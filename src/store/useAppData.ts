@@ -5,6 +5,7 @@ type AppState = {
 	repoList: repoType[];
 	deployments: DeployConfig[];
 	isLoading: boolean;
+	unAuthenticated : () => void
 	fetchAll: () => Promise<void>;
 	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error', message: string }>
@@ -14,7 +15,9 @@ export const useAppData = create<AppState>((set, get) => ({
 	repoList: [],
 	deployments: [],
 	isLoading: true,
-
+	unAuthenticated : () => {
+		set({ isLoading: false })
+	},
 	fetchAll: async () => {
 		set({ isLoading: true });
 		try {

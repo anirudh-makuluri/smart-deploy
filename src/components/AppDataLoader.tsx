@@ -6,11 +6,12 @@ import { useEffect, useState } from "react";
 export function AppDataLoader({ children }: React.PropsWithChildren) {
 	const [progress, setProgress] = useState(0);
 	const { status } = useSession(); // 'loading' | 'authenticated' | 'unauthenticated'
-	const { isLoading, fetchAll } = useAppData();
+	const { isLoading, fetchAll, unAuthenticated } = useAppData();
 
 	useEffect(() => {
 		console.log(status)
 		if (status === 'authenticated') fetchAll();
+		if(status === 'unauthenticated') unAuthenticated();
 
 		const interval = setInterval(() => {
 			setProgress(prev => {
