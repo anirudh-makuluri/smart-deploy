@@ -7,6 +7,7 @@ import { repoType } from '@/app/types';
 import { useAppData } from '@/store/useAppData';
 import { RefreshCcw } from 'lucide-react'
 import { toast } from 'sonner';
+import { formatTimestamp } from '@/lib/utils';
 
 
 export default function DashboardSideBar() {
@@ -37,7 +38,10 @@ export default function DashboardSideBar() {
 					{repoList.map((repo: repoType) => (
 						<li key={repo.id} className="bg-card p-2 rounded-md w-[80%]">
 							<Link className='w-full' href={`/repo/${repo.id}/${repo.full_name}`}>
-								{repo.full_name.split("/")[1]}
+								<p>{repo.full_name.split("/")[1]}</p>
+								<p className='text-[10px] opacity-50 truncate mt-0.5'><strong>Latest Commit:</strong> {repo.latest_commit?.message}</p>
+								<p className='text-[10px] opacity-50 truncate mt-0.5'><strong>On:</strong> {formatTimestamp(repo.latest_commit?.date)} 
+								</p>
 							</Link>
 						</li>
 					))}
