@@ -6,7 +6,7 @@ type AppState = {
 	deployments: DeployConfig[];
 	isLoading: boolean;
 	fetchAll: () => Promise<void>;
-	updateDeploymentById : ( deployment : DeployConfig ) => Promise<void>;
+	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
 };
 
 export const useAppData = create<AppState>((set, get) => ({
@@ -54,9 +54,24 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 
 		const deployments = get().deployments;
-		const updatedList = deployments.map(dep =>
-			dep.id === newDeployment.id ? newDeployment : dep
-		);
+
+
+		let updatedList;
+
+		if (newDeployment.status === "stopped") {
+			// Remove the deployment from the list
+			updatedList = deployments.filter(dep => dep.id !== newDeployment.id);
+		} else {
+			// Update or insert the deployment
+			const exists = deployments.some(dep => dep.id === newDeployment.id);
+			if (exists) {
+				updatedList = deployments.map(dep =>
+					dep.id === newDeployment.id ? newDeployment : dep
+				);
+			} else {
+				updatedList = [...deployments, newDeployment];
+			}
+		}
 
 		set({ deployments: updatedList });
 	}

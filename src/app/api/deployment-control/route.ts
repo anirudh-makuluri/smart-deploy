@@ -26,10 +26,10 @@ export async function PUT(req: NextRequest) {
 
 		// Run the command
 		const output = await runCommandLiveWithOutput("gcloud", args);
-		return NextResponse.json({ success: true, output });
+		return NextResponse.json({ status: "success", message: output });
 
 	} catch (err: any) {
 		console.error("Service control error:", err);
-		return NextResponse.json({ error: err.message }, { status: 500 });
+		return NextResponse.json({ status: "error", message: err.message }, { status: 500 });
 	}
 }

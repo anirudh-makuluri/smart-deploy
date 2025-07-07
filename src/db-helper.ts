@@ -46,9 +46,22 @@ export const dbHelper = {
 			const deploymentRef = db.collection("deployments").doc(deploymentId);
 			const deploymentDoc = await deploymentRef.get();
 
+			if (deployConfig.status === 'stopped') {
+				await deploymentRef.delete();
+
+				// Remove deployment ID from user's deploymentIds
+				const userData = userDoc.data();
+				if (userData && Array.isArray(userData.deploymentIds)) {
+					const updatedIds = userData.deploymentIds.filter((id: string) => id !== deploymentId);
+					await userRef.update({ deploymentIds: updatedIds });
+				}
+
+				return { success: "Deployment stopped and deleted" };
+			}
+
 			if (!deploymentDoc.exists) {
-				await deploymentRef.set({ 
-					ownerID: userID, 
+				await deploymentRef.set({
+					ownerID: userID,
 					status: 'running',
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
@@ -65,14 +78,14 @@ export const dbHelper = {
 				return { success: "New deployment created and added to user" };
 			} else {
 				const data = deploymentDoc.data();
-				if(data) {
+				if (data) {
 					const revision = data['revision'] ? data['revision'] + 1 : 1;
 					const last_deployment = new Date().toISOString()
-					await deploymentRef.set({ revision, last_deployment, ...deployConfig } , { merge: true });
+					await deploymentRef.set({ revision, last_deployment, ...deployConfig }, { merge: true });
 				} else {
 					await deploymentRef.set(deployConfig, { merge: true });
 				}
-				
+
 				return { success: "Deployment data updated successfully" };
 			}
 		} catch (error) {

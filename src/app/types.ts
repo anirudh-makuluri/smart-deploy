@@ -50,7 +50,7 @@ export type DeployConfig = {
 	env_vars?: string;
 	deployUrl?: string,
 	service_name: string,
-	status?: 'running' | 'paused',
+	status?: 'running' | 'paused' | 'stopped',
 	first_deployment ?: string,
 	last_deployment ?: string,
 	revision ?: number

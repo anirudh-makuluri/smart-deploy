@@ -48,12 +48,12 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			url: `https://github.com/${username}/${reponame}`,
-			service_name: `${reponame}-service`,
+			service_name: `${reponame}`,
 			branch: "main",
 			build_cmd: "npm run build",
 			run_cmd: "npm start",
 			env_vars: "",
-			workdir: "",
+			workdir: "/app",
 			use_custom_dockerfile: false,
 		},
 	})
@@ -103,7 +103,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 								<FormItem>
 									<FormLabel>Service Name</FormLabel>
 									<FormControl>
-										<Input disabled {...field} />
+										<Input {...field} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>

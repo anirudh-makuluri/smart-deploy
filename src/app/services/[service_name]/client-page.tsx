@@ -17,6 +17,17 @@ import {
 	FormField,
 	FormItem,
 } from "@/components/ui/form"
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+	AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 
 import { formSchema } from "@/app/repo/[id]/[username]/[reponame]/page";
 import { Switch } from "@/components/ui/switch";
@@ -104,6 +115,10 @@ export default function Page({ service_name }: { service_name: string }) {
 		if (newDeployment.service_name != deployment.service_name) {
 			router.replace(`/services/${newDeployment.service_name}?new-change=true`)
 		}
+
+		if (newDeployment.status == 'stopped') {
+			router.replace("/")
+		}
 	}
 
 	function handleRedeploy() {
@@ -124,6 +139,35 @@ export default function Page({ service_name }: { service_name: string }) {
 		sendDeployConfig(deployment, session?.accessToken)
 	}
 
+	function handleDeploymentControl(action: string) {
+		if (!deployment) return;
+
+
+		console.log(action, service_name, deployment?.id)
+		fetch('/api/deployment-control', {
+			method: "PUT",
+			body: JSON.stringify({ action, serviceName: service_name, id: deployment.id }),
+			headers: {
+				"Content-Type": "application/json",
+			}
+		}).then(res => res.json())
+			.then(response => {
+				if (response.status == "success") {
+					let newStatus: "running" | "paused" | "stopped" | undefined;
+					if (action == 'resume') {
+						newStatus = 'running'
+					} else if (action == 'pause') {
+						newStatus = 'paused'
+					} else {
+						newStatus = 'stopped'
+					}
+					const newDeployment: DeployConfig = { ...deployment, status: newStatus }
+					updateDeployment(newDeployment)
+				}
+			})
+
+	}
+
 	return (
 		<>
 			<Header />
@@ -142,8 +186,46 @@ export default function Page({ service_name }: { service_name: string }) {
 						<Button onClick={handleRedeploy} variant={newChanges ? "default" : "outline"}>
 							{isDeploying ? "Redeploying" : deployStatus == "success" ? "Deployment Success!" : "Redeploy"}
 						</Button>
-						<Button variant={'outline'}>Pause</Button>
-						<Button variant={'outline'}>Stop/Delete</Button>
+						<AlertDialog>
+							<AlertDialogTrigger asChild>
+								<Button className="hidden"
+									variant={'outline'}>
+									{deployment.status == 'running' ? "Pause" : "Resume"}
+								</Button>
+							</AlertDialogTrigger>
+							<AlertDialogContent>
+								<AlertDialogHeader>
+									<AlertDialogTitle>Are you sure?</AlertDialogTitle>
+									<AlertDialogDescription>
+										This action will prevent you from accessing the website until you resume it
+									</AlertDialogDescription>
+								</AlertDialogHeader>
+								<AlertDialogFooter>
+									<AlertDialogCancel>Cancel</AlertDialogCancel>
+									<AlertDialogAction onClick={() => handleDeploymentControl(deployment.status == 'running' ? "pause" : "resume")}>Continue</AlertDialogAction>
+								</AlertDialogFooter>
+							</AlertDialogContent>
+						</AlertDialog>
+						<AlertDialog>
+							<AlertDialogTrigger asChild>
+								<Button
+									variant={'destructive'}>
+									Stop/Delete
+								</Button>
+							</AlertDialogTrigger>
+							<AlertDialogContent>
+								<AlertDialogHeader>
+									<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+									<AlertDialogDescription>
+										This action cannot be undone. This will permanently delete your service and remove service data from our servers.
+									</AlertDialogDescription>
+								</AlertDialogHeader>
+								<AlertDialogFooter>
+									<AlertDialogCancel>Cancel</AlertDialogCancel>
+									<AlertDialogAction onClick={() => handleDeploymentControl("stop")}>Continue</AlertDialogAction>
+								</AlertDialogFooter>
+							</AlertDialogContent>
+						</AlertDialog>
 						{
 							!editMode && (
 								<Button onClick={() => { setEditMode(true) }} variant={'default'}>Edit Config</Button>
@@ -337,7 +419,7 @@ export default function Page({ service_name }: { service_name: string }) {
 						</form>
 					</Form>
 
-					<Button className="absolute bottom-10 right-10" variant={'outline'}>Copy Config</Button>
+					<Button className="hidden absolute bottom-10 right-10" variant={'outline'}>Copy Config</Button>
 					{
 						isDeploying ?
 							(
