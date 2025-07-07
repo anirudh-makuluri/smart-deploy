@@ -63,3 +63,20 @@ export function parseEnvVarsToStore(envString: string): string {
 		.filter(line => line && !line.startsWith("#"))
 		.join(",");
 }
+
+
+export function readDockerfile(file: File): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+
+		reader.onload = () => {
+			resolve(reader.result as string);
+		};
+
+		reader.onerror = () => {
+			reject(reader.error);
+		};
+
+		reader.readAsText(file); // 👈 Reads as plain UTF-8 text
+	});
+}

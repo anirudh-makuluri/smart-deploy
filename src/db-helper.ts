@@ -65,7 +65,7 @@ export const dbHelper = {
 					status: 'running',
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
-					revison: 1,
+					revision: 1,
 					...deployConfig
 				});
 
@@ -130,25 +130,18 @@ export const dbHelper = {
 		const userRef = db.collection("users").doc(userID);
 		const reposRef = userRef.collection("repos");
 
-		const snapshot = await reposRef.limit(1).get();
-
-		// If there are already repos, skip writing
-		if (!snapshot.empty) {
-			console.log(`✅ Repos already exist for user: ${userID}`);
-			return;
-		}
-
-		// Add repos
+		// Create a batch
 		const batch = db.batch();
 
 		repoList.forEach((repo) => {
-			const docRef = reposRef.doc(repo.name); // you can also use repo.id.toString()
+			const docRef = reposRef.doc(repo.name);
+			// Use merge to update if exists or create if not
 			batch.set(docRef, repo, { merge: true });
 		});
 
 		await batch.commit();
 
-		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
+		console.log(`✅ Synced ${repoList.length} repos for user: ${userID}`);
 	}
 
 

@@ -16,13 +16,13 @@ import {
 	FormMessage,
 } from "@/components/ui/form"
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectTrigger,
+	SelectValue,
 } from "@/components/ui/select"
 
 import Header from "@/components/Header" // adjust based on your layout
@@ -35,6 +35,7 @@ import DeploymentAccordion from "@/components/DeploymentAccordion"
 import { parseEnvVarsToStore } from "@/lib/utils"
 import { Switch } from "@/components/ui/switch"
 import { useAppData } from "@/store/useAppData"
+import { toast } from "sonner"
 
 export const formSchema = z.object({
 	url: z.string().url({ message: "Must be a valid URL" }),
@@ -65,7 +66,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		defaultValues: {
 			url: `https://github.com/${username}/${reponame}`,
 			service_name: `${reponame}`,
-			branch: "main",
+			branch: branches.current[0],
 			install_cmd: "",
 			build_cmd: "",
 			run_cmd: "",
@@ -100,8 +101,13 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			...values,
 		};
 
-		if (values.use_custom_dockerfile && dockerfile) {
-			payload.dockerfile = dockerfile;
+		if (values.use_custom_dockerfile) {
+			if (dockerfile) {
+				payload.dockerfile = dockerfile;
+			} else {
+				toast("Dockerfile not provided")
+				return;
+			}
 		}
 
 		console.log("Form Data", payload);

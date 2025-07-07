@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
 import { AppDataLoader } from "@/components/AppDataLoader";
+import { Toaster } from "@/components/ui/sonner"
+
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
@@ -16,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
 	title: "Smart Deploy",
-	description: "Deploy your code easiest way",
+	description: "Deploy your code in an easy way",
 };
 
 export default function RootLayout({
@@ -32,6 +34,7 @@ export default function RootLayout({
 				<SessionWrapper>
 					<AppDataLoader>
 						{children}
+						<Toaster />
 					</AppDataLoader>
 				</SessionWrapper>
 

@@ -27,14 +27,12 @@ export default function DashboardDeploymentItem({ deployConfig, repo }: { deploy
 
 	return (
 		<div className='bg-card px-4 py-2 rounded-md flex flex-col justify-between items-center'>
-			<div className='flex flex-row items-center justify-between'>
+			<div className='flex flex-row items-center justify-between w-full'>
 				<div>
 					<Link href={`/services/${deployConfig.service_name}`}><p className='font-bold mb-2 hover:underline'>{deployConfig.service_name}</p></Link>
 					<a href={deployConfig.deployUrl} target='_blank'><p className='text-xs mb-4 hover:underline'>{deployConfig.deployUrl}</p></a>
 				</div>
-				<div className='flex flex-row space-x-2 items-center'>
-					<div className={(deployConfig.status == 'running' ? 'bg-green-500' : 'bg-red-500') + ' w-3.5 h-3.5 rounded-full'}>
-					</div>
+				<div className='flex-row space-x-2 items-center hidden'>
 					<DropdownMenu>
 						<DropdownMenuTrigger className='hover:bg-muted hover:cursor-pointer p-2 rounded-xl'>
 							<EllipsisVertical />

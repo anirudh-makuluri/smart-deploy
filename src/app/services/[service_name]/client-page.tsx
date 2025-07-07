@@ -2,7 +2,7 @@
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatTimestamp, parseEnvVarsToDisplay, parseEnvVarsToStore } from "@/lib/utils";
+import { formatTimestamp, parseEnvVarsToDisplay, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@radix-ui/react-dropdown-menu";
 import { useState } from "react";
@@ -28,6 +28,7 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { formSchema } from "@/app/repo/[id]/[username]/[reponame]/page";
 import { Switch } from "@/components/ui/switch";
@@ -60,8 +61,10 @@ export default function Page({ service_name }: { service_name: string }) {
 
 	const [editMode, setEditMode] = useState(false);
 	const [newChanges, setNewChanges] = useState(new_change ?? false);
+	const [dockerfile, setDockerfile] = useState<File | null>(null);
 
 	const deployment = deployments.find((dep) => dep.service_name == service_name);
+	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
@@ -83,6 +86,13 @@ export default function Page({ service_name }: { service_name: string }) {
 			updateDeployment(deployConfigRef.current);
 		}
 	}, [deployStatus])
+
+	React.useEffect(() => {
+		if(!dockerfile) return;
+		readDockerfile(dockerfile)
+		.then(res => setDockerfileContent(res))
+
+	}, [dockerfile])
 
 	if (!deployment) return (
 		<div>Service Not Found</div>
@@ -358,6 +368,21 @@ export default function Page({ service_name }: { service_name: string }) {
 														onCheckedChange={field.onChange}
 													/>
 												</FormControl>
+												{field.value && (
+													<div>
+														<label className="block text-sm font-medium text-gray-700 mb-1">
+															Upload Dockerfile
+														</label>
+														<Input
+															type="file"
+															accept=".dockerfile,.txt,.Dockerfile"
+															onChange={(e) => {
+																const file = e.target.files?.[0];
+																if (file) setDockerfile(file);
+															}}
+														/>
+													</div>
+												)}
 											</FormItem>
 										)}
 									/>
@@ -367,6 +392,13 @@ export default function Page({ service_name }: { service_name: string }) {
 									</span>
 								)}
 							</div>
+							{
+								dockerfileContent && (
+									<div className="bg-card p-2 rounded-md">
+										<p className="text-sm">{dockerfileContent}</p>
+									</div>
+								)
+							}
 
 							{/* Env Vars */}
 							<p className="font-bold text-xl whitespace-nowrap mt-10">Environment Variables</p>

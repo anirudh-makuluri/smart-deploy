@@ -1,4 +1,5 @@
 import { DeployConfig, DeployStep } from "@/app/types";
+import { readDockerfile } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
 type SocketStatus = "connecting" | "open" | "closed" | "error";
@@ -122,21 +123,24 @@ export function useDeployLogs() {
 		} else {
 			const reader = new FileReader();
 
-			reader.onload = () => {
+			reader.onload =  async () => {
 				const base64 = reader.result as string;
 				const socket = wsRef.current;
+
+				deployConfig.dockerfileInfo = {
+					name: file.name,
+					type: file.type,
+					content: base64
+				}
+
+				deployConfig.dockerfileContent = await readDockerfile(file);
+
+				deployConfigRef.current = deployConfig;
 
 				if (socket?.readyState === WebSocket.OPEN) {
 					socket.send(
 						JSON.stringify({
-							deployConfig: {
-								...deployConfig,
-								dockerfileInfo: {
-									name: file.name,
-									type: file.type,
-									content: base64, // <- send base64
-								},
-							},
+							deployConfig,
 							token,
 						})
 					);

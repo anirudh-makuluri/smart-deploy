@@ -5,18 +5,34 @@ import { Button } from './ui/button';
 import Link from 'next/link'
 import { repoType } from '@/app/types';
 import { useAppData } from '@/store/useAppData';
+import { RefreshCcw } from 'lucide-react'
+import { toast } from 'sonner';
 
 
 export default function DashboardSideBar() {
+
 	const { data: session } = useSession();
-	const { repoList } = useAppData();
+	const { repoList , refreshRepoList} = useAppData();
+
+	const [isRefreshing, setIsRefreshing] = useState(false);
+
+	async function handleRefresh() {
+		setIsRefreshing(true);
+		const response = await refreshRepoList();
+		setIsRefreshing(false);
+		toast(response.message);	
+	}
 
 	return (
 		<div className="h-full w-1/3 px-4 py-2">
 			<p className='font-bold text-2xl my-2'>{session?.user?.name}</p>
-			<Button className='bg-accent-foreground my-2 hover:cursor-pointer'>Import</Button>
 			<div className='rounded-2xl pl-4 py-2 w-[80%]'>
-				<p className='font-bold text-xl my-2'>Repositories</p>
+				<div className='flex flex-row items-center justify-between'>
+					<p className='font-bold text-xl my-2'>Repositories</p>
+					<Button onClick={handleRefresh} variant={'outline'} disabled={isRefreshing} className='my-2 hover:cursor-pointer'>
+						<RefreshCcw className={isRefreshing ? 'spin-animation' : ''}/>Refresh
+					</Button>
+				</div>
 				<ul className="mt-4 space-y-2 max-h-[65vh] overflow-y-auto">
 					{repoList.map((repo: repoType) => (
 						<li key={repo.id} className="bg-card p-2 rounded-md w-[80%]">
