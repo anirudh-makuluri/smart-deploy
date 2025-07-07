@@ -80,3 +80,18 @@ export function readDockerfile(file: File): Promise<string> {
 		reader.readAsText(file); // 👈 Reads as plain UTF-8 text
 	});
 }
+
+
+export function formatLogTimestamp(isoTimestamp : string) {
+	const date = new Date(isoTimestamp);
+
+	// Format: DD MMM YYYY, hh:mm AM/PM
+	return date.toLocaleString('en-IN', {
+		day: '2-digit',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: true,
+	});
+}

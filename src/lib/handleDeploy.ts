@@ -17,8 +17,17 @@ function detectLanguage(appDir: string): string {
 
 
 export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any): Promise<string> {
-	const send = (msg: string) => {
-		if (ws.readyState === ws.OPEN) ws.send(msg);
+	const send = (msg: string, id: string) => {
+		if (ws.readyState === ws.OPEN) {
+			const object = {
+				type : 'deploy_logs',
+				payload : {
+					id,
+					msg
+				}
+			}
+			ws.send(JSON.stringify(object));
+		}
 	};
 
 	console.log("in handle deploy")
@@ -29,7 +38,7 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
 
 	console.log("🔐 Authenticating with Google Cloud...")
-	send("[auth] 🔐 Authenticating with Google Cloud...");
+	send("🔐 Authenticating with Google Cloud...", 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth');
@@ -43,21 +52,21 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 	const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
 	const branch = deployConfig.branch?.trim() || "main";
-	send(`[clone] 📦 Cloning repo from branch "${branch}"...`);
+	send(`📦 Cloning repo from branch "${branch}"...`, 'clone');
 	await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
 
 	const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
 	const dockerfilePath = path.join(appDir, "Dockerfile");
 
 	if (deployConfig.use_custom_dockerfile && deployConfig.dockerfileContent) {
-		send("[clone] ✍️ Writing custom Dockerfile...");
+		send("✍️ Writing custom Dockerfile...", 'clone');
 
 		fs.writeFileSync(dockerfilePath, deployConfig.dockerfileContent);
 	}
 
 	if (!deployConfig.use_custom_dockerfile && !fs.existsSync(dockerfilePath)) {
 		const language = detectLanguage(appDir);
-		send(`[clone] Detected Language : ${language}`)
+		send(`Detected Language : ${language}`, 'clone')
 
 		let dockerfileContent = "";
 
@@ -134,12 +143,12 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"
 	const imageName = `${repoName}-image`;
 	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
 
-	send("[docker] 🐳 Building Docker image...");
+	send("🐳 Building Docker image...", 'docker');
 	await runCommandLiveWithWebSocket("docker", ["build", "-t", imageName, appDir], ws), 'docker';
 	await runCommandLiveWithWebSocket("docker", ["tag", imageName, gcpImage], ws, 'docker');
 	await runCommandLiveWithWebSocket("docker", ["push", gcpImage], ws, 'push');
 
-	send("[deploy] 🚀 Deploying to Cloud Run...");
+	send("🚀 Deploying to Cloud Run...", 'deploy');
 	const envArgs = deployConfig.env_vars ? ["--set-env-vars", deployConfig.env_vars] : [];
 	await runCommandLiveWithWebSocket("gcloud", [
 		"run", "deploy", serviceName,
@@ -160,7 +169,7 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"
 	], ws, 'deploy');
 
 
-	send(`[done] Deployment success`)
+	send(`Deployment success`, 'done')
 
 	// ✅ Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

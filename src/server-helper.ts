@@ -49,11 +49,16 @@ export async function runCommandLiveWithWebSocket(
 		let output = "";
 		const child = spawn(cmd, args, { shell: true });
 
-		const prefix = id ? `[${id}]` : "";
-
 		const sendWS = (msg: string) => {
 			if (ws && ws.readyState === ws.OPEN) {
-				ws.send(`${prefix} ${msg}`);
+				const object = {
+					type: 'deploy_logs',
+					payload: {
+						id,
+						msg
+					}
+				}
+				ws.send(JSON.stringify(object));
 			}
 		};
 

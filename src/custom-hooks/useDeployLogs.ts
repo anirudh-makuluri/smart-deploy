@@ -13,14 +13,14 @@ const initialSteps: DeployStep[] = [
 	{ id: "deploy", label: "🚀 Deploy to Cloud Run", logs: [], status: "pending" },
 ];
 
-export function useDeployLogs() {
+export function useDeployLogs(serviceName : string) {
 	const [steps, setSteps] = useState(initialSteps);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
-	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started")
+	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
+	const [serviceLogs, setServiceLogs] = useState<{timestamp : string, message ?: string}[]>([]);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 
-	const latestStepRef = useRef<string>(steps[0].id);
 	const wsRef = useRef<WebSocket | null>(null);
 
 	useEffect(() => {
@@ -30,76 +30,38 @@ export function useDeployLogs() {
 		ws.onopen = () => {
 			console.log("Connected to Server: 4001")
 			setSocketStatus("open");
+			initiateServiceLogs();
 		};
 
 		ws.onmessage = (e) => {
-			const msg = e.data as string;
-			setDeployStatus("running")
+			const data = JSON.parse(e.data);
+			const type = data.type;
+			const payload = data.payload;
 
-			if (msg.includes("Service URL")) {
-				const match = msg.match(/https:\/\/[^\s]+/);
-				if (match) {
-					const deployedUrl = match[0];
-					console.log("Extracted URL:", deployedUrl);
-					if (deployConfigRef.current?.id) {
-						const newConfig = { ...deployConfigRef.current, deployUrl: deployedUrl }
-						deployConfigRef.current = newConfig
-						setDeployStatus("success")
-					}
 
-				}
+			switch (type) {
+				case 'initial_logs':
+					processServiceLogs(payload.logs)
+					break;
+				case 'stream_logs':
+					processServiceLogs([payload.log]);
+					break;
+				case 'deploy_logs':
+					deployLogs(payload)
+					break;
+				default:
+					break;
 			}
-
-			const match = msg.match(/^\[(.*?)\] (.*)$/);
-			let stepId = "";
-			let log = "";
-			if (!match) {
-				stepId = latestStepRef.current
-				log = msg;
-			} else {
-				[, stepId, log] = match;
-				latestStepRef.current = stepId
-			}
-
-			
-
-			setSteps((prev) =>
-				prev.map((step) =>
-					step.id === stepId
-						? {
-							...step,
-							status: log.includes("✅") ? "success"
-								: log.includes("❌") ? "error"
-									: step.status === "pending" ? "in_progress" : step.status,
-							logs: [...step.logs, log],
-						}
-						: step
-				)
-			);
 		};
 
 		ws.onerror = () => {
 			setSocketStatus("error");
 			setDeployStatus("error")
-			const stepId = latestStepRef.current;
-			const log = "❌ WebSocket connection error"
-			setSteps((prev) =>
-				prev.map((step) =>
-					step.id === stepId
-						? {
-							...step,
-							status: log.includes("✅") ? "success"
-								: log.includes("❌") ? "error"
-									: step.status === "pending" ? "in_progress" : step.status,
-							logs: [...step.logs, log],
-						}
-						: step
-				)
-			);
 		};
 
 		ws.onclose = () => {
 			setSocketStatus("closed");
+			setDeployStatus("error")
 		};
 
 		return () => {
@@ -112,11 +74,17 @@ export function useDeployLogs() {
 
 		const file = deployConfig.dockerfile;
 
-		if (!file) {
+		if (!file || !deployConfig.use_custom_dockerfile) {
 			const socket = wsRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({ deployConfig, token }));
-				// setLogs((prev) => [...prev, `🚀 Starting deployment: ${deployConfig.id}`]);
+				const object = {
+					type: 'deploy',
+					payload : {
+						deployConfig,
+						token
+					}
+				}
+				socket.send(JSON.stringify(object));
 			} else {
 				console.error("Socket not open");
 			}
@@ -138,11 +106,15 @@ export function useDeployLogs() {
 				deployConfigRef.current = deployConfig;
 
 				if (socket?.readyState === WebSocket.OPEN) {
-					socket.send(
-						JSON.stringify({
+					const object = {
+						type: 'deploy',
+						payload: {
 							deployConfig,
-							token,
-						})
+							token
+						}
+					}
+					socket.send(
+						JSON.stringify(object)
 					);
 				} else {
 					console.error("Socket not open");
@@ -154,5 +126,56 @@ export function useDeployLogs() {
 		}
 	};
 
-	return { steps, socketStatus, sendDeployConfig, deployConfigRef, deployStatus };
+	const initiateServiceLogs = () => {
+		const socket = wsRef.current;
+		if (socket?.readyState === WebSocket.OPEN) {
+			const object = {
+				type: 'service_logs',
+				payload : {
+					serviceName
+				}
+			}
+			socket.send(JSON.stringify(object))
+		}
+	}
+
+	function processServiceLogs(logs : {timestamp : string, message ?: string}[]) {
+		setServiceLogs(prev => [...prev, ...logs]);
+	}
+
+	function deployLogs({ id, msg } : { id : string, msg : string }) {
+		setDeployStatus("running")
+
+		if (msg.includes("Service URL")) {
+			const match = msg.match(/https:\/\/[^\s]+/);
+			if (match) {
+				const deployedUrl = match[0];
+				console.log("Extracted URL:", deployedUrl);
+				if (deployConfigRef.current?.id) {
+					const newConfig = { ...deployConfigRef.current, deployUrl: deployedUrl }
+					deployConfigRef.current = newConfig
+					setDeployStatus("success")
+				}
+
+			}
+		}
+
+
+
+		setSteps((prev) =>
+			prev.map((step) =>
+				step.id === id
+					? {
+						...step,
+						status: msg.includes("✅") ? "success"
+							: msg.includes("❌") ? "error"
+								: step.status === "pending" ? "in_progress" : step.status,
+						logs: [...step.logs, msg],
+					}
+					: step
+			)
+		);
+	}
+
+	return { steps, socketStatus, sendDeployConfig, deployConfigRef, deployStatus, initiateServiceLogs, serviceLogs };
 }

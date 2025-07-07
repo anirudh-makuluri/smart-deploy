@@ -15,7 +15,7 @@ export default function DeploymentAccordion({ steps }: { steps: DeployStep[] }) 
 	const [openItem, setOpenItem] = useState<string | undefined>(steps[0]?.id);
 
 	return (
-		<Accordion type="single" collapsible value={openItem} onValueChange={setOpenItem}>
+		<Accordion className="bg-card p-2 rounded-md" type="single" collapsible value={openItem} onValueChange={setOpenItem}>
 			{steps.map((step) => (
 				<AccordionItem key={step.id} value={step.id}>
 					<AccordionTrigger>
