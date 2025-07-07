@@ -5,6 +5,7 @@ dotenv.config();
 import { WebSocketServer } from "ws";
 import http from "http";
 import { handleDeploy } from "./lib/handleDeploy"; // Your deploy function
+import { DeployConfig } from "./app/types";
 
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer();
@@ -21,7 +22,21 @@ wss.on("connection", (ws) => {
 			const {
 				deployConfig,
 				token
-			} = msg;
+			} : { deployConfig : DeployConfig, token : string } = msg;
+
+			if (deployConfig.dockerfileInfo) {
+				const { name, content } = deployConfig.dockerfileInfo;
+
+				// Extract base64 content from data URI
+				const base64 = content.split(',')[1];
+				const buffer = Buffer.from(base64, 'base64');
+
+				// If needed, save or pass this to handleDeploy
+				// fs.writeFileSync(`/tmp/${name}`, buffer);
+
+				deployConfig.dockerfileContent = buffer.toString();
+			}
+
 
 			// ws.send(`🚀 Deployment ${deploymentId} started`);
 

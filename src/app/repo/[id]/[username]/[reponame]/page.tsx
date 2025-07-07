@@ -15,6 +15,15 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 import Header from "@/components/Header" // adjust based on your layout
 import { use, useEffect, useState } from "react"
@@ -24,13 +33,16 @@ import { useSession } from "next-auth/react"
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs"
 import DeploymentAccordion from "@/components/DeploymentAccordion"
 import { parseEnvVarsToStore } from "@/lib/utils"
+import { Switch } from "@/components/ui/switch"
+import { useAppData } from "@/store/useAppData"
 
 export const formSchema = z.object({
 	url: z.string().url({ message: "Must be a valid URL" }),
 	service_name: z.string(),
 	branch: z.string().min(1, { message: "Branch is required" }),
-	build_cmd: z.string().min(1, { message: "Build command is required" }),
-	run_cmd: z.string().min(1, { message: "Run command is required" }),
+	install_cmd: z.string().optional(),
+	build_cmd: z.string().optional(),
+	run_cmd: z.string().optional(),
 	env_vars: z.string().optional(),
 	workdir: z.string().optional(),
 	use_custom_dockerfile: z.boolean()
@@ -39,9 +51,13 @@ export const formSchema = z.object({
 
 export default function Page({ params }: { params: Promise<{ id: string, username: string, reponame: string }> }) {
 	const { id, username, reponame } = use(params)
-	const { steps, sendDeployConfig, deployConfigRef } = useDeployLogs();
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus } = useDeployLogs();
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
+	const [dockerfile, setDockerfile] = useState<File | null>(null);
+	const { repoList, updateDeploymentById } = useAppData();
+	const repo = repoList.find(rep => rep.full_name == `${username}/${reponame}`);
+	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
 
 	const form = useForm<z.infer<typeof formSchema>>({
@@ -50,13 +66,23 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			url: `https://github.com/${username}/${reponame}`,
 			service_name: `${reponame}`,
 			branch: "main",
-			build_cmd: "npm run build",
-			run_cmd: "npm start",
+			install_cmd: "",
+			build_cmd: "",
+			run_cmd: "",
 			env_vars: "",
-			workdir: "/app",
+			workdir: "/",
 			use_custom_dockerfile: false,
 		},
 	})
+
+	React.useEffect(() => {
+		if (deployStatus == "success" && deployConfigRef.current) {
+			setIsDeploying(false);
+			addDeployment(deployConfigRef.current);
+		}
+	}, [deployStatus])
+
+	const watchCustomDockerfile = form.watch("use_custom_dockerfile")
 
 
 	function onSubmit(values: z.infer<typeof formSchema>) {
@@ -67,12 +93,29 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		if (values.env_vars) {
 			values.env_vars = parseEnvVarsToStore(values.env_vars)
 		}
-		console.log("Form Data", values)
-		// submit to backend here
 
-		setIsDeploying(true);	
-		sendDeployConfig({ id ,...values }, session?.accessToken)
 
+		const payload: DeployConfig = {
+			id,
+			...values,
+		};
+
+		if (values.use_custom_dockerfile && dockerfile) {
+			payload.dockerfile = dockerfile;
+		}
+
+		console.log("Form Data", payload);
+
+		setIsDeploying(true);
+		sendDeployConfig(payload, session?.accessToken);
+
+	}
+
+	async function addDeployment(deployment: DeployConfig) {
+		deployment.first_deployment = new Date().toISOString();
+		deployment.last_deployment = new Date().toISOString();
+		deployment.revision = 1
+		await updateDeploymentById(deployment)
 	}
 
 	return (
@@ -117,7 +160,35 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 								<FormItem>
 									<FormLabel>Branch to Deploy</FormLabel>
 									<FormControl>
-										<Input placeholder="e.g. main" {...field} />
+										<Select
+											onValueChange={field.onChange}
+											defaultValue={field.value}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="Select a branch" />
+											</SelectTrigger>
+											<SelectContent>
+												{branches.current.map((branch) => (
+													<SelectItem key={branch} value={branch}>
+														{branch}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</FormControl>
+									<FormMessage />
+								</FormItem>
+							)}
+						/>
+
+						<FormField
+							control={form.control}
+							name="install_cmd"
+							render={({ field }) => (
+								<FormItem>
+									<FormLabel>Install Command</FormLabel>
+									<FormControl>
+										<Input disabled={watchCustomDockerfile} placeholder="e.g. npm install" {...field} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -131,7 +202,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 								<FormItem>
 									<FormLabel>Build Command</FormLabel>
 									<FormControl>
-										<Input placeholder="e.g. npm run build" {...field} />
+										<Input disabled={watchCustomDockerfile} placeholder="e.g. npm run build" {...field} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -145,7 +216,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 								<FormItem>
 									<FormLabel>Run Command</FormLabel>
 									<FormControl>
-										<Input placeholder="e.g. npm start" {...field} />
+										<Input disabled={watchCustomDockerfile} placeholder="e.g. npm start" {...field} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -160,7 +231,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 									<FormLabel>Environment Variables</FormLabel>
 									<FormControl>
 										<Textarea
-											placeholder="KEY=value (one per line)"
+											placeholder="KEY=value (Separate by comma) e.g. NODE_ENV=PROD,TEST=TEST"
 											className="min-h-[100px]"
 											{...field}
 										/>
@@ -176,7 +247,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 								<FormItem>
 									<FormLabel>Working Directory</FormLabel>
 									<FormControl>
-										<Input placeholder="e.g. /app or ./client" {...field} />
+										<Input disabled={watchCustomDockerfile} placeholder="e.g. /app or ./client" {...field} />
 									</FormControl>
 									<FormMessage />
 								</FormItem>
@@ -187,18 +258,31 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 							control={form.control}
 							name="use_custom_dockerfile"
 							render={({ field }) => (
-								<FormItem className="flex flex-row items-center space-x-3 space-y-0">
+								<FormItem className="flex flex-row items-center space-x-3 space-y-0 min-h-[60px]">
 									<FormControl>
-										<input
-											type="checkbox"
-											className="mt-1 h-4 w-4"
+										<Switch
 											checked={field.value}
-											onChange={e => field.onChange(e.target.checked)}
+											onCheckedChange={field.onChange}
 										/>
 									</FormControl>
 									<div className="space-y-1 leading-none">
 										<FormLabel>Use custom Dockerfile</FormLabel>
 									</div>
+									{field.value && (
+										<div>
+											<label className="block text-sm font-medium text-gray-700 mb-1">
+												Upload Dockerfile
+											</label>
+											<Input
+												type="file"
+												accept=".dockerfile,.txt,.Dockerfile"
+												onChange={(e) => {
+													const file = e.target.files?.[0];
+													if (file) setDockerfile(file);
+												}}
+											/>
+										</div>
+									)}
 								</FormItem>
 							)}
 						/>
@@ -218,8 +302,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 						) : null
 				}
 				{
-					deployConfigRef.current?.deployUrl ? 
-						<div>Deployment Successful: 
+					deployConfigRef.current?.deployUrl ?
+						<div>Deployment Successful:
 							<Link className="underline text-blue-600" href={deployConfigRef.current?.deployUrl}> Link</Link>
 						</div> : null
 				}

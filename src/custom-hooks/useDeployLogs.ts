@@ -107,14 +107,46 @@ export function useDeployLogs() {
 	}, []);
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string) => {
-		deployConfigRef.current = deployConfig
+		deployConfigRef.current = deployConfig;
 
-		const socket = wsRef.current;
-		if (socket?.readyState === WebSocket.OPEN) {
-			socket.send(JSON.stringify({ deployConfig, token }));
-			// setLogs((prev) => [...prev, `🚀 Starting deployment: ${deployConfig.id}`]);
+		const file = deployConfig.dockerfile;
+
+		if (!file) {
+			const socket = wsRef.current;
+			if (socket?.readyState === WebSocket.OPEN) {
+				socket.send(JSON.stringify({ deployConfig, token }));
+				// setLogs((prev) => [...prev, `🚀 Starting deployment: ${deployConfig.id}`]);
+			} else {
+				console.error("Socket not open");
+			}
 		} else {
-			console.error("Socket not open");
+			const reader = new FileReader();
+
+			reader.onload = () => {
+				const base64 = reader.result as string;
+				const socket = wsRef.current;
+
+				if (socket?.readyState === WebSocket.OPEN) {
+					socket.send(
+						JSON.stringify({
+							deployConfig: {
+								...deployConfig,
+								dockerfileInfo: {
+									name: file.name,
+									type: file.type,
+									content: base64, // <- send base64
+								},
+							},
+							token,
+						})
+					);
+				} else {
+					console.error("Socket not open");
+				}
+			};
+
+			reader.readAsDataURL(file);
+			
 		}
 	};
 

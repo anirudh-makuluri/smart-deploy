@@ -43,8 +43,9 @@ export type DeployConfig = {
 	id: string,
 	url: string;
 	branch: string;
-	build_cmd: string;
-	run_cmd: string;
+	install_cmd?: string;
+	build_cmd?: string;
+	run_cmd?: string;
 	workdir?: string;
 	use_custom_dockerfile: boolean;
 	env_vars?: string;
@@ -54,6 +55,13 @@ export type DeployConfig = {
 	first_deployment ?: string,
 	last_deployment ?: string,
 	revision ?: number
+	dockerfile?: File,
+	dockerfileInfo ?: {
+		name: string,
+		type: string,
+		content: string,
+	},
+	dockerfileContent ?: string
 }
 
 export type DeployStep = {
