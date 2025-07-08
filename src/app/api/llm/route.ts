@@ -86,31 +86,12 @@ const extraInfo = `
 
 features_infrastructure:
 - uses_websockets: true/false
-- uses_database: true/false
-- database_type: Type of database if used (e.g., PostgreSQL, MongoDB)
-- uses_redis: true/false
-- uses_file_uploads: true/false
 - uses_cron: true/false
-- uses_docker: true/false
-
----
-
-frontend_build:
-- uses_typescript: true/false
-- uses_tailwind: true/false
-- static_site: true/false
-- ssr_enabled: true/false
-- build_tool: Webpack, Vite, Rollup, etc.
-
----
-
-quality_tooling:
-- uses_testing: true/false
-- testing_frameworks: List (e.g., ["Jest", "Pytest"])
-- uses_logging: true/false
-- logging_libs: List (e.g., ["Winston", "Loguru"])
-- has_docs: true/false
-- has_readme: true/false
+- uses_mobile: true/false
+- uses_server: true/false
+- cloud_run_compatible: true/false
+- is_library: true/false
+- requires_build_but_missing_cmd: true/false
 
 ---
 

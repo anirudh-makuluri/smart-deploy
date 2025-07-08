@@ -6,13 +6,13 @@ import { z } from "zod"
 import Header from "@/components/Header" // adjust based on your layout
 import { use, useEffect, useState } from "react"
 import Link from "next/link"
-import { DeployConfig } from "@/app/types"
+import { AIGenProjectMetadata, DeployConfig } from "@/app/types"
 import { useSession } from "next-auth/react"
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs"
 import { parseEnvVarsToStore } from "@/lib/utils"
 import { useAppData } from "@/store/useAppData"
 import { toast } from "sonner"
-import ConfigTabs, { formSchema } from "@/components/ConfigTabs"
+import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs"
 
 
 export default function Page({ params }: { params: Promise<{ id: string, username: string, reponame: string }> }) {
@@ -37,7 +37,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		)
 	}
 
-	function onSubmit(values: z.infer<typeof formSchema>) {
+	function onSubmit(values: FormSchemaType & Partial<AIGenProjectMetadata>) {
 		if (!session?.accessToken) {
 			return console.log("Unauthenticated")
 		}
@@ -78,7 +78,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	return (
 		<div className="bg-muted flex min-h-svh flex-col">
 			<Header />
-			<div className="max-w-2xl w-full mx-auto p-4">
+			<div className="w-full mx-auto p-4">
 				<ConfigTabs editMode={true} onSubmit={onSubmit} repo={repo}
 					service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} />
 				{

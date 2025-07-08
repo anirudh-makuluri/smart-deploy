@@ -112,7 +112,7 @@ export function extractDeployConfigFromAI(responseObj: { response: string }): AI
 	}
 }
 
-export function sanitizeAndParseAIResponse(raw: any): Record<string, any> | null {
+export function sanitizeAndParseAIResponse(raw: any): AIGenProjectMetadata | null {
 	try {
 		let jsonStr = "";
 

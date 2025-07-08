@@ -23,8 +23,8 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation'
-import { DeployConfig } from "@/app/types";
-import ConfigTabs, { formSchema } from "@/components/ConfigTabs";
+import { AIGenProjectMetadata, DeployConfig } from "@/app/types";
+import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
 
 export default function Page({ service_name }: { service_name: string }) {
 	const { deployments, updateDeploymentById, repoList } = useAppData();
@@ -63,7 +63,7 @@ export default function Page({ service_name }: { service_name: string }) {
 		<div>Service Not Found</div>
 	)
 
-	async function onSubmit(values: z.infer<typeof formSchema>) {
+	async function onSubmit(values: FormSchemaType & Partial<AIGenProjectMetadata>) {
 		setEditMode(false)
 
 		if (values.env_vars) {
@@ -201,11 +201,9 @@ export default function Page({ service_name }: { service_name: string }) {
 								</AlertDialogFooter>
 							</AlertDialogContent>
 						</AlertDialog>
-						{
-							!editMode && (
-								<Button onClick={() => { setEditMode(true) }} variant={'default'}>Edit Config</Button>
-							)
-						}
+						<Button onClick={() => { setEditMode(prev => !prev) }} variant={editMode ? 'destructive' : 'default'}>
+							{editMode ? "Cancel Changes" : "Edit Config"}
+						</Button>
 					</div>
 				</div>
 				<div id="main" className="w-3/4 h-full py-4 px-24">

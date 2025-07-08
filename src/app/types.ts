@@ -62,6 +62,9 @@ export type DeployConfig = {
 		content: string,
 	},
 	dockerfileContent?: string
+	core_deployment_info?: CoreDeploymentInfo;
+	features_infrastructure?: FeaturesInfrastructure;
+	final_notes?: FinalNotes;
 }
 
 export type DeployStep = {
@@ -78,35 +81,18 @@ type CoreDeploymentInfo = {
 	install_cmd: string;
 	build_cmd: string | null;
 	run_cmd: string;
-	workdir: string;
+	workdir: string | null;
 	port?: number;
 };
 
 type FeaturesInfrastructure = {
 	uses_websockets: boolean;
-	uses_database: boolean;
-	database_type?: string;
-	uses_redis: boolean;
-	uses_file_uploads: boolean;
 	uses_cron: boolean;
-	uses_docker: boolean;
-};
-
-type FrontendBuild = {
-	uses_typescript: boolean;
-	uses_tailwind: boolean;
-	static_site: boolean;
-	ssr_enabled: boolean;
-	build_tool: "Webpack" | "Vite" | "Rollup" | string;
-};
-
-type QualityTooling = {
-	uses_testing: boolean;
-	testing_frameworks: string[];
-	uses_logging: boolean;
-	logging_libs: string[];
-	has_docs: boolean;
-	has_readme: boolean;
+	uses_mobile: boolean;
+	uses_server?: boolean;
+	cloud_run_compatible: boolean;
+	is_library: boolean;
+	requires_build_but_missing_cmd: boolean;
 };
 
 type FinalNotes = {
@@ -116,7 +102,5 @@ type FinalNotes = {
 export type AIGenProjectMetadata = {
 	core_deployment_info: CoreDeploymentInfo;
 	features_infrastructure: FeaturesInfrastructure;
-	frontend_build: FrontendBuild;
-	quality_tooling: QualityTooling;
 	final_notes: FinalNotes;
 };
