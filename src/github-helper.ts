@@ -11,13 +11,13 @@ export async function getGithubRepos(token: string) {
 
 		if (!res.ok) {
 			const error = await res.json();
-			return { error : error.toString() };
+			return { error: error.toString() };
 		}
 
 		const repos = await res.json();
 
 		// Fetch extra data per repo in parallel
-		const data : repoType[] = await Promise.all(
+		const data: repoType[] = await Promise.all(
 			repos.map(async (repo: repoType) => {
 				const { owner, name, default_branch } = repo;
 
@@ -93,3 +93,48 @@ export async function getGithubRepos(token: string) {
 		return { err };
 	}
 }
+
+export async function getRepoFilePaths(full_name: string, branch: string, token: string): Promise<{ filePaths: string[]; fileContents: Record<string, string> }> {
+	const treeRes = await fetch(`https://api.github.com/repos/${full_name}/git/trees/${branch}?recursive=1`, {
+		headers: { Authorization: `token ${token}` }
+	});
+	const treeData = await treeRes.json();
+
+	const filePaths = treeData.tree
+		.filter((item: any) => item.type === "blob")
+		.map((item: any) => item.path);
+
+
+	const importantFiles = ["package.json", "Dockerfile", "requirements.txt", "main.py", "Procfile"];
+
+	const fileContents: Record<string, string> = {};
+
+	for (const file of filePaths) {
+		if (importantFiles.includes(file)) {
+			const content = await getFileContentFromRepo(full_name, file, token);
+			if (content) fileContents[file] = content;
+		}
+	}
+
+	return { filePaths, fileContents }
+}
+
+async function getFileContentFromRepo(full_name: string, filePath: string, token: string): Promise<string | null> {
+
+	const apiUrl = `https://api.github.com/repos/${full_name}/contents/${filePath}`;
+
+	const res = await fetch(apiUrl, {
+		headers: {
+			Authorization: `token ${token}`,
+			Accept: "application/vnd.github.v3.raw"
+		}
+	});
+
+	if (!res.ok) {
+		console.warn(`⚠️ Failed to fetch ${filePath}: ${res.status}`);
+		return null;
+	}
+
+	return await res.text();
+}
+

@@ -1,22 +1,11 @@
 "use client"
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { formatTimestamp, parseEnvVarsToDisplay, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
+import { formatTimestamp, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
-import { Separator } from "@radix-ui/react-dropdown-menu";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
 import * as React from "react"
 import { z } from "zod"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Textarea } from "@/components/ui/textarea"
-import {
-	Form,
-	FormControl,
-	FormField,
-	FormItem,
-} from "@/components/ui/form"
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -28,30 +17,17 @@ import {
 	AlertDialogTitle,
 	AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
-import { formSchema } from "@/app/repo/[id]/[username]/[reponame]/page";
-import { Switch } from "@/components/ui/switch";
 import { isEqual } from 'lodash'
-import {
-	Table,
-	TableBody,
-	TableCaption,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table"
+
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
-import DeploymentAccordion from "@/components/DeploymentAccordion";
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation'
 import { DeployConfig } from "@/app/types";
-import ServiceLogs from "@/components/ServiceLogs";
+import ConfigTabs, { formSchema } from "@/components/ConfigTabs";
 
 export default function Page({ service_name }: { service_name: string }) {
-	const { deployments, updateDeploymentById } = useAppData();
+	const { deployments, updateDeploymentById, repoList } = useAppData();
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const new_change = searchParams.get('new-change')
@@ -65,21 +41,9 @@ export default function Page({ service_name }: { service_name: string }) {
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
 
 	const deployment = deployments.find((dep) => dep.service_name == service_name);
-	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
+	const repo = repoList.find((rep) => rep.id == deployment?.id)
 
-	const form = useForm<z.infer<typeof formSchema>>({
-		resolver: zodResolver(formSchema),
-		defaultValues: {
-			url: deployment?.url,
-			service_name: deployment?.service_name,
-			branch: deployment?.branch,
-			build_cmd: deployment?.build_cmd,
-			run_cmd: deployment?.run_cmd,
-			env_vars: deployment?.env_vars,
-			workdir: deployment?.workdir,
-			use_custom_dockerfile: deployment?.use_custom_dockerfile,
-		},
-	})
+	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 
 	React.useEffect(() => {
 		if (deployStatus == "success" && deployConfigRef.current) {
@@ -95,7 +59,7 @@ export default function Page({ service_name }: { service_name: string }) {
 
 	}, [dockerfile])
 
-	if (!deployment) return (
+	if (!deployment || !repo) return (
 		<div>Service Not Found</div>
 	)
 
@@ -245,231 +209,8 @@ export default function Page({ service_name }: { service_name: string }) {
 					</div>
 				</div>
 				<div id="main" className="w-3/4 h-full py-4 px-24">
-					<Tabs defaultValue="env_config">
-						<TabsList>
-							<TabsTrigger value="env_config">Environment & Configuration</TabsTrigger>
-							<TabsTrigger value="service_logs">Service Logs</TabsTrigger>
-							{isDeploying && <TabsTrigger value="deploy_logs">Deploy Logs</TabsTrigger>}
-						</TabsList>
-						<TabsContent value="env_config">
-							<Form {...form}>
-								<form onSubmit={form.handleSubmit(onSubmit)} className="w-3/4 h-full py-4 px-20">
-									<p className="font-bold text-xl whitespace-nowrap my-4">Environment & Configuration</p>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Service Name:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="service_name"
-												render={({ field }) => (
-													<FormItem className="w-40">
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">{deployment.service_name}</span>
-										)}
-									</div>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									{/* Build Command */}
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Build Command:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="build_cmd"
-												render={({ field }) => (
-													<FormItem className="w-40">
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">{deployment.build_cmd}</span>
-										)}
-									</div>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									{/* Run Command */}
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Run Command:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="run_cmd"
-												render={({ field }) => (
-													<FormItem className="w-40">
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">{deployment.run_cmd}</span>
-										)}
-									</div>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									{/* Branch */}
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Branch:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="branch"
-												render={({ field }) => (
-													<FormItem className="w-40">
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">{deployment.branch}</span>
-										)}
-									</div>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									{/* Working Directory */}
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Working Directory:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="workdir"
-												render={({ field }) => (
-													<FormItem className="w-40">
-														<FormControl>
-															<Input {...field} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">{deployment.workdir || '-'}</span>
-										)}
-									</div>
-									<Separator className="bg-slate-700 h-[1px]" />
-
-									{/* Custom Dockerfile */}
-									<div className="w-96 my-4 flex flex-row justify-between items-center">
-										<span className="font-semibold">Custom Dockerfile:</span>
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="use_custom_dockerfile"
-												render={({ field }) => (
-													<FormItem>
-														<FormControl>
-															<Switch
-																checked={field.value}
-																onCheckedChange={field.onChange}
-															/>
-														</FormControl>
-														{field.value && (
-															<div>
-																<label className="block text-sm font-medium text-gray-700 mb-1">
-																	Upload Dockerfile
-																</label>
-																<Input
-																	type="file"
-																	accept=".dockerfile,.txt,.Dockerfile"
-																	onChange={(e) => {
-																		const file = e.target.files?.[0];
-																		if (file) setDockerfile(file);
-																	}}
-																/>
-															</div>
-														)}
-													</FormItem>
-												)}
-											/>
-										) : (
-											<span className="text-slate-400 w-40">
-												{deployment.use_custom_dockerfile ? 'Yes' : 'No'}
-											</span>
-										)}
-									</div>
-									{
-										dockerfileContent && (
-											<div className="bg-card p-2 rounded-md">
-												<p className="text-sm">{dockerfileContent}</p>
-											</div>
-										)
-									}
-
-									{/* Env Vars */}
-									<p className="font-bold text-xl whitespace-nowrap mt-10">Environment Variables</p>
-									<div className="w-full mt-2">
-										{editMode ? (
-											<FormField
-												control={form.control}
-												name="env_vars"
-												render={({ field }) => (
-													<FormItem>
-														<FormControl>
-															<Textarea {...field} rows={4} />
-														</FormControl>
-													</FormItem>
-												)}
-											/>
-										) : (
-											<>
-												{deployment.env_vars ? (
-													<Table className="border p-2 rounded-md overflow-hidden">
-														<TableHeader className="bg-card">
-															<TableRow>
-																<TableHead>Name</TableHead>
-																<TableHead>Value</TableHead>
-															</TableRow>
-														</TableHeader>
-														<TableBody>
-															{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
-																<TableRow key={idx} >
-																	<TableCell>{env.name}</TableCell >
-																	<TableCell>{env.value}</TableCell >
-																</TableRow>
-															))}
-														</TableBody>
-													</Table>
-												) : (
-													<span className="text-slate-400">-</span>
-												)}
-											</>
-										)}
-									</div>
-
-
-									{/* Submit button in edit mode */}
-									{editMode && (
-										<Button type="submit" className="mt-6">
-											Save Changes
-										</Button>
-									)}
-								</form>
-							</Form>
-						</TabsContent>
-						<TabsContent value="service_logs">
-								<p className="font-bold text-xl whitespace-nowrap my-4">Service Logs</p>
-								<ServiceLogs logs={serviceLogs}/>
-						</TabsContent>
-						<TabsContent value="deploy_logs">
-								<p className="font-bold text-xl whitespace-nowrap my-4">Deploy Logs</p>
-								<DeploymentAccordion steps={steps} />
-						</TabsContent>
-					</Tabs>
-
-					<Button className="hidden absolute bottom-10 right-10" variant={'outline'}>Copy Config</Button>
+					<ConfigTabs editMode={editMode} onSubmit={onSubmit} service_name={service_name} repo={repo} deployment={deployment}
+					id={deployment.id} isDeploying={isDeploying} serviceLogs={serviceLogs} steps={steps}/>					
 				</div>
 
 			</div>

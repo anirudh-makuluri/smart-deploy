@@ -13,7 +13,7 @@ const initialSteps: DeployStep[] = [
 	{ id: "deploy", label: "🚀 Deploy to Cloud Run", logs: [], status: "pending" },
 ];
 
-export function useDeployLogs(serviceName : string) {
+export function useDeployLogs(serviceName ?: string) {
 	const [steps, setSteps] = useState(initialSteps);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
@@ -127,6 +127,8 @@ export function useDeployLogs(serviceName : string) {
 	};
 
 	const initiateServiceLogs = () => {
+		if(!serviceName) return;
+
 		const socket = wsRef.current;
 		if (socket?.readyState === WebSocket.OPEN) {
 			const object = {

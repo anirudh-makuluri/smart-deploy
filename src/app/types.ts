@@ -1,5 +1,5 @@
 export type repoType = {
-	id: number;
+	id: string;
 	name: string;
 	full_name: string;
 	html_url: string;
@@ -52,16 +52,16 @@ export type DeployConfig = {
 	deployUrl?: string,
 	service_name: string,
 	status?: 'running' | 'paused' | 'stopped',
-	first_deployment ?: string,
-	last_deployment ?: string,
-	revision ?: number
+	first_deployment?: string,
+	last_deployment?: string,
+	revision?: number
 	dockerfile?: File,
-	dockerfileInfo ?: {
+	dockerfileInfo?: {
 		name: string,
 		type: string,
 		content: string,
 	},
-	dockerfileContent ?: string
+	dockerfileContent?: string
 }
 
 export type DeployStep = {
@@ -70,3 +70,53 @@ export type DeployStep = {
 	logs: string[],
 	status: 'pending' | 'in_progress' | "success" | "error"
 }
+
+
+type CoreDeploymentInfo = {
+	language: string;
+	framework: string;
+	install_cmd: string;
+	build_cmd: string | null;
+	run_cmd: string;
+	workdir: string;
+	port?: number;
+};
+
+type FeaturesInfrastructure = {
+	uses_websockets: boolean;
+	uses_database: boolean;
+	database_type?: string;
+	uses_redis: boolean;
+	uses_file_uploads: boolean;
+	uses_cron: boolean;
+	uses_docker: boolean;
+};
+
+type FrontendBuild = {
+	uses_typescript: boolean;
+	uses_tailwind: boolean;
+	static_site: boolean;
+	ssr_enabled: boolean;
+	build_tool: "Webpack" | "Vite" | "Rollup" | string;
+};
+
+type QualityTooling = {
+	uses_testing: boolean;
+	testing_frameworks: string[];
+	uses_logging: boolean;
+	logging_libs: string[];
+	has_docs: boolean;
+	has_readme: boolean;
+};
+
+type FinalNotes = {
+	comment: string;
+};
+
+export type AIGenProjectMetadata = {
+	core_deployment_info: CoreDeploymentInfo;
+	features_infrastructure: FeaturesInfrastructure;
+	frontend_build: FrontendBuild;
+	quality_tooling: QualityTooling;
+	final_notes: FinalNotes;
+};

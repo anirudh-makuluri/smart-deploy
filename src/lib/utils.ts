@@ -1,3 +1,4 @@
+import { AIGenProjectMetadata } from "@/app/types";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -82,7 +83,7 @@ export function readDockerfile(file: File): Promise<string> {
 }
 
 
-export function formatLogTimestamp(isoTimestamp : string) {
+export function formatLogTimestamp(isoTimestamp: string) {
 	const date = new Date(isoTimestamp);
 
 	// Format: DD MMM YYYY, hh:mm AM/PM
@@ -95,3 +96,54 @@ export function formatLogTimestamp(isoTimestamp : string) {
 		hour12: true,
 	});
 }
+
+
+export function extractDeployConfigFromAI(responseObj: { response: string }): AIGenProjectMetadata | null {
+	try {
+		const cleaned = responseObj.response.replace(/\/\/.*$/gm, "").trim();
+
+		// Parse the cleaned string
+		const config = JSON.parse(cleaned);
+
+		return config;
+	} catch (error) {
+		console.error("Failed to parse AI response:", error);
+		return null;
+	}
+}
+
+export function sanitizeAndParseAIResponse(raw: any): Record<string, any> | null {
+	try {
+		let jsonStr = "";
+
+		// Step 1: If the AI returned { response: "..." }, extract it
+		if (typeof raw === "object" && typeof raw.response === "string") {
+			jsonStr = raw.response;
+		} else if (typeof raw === "string") {
+			jsonStr = raw;
+		} else {
+			jsonStr = JSON.stringify(raw);
+		}
+
+		// Step 2: Remove comments (// ...)
+		jsonStr = jsonStr.replace(/\/\/.*$/gm, "");
+
+		// Step 3: Remove trailing commas before closing brackets/braces
+		jsonStr = jsonStr.replace(/,\s*([}\]])/g, "$1");
+
+		// Step 4: Trim non-JSON content (attempt to isolate the first valid object)
+		const firstBrace = jsonStr.indexOf("{");
+		const lastBrace = jsonStr.lastIndexOf("}");
+		if (firstBrace === -1 || lastBrace === -1) throw new Error("No JSON object found");
+
+		const possibleJson = jsonStr.slice(firstBrace, lastBrace + 1);
+
+		// Step 5: Parse
+		return JSON.parse(possibleJson);
+
+	} catch (err) {
+		console.error("❌ Failed to sanitize/parse AI response:", err);
+		return null;
+	}
+}
+
