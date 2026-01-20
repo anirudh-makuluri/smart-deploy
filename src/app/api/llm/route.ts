@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "../auth/[...nextauth]/route";
 import { getRepoFilePaths } from "@/github-helper";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export async function POST(req: Request) {
 	const session = await getServerSession(authOptions);
@@ -20,23 +21,41 @@ export async function POST(req: Request) {
 	const { filePaths, fileContents } = await getRepoFilePaths(full_name, branch, token);
 	const prompt = createPrompt(filePaths, fileContents, include_extra_info);
 
-	const OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-	console.log("Sending req to " + OLLAMA_URL)
-	const response = await fetch(OLLAMA_URL, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({
-			model: "mistral",
-			prompt: prompt,
-			stream: false,
-		}),
-	});
+	const geminiApiKey = process.env.GEMINI_API_KEY;
+	if (!geminiApiKey) {
+		return NextResponse.json(
+			{ error: "Missing GEMINI_API_KEY env var" },
+			{ status: 500 }
+		);
+	}
 
-	const data = await response.json();
+	try {
+		// Initialize Gemini SDK
+		const genAI = new GoogleGenerativeAI(geminiApiKey);
+		const model = genAI.getGenerativeModel({ 
+			model: "gemini-2.5-flash",
+			generationConfig: {
+				temperature: 0.2,
+				maxOutputTokens: 8192,
+			},
+		});
 
-	return NextResponse.json({ response: data.response, filePaths, fileContents });
+		// Generate content
+		const result = await model.generateContent(prompt);
+		const response = await result.response;
+		const text = response.text();
+
+		return NextResponse.json({ response: text, filePaths, fileContents });
+	} catch (error: any) {
+		console.error("Gemini API error:", error);
+		return NextResponse.json(
+			{
+				error: "Gemini API request failed",
+				details: error?.message || "Unknown error",
+			},
+			{ status: 502 }
+		);
+	}
 }
 
 

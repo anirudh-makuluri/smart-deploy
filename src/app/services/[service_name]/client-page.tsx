@@ -197,7 +197,7 @@ export default function Page({ service_name }: { service_name: string }) {
 								</AlertDialogHeader>
 								<AlertDialogFooter>
 									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction onClick={() => handleDeploymentControl("stop")}>Continue</AlertDialogAction>
+									<AlertDialogAction variant="destructive" onClick={() => handleDeploymentControl("stop")}>Continue</AlertDialogAction>
 								</AlertDialogFooter>
 							</AlertDialogContent>
 						</AlertDialog>

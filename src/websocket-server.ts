@@ -4,8 +4,6 @@ dotenv.config();
 
 import { WebSocketServer } from "ws";
 import http from "http";
-import { handleDeploy } from "./lib/handleDeploy"; // Your deploy function
-import { DeployConfig } from "./app/types";
 import { deploy, serviceLogs } from "./websocket-types";
 
 // Setup HTTP server to attach WebSocket to
@@ -14,7 +12,7 @@ const wss = new WebSocketServer({ server });
 const port = 4001;
 
 wss.on("connection", (ws) => {
-	console.log("🔌 Client connected");
+	console.log("Client connected");
 
 	ws.on("message", async (data) => {
 		try {
@@ -35,16 +33,16 @@ wss.on("connection", (ws) => {
 
 			
 		} catch (err: any) {
-			ws.send(`❌ Error: ${err.message}`);
+			ws.send(`Error: ${err.message}`);
 			ws.close();
 		}
 	});
 
 	ws.on("close", () => {
-		console.log("❎ Client disconnected");
+		console.log("Client disconnected");
 	});
 });
 
 server.listen(port, () => {
-	console.log(`✅ WebSocket server running on ws://localhost:${port}`);
+	console.log(`WebSocket server running on ws://localhost:${port}`);
 });

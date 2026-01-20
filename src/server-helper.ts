@@ -32,7 +32,7 @@ export async function runCommandLiveWithOutput(cmd: string, args: string[]): Pro
 			if (code === 0) {
 				resolve(output);
 			} else {
-				reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code}`));
+				reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code}\n${output}`));
 			}
 		});
 	});

@@ -3,6 +3,7 @@ const config = {
 	GITHUB_SECRET: process.env.GITHUB_SECRET || "",
 	GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || "",
 	GCP_SERVICE_ACCOUNT_KEY: process.env.GCP_SERVICE_ACCOUNT_KEY || "",
+	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
 	FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || "",
 	FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN || "",
 	FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",

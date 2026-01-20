@@ -23,7 +23,7 @@ It uses **AI to auto-analyze your codebase**, generate build/run commands, detec
 - **Frontend**: Next.js, TailwindCSS, shadcn/ui
 - **Backend**: Node.js, Express, Firebase Firestore
 - **Cloud**: Google Cloud Run, Docker, GitHub OAuth
-- **AI**: Local LLM via [Ollama](https://ollama.com) (`mistral`)
+- **AI**: Google Gemini API (AI Studio)
 
 ---
 
@@ -49,14 +49,8 @@ Create a **.env** with the help of **.env.example** in the root directory
 npm run start-all
 ```
 
-### 5. Run Local LLM (optional for AI features)
-```bash
-ollama serve &
-```
-
-```bash
-ollama run mistral
-```
+### 5. Enable AI features (Gemini)
+Add `GEMINI_API_KEY` to your `.env` (from Google AI Studio).
 
 📦 Docker Desktop must be running to build and push images.
 

@@ -25,8 +25,15 @@ export async function PUT(req: NextRequest) {
 		}
 
 		// Run the command
-		const output = await runCommandLiveWithOutput("gcloud", args);
-		return NextResponse.json({ status: "success", message: output });
+		try {
+			const output = await runCommandLiveWithOutput("gcloud", args);
+			return NextResponse.json({ status: "success", message: output });
+		} catch (cmdErr: any) {
+			if (action === "stop" && cmdErr.message?.includes("could not be found")) {
+				return NextResponse.json({ status: "success", message: "Service already deleted or not found" });
+			}
+			throw cmdErr;
+		}
 
 	} catch (err: any) {
 		console.error("Service control error:", err);
