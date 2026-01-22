@@ -143,10 +143,12 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"
 	const imageName = `${repoName}-image`;
 	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
 
-	send("🐳 Building Docker image...", 'docker');
-	await runCommandLiveWithWebSocket("docker", ["build", "-t", imageName, appDir], ws), 'docker';
-	await runCommandLiveWithWebSocket("docker", ["tag", imageName, gcpImage], ws, 'docker');
-	await runCommandLiveWithWebSocket("docker", ["push", gcpImage], ws, 'push');
+	send("🐳 Building Docker image with Cloud Build...", 'docker');
+	await runCommandLiveWithWebSocket("gcloud", [
+		"builds", "submit",
+		"--tag", gcpImage,
+		appDir
+	], ws, 'docker');
 
 	send("🚀 Deploying to Cloud Run...", 'deploy');
 	const envArgs = deployConfig.env_vars ? ["--set-env-vars", deployConfig.env_vars] : [];
