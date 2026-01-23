@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebaseAdmin";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { getGithubRepos } from "@/github-helper";
 import { repoType } from "@/app/types";

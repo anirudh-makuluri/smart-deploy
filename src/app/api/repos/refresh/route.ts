@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../../auth/[...nextauth]/route";
+import { authOptions } from "../../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { repoType } from "@/app/types";
 import { getGithubRepos } from "@/github-helper";

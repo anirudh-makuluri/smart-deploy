@@ -3,7 +3,7 @@ import { db } from "@/lib/firebaseAdmin";
 import { getServerSession } from "next-auth";
 
 import { dbHelper } from "@/db-helper";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "../auth/authOptions";
 
 export async function GET(req: NextRequest) {
 	try {

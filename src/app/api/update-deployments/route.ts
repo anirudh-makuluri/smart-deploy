@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DeployConfig } from "@/app/types";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 
 export async function POST(req: NextRequest) {

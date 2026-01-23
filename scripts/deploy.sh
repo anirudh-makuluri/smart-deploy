@@ -55,10 +55,41 @@ setup_repo() {
         cd "$APP_DIR"
         git fetch origin
         git reset --hard origin/$BRANCH
+        git clean -fd  # Remove untracked files
     else
+        echo "Setting up fresh repository..."
+        
+        # Check if directory has files (including hidden ones)
+        if [ "$(ls -A $APP_DIR 2>/dev/null)" ]; then
+            echo -e "${YELLOW}Directory is not empty. Backing up .env if it exists...${NC}"
+            # Backup .env if it exists
+            if [ -f "$APP_DIR/.env" ]; then
+                sudo cp "$APP_DIR/.env" /tmp/smartdeploy-env-backup
+                echo -e "${GREEN}.env backed up${NC}"
+            fi
+            
+            # Remove all files including hidden ones - more reliable method
+            echo "Cleaning directory..."
+            cd /tmp
+            sudo rm -rf "$APP_DIR"/{*,.[!.]*,..?*} 2>/dev/null || true
+            # Alternative: move everything out and delete
+            if [ "$(ls -A $APP_DIR 2>/dev/null)" ]; then
+                sudo mv "$APP_DIR" "${APP_DIR}.old"
+                sudo mkdir -p "$APP_DIR"
+                sudo rm -rf "${APP_DIR}.old"
+            fi
+        fi
+        
+        # Clone the repository
         echo "Cloning repository..."
-        sudo rm -rf "$APP_DIR"/*
         git clone -b $BRANCH "$REPO_URL" "$APP_DIR"
+        
+        # Restore .env if it was backed up
+        if [ -f "/tmp/smartdeploy-env-backup" ]; then
+            sudo cp /tmp/smartdeploy-env-backup "$APP_DIR/.env"
+            sudo rm /tmp/smartdeploy-env-backup
+            echo -e "${GREEN}.env restored${NC}"
+        fi
     fi
     
     cd "$APP_DIR"
