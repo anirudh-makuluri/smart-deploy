@@ -1,0 +1,21 @@
+# WebSocket server Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install all dependencies (including dev for ts-node)
+RUN npm ci
+
+# Copy all source files (websocket-types has dependencies across src/)
+COPY src/ ./src/
+COPY tsconfig.json ./
+
+# Environment variables
+ENV NODE_ENV=production
+
+EXPOSE 4001
+
+CMD ["npx", "ts-node", "./src/websocket-server.ts"]

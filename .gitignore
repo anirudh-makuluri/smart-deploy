@@ -52,3 +52,5 @@ smartdeploy-key.pub
 *.tfstate.backup.lock.info
 *.lock.hcl
 *.exe
+.terraform/
+*.tfvars
