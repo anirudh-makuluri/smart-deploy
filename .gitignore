@@ -43,3 +43,12 @@ next-env.d.ts
 
 clones
 smartdeploy-key.json
+*.txt
+smartdeploy-key
+smartdeploy-key.pub
+*.tfstate
+*.tfstate.backup
+*.tfstate.backup.lock
+*.tfstate.backup.lock.info
+*.lock.hcl
+*.exe
