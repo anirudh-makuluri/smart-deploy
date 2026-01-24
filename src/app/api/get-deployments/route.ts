@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebaseAdmin";
 import { getServerSession } from "next-auth";
 
 import { dbHelper } from "@/db-helper";
 import { authOptions } from "../auth/authOptions";
+
+// Force dynamic rendering - prevents Next.js from analyzing this route during build
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
 	try {

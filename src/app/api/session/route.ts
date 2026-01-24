@@ -6,6 +6,10 @@ import { dbHelper } from "@/db-helper";
 import { getGithubRepos } from "@/github-helper";
 import { repoType } from "@/app/types";
 
+// Force dynamic rendering - prevents Next.js from analyzing this route during build
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(req: NextRequest) {
 	try {
 		const session = await getServerSession(authOptions)

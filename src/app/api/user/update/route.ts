@@ -4,6 +4,10 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 
+// Force dynamic rendering - prevents Next.js from analyzing this route during build
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function PUT(req: NextRequest) {
 	try {
 		const session = await getServerSession(authOptions)
