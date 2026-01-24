@@ -28,10 +28,14 @@ echo "  App URL: http://$(curl -s ifconfig.me)"
 echo ""
 
 echo "🏥 Health Check:"
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200\|302"; then
-    echo "  App: ✅ Healthy"
+APP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000)
+if echo "$APP_STATUS" | grep -q "200\|302\|401"; then
+    echo "  App: ✅ Healthy (HTTP $APP_STATUS)"
 else
-    echo "  App: ❌ Unhealthy"
+    echo "  App: ❌ Unhealthy (HTTP $APP_STATUS)"
+    echo "  Trying /api/session endpoint..."
+    SESSION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/session)
+    echo "  /api/session: HTTP $SESSION_STATUS"
 fi
 
 if curl -s -o /dev/null -w "%{http_code}" http://localhost:4001 2>/dev/null | grep -q "101\|200"; then
