@@ -181,6 +181,9 @@ show_status() {
     echo ""
     echo -e "${GREEN}=== Deployment Complete ===${NC}"
     echo "Access your application at: http://$(curl -s ifconfig.me)"
+    echo ""
+    echo -e "${YELLOW}Next step: Set up SSL certificate${NC}"
+    echo "Run: sudo ./scripts/setup-ssl.sh"
 }
 
 # Main execution
