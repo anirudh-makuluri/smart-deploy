@@ -144,11 +144,13 @@ export default function ConfigTabs(
 	}
 
 
+	const featuresInfra = projectMetadata?.features_infrastructure;
+
 	return (
 		<>
 			{projectMetadata && (
 				<>
-					{(projectMetadata.features_infrastructure.uses_websockets || projectMetadata.features_infrastructure.uses_cron) && (
+					{(featuresInfra?.uses_websockets || featuresInfra?.uses_cron) && (
 						<Alert variant="default">
 							<AlertTitle>Warning!</AlertTitle>
 							<AlertDescription>
@@ -159,9 +161,9 @@ export default function ConfigTabs(
 						</Alert>
 					)}
 
-					{(projectMetadata.features_infrastructure.uses_mobile ||
-						!projectMetadata.features_infrastructure.cloud_run_compatible ||
-						projectMetadata.features_infrastructure.is_library) && (
+					{(featuresInfra?.uses_mobile ||
+						featuresInfra?.cloud_run_compatible === false ||
+						featuresInfra?.is_library) && (
 							<Alert variant="destructive">
 								<AlertTitle>Error!</AlertTitle>
 								<AlertDescription>
@@ -169,15 +171,15 @@ export default function ConfigTabs(
 										❌ This project <strong>cannot be deployed</strong> to Cloud Run.
 									</p>
 									<ul className="list-disc pl-4 mt-2 text-sm">
-										{projectMetadata.features_infrastructure.uses_mobile && <li>It is a mobile app</li>}
-										{!projectMetadata.features_infrastructure.cloud_run_compatible && <li>It is not compatible with Cloud Run</li>}
-										{projectMetadata.features_infrastructure.is_library && <li>It is a library, not a deployable service</li>}
+										{featuresInfra?.uses_mobile && <li>It is a mobile app</li>}
+										{featuresInfra?.cloud_run_compatible === false && <li>It is not compatible with Cloud Run</li>}
+										{featuresInfra?.is_library && <li>It is a library, not a deployable service</li>}
 									</ul>
 								</AlertDescription>
 							</Alert>
 						)}
 
-					{projectMetadata.features_infrastructure.requires_build_but_missing_cmd && (
+					{featuresInfra?.requires_build_but_missing_cmd && (
 						<Alert variant="destructive">
 							<AlertTitle>Error!</AlertTitle>
 							<AlertDescription>
