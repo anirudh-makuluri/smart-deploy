@@ -62,17 +62,18 @@ export const dbHelper = {
 			if (!deploymentDoc.exists) {
 				await deploymentRef.set({
 					ownerID: userID,
-					status: 'running',
+					status: deployConfig.status ?? 'running',
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
 					...deployConfig
 				});
 
+				const userData = userDoc.data();
+				const existingIds: string[] = userData?.deploymentIds || [];
+				const updatedIds = existingIds.includes(deploymentId) ? existingIds : [...existingIds, deploymentId];
 				await userRef.set(
-					{
-						deploymentIds: [deploymentId],
-					},
+					{ deploymentIds: updatedIds },
 					{ merge: true }
 				);
 				return { success: "New deployment created and added to user" };

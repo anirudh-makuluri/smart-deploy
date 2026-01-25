@@ -24,7 +24,7 @@ export default function DashboardMain() {
 					deployments.length == 0 ?
 					<div>No Services Found</div>
 					:
-					deployments.map((dep, i) => 
+					deployments.filter(dep => dep.status != 'didnt_deploy').map((dep, i) => 
 						<DashboardDeploymentItem 
 							deployConfig={dep} 
 							key={i}

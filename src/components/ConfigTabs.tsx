@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, sanitizeAndParseAIResponse } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import * as React from "react"
 import { z } from "zod"
@@ -77,9 +77,9 @@ const exampleProjectMetadata: AIGenProjectMetadata = {
 }
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, editMode, isDeploying, id, serviceLogs, steps, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, editMode, isDeploying, id, serviceLogs, steps, deployment, repo }:
 		{
-			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, editMode: boolean, isDeploying: boolean, id: string,
+			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, editMode: boolean, isDeploying: boolean, id: string,
 			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig
 		}) {
 
@@ -115,6 +115,36 @@ export default function ConfigTabs(
 		},
 	})
 
+	// When deployment becomes available (e.g. saved scan loaded from DB), pre-fill form and metadata
+	const appliedDeploymentId = React.useRef<string | null>(null);
+	useEffect(() => {
+		if (!deployment?.id) {
+			appliedDeploymentId.current = null;
+			return;
+		}
+		// Only sync when opening a deployment we haven't synced yet (avoid overwriting in-progress edits)
+		if (appliedDeploymentId.current === deployment.id) return;
+		appliedDeploymentId.current = deployment.id;
+		form.reset({
+			url: repo?.html_url ?? deployment.url,
+			service_name: deployment.service_name || service_name || repo?.name,
+			branch: deployment.branch || "main",
+			install_cmd: deployment.install_cmd ?? "",
+			build_cmd: deployment.build_cmd ?? "",
+			run_cmd: deployment.run_cmd ?? "",
+			env_vars: deployment.env_vars ?? "",
+			workdir: deployment.workdir ?? "",
+			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
+		});
+		if (deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes) {
+			setProjectMetadata({
+				core_deployment_info: deployment.core_deployment_info,
+				features_infrastructure: deployment.features_infrastructure,
+				final_notes: deployment.final_notes,
+			});
+		}
+	}, [deployment, repo?.html_url, service_name, repo?.name]);
+
 	function handleAIBtn() {
 		setAiFetching(true);
 
@@ -139,6 +169,17 @@ export default function ConfigTabs(
 					form.setValue('build_cmd', core_deployment_info.build_cmd || undefined)
 					form.setValue('run_cmd', core_deployment_info.run_cmd)
 					form.setValue('workdir', core_deployment_info.workdir || '/app')
+				}
+				console.log(parsed_response);
+
+				if (parsed_response) {
+					const payload: FormSchemaType & Partial<AIGenProjectMetadata> = {
+						...form.getValues(),
+						...parsed_response,
+					};
+
+					console.log("Payload", payload);
+					onScanComplete(payload)
 				}
 			})
 	}
@@ -205,10 +246,10 @@ export default function ConfigTabs(
 			)}
 			<Tabs defaultValue="env_config">
 				{
-					isDeploying || deployment ? (
+					isDeploying || deployment?.status != 'didnt_deploy' ? (
 						<TabsList>
 							<TabsTrigger value="env_config">Environment & Configuration</TabsTrigger>
-							{deployment ? <TabsTrigger value="service_logs">Service Logs</TabsTrigger> : null}
+							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs">Service Logs</TabsTrigger> : null}
 							{isDeploying && <TabsTrigger value="deploy_logs">Deploy Logs</TabsTrigger>}
 						</TabsList>
 					) : null

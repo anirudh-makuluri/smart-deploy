@@ -96,6 +96,21 @@ export default function Page({ service_name }: { service_name: string }) {
 		}
 	}
 
+	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
+		if (!deployment) return;
+		const merged: DeployConfig = {
+			...deployment,
+			install_cmd: data.install_cmd ?? deployment.install_cmd,
+			build_cmd: data.build_cmd ?? deployment.build_cmd,
+			run_cmd: data.run_cmd ?? deployment.run_cmd,
+			workdir: data.workdir ?? deployment.workdir,
+			core_deployment_info: data.core_deployment_info ?? deployment.core_deployment_info,
+			features_infrastructure: data.features_infrastructure ?? deployment.features_infrastructure,
+			final_notes: data.final_notes ?? deployment.final_notes,
+		};
+		await updateDeployment(merged);
+	}
+
 	function handleRedeploy() {
 		if (!session?.accessToken) {
 			return console.log("Unauthorized")
@@ -207,7 +222,7 @@ export default function Page({ service_name }: { service_name: string }) {
 					</div>
 				</div>
 				<div id="main" className="w-3/4 h-full py-4 px-24">
-					<ConfigTabs editMode={editMode} onSubmit={onSubmit} service_name={service_name} repo={repo} deployment={deployment}
+					<ConfigTabs editMode={editMode} onSubmit={onSubmit} onScanComplete={onScanComplete} service_name={service_name} repo={repo} deployment={deployment}
 					id={deployment.id} isDeploying={isDeploying} serviceLogs={serviceLogs} steps={steps}/>					
 				</div>
 

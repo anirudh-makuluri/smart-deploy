@@ -21,8 +21,11 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
-	const { repoList, updateDeploymentById } = useAppData();
+	const { repoList, deployments, updateDeploymentById } = useAppData();
 	const repo = repoList.find(rep => rep.full_name == `${username}/${reponame}`);
+	// Use existing deployment (e.g. from a previous Smart Project Scan) to pre-fill form and metadata
+	const existingDeployment = deployments.find((dep) => dep.id === id);
+	console.log("Existing Deployment", existingDeployment);
 
 	React.useEffect(() => {
 		if (deployStatus == "success" && deployConfigRef.current) {
@@ -35,6 +38,33 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		return (
 			<div>Repo not found</div>
 		)
+	}
+
+	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
+		console.log("On Scan Complete", data);
+		console.log("Session", session);
+		console.log("Repo", repo);
+		if (!session?.user || !repo) return;
+
+		console.log("Data", data);
+		const scanConfig: DeployConfig = {
+			id,
+			url: data.url || repo.html_url,
+			service_name: data.service_name || repo.name,
+			branch: data.branch || repo.default_branch || "main",
+			install_cmd: data.install_cmd,
+			build_cmd: data.build_cmd,
+			run_cmd: data.run_cmd,
+			workdir: data.workdir,
+			use_custom_dockerfile: data.use_custom_dockerfile ?? false,
+			env_vars: data.env_vars,
+			status: "didnt_deploy",
+			core_deployment_info: data.core_deployment_info,
+			features_infrastructure: data.features_infrastructure,
+			final_notes: data.final_notes,
+		};
+		await updateDeploymentById(scanConfig);
+		toast.success("Scan saved to configuration");
 	}
 
 	function onSubmit(values: FormSchemaType & Partial<AIGenProjectMetadata>) {
@@ -79,8 +109,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		<div className="bg-muted flex min-h-svh flex-col">
 			<Header />
 			<div className="w-full mx-auto p-4">
-				<ConfigTabs editMode={true} onSubmit={onSubmit} repo={repo}
-					service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} />
+				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
+					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} />
 				{
 					deployConfigRef.current?.deployUrl ?
 						<div>Deployment Successful:
