@@ -43,11 +43,12 @@ export async function runCommandLiveWithWebSocket(
 	cmd: string,
 	args: string[],
 	ws?: WebSocket,
-	id?: string
+	id?: string,
+	opts?: { cwd?: string }
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let output = "";
-		const child = spawn(cmd, args, { shell: true });
+		const child = spawn(cmd, args, { shell: true, ...opts });
 
 		const sendWS = (msg: string) => {
 			if (ws && ws.readyState === ws.OPEN) {

@@ -25,7 +25,6 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const repo = repoList.find(rep => rep.full_name == `${username}/${reponame}`);
 	// Use existing deployment (e.g. from a previous Smart Project Scan) to pre-fill form and metadata
 	const existingDeployment = deployments.find((dep) => dep.id === id);
-	console.log("Existing Deployment", existingDeployment);
 
 	React.useEffect(() => {
 		if (deployStatus == "success" && deployConfigRef.current) {
@@ -71,6 +70,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		if (!session?.accessToken) {
 			return console.log("Unauthenticated")
 		}
+
+		console.log("Values", values);
 
 		if (values.env_vars) {
 			values.env_vars = parseEnvVarsToStore(values.env_vars)

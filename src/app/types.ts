@@ -39,6 +39,12 @@ export type repoType = {
 };
 
 
+// Cloud provider types
+export type CloudProvider = 'aws' | 'gcp';
+export type AWSDeploymentTarget = 'amplify' | 'elastic-beanstalk' | 'ecs' | 'ec2';
+export type GCPDeploymentTarget = 'cloud-run';
+export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
+
 export type DeployConfig = {
 	id: string,
 	url: string;
@@ -65,6 +71,11 @@ export type DeployConfig = {
 	core_deployment_info?: CoreDeploymentInfo;
 	features_infrastructure?: FeaturesInfrastructure;
 	final_notes?: FinalNotes;
+	
+	// Cloud provider configuration
+	cloudProvider?: CloudProvider;
+	deploymentTarget?: DeploymentTarget;
+	awsRegion?: string;
 }
 
 export type DeployStep = {

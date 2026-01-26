@@ -272,7 +272,7 @@ export default function ConfigTabs(
 										<p>Smart Project Scan</p>
 									</Button>
 									<Button type="submit">
-										{deployment ? "Save Changes" : "Deploy"}
+										{(deployment && deployment?.status != 'didnt_deploy') ? "Save Changes" : "Deploy"}
 									</Button>
 								</div>
 							)}
