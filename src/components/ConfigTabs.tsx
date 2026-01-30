@@ -97,12 +97,12 @@ export default function ConfigTabs(
 			: null
 	);
 
-	const isAWSTarget = (t: string): t is AWSDeploymentTarget =>
-		t === "amplify" || t === "elastic-beanstalk" || t === "ecs" || t === "ec2";
+	const isDeploymentTarget = (t: string): t is AWSDeploymentTarget =>
+		["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"].includes(t);
 	const [deploymentAnalysis, setDeploymentAnalysis] = useState<DeploymentAnalysisFromMetadata | null>(() => {
 		const t = deployment?.deploymentTarget;
 		const r = deployment?.deployment_target_reason;
-		if (t && r && isAWSTarget(t)) return { target: t, reason: r, warnings: [] };
+		if (t && r && isDeploymentTarget(t)) return { target: t, reason: r, warnings: [] };
 		return null;
 	});
 
@@ -152,7 +152,7 @@ export default function ConfigTabs(
 				final_notes: deployment.final_notes,
 			});
 		}
-		if (deployment.deploymentTarget && deployment.deployment_target_reason && isAWSTarget(deployment.deploymentTarget)) {
+		if (deployment.deploymentTarget && deployment.deployment_target_reason && isDeploymentTarget(deployment.deploymentTarget)) {
 			setDeploymentAnalysis({
 				target: deployment.deploymentTarget,
 				reason: deployment.deployment_target_reason,
@@ -217,6 +217,7 @@ export default function ConfigTabs(
 							{deploymentAnalysis.target === "elastic-beanstalk" && "AWS Elastic Beanstalk"}
 							{deploymentAnalysis.target === "ecs" && "AWS ECS Fargate"}
 							{deploymentAnalysis.target === "ec2" && "AWS EC2"}
+							{deploymentAnalysis.target === "cloud-run" && "Google Cloud Run"}
 						</p>
 						<p className="text-sm text-muted-foreground">{deploymentAnalysis.reason}</p>
 						{deploymentAnalysis.warnings.length > 0 && (

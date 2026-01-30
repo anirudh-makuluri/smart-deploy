@@ -1,11 +1,26 @@
 import type { AWSDeploymentTarget } from "@/app/types";
-import type { AIGenProjectMetadata } from "@/app/types";
+import type { AIGenProjectMetadata, ServiceCompatibility } from "@/app/types";
 
 export type DeploymentAnalysisFromMetadata = {
 	target: AWSDeploymentTarget;
 	reason: string;
 	warnings: string[];
 };
+
+/** Order of targets from simplest to most complex; first compatible wins. */
+const SIMPLEST_FIRST: AWSDeploymentTarget[] = [
+	"amplify",
+	"elastic-beanstalk",
+	"cloud-run",
+	"ecs",
+	"ec2",
+];
+
+function getCompatibilityKey(target: AWSDeploymentTarget): keyof ServiceCompatibility | null {
+	if (target === "elastic-beanstalk") return "elastic_beanstalk";
+	// if (target === "cloud-run") return "cloud_run";
+	return target as keyof ServiceCompatibility;
+}
 
 const EB_SUPPORTED_LANGUAGES = ["node", "python", "java", "go", "dotnet", "php", "ruby"];
 
@@ -30,8 +45,36 @@ function isNextJs(metadata: AIGenProjectMetadata): boolean {
 }
 
 /**
- * Derives AWS deployment target from scan metadata (no filesystem).
- * Mirrors selectAWSDeploymentTarget logic for use after Smart Project Scan.
+ * Picks the simplest compatible target from LLM-reported service_compatibility.
+ * Returns null if no compatibility data or no compatible target.
+ */
+function selectSimplestFromCompatibility(
+	service_compatibility: ServiceCompatibility,
+	warnings: string[]
+): DeploymentAnalysisFromMetadata | null {
+	const labels: Record<AWSDeploymentTarget, string> = {
+		amplify: "AWS Amplify (static/frontend)",
+		"elastic-beanstalk": "AWS Elastic Beanstalk",
+		"cloud-run": "Google Cloud Run",
+		ecs: "AWS ECS Fargate",
+		ec2: "AWS EC2",
+	};
+	for (const target of SIMPLEST_FIRST) {
+		const key = getCompatibilityKey(target);
+		if (!key || service_compatibility[key] !== true) continue;
+		return {
+			target,
+			reason: `Compatible with ${labels[target]}; chosen as the simplest option for this project.`,
+			warnings,
+		};
+	}
+	return null;
+}
+
+/**
+ * Derives deployment target from scan metadata (no filesystem).
+ * Uses LLM-reported service_compatibility to pick the simplest compatible platform when present;
+ * otherwise falls back to rule-based logic.
  */
 export function selectDeploymentTargetFromMetadata(
 	metadata: AIGenProjectMetadata | null | undefined
@@ -44,7 +87,15 @@ export function selectDeploymentTargetFromMetadata(
 	const hints = metadata.deployment_hints ?? {};
 	const warnings: string[] = [];
 	const language = normalizeLanguage(core.language, core.framework);
+	const compat = metadata.service_compatibility;
 
+	// Prefer LLM-reported compatibility: pick simplest compatible target
+	if (compat && typeof compat === "object") {
+		const result = selectSimplestFromCompatibility(compat, warnings);
+		if (result) return result;
+	}
+
+	// Fallback: rule-based selection (same order of checks as before)
 	if (hints.is_multi_service) {
 		return {
 			target: "ecs",

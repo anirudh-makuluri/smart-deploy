@@ -119,9 +119,20 @@ export type DeploymentHints = {
 	nextjs_static_export?: boolean;
 };
 
+/** Per-platform compatibility from LLM: true if the project can run on that platform. */
+export type ServiceCompatibility = {
+	amplify?: boolean;
+	elastic_beanstalk?: boolean;
+	ecs?: boolean;
+	ec2?: boolean;
+	cloud_run?: boolean;
+};
+
 export type AIGenProjectMetadata = {
 	core_deployment_info: CoreDeploymentInfo;
 	features_infrastructure: FeaturesInfrastructure;
 	deployment_hints?: DeploymentHints;
+	/** LLM-reported compatibility per platform; used to pick simplest compatible target. */
+	service_compatibility?: ServiceCompatibility;
 	final_notes: FinalNotes;
 };

@@ -149,7 +149,9 @@ async function callLocalLLM(prompt: string): Promise<string> {
 
 
 function createPrompt(filePaths: string[], fileContents: Record<string, string>, include_extra_info: boolean) {
-	const prompt = `Analyze this repo for deployment. Return only valid JSON (no markdown, no trailing commas).
+	const prompt = `Analyze this repo for deployment.
+
+Output rules: Return ONLY a single JSON object. No text, explanation, or markdown before or after. No code fences (\`\`\`). No comments inside the JSON (no // or /* */). No trailing commas. The response must be parseable by JSON.parse().
 
 Repository file list:
 ${filePaths.join("\n")}
@@ -162,8 +164,15 @@ ${Object.entries(fileContents)
 Required JSON keys:
 - core_deployment_info: { language (e.g. TypeScript, Python), framework (e.g. Next.js, Express), install_cmd, build_cmd (string or null), run_cmd, workdir (string or null) }
 ${include_extra_info ? `
-- features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, requires_build_but_missing_cmd } (all boolean)
-- deployment_hints: { has_dockerfile (boolean, true if repo root or app dir has Dockerfile), is_multi_service (true if multiple deployable services), has_database (true if app uses PostgreSQL/MySQL/Mongo etc), nextjs_static_export (true only if Next.js and next.config has output: "export") }
+- features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, cloud_run_compatible, requires_build_but_missing_cmd } (all boolean; cloud_run_compatible = true only if stateless HTTP, no long-lived WebSockets, no mobile/lib)
+- deployment_hints: { has_dockerfile (boolean), is_multi_service (boolean), has_database (boolean), nextjs_static_export (boolean; true only if Next.js and next.config has output: "export") }
+- service_compatibility: For each platform set true ONLY if this project can be deployed and run there. All boolean:
+  - amplify: true only for static/frontend Node apps (SPA or Next.js static export with build output)
+  - elastic_beanstalk: true for single-service apps in Node, Python, Java, Go, .NET, PHP, Ruby without Dockerfile; no multi-service, no built-in DB requirement
+  - ecs: true for containerized apps, multi-service, apps with DB, WebSockets, or when Dockerfile present
+  - ec2: true for any deployable app (fallback; full control)
+  - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
+  Prefer marking the simplest compatible platform(s); at least one of ecs or ec2 should be true if the project is deployable.
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;
