@@ -37,6 +37,7 @@ import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, DeployStep, re
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { formatDeploymentTargetName } from "@/lib/utils";
 
 
 export type FormSchemaType = z.infer<typeof formSchema>
@@ -105,6 +106,20 @@ export default function ConfigTabs(
 		if (t && r && isDeploymentTarget(t)) return { target: t, reason: r, warnings: [] };
 		return null;
 	});
+
+	// Available deployment targets
+	const deploymentTargets: AWSDeploymentTarget[] = ["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"];
+
+	// Handler for manual deployment target selection
+	const handleDeploymentTargetChange = (target: string) => {
+		if (isDeploymentTarget(target)) {
+			setDeploymentAnalysis({
+				target,
+				reason: `Manually selected ${formatDeploymentTargetName(target)}.`,
+				warnings: [],
+			});
+		}
+	};
 
 	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
@@ -187,6 +202,9 @@ export default function ConfigTabs(
 				const analysis = parsed_response ? selectDeploymentTargetFromMetadata(parsed_response) : null;
 				if (analysis) {
 					setDeploymentAnalysis(analysis);
+				} else {
+					// If no analysis, reset to null (user can manually select)
+					setDeploymentAnalysis(null);
 				}
 				if (parsed_response) {
 					const payload = {
@@ -230,28 +248,46 @@ export default function ConfigTabs(
 
 	return (
 		<>
-			{(deploymentAnalysis && !isDeployDisabled) && (
+			{!isDeployDisabled && (
 				<Card className="mb-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
 					<CardHeader className="pb-2">
 						<CardTitle className="text-base font-medium flex items-center gap-2 text-[#e2e8f0]">
-							Deployment target
+							Deployment Target
 						</CardTitle>
 					</CardHeader>
-					<CardContent className="space-y-1">
-						<p className="font-semibold text-[#e2e8f0]">
-							{deploymentAnalysis.target === "amplify" && "AWS Amplify"}
-							{deploymentAnalysis.target === "elastic-beanstalk" && "AWS Elastic Beanstalk"}
-							{deploymentAnalysis.target === "ecs" && "AWS ECS Fargate"}
-							{deploymentAnalysis.target === "ec2" && "AWS EC2"}
-							{deploymentAnalysis.target === "cloud-run" && "Google Cloud Run"}
-						</p>
-						<p className="text-sm text-[#94a3b8]">{deploymentAnalysis.reason}</p>
-						{deploymentAnalysis.warnings.length > 0 && (
-							<ul className="text-xs text-[#f59e0b] list-disc list-inside mt-1">
-								{deploymentAnalysis.warnings.map((w, i) => (
-									<li key={i}>{w}</li>
-								))}
-							</ul>
+					<CardContent className="space-y-3">
+						{editMode ? (
+							<Select
+								value={deploymentAnalysis?.target || ""}
+								onValueChange={handleDeploymentTargetChange}
+							>
+								<SelectTrigger className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] focus:ring-[#1d4ed8]">
+									<SelectValue placeholder="Select deployment target" />
+								</SelectTrigger>
+								<SelectContent>
+									{deploymentTargets.map((target) => (
+										<SelectItem key={target} value={target}>
+											{formatDeploymentTargetName(target)}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : (
+							<p className="font-semibold text-[#e2e8f0]">
+								{deploymentAnalysis ? formatDeploymentTargetName(deploymentAnalysis.target) : "Not selected"}
+							</p>
+						)}
+						{deploymentAnalysis && (
+							<>
+								<p className="text-sm text-[#94a3b8]">{deploymentAnalysis.reason}</p>
+								{deploymentAnalysis.warnings.length > 0 && (
+									<ul className="text-xs text-[#f59e0b] list-disc list-inside mt-1">
+										{deploymentAnalysis.warnings.map((w, i) => (
+											<li key={i}>{w}</li>
+										))}
+									</ul>
+								)}
+							</>
 						)}
 					</CardContent>
 				</Card>
@@ -327,6 +363,10 @@ export default function ConfigTabs(
 							onSubmit({
 								...data,
 								...(projectMetadata ?? {}), // merge only if not null
+								...(deploymentAnalysis && { 
+									deploymentTarget: deploymentAnalysis.target, 
+									deployment_target_reason: deploymentAnalysis.reason 
+								}),
 							});
 						})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
 							<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Environment & Configuration</p>
