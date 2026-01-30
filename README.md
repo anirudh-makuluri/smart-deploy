@@ -1,6 +1,6 @@
 # 🚀 SmartDeploy
 
-**SmartDeploy** is a lightweight DevOps automation platform that lets you connect your GitHub repository, configure deployment settings, and deploy to **Google Cloud Run** — all in just a few clicks.
+**SmartDeploy** is a lightweight DevOps automation platform that lets you connect your GitHub repository, configure deployment settings, and deploy to **AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2)** or **Google Cloud Run** — all in just a few clicks.
 
 It uses **AI to auto-analyze your codebase**, generate build/run commands, detect frameworks and databases, and provide real-time feedback via WebSockets.
 
@@ -10,20 +10,23 @@ It uses **AI to auto-analyze your codebase**, generate build/run commands, detec
 
 - 🔗 **GitHub Integration** — Pick any of your repositories
 - ⚙️ **Custom Config** — Set build/run commands, env vars, workdir, etc.
-- 🤖 **AI-Powered Analysis** — Auto-fills deploy config from code
-- 📦 **Cloud Run Deployment** — Docker builds + GCP push
+- 🤖 **AI-Powered Smart Project Scan** — Analyzes your repo, auto-fills deploy config, and recommends the best platform
+- ☁️ **Multi-Cloud Deployment** — Deploy to AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2) or Google Cloud Run
 - 🏗️ **Multi-Service Support** — Automatically detects and deploys complex applications with multiple services (frontend/backend, microservices, etc.)
+- 🗄️ **Managed Databases** — Automatically provisions Cloud SQL (GCP) or RDS (AWS) when your app needs a database
 - 📡 **Live Logs** — Real-time deployment status via WebSocket
 - 🔁 **Redeploy & Edit** — Modify config and redeploy anytime
 - 🛑 **Control** — Pause, resume, or stop deployed services
+- 💻 **Self-Hosted Dashboard** — Run SmartDeploy itself on a tiny EC2 `t3.micro` (with swap) in your own AWS account
 
 ---
 
 ## 🧪 Tech Stack
 
-- **Frontend**: Next.js, TailwindCSS, shadcn/ui
-- **Backend**: Node.js, Express, Firebase Firestore
-- **Cloud**: Google Cloud Run, Docker, GitHub OAuth
+- **Frontend / API**: Next.js (App Router), TailwindCSS, shadcn/ui
+- **Backend Data**: Firebase Firestore
+- **Cloud**: AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2), Google Cloud Run, Docker
+- **Auth**: NextAuth with GitHub & Google OAuth
 - **AI**: Google Gemini API (AI Studio)
 
 ---
@@ -64,6 +67,7 @@ Add `GEMINI_API_KEY` to your `.env` (from Google AI Studio).
 - Flags issues like missing server or mobile-only code
 - Summarizes project structure and deployability
 - Generates a structured JSON deployment profile
+- Suggests the best deployment target (Amplify, Elastic Beanstalk, ECS Fargate, EC2, Cloud Run) based on your app
 
 ## 🏗️ Multi-Service Deployment
 
@@ -113,7 +117,7 @@ SmartDeploy will:
 
 Each service is deployed independently with its own Dockerfile, build process, and Cloud Run service.
 
-### Database Support
+### Database Support (Cloud SQL & RDS)
 
 SmartDeploy automatically detects and provisions databases for your applications:
 
@@ -126,15 +130,15 @@ The system detects database requirements from:
 
 #### Supported Databases
 
-- **MSSQL/SQL Server**: Automatically creates Cloud SQL for SQL Server instances
-- **PostgreSQL**: Creates Cloud SQL for PostgreSQL instances
-- **MySQL**: Creates Cloud SQL for MySQL instances
+- **MSSQL/SQL Server**: Automatically creates a managed SQL Server instance (Cloud SQL on GCP, RDS on AWS)
+- **PostgreSQL**: Creates managed PostgreSQL instances (Cloud SQL on GCP, RDS on AWS)
+- **MySQL**: Creates managed MySQL instances (Cloud SQL on GCP, RDS on AWS)
 
 #### How It Works
 
 1. **Detection**: Scans your codebase for database connection strings and configurations
-2. **Provisioning**: Creates a Cloud SQL instance in the same GCP project
-3. **Connection**: Configures Cloud Run services to connect via Unix sockets (secure, no public IP needed)
+2. **Provisioning**: Creates a managed database instance in your cloud account (Cloud SQL on GCP, RDS on AWS)
+3. **Connection**: Configures your services (Cloud Run, ECS/EC2, etc.) to connect securely
 4. **Environment Variables**: Automatically injects connection strings into your services
 
 #### Example: Code-Craft with MSSQL
@@ -154,10 +158,10 @@ Server=/cloudsql/PROJECT_ID:REGION:INSTANCE_NAME;Database=YOUR_DB;User Id=USER;P
 
 #### Important Notes
 
-- **Cloud SQL Costs**: Cloud SQL instances incur charges. The system creates a `db-f1-micro` instance by default (can be upgraded)
+- **Managed DB Costs**: Cloud SQL and RDS instances incur charges. On GCP, the system creates a `db-f1-micro` instance by default; on AWS, it uses `db.t3.micro` for RDS (both can be upgraded)
 - **Database Migration**: You may need to run migrations after deployment to set up your database schema
 - **Credentials**: Database passwords are auto-generated and provided via environment variables
-- **Region**: Databases are created in `us-central1` to match Cloud Run services
+- **Region**: GCP databases are created in `us-central1` to match Cloud Run services; AWS RDS uses your selected region (defaults to `AWS_REGION` in config)
 
 ---
 
