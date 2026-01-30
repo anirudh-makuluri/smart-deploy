@@ -8,6 +8,7 @@ type AppState = {
 	unAuthenticated : () => void
 	fetchAll: () => Promise<void>;
 	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
+	removeDeployment: (deploymentId: string) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error', message: string }>
 };
 
@@ -88,6 +89,11 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 
 		set({ deployments: updatedList });
+	},
+	removeDeployment: (deploymentId: string) => {
+		set((state) => ({
+			deployments: state.deployments.filter((dep) => dep.id !== deploymentId),
+		}));
 	},
 	refreshRepoList: async () => {
 		const response = await fetch("/api/repos/refresh", {

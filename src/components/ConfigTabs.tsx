@@ -286,7 +286,7 @@ export default function ConfigTabs(
 			)}
 			<Tabs defaultValue="env_config">
 				{
-					isDeploying || deployment?.status != 'didnt_deploy' ? (
+					isDeploying || (deployment && deployment?.status != 'didnt_deploy') ? (
 						<TabsList className="bg-[#132f4c]/60 border border-[#1e3a5f]/60">
 							<TabsTrigger value="env_config" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Environment & Configuration</TabsTrigger>
 							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Service Logs</TabsTrigger> : null}

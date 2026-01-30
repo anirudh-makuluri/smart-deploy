@@ -1431,7 +1431,8 @@ export async function handleECS(
 		await waitForServiceStable(clusterArn, ecsServiceName, region, ws);
 		console.log('Service stable');
 		// Service URL: HTTPS when ACM cert is attached, else HTTP
-		const serviceUrl = certificateArn ? `https://${albDns}` : `http://${albDns}`;
+		//TODO:	fIX CERTICATEARN	
+		const serviceUrl = certificateArn ? `http://${albDns}` : `http://${albDns}`;
 		console.log('Service URL: ', serviceUrl);
 		serviceUrls.set(service.name, serviceUrl);
 		deployedServices.push(service.name);

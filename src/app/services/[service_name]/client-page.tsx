@@ -29,7 +29,7 @@ import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs"
 import { ExternalLink, Calendar, Hash } from "lucide-react";
 
 export default function Page({ service_name }: { service_name: string }) {
-	const { deployments, updateDeploymentById, repoList } = useAppData();
+	const { deployments, updateDeploymentById, removeDeployment, repoList } = useAppData();
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const new_change = searchParams.get("new-change");
@@ -143,6 +143,26 @@ export default function Page({ service_name }: { service_name: string }) {
 	function handleDeploymentControl(action: string) {
 		if (!deployment) return;
 
+		// Stop = full delete: remove Cloud Run service and DB record (no traces left)
+		if (action === "stop") {
+			fetch("/api/delete-deployment", {
+				method: "POST",
+				body: JSON.stringify({
+					deploymentId: deployment.id,
+					serviceName: deployment.service_name,
+				}),
+				headers: { "Content-Type": "application/json" },
+			})
+				.then((res) => res.json())
+				.then((response) => {
+					if (response.status === "success") {
+						removeDeployment(deployment.id);
+						router.replace("/");
+					}
+				});
+			return;
+		}
+
 		fetch("/api/deployment-control", {
 			method: "PUT",
 			body: JSON.stringify({ action, serviceName: service_name, id: deployment.id }),
@@ -151,10 +171,7 @@ export default function Page({ service_name }: { service_name: string }) {
 			.then((res) => res.json())
 			.then((response) => {
 				if (response.status == "success") {
-					let newStatus: "running" | "paused" | "stopped" | undefined;
-					if (action == "resume") newStatus = "running";
-					else if (action == "pause") newStatus = "paused";
-					else newStatus = "stopped";
+					const newStatus: "running" | "paused" = action === "resume" ? "running" : "paused";
 					const newDeployment: DeployConfig = { ...deployment, status: newStatus };
 					updateDeployment(newDeployment);
 				}

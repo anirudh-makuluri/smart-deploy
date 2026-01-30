@@ -95,6 +95,43 @@ export const dbHelper = {
 		}
 	},
 
+	deleteDeployment: async function (deploymentId: string, userID: string) {
+		try {
+			if (!deploymentId || !userID) {
+				return { error: "Deployment ID and user ID are required" };
+			}
+
+			const deploymentRef = db.collection("deployments").doc(deploymentId);
+			const deploymentDoc = await deploymentRef.get();
+
+			if (!deploymentDoc.exists) {
+				return { success: "Deployment already deleted or not found" };
+			}
+
+			const data = deploymentDoc.data();
+			if (data && data.ownerID !== userID) {
+				return { error: "Unauthorized: deployment does not belong to user" };
+			}
+
+			await deploymentRef.delete();
+
+			const userRef = db.collection("users").doc(userID);
+			const userDoc = await userRef.get();
+			if (userDoc.exists) {
+				const userData = userDoc.data();
+				if (userData && Array.isArray(userData.deploymentIds)) {
+					const updatedIds = userData.deploymentIds.filter((id: string) => id !== deploymentId);
+					await userRef.update({ deploymentIds: updatedIds });
+				}
+			}
+
+			return { success: "Deployment deleted" };
+		} catch (error) {
+			console.error("deleteDeployment error:", error);
+			return { error };
+		}
+	},
+
 	getUserDeployments: async function (userID: string) {
 		try {
 			const userRef = db.collection("users").doc(userID);

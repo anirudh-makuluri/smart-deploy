@@ -69,7 +69,9 @@ export function useDeployLogs(serviceName ?: string) {
 						deployConfigRef.current = { 
 							...deployConfigRef.current, 
 							deployUrl: payload.deployUrl,
-							status: "running"
+							status: "running",
+							// Save deployed-service to persist actual deployed service type (even if deploymentTarget changes later)
+							"deployed-service": payload.deploymentTarget || deployConfigRef.current.deploymentTarget || deployConfigRef.current["deployed-service"]
 						};
 					}
 					// Mark done step as success when deploy completed successfully

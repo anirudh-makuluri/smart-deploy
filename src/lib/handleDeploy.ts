@@ -136,9 +136,16 @@ function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	}
 }
 
-function sendDeployComplete(ws: any, deployUrl: string | undefined, success: boolean) {
+function sendDeployComplete(ws: any, deployUrl: string | undefined, success: boolean, deploymentTarget?: string) {
 	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: deployUrl ?? null, success } }));
+		ws.send(JSON.stringify({ 
+			type: "deploy_complete", 
+			payload: { 
+				deployUrl: deployUrl ?? null, 
+				success,
+				deploymentTarget: deploymentTarget ?? null
+			} 
+		}));
 	}
 }
 
@@ -286,7 +293,7 @@ async function handleAWSDeploy(
 	}
 
 	// Notify client of success and URL
-	sendDeployComplete(ws, deployUrl, true);
+	sendDeployComplete(ws, deployUrl, true, target);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -358,7 +365,7 @@ async function handleGCPDeploy(
 		}
 		send(summary, 'done');
 		const firstGcpUrl = serviceUrls.entries().next().value;
-		sendDeployComplete(ws, firstGcpUrl ? firstGcpUrl[1] : undefined, true);
+		sendDeployComplete(ws, firstGcpUrl ? firstGcpUrl[1] : undefined, true, "cloud-run");
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -527,7 +534,7 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 
 	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
 	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
-	sendDeployComplete(ws, gcpDeployUrl, true);
+	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run");
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

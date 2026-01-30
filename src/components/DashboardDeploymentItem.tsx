@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatTimestamp } from "@/lib/utils";
 import Link from "next/link";
+import { useAppData } from "@/store/useAppData";
+import { useState } from "react";
 
 const statusStyles: Record<string, string> = {
 	running: "bg-[#14b8a6]/20 text-[#14b8a6] border-[#14b8a6]/40",
@@ -24,7 +26,31 @@ export default function DashboardDeploymentItem({
 	deployConfig: DeployConfig;
 	repo: repoType | undefined;
 }) {
+	const { removeDeployment } = useAppData();
+	const [isDeleting, setIsDeleting] = useState(false);
+
 	function changeStatus(action: string) {
+		// Delete = full remove: Cloud Run + DB, no traces left
+		if (action === "stop") {
+			setIsDeleting(true);
+			fetch("/api/delete-deployment", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					deploymentId: deployConfig.id,
+					serviceName: deployConfig.service_name,
+				}),
+			})
+				.then((res) => res.json())
+				.then((response) => {
+					if (response.status === "success") {
+						removeDeployment(deployConfig.id);
+					}
+				})
+				.finally(() => setIsDeleting(false));
+			return;
+		}
+
 		fetch("/api/deployment-control", {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },
@@ -61,9 +87,10 @@ export default function DashboardDeploymentItem({
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							onClick={() => changeStatus("stop")}
+							disabled={isDeleting}
 							className="text-[#e2e8f0] focus:bg-[#dc2626]/20 focus:text-[#fca5a5]"
 						>
-							Delete
+							{isDeleting ? "Deleting…" : "Delete"}
 						</DropdownMenuItem>
 					</DropdownMenuContent>
 				</DropdownMenu>

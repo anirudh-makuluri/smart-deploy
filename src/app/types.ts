@@ -77,6 +77,8 @@ export type DeployConfig = {
 	deploymentTarget?: DeploymentTarget;
 	deployment_target_reason?: string;
 	awsRegion?: string;
+	// Actual deployed service type (persists even if deploymentTarget changes on redeploy)
+	"deployed-service"?: DeploymentTarget;
 }
 
 export type DeployStep = {
