@@ -57,6 +57,17 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 		const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
 
+		// Clean Next.js build cache if present (to avoid corrupted .next directory issues)
+		const nextDir = path.join(appDir, ".next");
+		if (fs.existsSync(nextDir)) {
+			send("🧹 Cleaning existing Next.js build cache...", 'clone');
+			try {
+				fs.rmSync(nextDir, { recursive: true, force: true });
+			} catch {
+				// Ignore errors - if we can't delete it, the build will handle it
+			}
+		}
+
 		// Analyze application structure
 		send("Analyzing application structure...", 'clone');
 		const multiServiceConfig = detectMultiService(appDir);

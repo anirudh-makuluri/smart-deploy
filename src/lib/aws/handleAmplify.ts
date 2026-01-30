@@ -34,6 +34,37 @@ function detectBuildOutputDir(appDir: string): string | null {
 }
 
 /**
+ * Checks if the project is a Next.js app
+ */
+function isNextJsApp(appDir: string): boolean {
+	const pkgPath = path.join(appDir, "package.json");
+	if (!fs.existsSync(pkgPath)) return false;
+	try {
+		const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+			dependencies?: Record<string, string>;
+			devDependencies?: Record<string, string>;
+		};
+		return !!(pkg.dependencies?.next ?? pkg.devDependencies?.next);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Cleans the .next directory to avoid build cache issues
+ */
+function cleanNextBuildCache(appDir: string): void {
+	const nextDir = path.join(appDir, ".next");
+	if (fs.existsSync(nextDir)) {
+		try {
+			fs.rmSync(nextDir, { recursive: true, force: true });
+		} catch (error) {
+			// Ignore errors - if we can't delete it, the build will handle it
+		}
+	}
+}
+
+/**
  * Checks if the project uses an older version of react-scripts that needs OpenSSL legacy provider.
  * Older CRA projects (< 5.0) are incompatible with Node.js 17+ without the legacy provider flag.
  */
@@ -173,16 +204,55 @@ export async function handleAmplify(
 	const installCmd = deployConfig.install_cmd?.trim() || "npm install";
 	const [installExec, ...installArgs] = installCmd.split(/\s+/).filter(Boolean);
 	send(`Running: ${installCmd}`, "build");
+	
+	// For Next.js apps, ensure we use npm ci if package-lock.json exists for more reliable installs
+	const isNext = isNextJsApp(appDir);
+	const hasLockFile = fs.existsSync(path.join(appDir, "package-lock.json"));
+	const finalInstallCmd = isNext && hasLockFile && installCmd === "npm install" 
+		? "npm ci" 
+		: installCmd;
+	const [finalInstallExec, ...finalInstallArgs] = finalInstallCmd.split(/\s+/).filter(Boolean);
+	
 	await runCommandLiveWithWebSocket(
-		installExec || "npm",
-		installArgs.length ? installArgs : ["install"],
+		finalInstallExec || "npm",
+		finalInstallArgs.length ? finalInstallArgs : ["install"],
 		ws,
 		"build",
-		{ cwd: appDir }
+		{ 
+			cwd: appDir,
+			// Ensure we don't use parent node_modules by clearing NODE_PATH
+			env: { ...process.env, NODE_PATH: undefined }
+		}
 	);
 
+	// Clean .next directory for Next.js apps to avoid build cache issues
+	if (isNext) {
+		send("🧹 Cleaning Next.js build cache (.next directory)...", "build");
+		cleanNextBuildCache(appDir);
+		
+		// Verify Next.js is installed in the project's node_modules
+		const nextPath = path.join(appDir, "node_modules", "next");
+		if (!fs.existsSync(nextPath)) {
+			throw new Error("Next.js is not installed in the project. Please ensure package.json includes 'next' as a dependency and npm install completed successfully.");
+		}
+	}
+
 	// Build
-	const buildCmd = deployConfig.build_cmd?.trim() || "npm run build";
+	let buildCmd = deployConfig.build_cmd?.trim() || "npm run build";
+	
+	// For Next.js apps, ensure we use the local Next.js binary to avoid module resolution issues
+	if (isNext) {
+		// Check if build_cmd is just "npm run build" or "next build"
+		if (buildCmd === "npm run build" || buildCmd === "next build") {
+			// Use npx to ensure we use the local Next.js installation
+			const nextBinPath = path.join(appDir, "node_modules", ".bin", "next");
+			if (fs.existsSync(nextBinPath)) {
+				buildCmd = `npx next build`;
+				send("ℹ️ Using local Next.js binary via npx to ensure correct module resolution", "build");
+			}
+		}
+	}
+	
 	const [buildExec, ...buildArgs] = buildCmd.split(/\s+/).filter(Boolean);
 	
 	// Check if we need OpenSSL legacy provider for older CRA projects
@@ -201,7 +271,16 @@ export async function handleAmplify(
 		buildArgs.length ? buildArgs : ["run", "build"],
 		ws,
 		"build",
-		{ cwd: appDir, env: buildEnv }
+		{ 
+			cwd: appDir, 
+			env: {
+				...buildEnv,
+				// Ensure we use the project's own node_modules, not parent directories
+				NODE_PATH: undefined,
+				// Prevent Next.js from looking in parent node_modules
+				__NEXT_PRIVATE_PREBUNDLED_REACT: undefined
+			}
+		}
 	);
 
 	const buildOutputDir = detectBuildOutputDir(appDir);

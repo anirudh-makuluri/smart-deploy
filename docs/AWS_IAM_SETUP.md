@@ -24,38 +24,98 @@ Create a custom policy with the following JSON:
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["elasticbeanstalk:*", "cloudformation:*", "autoscaling:*", "elasticloadbalancing:*"],
+      "Action": [
+        "elasticbeanstalk:*",
+        "cloudformation:*",
+        "autoscaling:*",
+        "elasticloadbalancing:*"
+      ],
       "Resource": "*"
     },
     {
       "Effect": "Allow",
-      "Action": ["ecs:*", "ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart", "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:CreateRepository", "ecr:DescribeRepositories"],
+      "Action": [
+        "ecs:*",
+        "ecr:GetAuthorizationToken",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:CreateRepository",
+        "ecr:DescribeRepositories"
+      ],
       "Resource": "*"
     },
     {
       "Effect": "Allow",
-      "Action": ["ec2:RunInstances", "ec2:CreateTags", "ec2:Describe*", "ec2:TerminateInstances", "ec2:StartInstances", "ec2:StopInstances", "ec2:CreateSecurityGroup", "ec2:DeleteSecurityGroup", "ec2:AuthorizeSecurityGroup*", "ec2:RevokeSecurityGroup*", "ec2:CreateKeyPair", "ec2:CreateLaunchTemplate*", "ec2:DeleteLaunchTemplate"],
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:CreateTags",
+        "ec2:Describe*",
+        "ec2:TerminateInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:CreateSecurityGroup",
+        "ec2:DeleteSecurityGroup",
+        "ec2:AuthorizeSecurityGroup*",
+        "ec2:RevokeSecurityGroup*",
+        "ec2:CreateKeyPair",
+        "ec2:CreateLaunchTemplate*",
+        "ec2:DeleteLaunchTemplate"
+      ],
       "Resource": "*"
     },
     {
       "Effect": "Allow",
-      "Action": ["rds:CreateDBInstance", "rds:DescribeDB*", "rds:ModifyDBInstance", "rds:DeleteDBInstance", "rds:CreateDBSubnetGroup", "rds:DeleteDBSubnetGroup", "rds:CreateDBSnapshot"],
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:DescribeDB*",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:CreateDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup",
+        "rds:CreateDBSnapshot"
+      ],
       "Resource": "*"
     },
     {
       "Effect": "Allow",
-      "Action": ["s3:CreateBucket", "s3:ListBucket", "s3:*BucketPolicy", "s3:*BucketOwnershipControls"],
-      "Resource": ["arn:aws:s3:::smartdeploy-eb-*", "arn:aws:s3:::elasticbeanstalk-*"]
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:*BucketPolicy",
+        "s3:*BucketOwnershipControls"
+      ],
+      "Resource": [
+        "arn:aws:s3:::smartdeploy-eb-*",
+        "arn:aws:s3:::elasticbeanstalk-*"
+      ]
     },
     {
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:*ObjectAcl"],
-      "Resource": ["arn:aws:s3:::smartdeploy-eb-*/*", "arn:aws:s3:::elasticbeanstalk-*/*"]
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:*ObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::smartdeploy-eb-*/*",
+        "arn:aws:s3:::elasticbeanstalk-*/*"
+      ]
     },
     {
       "Effect": "Allow",
-      "Action": ["iam:GetRole", "iam:PassRole"],
-      "Resource": ["arn:aws:iam::*:role/ecsTask*Role", "arn:aws:iam::*:role/aws-elasticbeanstalk-*-role"]
+      "Action": [
+        "iam:GetRole",
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/ecsTask*Role",
+        "arn:aws:iam::*:role/aws-elasticbeanstalk-*-role"
+      ]
     },
     {
       "Effect": "Allow",
@@ -64,7 +124,20 @@ Create a custom policy with the following JSON:
     },
     {
       "Effect": "Allow",
-      "Action": ["logs:*", "cloudwatch:*", "sns:*", "sqs:*", "sts:GetCallerIdentity"],
+      "Action": [
+        "logs:*",
+        "cloudwatch:*",
+        "sns:*",
+        "sqs:*",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "amplify:*"
+      ],
       "Resource": "*"
     }
   ]

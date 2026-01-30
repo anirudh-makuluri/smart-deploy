@@ -48,10 +48,22 @@ export async function runCommandLiveWithWebSocket(
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let output = "";
+		// Create isolated environment - don't inherit parent NODE_PATH or other module resolution paths
+		const isolatedEnv = {
+			...process.env,
+			...opts?.env,
+			// Clear NODE_PATH to prevent module resolution from parent directories
+			NODE_PATH: undefined,
+			// Ensure we use the cwd's node_modules
+			...(opts?.cwd && {
+				// Set PWD to ensure relative paths resolve correctly
+				PWD: opts.cwd
+			})
+		};
 		const child = spawn(cmd, args, { 
 			shell: true, 
-			...opts,
-			env: opts?.env || process.env
+			cwd: opts?.cwd,
+			env: isolatedEnv
 		});
 
 		const sendWS = (msg: string) => {
