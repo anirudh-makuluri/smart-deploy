@@ -13,14 +13,14 @@ export async function POST(req: NextRequest) {
 		}
 
 		const body = await req.json();
-		const { owner, repo } = body;
+		const { owner, repo: repoName } = body;
 
-		if (!owner || !repo) {
+		if (!owner || !repoName) {
 			return NextResponse.json({ error: "Owner and repo are required" }, { status: 400 });
 		}
 
 		// Fetch repo info from GitHub API
-		const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+		const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
 			headers: {
 				Authorization: `token ${token}`,
 				Accept: "application/vnd.github+json",
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
 		// Fetch latest commit info on default branch
 		const commitRes = await fetch(
-			`https://api.github.com/repos/${owner}/${repo}/commits/${repoData.default_branch}`,
+			`https://api.github.com/repos/${owner}/${repoName}/commits/${repoData.default_branch}`,
 			{
 				headers: {
 					Authorization: `token ${token}`,
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
 		// Fetch branches
 		const branchesRes = await fetch(
-			`https://api.github.com/repos/${owner}/${repo}/branches`,
+			`https://api.github.com/repos/${owner}/${repoName}/branches`,
 			{
 				headers: {
 					Authorization: `token ${token}`,
