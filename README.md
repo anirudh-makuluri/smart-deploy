@@ -158,3 +158,9 @@ Server=/cloudsql/PROJECT_ID:REGION:INSTANCE_NAME;Database=YOUR_DB;User Id=USER;P
 - **Database Migration**: You may need to run migrations after deployment to set up your database schema
 - **Credentials**: Database passwords are auto-generated and provided via environment variables
 - **Region**: Databases are created in `us-central1` to match Cloud Run services
+
+---
+
+## Self-hosting on EC2 (t3.micro)
+
+To run SmartDeploy on a t3.micro (1 GB RAM), add swap so the Docker build can complete. See **[docs/T3_MICRO.md](docs/T3_MICRO.md)** for setup: run `sudo ./scripts/setup-swap.sh` once, then deploy or update as usual.
