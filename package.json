@@ -11,6 +11,8 @@
     "start-all": "concurrently \"npm run dev\" \"npm run ws\""
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.975.0",
+    "@aws-sdk/client-codebuild": "^3.975.0",
     "@aws-sdk/client-ec2": "^3.975.0",
     "@aws-sdk/client-ecr": "^3.975.0",
     "@aws-sdk/client-ecs": "^3.975.0",
@@ -54,6 +56,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",
+    "@types/archiver": "^7.0.0",
     "@types/lodash": "^4.17.20",
     "@types/node": "^20",
     "@types/react": "^19",

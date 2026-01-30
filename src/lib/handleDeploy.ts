@@ -3,7 +3,7 @@ import os from "os"
 import path from "path";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeployConfig, CloudProvider } from "../app/types";
+import { AWSDeploymentTarget, DeployConfig, CloudProvider } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -74,8 +74,71 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
+		if (ws.readyState === ws.OPEN) {
+			ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: null, success: false } }));
+		}
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		throw error;
+	}
+}
+
+/** Step definitions per AWS target so the client shows accurate labels */
+const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string }[]> = {
+	"amplify": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "build", label: "🔨 Build" },
+		{ id: "amplify", label: "🚀 Deploy to Amplify" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"elastic-beanstalk": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Detecting stack" },
+		{ id: "setup", label: "⚙️ Setup (S3, app)" },
+		{ id: "bundle", label: "📦 Create bundle" },
+		{ id: "deploy", label: "🚀 Deploy to Elastic Beanstalk" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ecs": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, ECR, S3, CodeBuild)" },
+		{ id: "docker", label: "🐳 Build image (CodeBuild)" },
+		{ id: "deploy", label: "🚀 Deploy to ECS + ALB" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ec2": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
+		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"cloud-run": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	],
+};
+
+function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps } }));
+	}
+}
+
+function sendDeployComplete(ws: any, deployUrl: string | undefined, success: boolean) {
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: deployUrl ?? null, success } }));
 	}
 }
 
@@ -109,21 +172,38 @@ async function handleAWSDeploy(
 	send("Authenticating with AWS...", 'auth');
 	await setupAWSCredentials(ws);
 
-	// Select AWS deployment target
-	const analysis = selectAWSDeploymentTarget(
-		appDir,
-		multiServiceConfig,
-		dbConfig,
-		deployConfig.features_infrastructure || null
-	);
+	// Use saved target from Smart Project Scan, or run selection only when missing
+	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
+	const savedTarget = deployConfig.deploymentTarget;
+	const useSavedTarget = savedTarget && awsTargets.includes(savedTarget);
 
-	console.log("Analysis", analysis);
-	send(`Selected deployment target: ${analysis.target.toUpperCase()}`, 'docker');
-	send(`Reason: ${analysis.reason}`, 'docker');
-	
-	for (const warning of analysis.warnings) {
-		send(`Warning: ${warning}`, 'docker');
+	let target: AWSDeploymentTarget;
+	let reason: string;
+	let warnings: string[];
+
+	if (useSavedTarget) {
+		target = savedTarget;
+		reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
+		warnings = [];
+		send(`Deploying to: ${target.toUpperCase()}`, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
+		send(reason, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
+	} else {
+		const analysis = selectAWSDeploymentTarget(
+			appDir,
+			multiServiceConfig,
+			dbConfig,
+			deployConfig.features_infrastructure || null
+		);
+		target = analysis.target;
+		reason = analysis.reason;
+		warnings = analysis.warnings;
+		send(`Selected deployment target: ${target.toUpperCase()}`, 'detect');
+		send(`Reason: ${reason}`, 'detect');
+		for (const w of warnings) send(`Warning: ${w}`, 'detect');
 	}
+
+	// Tell client which steps to show for this target (merge-friendly: preserves existing logs for auth/clone)
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
 
 	// Handle database provisioning if needed
 	let dbConnectionString: string | undefined;
@@ -144,15 +224,18 @@ async function handleAWSDeploy(
 	}
 
 	let result: string;
+	let deployUrl: string | undefined;
 
 	// Route to appropriate AWS service
-	switch (analysis.target) {
+	switch (target) {
 		case 'amplify':
 			result = await handleAmplify(deployConfig, appDir, ws);
+			deployUrl = result && result !== "done" ? result : undefined;
 			break;
 
 		case 'elastic-beanstalk':
 			result = await handleElasticBeanstalk(deployConfig, appDir, ws);
+			deployUrl = result && result !== "done" ? result : undefined;
 			break;
 
 		case 'ecs':
@@ -163,13 +246,15 @@ async function handleAWSDeploy(
 				dbConnectionString,
 				ws
 			);
-			
 			// Build summary
 			let summary = `\nDeployment completed!\n\nDeployed services:\n`;
 			for (const [name, url] of ecsResult.serviceUrls.entries()) {
 				summary += `  - ${name}: ${url}\n`;
 			}
 			send(summary, 'done');
+			// Primary URL for client (first service)
+			const firstUrl = ecsResult.serviceUrls.entries().next().value;
+			deployUrl = firstUrl ? firstUrl[1] : undefined;
 			result = "done";
 			break;
 
@@ -182,7 +267,6 @@ async function handleAWSDeploy(
 				dbConnectionString,
 				ws
 			);
-			
 			// Build summary
 			let ec2Summary = `\nDeployment completed!\n`;
 			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
@@ -192,12 +276,17 @@ async function handleAWSDeploy(
 				ec2Summary += `  - ${name}: ${url}\n`;
 			}
 			send(ec2Summary, 'done');
+			const ec2FirstUrl = ec2Result.serviceUrls.entries().next().value;
+			deployUrl = ec2FirstUrl ? ec2FirstUrl[1] : ec2Result.publicIp ? `http://${ec2Result.publicIp}` : undefined;
 			result = "done";
 			break;
 
 		default:
-			throw new Error(`Unknown deployment target: ${analysis.target}`);
+			throw new Error(`Unknown deployment target: ${target}`);
 	}
+
+	// Notify client of success and URL
+	sendDeployComplete(ws, deployUrl, true);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -232,6 +321,17 @@ async function handleGCPDeploy(
 	const keyPath = "/tmp/smartdeploy-key.json";
 	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
 
+	const gcpSteps = [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	];
+	sendDeploySteps(ws, gcpSteps);
+
 	send("Authenticating with Google Cloud...", 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth');
@@ -257,7 +357,8 @@ async function handleGCPDeploy(
 			summary += `  - ${name}: ${url}\n`;
 		}
 		send(summary, 'done');
-		
+		const firstGcpUrl = serviceUrls.entries().next().value;
+		sendDeployComplete(ws, firstGcpUrl ? firstGcpUrl[1] : undefined, true);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -423,6 +524,10 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 	], ws, 'deploy');
 
 	send(`Deployment success`, 'done');
+
+	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
+	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
+	sendDeployComplete(ws, gcpDeployUrl, true);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -1,6 +1,5 @@
 import fs from "fs";
 import path from "path";
-// @ts-expect-error - no @types/archiver; declare in src/archiver.d.ts not picked by ts-node
 import archiver from "archiver";
 import config from "../../config";
 import { runCommandLiveWithWebSocket } from "../../server-helper";

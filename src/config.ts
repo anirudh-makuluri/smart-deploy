@@ -11,6 +11,8 @@ const config = {
 	AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || "",
 	AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || "",
 	AWS_REGION: process.env.AWS_REGION || "us-west-2",
+	// ECS ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP→HTTPS redirect are enabled.
+	ECS_ACM_CERTIFICATE_ARN: process.env.ECS_ACM_CERTIFICATE_ARN || "",
 	
 	// AI
 	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",

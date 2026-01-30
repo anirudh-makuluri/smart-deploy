@@ -5,16 +5,18 @@ import { useEffect, useRef, useState } from "react";
 type SocketStatus = "connecting" | "open" | "closed" | "error";
 type DeployStatus = "not-started" | "running" | "success" | "error"
 
-const initialSteps: DeployStep[] = [
+/** Fallback when server doesn't send deploy_steps (e.g. older backend). IDs must match backend log ids. */
+const defaultSteps: DeployStep[] = [
 	{ id: "auth", label: "🔐 Authentication", logs: [], status: "pending" },
-	{ id: "clone", label: "📦 Cloning Repository", logs: [], status: "pending" },
-	{ id: "docker", label: "🐳 Docker Build", logs: [], status: "pending" },
-	{ id: "push", label: "📤 Push Image", logs: [], status: "pending" },
-	{ id: "deploy", label: "🚀 Deploy to Cloud Run", logs: [], status: "pending" },
+	{ id: "clone", label: "📦 Cloning repository", logs: [], status: "pending" },
+	{ id: "setup", label: "⚙️ Setup", logs: [], status: "pending" },
+	{ id: "docker", label: "🐳 Build", logs: [], status: "pending" },
+	{ id: "deploy", label: "🚀 Deploy", logs: [], status: "pending" },
+	{ id: "done", label: "✅ Done", logs: [], status: "pending" },
 ];
 
 export function useDeployLogs(serviceName ?: string) {
-	const [steps, setSteps] = useState(initialSteps);
+	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
 	const [serviceLogs, setServiceLogs] = useState<{timestamp : string, message ?: string}[]>([]);
@@ -41,13 +43,41 @@ export function useDeployLogs(serviceName ?: string) {
 
 			switch (type) {
 				case 'initial_logs':
-					processServiceLogs(payload.logs)
+					processServiceLogs(payload.logs);
 					break;
 				case 'stream_logs':
 					processServiceLogs([payload.log]);
 					break;
 				case 'deploy_logs':
-					deployLogs(payload)
+					deployLogs(payload);
+					break;
+				case 'deploy_steps':
+					// Server sends step list for this target; merge to preserve existing logs (e.g. auth, clone)
+					setSteps((prev) => {
+						const byId = new Map(prev.map((s) => [s.id, s]));
+						return (payload.steps || []).map(({ id, label }: { id: string; label: string }) => ({
+							id,
+							label,
+							logs: byId.get(id)?.logs ?? [],
+							status: (byId.get(id)?.status as DeployStep["status"]) ?? "pending",
+						}));
+					});
+					break;
+				case 'deploy_complete':
+					setDeployStatus(payload.success ? "success" : "error");
+					if (payload.success && payload.deployUrl && deployConfigRef.current) {
+						deployConfigRef.current = { 
+							...deployConfigRef.current, 
+							deployUrl: payload.deployUrl,
+							status: "running"
+						};
+					}
+					// Mark done step as success when deploy completed successfully
+					if (payload.success) {
+						setSteps((prev) =>
+							prev.map((s) => (s.id === "done" ? { ...s, status: "success" as const } : s))
+						);
+					}
 					break;
 				default:
 					break;
@@ -69,13 +99,25 @@ export function useDeployLogs(serviceName ?: string) {
 		};
 	}, []);
 
+	const openSocket = () => {
+		const ws = new WebSocket("ws://localhost:4001");
+		wsRef.current = ws;
+	}
+
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string) => {
 		deployConfigRef.current = deployConfig;
+		setDeployStatus("running");
+		// Reset steps to default so server's deploy_steps can replace or merge; avoids showing previous deploy's steps
+		setSteps([...defaultSteps]);
 
 		const file = deployConfig.dockerfile;
 
 		if (!file || !deployConfig.use_custom_dockerfile) {
-			const socket = wsRef.current;
+			let socket = wsRef.current;
+			if (!socket) {
+				openSocket();
+			}
+			socket = wsRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
 				const object = {
 					type: 'deploy',
@@ -145,39 +187,26 @@ export function useDeployLogs(serviceName ?: string) {
 		setServiceLogs(prev => [...prev, ...logs]);
 	}
 
-	function deployLogs({ id, msg } : { id : string, msg : string }) {
-		setDeployStatus("running")
+	function deployLogs({ id, msg }: { id: string; msg: string }) {
+		setDeployStatus("running");
 
-		if (msg.includes("Service URL")) {
-			const match = msg.match(/https:\/\/[^\s]+/);
-			if (match) {
-				const deployedUrl = match[0];
-				console.log("Extracted URL:", deployedUrl);
-				if (deployConfigRef.current?.id) {
-					const newConfig = { ...deployConfigRef.current, deployUrl: deployedUrl }
-					deployConfigRef.current = newConfig
-					setDeployStatus("success")
-				}
-
+		setSteps((prev) => {
+			const existing = prev.find((s) => s.id === id);
+			if (!existing) {
+				// Server sent a step id we don't have yet (e.g. detect, database, amplify); append so we don't drop logs
+				return [...prev, { id, label: id, logs: [msg], status: "in_progress" as const }];
 			}
-		}
-
-
-
-		setSteps((prev) =>
-			prev.map((step) =>
+			return prev.map((step) =>
 				step.id === id
 					? {
-						...step,
-						status: msg.includes("✅") ? "success"
-							: msg.includes("❌") ? "error"
-								: step.status === "pending" ? "in_progress" : step.status,
-						logs: [...step.logs, msg],
-					}
+							...step,
+							status: msg.includes("✅") ? "success" : msg.includes("❌") ? "error" : step.status === "pending" ? "in_progress" : step.status,
+							logs: [...step.logs, msg],
+						}
 					: step
-			)
-		);
+			);
+		});
 	}
 
-	return { steps, socketStatus, sendDeployConfig, deployConfigRef, deployStatus, initiateServiceLogs, serviceLogs };
+	return { steps, socketStatus, sendDeployConfig, openSocket, deployConfigRef, deployStatus, initiateServiceLogs, serviceLogs };
 }

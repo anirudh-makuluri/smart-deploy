@@ -41,7 +41,7 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type AWSDeploymentTarget = 'amplify' | 'elastic-beanstalk' | 'ecs' | 'ec2';
+export type AWSDeploymentTarget = 'amplify' | 'elastic-beanstalk' | 'ecs' | 'ec2' | 'cloud-run';
 export type GCPDeploymentTarget = 'cloud-run';
 export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
 
@@ -75,6 +75,7 @@ export type DeployConfig = {
 	// Cloud provider configuration
 	cloudProvider?: CloudProvider;
 	deploymentTarget?: DeploymentTarget;
+	deployment_target_reason?: string;
 	awsRegion?: string;
 }
 
@@ -110,8 +111,17 @@ type FinalNotes = {
 	comment: string;
 };
 
+/** Hints from scan (LLM) used to derive deployment target without filesystem. */
+export type DeploymentHints = {
+	has_dockerfile?: boolean;
+	is_multi_service?: boolean;
+	has_database?: boolean;
+	nextjs_static_export?: boolean;
+};
+
 export type AIGenProjectMetadata = {
 	core_deployment_info: CoreDeploymentInfo;
 	features_infrastructure: FeaturesInfrastructure;
+	deployment_hints?: DeploymentHints;
 	final_notes: FinalNotes;
 };

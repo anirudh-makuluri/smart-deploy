@@ -1,7 +1,6 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-// @ts-expect-error - no @types/archiver; declare in src/archiver.d.ts
 import archiver from "archiver";
 import config from "../../config";
 import { DeployConfig } from "../../app/types";
