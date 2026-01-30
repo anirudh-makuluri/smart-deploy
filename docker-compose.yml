@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:4001}
+        # 2048 = safe for t3.micro (1GB RAM + 2GB swap). Use 4096+ on larger instances.
+        - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
     container_name: smartdeploy-app
     restart: unless-stopped
     ports:

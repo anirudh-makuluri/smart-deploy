@@ -27,8 +27,10 @@ COPY . .
 ARG NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 
+# Increase Node heap for Next.js build (override with --build-arg if build host has less RAM)
+ARG NODE_MAX_OLD_SPACE_SIZE=4096
 # Build the Next.js application
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}" npm run build
 
 # ================================
 # Production runner stage
