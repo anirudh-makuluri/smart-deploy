@@ -9,7 +9,7 @@ import { deploy, serviceLogs } from "./websocket-types";
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer();
 const wss = new WebSocketServer({ server });
-const port = 4001;
+const port = Number(process.env.WS_PORT) || 4001;
 
 wss.on("connection", (ws) => {
 	console.log("Client connected");

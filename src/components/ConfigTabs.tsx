@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, sanitizeAndParseAIResponse } from "@/lib/utils";
+import { selectDeploymentTargetFromMetadata, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
@@ -32,7 +33,7 @@ import ServiceLogs from "@/components/ServiceLogs";
 import { RotateCw } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, DeployConfig, DeployStep, repoType } from "@/app/types";
+import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, DeployStep, repoType } from "@/app/types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -51,7 +52,7 @@ export const formSchema = z.object({
 	run_cmd: z.string().optional(),
 	env_vars: z.string().optional(),
 	workdir: z.string().optional(),
-	use_custom_dockerfile: z.boolean()
+	use_custom_dockerfile: z.boolean(),
 })
 
 const exampleProjectMetadata: AIGenProjectMetadata = {
@@ -96,6 +97,14 @@ export default function ConfigTabs(
 			: null
 	);
 
+	const isAWSTarget = (t: string): t is AWSDeploymentTarget =>
+		t === "amplify" || t === "elastic-beanstalk" || t === "ecs" || t === "ec2";
+	const [deploymentAnalysis, setDeploymentAnalysis] = useState<DeploymentAnalysisFromMetadata | null>(() => {
+		const t = deployment?.deploymentTarget;
+		const r = deployment?.deployment_target_reason;
+		if (t && r && isAWSTarget(t)) return { target: t, reason: r, warnings: [] };
+		return null;
+	});
 
 	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
@@ -143,6 +152,13 @@ export default function ConfigTabs(
 				final_notes: deployment.final_notes,
 			});
 		}
+		if (deployment.deploymentTarget && deployment.deployment_target_reason && isAWSTarget(deployment.deploymentTarget)) {
+			setDeploymentAnalysis({
+				target: deployment.deploymentTarget,
+				reason: deployment.deployment_target_reason,
+				warnings: [],
+			});
+		}
 	}, [deployment, repo?.html_url, service_name, repo?.name]);
 
 	function handleAIBtn() {
@@ -159,27 +175,26 @@ export default function ConfigTabs(
 		}).then(res => res.json())
 			.then((response) => {
 				setAiFetching(false);
-				console.log(response)
-				const parsed_response = sanitizeAndParseAIResponse(response)
-				console.log(parsed_response);
-				setProjectMetadata(parsed_response);
+				const parsed_response = sanitizeAndParseAIResponse(response);
+				setProjectMetadata(parsed_response ?? null);
 				const core_deployment_info = parsed_response?.core_deployment_info;
 				if (core_deployment_info) {
-					form.setValue('install_cmd', core_deployment_info.install_cmd)
-					form.setValue('build_cmd', core_deployment_info.build_cmd || undefined)
-					form.setValue('run_cmd', core_deployment_info.run_cmd)
-					form.setValue('workdir', core_deployment_info.workdir || '/app')
+					form.setValue('install_cmd', core_deployment_info.install_cmd);
+					form.setValue('build_cmd', core_deployment_info.build_cmd ?? undefined);
+					form.setValue('run_cmd', core_deployment_info.run_cmd);
+					form.setValue('workdir', core_deployment_info.workdir ?? '');
 				}
-				console.log(parsed_response);
-
+				const analysis = parsed_response ? selectDeploymentTargetFromMetadata(parsed_response) : null;
+				if (analysis) {
+					setDeploymentAnalysis(analysis);
+				}
 				if (parsed_response) {
-					const payload: FormSchemaType & Partial<AIGenProjectMetadata> = {
+					const payload = {
 						...form.getValues(),
 						...parsed_response,
+						...(analysis && { deploymentTarget: analysis.target, deployment_target_reason: analysis.reason }),
 					};
-
-					console.log("Payload", payload);
-					onScanComplete(payload)
+					onScanComplete(payload);
 				}
 			})
 	}
@@ -189,6 +204,31 @@ export default function ConfigTabs(
 
 	return (
 		<>
+			{deploymentAnalysis && (
+				<Card className="mb-4 border-emerald-500/50 bg-emerald-500/5">
+					<CardHeader className="pb-2">
+						<CardTitle className="text-base font-medium flex items-center gap-2">
+							Deployment target
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-1">
+						<p className="font-semibold text-foreground">
+							{deploymentAnalysis.target === "amplify" && "AWS Amplify"}
+							{deploymentAnalysis.target === "elastic-beanstalk" && "AWS Elastic Beanstalk"}
+							{deploymentAnalysis.target === "ecs" && "AWS ECS Fargate"}
+							{deploymentAnalysis.target === "ec2" && "AWS EC2"}
+						</p>
+						<p className="text-sm text-muted-foreground">{deploymentAnalysis.reason}</p>
+						{deploymentAnalysis.warnings.length > 0 && (
+							<ul className="text-xs text-amber-600 dark:text-amber-400 list-disc list-inside mt-1">
+								{deploymentAnalysis.warnings.map((w, i) => (
+									<li key={i}>{w}</li>
+								))}
+							</ul>
+						)}
+					</CardContent>
+				</Card>
+			)}
 			{projectMetadata && (
 				<>
 					{(featuresInfra?.uses_websockets || featuresInfra?.uses_cron) && (
@@ -203,7 +243,6 @@ export default function ConfigTabs(
 					)}
 
 					{(featuresInfra?.uses_mobile ||
-						featuresInfra?.cloud_run_compatible === false ||
 						featuresInfra?.is_library) && (
 							<Alert variant="destructive">
 								<AlertTitle>Error!</AlertTitle>
@@ -272,7 +311,7 @@ export default function ConfigTabs(
 										<p>Smart Project Scan</p>
 									</Button>
 									<Button type="submit">
-										{deployment ? "Save Changes" : "Deploy"}
+										{(deployment && deployment?.status != 'didnt_deploy') ? "Save Changes" : "Deploy"}
 									</Button>
 								</div>
 							)}

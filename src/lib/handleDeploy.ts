@@ -3,25 +3,31 @@ import os from "os"
 import path from "path";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeployConfig } from "../app/types";
-// import type { WebSocket as ServerWebSocket } from "ws";
+import { AWSDeploymentTarget, DeployConfig, CloudProvider } from "../app/types";
+import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
+import { detectDatabase, DatabaseConfig } from "./databaseDetector";
+import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
 
-function detectLanguage(appDir: string): string {
-	if (fs.existsSync(path.join(appDir, "package.json"))) return "node";
-	if (fs.existsSync(path.join(appDir, "requirements.txt"))) return "python";
-	if (fs.existsSync(path.join(appDir, "go.mod"))) return "go";
-	if (fs.existsSync(path.join(appDir, "pom.xml"))) return "java";
-	if (fs.existsSync(path.join(appDir, "Cargo.toml"))) return "rust";
-	return "node"; // default fallback
-}
+// AWS imports
+import { selectAWSDeploymentTarget, setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
+import { handleAmplify } from "./aws/handleAmplify";
+import { handleElasticBeanstalk } from "./aws/handleElasticBeanstalk";
+import { handleECS } from "./aws/handleECS";
+import { handleEC2 } from "./aws/handleEC2";
+import { createRDSInstance } from "./aws/handleRDS";
 
+// GCP imports (for Cloud SQL)
+import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 
+/**
+ * Main deployment handler - routes to AWS (default) or GCP
+ */
 export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any): Promise<string> {
 	const send = (msg: string, id: string) => {
 		if (ws.readyState === ws.OPEN) {
 			const object = {
-				type : 'deploy_logs',
-				payload : {
+				type: 'deploy_logs',
+				payload: {
 					id,
 					msg
 				}
@@ -30,43 +36,363 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		}
 	};
 
-	console.log("in handle deploy")
+	console.log("in handle deploy");
+
+	// Determine cloud provider (default to AWS)
+	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
+	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'auth');
+
+	const repoUrl = deployConfig.url;
+	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
+
+	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-"));
+	const cloneDir = path.join(tmpDir, repoName);
+
+	try {
+		// Clone repository first (common step)
+		const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
+		const branch = deployConfig.branch?.trim() || "main";
+		send(`Cloning repo from branch "${branch}"...`, 'clone');
+		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
+
+		const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
+
+		// Analyze application structure
+		send("Analyzing application structure...", 'clone');
+		const multiServiceConfig = detectMultiService(appDir);
+		const dbConfig = detectDatabase(appDir);
+
+		if (dbConfig) {
+			send(`Detected ${dbConfig.type.toUpperCase()} database requirement`, 'detect');
+		}
+
+		// Route to appropriate cloud provider
+		if (cloudProvider === 'aws') {
+			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws);
+		} else {
+			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws);
+		}
+	} catch (error: any) {
+		send(`Deployment failed: ${error.message}`, 'error');
+		if (ws.readyState === ws.OPEN) {
+			ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: null, success: false } }));
+		}
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		throw error;
+	}
+}
+
+/** Step definitions per AWS target so the client shows accurate labels */
+const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string }[]> = {
+	"amplify": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "build", label: "🔨 Build" },
+		{ id: "amplify", label: "🚀 Deploy to Amplify" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"elastic-beanstalk": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Detecting stack" },
+		{ id: "setup", label: "⚙️ Setup (S3, app)" },
+		{ id: "bundle", label: "📦 Create bundle" },
+		{ id: "deploy", label: "🚀 Deploy to Elastic Beanstalk" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ecs": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, ECR, S3, CodeBuild)" },
+		{ id: "docker", label: "🐳 Build image (CodeBuild)" },
+		{ id: "deploy", label: "🚀 Deploy to ECS + ALB" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ec2": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
+		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"cloud-run": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	],
+};
+
+function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps } }));
+	}
+}
+
+function sendDeployComplete(ws: any, deployUrl: string | undefined, success: boolean) {
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: deployUrl ?? null, success } }));
+	}
+}
+
+/**
+ * Handles AWS deployment with automatic service selection
+ */
+async function handleAWSDeploy(
+	deployConfig: DeployConfig,
+	appDir: string,
+	cloneDir: string,
+	tmpDir: string,
+	multiServiceConfig: MultiServiceConfig,
+	dbConfig: DatabaseConfig | null,
+	token: string,
+	ws: any
+): Promise<string> {
+	const send = (msg: string, id: string) => {
+		if (ws.readyState === ws.OPEN) {
+			const object = {
+				type: 'deploy_logs',
+				payload: { id, msg }
+			};
+			ws.send(JSON.stringify(object));
+		}
+	};
+
+	const region = deployConfig.awsRegion || config.AWS_REGION;
+	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+
+	// Setup AWS credentials
+	send("Authenticating with AWS...", 'auth');
+	await setupAWSCredentials(ws);
+
+	// Use saved target from Smart Project Scan, or run selection only when missing
+	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
+	const savedTarget = deployConfig.deploymentTarget;
+	const useSavedTarget = savedTarget && awsTargets.includes(savedTarget);
+
+	let target: AWSDeploymentTarget;
+	let reason: string;
+	let warnings: string[];
+
+	if (useSavedTarget) {
+		target = savedTarget;
+		reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
+		warnings = [];
+		send(`Deploying to: ${target.toUpperCase()}`, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
+		send(reason, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
+	} else {
+		const analysis = selectAWSDeploymentTarget(
+			appDir,
+			multiServiceConfig,
+			dbConfig,
+			deployConfig.features_infrastructure || null
+		);
+		target = analysis.target;
+		reason = analysis.reason;
+		warnings = analysis.warnings;
+		send(`Selected deployment target: ${target.toUpperCase()}`, 'detect');
+		send(`Reason: ${reason}`, 'detect');
+		for (const w of warnings) send(`Warning: ${w}`, 'detect');
+	}
+
+	// Tell client which steps to show for this target (merge-friendly: preserves existing logs for auth/clone)
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
+
+	// Handle database provisioning if needed
+	let dbConnectionString: string | undefined;
+	if (dbConfig) {
+		send("Provisioning AWS RDS database...", 'database');
+		try {
+			const { connectionString } = await createRDSInstance(
+				dbConfig,
+				repoName,
+				region,
+				ws
+			);
+			dbConnectionString = connectionString;
+			send(`Database provisioned successfully`, 'database');
+		} catch (error: any) {
+			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
+		}
+	}
+
+	let result: string;
+	let deployUrl: string | undefined;
+
+	// Route to appropriate AWS service
+	switch (target) {
+		case 'amplify':
+			result = await handleAmplify(deployConfig, appDir, ws);
+			deployUrl = result && result !== "done" ? result : undefined;
+			break;
+
+		case 'elastic-beanstalk':
+			result = await handleElasticBeanstalk(deployConfig, appDir, ws);
+			deployUrl = result && result !== "done" ? result : undefined;
+			break;
+
+		case 'ecs':
+			const ecsResult = await handleECS(
+				deployConfig,
+				appDir,
+				multiServiceConfig,
+				dbConnectionString,
+				ws
+			);
+			// Build summary
+			let summary = `\nDeployment completed!\n\nDeployed services:\n`;
+			for (const [name, url] of ecsResult.serviceUrls.entries()) {
+				summary += `  - ${name}: ${url}\n`;
+			}
+			send(summary, 'done');
+			// Primary URL for client (first service)
+			const firstUrl = ecsResult.serviceUrls.entries().next().value;
+			deployUrl = firstUrl ? firstUrl[1] : undefined;
+			result = "done";
+			break;
+
+		case 'ec2':
+			const ec2Result = await handleEC2(
+				deployConfig,
+				appDir,
+				multiServiceConfig,
+				token,
+				dbConnectionString,
+				ws
+			);
+			// Build summary
+			let ec2Summary = `\nDeployment completed!\n`;
+			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
+			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
+			ec2Summary += `\nService URLs:\n`;
+			for (const [name, url] of ec2Result.serviceUrls.entries()) {
+				ec2Summary += `  - ${name}: ${url}\n`;
+			}
+			send(ec2Summary, 'done');
+			const ec2FirstUrl = ec2Result.serviceUrls.entries().next().value;
+			deployUrl = ec2FirstUrl ? ec2FirstUrl[1] : ec2Result.publicIp ? `http://${ec2Result.publicIp}` : undefined;
+			result = "done";
+			break;
+
+		default:
+			throw new Error(`Unknown deployment target: ${target}`);
+	}
+
+	// Notify client of success and URL
+	sendDeployComplete(ws, deployUrl, true);
+
+	// Cleanup
+	fs.rmSync(tmpDir, { recursive: true, force: true });
+	return result;
+}
+
+/**
+ * Handles GCP deployment (existing Cloud Run logic)
+ */
+async function handleGCPDeploy(
+	deployConfig: DeployConfig,
+	appDir: string,
+	cloneDir: string,
+	tmpDir: string,
+	multiServiceConfig: MultiServiceConfig,
+	dbConfig: DatabaseConfig | null,
+	token: string,
+	ws: any
+): Promise<string> {
+	const send = (msg: string, id: string) => {
+		if (ws.readyState === ws.OPEN) {
+			const object = {
+				type: 'deploy_logs',
+				payload: { id, msg }
+			};
+			ws.send(JSON.stringify(object));
+		}
+	};
 
 	const projectId = config.GCP_PROJECT_ID;
 	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);
 	const keyPath = "/tmp/smartdeploy-key.json";
 	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
 
-	console.log("🔐 Authenticating with Google Cloud...")
-	send("🔐 Authenticating with Google Cloud...", 'auth');
+	const gcpSteps = [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	];
+	sendDeploySteps(ws, gcpSteps);
+
+	send("Authenticating with Google Cloud...", 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth');
 	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth');
 
-	const repoUrl = deployConfig.url;
-	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
+	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
 	const serviceName = `${repoName}`;
 
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-"));
-	const cloneDir = path.join(tmpDir, repoName);
+	// Handle multi-service deployment
+	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
+		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
+		send("Starting multi-service deployment...", 'detect');
+		
+		const { serviceUrls } = await handleMultiServiceDeploy(
+			deployConfig,
+			token,
+			ws,
+			cloneDir
+		);
+		
+		let summary = `\nMulti-service deployment completed!\n\nDeployed services:\n`;
+		for (const [name, url] of serviceUrls.entries()) {
+			summary += `  - ${name}: ${url}\n`;
+		}
+		send(summary, 'done');
+		const firstGcpUrl = serviceUrls.entries().next().value;
+		sendDeployComplete(ws, firstGcpUrl ? firstGcpUrl[1] : undefined, true);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		return "done";
+	}
 
-	const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
-	const branch = deployConfig.branch?.trim() || "main";
-	send(`📦 Cloning repo from branch "${branch}"...`, 'clone');
-	await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
+	// Handle database provisioning for GCP
+	let dbConnectionString: string | undefined;
+	if (dbConfig) {
+		send("Provisioning Cloud SQL database...", 'database');
+		try {
+			const instanceName = `${repoName}-db-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+			const { connectionName, ipAddress } = await createCloudSQLInstance(
+				dbConfig,
+				projectId,
+				instanceName,
+				ws
+			);
+			dbConnectionString = generateCloudSQLConnectionString(dbConfig, connectionName, ipAddress, dbConfig.database);
+			send(`Database provisioned successfully`, 'database');
+		} catch (error: any) {
+			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
+		}
+	}
 
-	const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
+	// Single-service GCP deployment
 	const dockerfilePath = path.join(appDir, "Dockerfile");
 
 	if (deployConfig.use_custom_dockerfile && deployConfig.dockerfileContent) {
-		send("✍️ Writing custom Dockerfile...", 'clone');
-
+		send("Writing custom Dockerfile...", 'clone');
 		fs.writeFileSync(dockerfilePath, deployConfig.dockerfileContent);
 	}
 
 	if (!deployConfig.use_custom_dockerfile && !fs.existsSync(dockerfilePath)) {
-		const language = detectLanguage(appDir);
-		send(`Detected Language : ${language}`, 'clone')
+		const language = detectAppLanguage(appDir, multiServiceConfig) ?? "node";
+		send(`Detected Language: ${language}`, 'clone');
 
 		let dockerfileContent = "";
 
@@ -131,27 +457,54 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"
 		`.trim();
 				break;
 
+			case "dotnet":
+				dockerfileContent = `
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR ${deployConfig.workdir || "/app"}
+COPY . .
+RUN dotnet restore
+${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN dotnet build -c Release"}
+RUN dotnet publish -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080
+CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
+		`.trim();
+				break;
+
 			default:
 				throw new Error("Unsupported language or missing Dockerfile.");
 		}
 
-
 		fs.writeFileSync(dockerfilePath, dockerfileContent);
-
 	}
 
 	const imageName = `${repoName}-image`;
 	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
 
-	send("🐳 Building Docker image with Cloud Build...", 'docker');
+	send("Building Docker image with Cloud Build...", 'docker');
 	await runCommandLiveWithWebSocket("gcloud", [
 		"builds", "submit",
 		"--tag", gcpImage,
 		appDir
 	], ws, 'docker');
 
-	send("🚀 Deploying to Cloud Run...", 'deploy');
-	const envArgs = deployConfig.env_vars ? ["--set-env-vars", deployConfig.env_vars] : [];
+	send("Deploying to Cloud Run...", 'deploy');
+	
+	// Build environment variables
+	const envVarsList: string[] = [];
+	if (deployConfig.env_vars) {
+		envVarsList.push(deployConfig.env_vars);
+	}
+	if (dbConnectionString) {
+		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
+		envVarsList.push(`ConnectionStrings__DefaultConnection=${dbConnectionString}`);
+	}
+	
+	const envArgs = envVarsList.length > 0 ? ["--set-env-vars", envVarsList.join(",")] : [];
+	
 	await runCommandLiveWithWebSocket("gcloud", [
 		"run", "deploy", serviceName,
 		"--image", gcpImage,
@@ -170,12 +523,14 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"
 		"--role=roles/run.invoker",
 	], ws, 'deploy');
 
+	send(`Deployment success`, 'done');
 
-	send(`Deployment success`, 'done')
+	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
+	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
+	sendDeployComplete(ws, gcpDeployUrl, true);
 
-	// ✅ Cleanup temp folder
+	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 
-
-	return "done"
+	return "done";
 }

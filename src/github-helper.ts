@@ -100,9 +100,13 @@ export async function getRepoFilePaths(full_name: string, branch: string, token:
 	});
 	const treeData = await treeRes.json();
 
+	if (!treeData.tree) {
+		return { filePaths: [], fileContents: {} };
+	}
+
 	const filePaths = treeData.tree
-		.filter((item: any) => item.type === "blob")
-		.map((item: any) => item.path);
+		?.filter((item: any) => item.type === "blob")
+		?.map((item: any) => item.path);
 
 
 	const importantFiles = ["package.json", "Dockerfile", "requirements.txt", "main.py", "Procfile"];

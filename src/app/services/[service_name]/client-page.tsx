@@ -46,11 +46,15 @@ export default function Page({ service_name }: { service_name: string }) {
 	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 
 	React.useEffect(() => {
-		if (deployStatus == "success" && deployConfigRef.current) {
+		if (deployStatus === "success" && deployConfigRef.current) {
 			setIsDeploying(false);
+			
 			updateDeployment(deployConfigRef.current);
 		}
-	}, [deployStatus])
+		if (deployStatus === "error") {
+			setIsDeploying(false);
+		}
+	}, [deployStatus]);
 
 	React.useEffect(() => {
 		if (!dockerfile) return;
@@ -96,7 +100,7 @@ export default function Page({ service_name }: { service_name: string }) {
 		}
 	}
 
-	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
+	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata> & { deploymentTarget?: DeployConfig["deploymentTarget"]; deployment_target_reason?: string }) {
 		if (!deployment) return;
 		const merged: DeployConfig = {
 			...deployment,
@@ -107,6 +111,8 @@ export default function Page({ service_name }: { service_name: string }) {
 			core_deployment_info: data.core_deployment_info ?? deployment.core_deployment_info,
 			features_infrastructure: data.features_infrastructure ?? deployment.features_infrastructure,
 			final_notes: data.final_notes ?? deployment.final_notes,
+			deploymentTarget: data.deploymentTarget ?? deployment.deploymentTarget,
+			deployment_target_reason: data.deployment_target_reason ?? deployment.deployment_target_reason,
 		};
 		await updateDeployment(merged);
 	}

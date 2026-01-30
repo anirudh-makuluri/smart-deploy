@@ -47,11 +47,20 @@ services:
       - "4001:4001"
     environment:
       - NODE_ENV=production
+      # GCP Configuration
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
       - GCP_SERVICE_ACCOUNT_KEY=${GCP_SERVICE_ACCOUNT_KEY}
+      # AWS Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      # Firebase Configuration
       - FIREBASE_SERVICE_ACCOUNT_KEY=${FIREBASE_SERVICE_ACCOUNT_KEY}
+      # GitHub Configuration
       - GITHUB_ID=${GITHUB_ID}
       - GITHUB_SECRET=${GITHUB_SECRET}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - smartdeploy-network
 
