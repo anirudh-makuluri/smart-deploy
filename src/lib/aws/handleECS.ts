@@ -36,6 +36,30 @@ function isNextJsApp(serviceDir: string): boolean {
 }
 
 /**
+ * Checks if the project uses an older version of react-scripts that needs OpenSSL legacy provider.
+ */
+function needsOpenSSLLegacyProvider(serviceDir: string): boolean {
+	const pkgPath = path.join(serviceDir, "package.json");
+	if (!fs.existsSync(pkgPath)) return false;
+	try {
+		const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+			dependencies?: Record<string, string>;
+			devDependencies?: Record<string, string>;
+		};
+		const reactScriptsVersion = pkg.dependencies?.["react-scripts"] || pkg.devDependencies?.["react-scripts"];
+		if (reactScriptsVersion) {
+			// Extract major version number
+			const majorVersion = parseInt(reactScriptsVersion.replace(/[^0-9]/g, "").charAt(0) || "5");
+			// react-scripts < 5.0 needs legacy provider
+			return majorVersion < 5;
+		}
+	} catch {
+		return false;
+	}
+	return false;
+}
+
+/**
  * Generates a Dockerfile for a service if it doesn't exist
  */
 function generateDockerfile(serviceDir: string, language: string, port: number = 8080): void {
@@ -47,6 +71,11 @@ function generateDockerfile(serviceDir: string, language: string, port: number =
 	// in AWS doesn't hit Docker Hub unauthenticated pull rate limits (429).
 	switch (language) {
 		case "node":
+			const needsLegacyProvider = needsOpenSSLLegacyProvider(serviceDir);
+			const buildCmd = needsLegacyProvider 
+				? "RUN NODE_OPTIONS=--openssl-legacy-provider npm run build --if-present"
+				: "RUN npm run build --if-present";
+			
 			if (isNextJsApp(serviceDir)) {
 				content = `
 FROM public.ecr.aws/docker/library/node:20-alpine
@@ -54,7 +83,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build --if-present
+${buildCmd}
 ENV PORT=${port}
 EXPOSE ${port}
 CMD ["npm", "start"]
@@ -66,7 +95,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build --if-present
+${buildCmd}
 ENV PORT=${port}
 EXPOSE ${port}
 CMD ["npm", "start"]

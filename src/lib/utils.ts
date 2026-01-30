@@ -1,4 +1,4 @@
-import { AIGenProjectMetadata } from "@/app/types";
+import { AIGenProjectMetadata, DeploymentTarget } from "@/app/types";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -9,40 +9,56 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatTimestamp(isoString: string | undefined): string {
 	if (!isoString) {
-		isoString = new Date().toISOString();
+		return "Never";
 	}
 
 	const date = new Date(isoString);
 	const now = new Date();
 
-	// Convert to local time
-	const localDate = new Date(date.getTime() + now.getTimezoneOffset() * 60000);
-	const localNow = new Date(now.getTime() + now.getTimezoneOffset() * 60000);
+	// Use user's timezone automatically via Intl.DateTimeFormat
+	const isSameDay = date.toDateString() === now.toDateString();
 
-	const isSameDay = localDate.toDateString() === localNow.toDateString();
-
-	const yesterday = new Date(localNow);
-	yesterday.setDate(localNow.getDate() - 1);
-	const isYesterday = localDate.toDateString() === yesterday.toDateString();
+	const yesterday = new Date(now);
+	yesterday.setDate(now.getDate() - 1);
+	const isYesterday = date.toDateString() === yesterday.toDateString();
 
 	const timeFormatter = new Intl.DateTimeFormat(undefined, {
 		hour: 'numeric',
 		minute: '2-digit',
 		hour12: true,
+		timeZoneName: 'short',
 	});
 
 	if (isSameDay) {
-		return timeFormatter.format(localDate);
+		return `Today at ${timeFormatter.format(date)}`;
 	} else if (isYesterday) {
-		return `Yesterday at ${timeFormatter.format(localDate)}`;
+		return `Yesterday at ${timeFormatter.format(date)}`;
 	} else {
 		const dateFormatter = new Intl.DateTimeFormat(undefined, {
 			year: 'numeric',
 			month: 'short',
 			day: 'numeric',
+			hour: 'numeric',
+			minute: '2-digit',
+			hour12: true,
+			timeZoneName: 'short',
 		});
-		return dateFormatter.format(localDate);
+		return dateFormatter.format(date);
 	}
+}
+
+export function formatDeploymentTargetName(target: DeploymentTarget | undefined): string {
+	if (!target) return "Unknown";
+	
+	const targetNames: Record<DeploymentTarget, string> = {
+		'amplify': 'AWS Amplify',
+		'elastic-beanstalk': 'AWS Elastic Beanstalk',
+		'ecs': 'AWS ECS Fargate',
+		'ec2': 'AWS EC2',
+		'cloud-run': 'Google Cloud Run',
+	};
+	
+	return targetNames[target] || target;
 }
 
 

@@ -2,7 +2,7 @@
 
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
-import { formatTimestamp, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
+import { formatTimestamp, formatDeploymentTargetName, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { useState } from "react";
 import * as React from "react";
@@ -24,7 +24,7 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
-import { AIGenProjectMetadata, DeployConfig } from "@/app/types";
+import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/types";
 import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
 import { ExternalLink, Calendar, Hash } from "lucide-react";
 
@@ -191,6 +191,14 @@ export default function Page({ service_name }: { service_name: string }) {
 							{deployment.status}
 						</span>
 					</div>
+					{(deployment["deployed-service"] || deployment.deploymentTarget) && (
+						<div>
+							<p className="text-[#94a3b8] text-xs mb-1">Deployed Service</p>
+							<p className="text-sm font-medium text-[#e2e8f0]">
+								{formatDeploymentTargetName(deployment["deployed-service"] || deployment.deploymentTarget)}
+							</p>
+						</div>
+					)}
 					{deployment.deployUrl && (
 						<div>
 							<p className="text-[#94a3b8] text-xs mb-1">Live URL</p>

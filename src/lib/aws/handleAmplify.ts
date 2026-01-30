@@ -34,6 +34,40 @@ function detectBuildOutputDir(appDir: string): string | null {
 }
 
 /**
+ * Checks if the project uses an older version of react-scripts that needs OpenSSL legacy provider.
+ * Older CRA projects (< 5.0) are incompatible with Node.js 17+ without the legacy provider flag.
+ */
+function needsOpenSSLLegacyProvider(appDir: string): boolean {
+	const tryDir = (dir: string): boolean => {
+		const pkgPath = path.join(dir, "package.json");
+		if (!fs.existsSync(pkgPath)) return false;
+		try {
+			const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as {
+				dependencies?: Record<string, string>;
+				devDependencies?: Record<string, string>;
+			};
+			const reactScriptsVersion = pkg.dependencies?.["react-scripts"] || pkg.devDependencies?.["react-scripts"];
+			if (reactScriptsVersion) {
+				// Extract major version number
+				const majorVersion = parseInt(reactScriptsVersion.replace(/[^0-9]/g, "").charAt(0) || "5");
+				// react-scripts < 5.0 needs legacy provider
+				return majorVersion < 5;
+			}
+		} catch {
+			return false;
+		}
+		return false;
+	};
+	
+	if (tryDir(appDir)) return true;
+	const parentDir = path.dirname(appDir);
+	if (parentDir !== appDir && path.basename(appDir).match(/^(app|src|frontend|web|client|server|api|backend)$/)) {
+		return tryDir(parentDir);
+	}
+	return false;
+}
+
+/**
  * Zips the contents of a directory (e.g. build output) for Amplify upload.
  */
 async function zipDirectory(
@@ -150,13 +184,24 @@ export async function handleAmplify(
 	// Build
 	const buildCmd = deployConfig.build_cmd?.trim() || "npm run build";
 	const [buildExec, ...buildArgs] = buildCmd.split(/\s+/).filter(Boolean);
+	
+	// Check if we need OpenSSL legacy provider for older CRA projects
+	const needsLegacyProvider = needsOpenSSLLegacyProvider(appDir);
+	const buildEnv = needsLegacyProvider 
+		? { ...process.env, NODE_OPTIONS: "--openssl-legacy-provider" }
+		: process.env;
+	
+	if (needsLegacyProvider) {
+		send("⚠️ Detected older Create React App. Using OpenSSL legacy provider for compatibility.", "build");
+	}
+	
 	send(`Running: ${buildCmd}`, "build");
 	await runCommandLiveWithWebSocket(
 		buildExec || "npm",
 		buildArgs.length ? buildArgs : ["run", "build"],
 		ws,
 		"build",
-		{ cwd: appDir }
+		{ cwd: appDir, env: buildEnv }
 	);
 
 	const buildOutputDir = detectBuildOutputDir(appDir);

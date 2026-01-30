@@ -166,16 +166,21 @@ Required JSON keys:
   IMPORTANT: If the repo has NO deployable code (empty, only docs/README, only config files, only mobile code with no backend), set language to null or empty string, and run_cmd to null.
 ${include_extra_info ? `
 - features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, cloud_run_compatible, requires_build_but_missing_cmd } (all boolean; cloud_run_compatible = true only if stateless HTTP, no long-lived WebSockets, no mobile/lib)
-  IMPORTANT: Set uses_mobile=true ONLY if the repo contains mobile code (React Native, Flutter, iOS, Android). Set uses_server=true if there's any server/backend code. If mobile-only with no server code, set uses_mobile=true and uses_server=false.
+  IMPORTANT: 
+  - Set uses_mobile=true ONLY if the repo contains mobile code (React Native, Flutter, iOS, Android). 
+  - Set uses_server=true ONLY if there's actual server/backend code that runs on a server (Express, FastAPI, Django, Flask, NestJS, etc.). 
+  - Static SPAs (Create React App, Vite, Angular, Vue CLI, Svelte) have uses_server=false because they are client-side only and don't need a server runtime.
+  - Firebase, Supabase client SDKs, and other BaaS (Backend-as-a-Service) clients are NOT server code - they run in the browser. Static SPAs using Firebase/Supabase should have uses_server=false.
+  - If mobile-only with no server code, set uses_mobile=true and uses_server=false.
 - deployment_hints: { has_dockerfile (boolean), is_multi_service (boolean), has_database (boolean), nextjs_static_export (boolean; true only if Next.js and next.config has output: "export") }
 - service_compatibility: For each platform set true ONLY if this project can be deployed and run there. All boolean:
-  - amplify: true only for static/frontend Node apps (SPA or Next.js static export with build output)
+  - amplify: true for static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export). These apps have build_cmd that produces build/, dist/, or out/ directory and NO run_cmd (or run_cmd is null). Static SPAs are perfect for Amplify.
   - elastic_beanstalk: true for single-service apps in Node, Python, Java, Go, .NET, PHP, Ruby without Dockerfile; no multi-service, no built-in DB requirement
   - ecs: true for containerized apps, multi-service, apps with DB, WebSockets, or when Dockerfile present
   - ec2: true for complex apps requiring full control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
-  Prefer marking the simplest compatible platform(s). At least one platform should be true ONLY if the project is deployable (has server/backend code).
+  Prefer marking the simplest compatible platform(s). At least one platform should be true if the project is deployable (has server/backend code OR is a static frontend app like CRA/Vite).
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;

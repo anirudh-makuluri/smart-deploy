@@ -9,7 +9,7 @@ import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
 
 // AWS imports
-import { selectAWSDeploymentTarget, setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
+import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
 import { handleAmplify } from "./aws/handleAmplify";
 import { handleElasticBeanstalk } from "./aws/handleElasticBeanstalk";
 import { handleECS } from "./aws/handleECS";
@@ -179,35 +179,19 @@ async function handleAWSDeploy(
 	send("Authenticating with AWS...", 'auth');
 	await setupAWSCredentials(ws);
 
-	// Use saved target from Smart Project Scan, or run selection only when missing
+	// Use saved target from Smart Project Scan
 	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
 	const savedTarget = deployConfig.deploymentTarget;
-	const useSavedTarget = savedTarget && awsTargets.includes(savedTarget);
-
-	let target: AWSDeploymentTarget;
-	let reason: string;
-	let warnings: string[];
-
-	if (useSavedTarget) {
-		target = savedTarget;
-		reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
-		warnings = [];
-		send(`Deploying to: ${target.toUpperCase()}`, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
-		send(reason, useSavedTarget ? AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy' : 'docker');
-	} else {
-		const analysis = selectAWSDeploymentTarget(
-			appDir,
-			multiServiceConfig,
-			dbConfig,
-			deployConfig.features_infrastructure || null
-		);
-		target = analysis.target;
-		reason = analysis.reason;
-		warnings = analysis.warnings;
-		send(`Selected deployment target: ${target.toUpperCase()}`, 'detect');
-		send(`Reason: ${reason}`, 'detect');
-		for (const w of warnings) send(`Warning: ${w}`, 'detect');
+	
+	if (!savedTarget || !awsTargets.includes(savedTarget)) {
+		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
 	}
+
+	const target = savedTarget;
+	const reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
+	
+	send(`Deploying to: ${target.toUpperCase()}`, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
+	send(reason, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
 
 	// Tell client which steps to show for this target (merge-friendly: preserves existing logs for auth/clone)
 	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
@@ -232,6 +216,8 @@ async function handleAWSDeploy(
 
 	let result: string;
 	let deployUrl: string | undefined;
+
+	console.log("target: ", target);
 
 	// Route to appropriate AWS service
 	switch (target) {

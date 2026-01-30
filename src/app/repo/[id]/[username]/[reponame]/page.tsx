@@ -6,7 +6,7 @@ import { z } from "zod"
 import Header from "@/components/Header" // adjust based on your layout
 import { use, useEffect, useState } from "react"
 import Link from "next/link"
-import { AIGenProjectMetadata, DeployConfig } from "@/app/types"
+import { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types"
 import { useSession } from "next-auth/react"
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs"
 import { parseEnvVarsToStore } from "@/lib/utils"
@@ -22,7 +22,10 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const { data: session } = useSession();
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
 	const { repoList, deployments, updateDeploymentById } = useAppData();
-	const repo = repoList.find(rep => rep.full_name == `${username}/${reponame}`);
+	const [repo, setRepo] = useState<repoType | undefined>(
+		repoList.find(rep => rep.full_name == `${username}/${reponame}`)
+	);
+	const [isLoadingRepo, setIsLoadingRepo] = useState(false);
 	// Use existing deployment (e.g. from a previous Smart Project Scan) to pre-fill form and metadata
 	const existingDeployment = deployments.find((dep) => dep.id === id);
 
@@ -35,6 +38,47 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			setIsDeploying(false);
 		}
 	}, [deployStatus]);
+
+	// Fetch repo if not found in repoList (public repo)
+	React.useEffect(() => {
+		if (!repo && session?.accessToken) {
+			setIsLoadingRepo(true);
+			fetch("/api/repos/public", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					owner: username,
+					repo: reponame,
+				}),
+			})
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.repo) {
+						setRepo(data.repo);
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to fetch repo:", err);
+				})
+				.finally(() => {
+					setIsLoadingRepo(false);
+				});
+		}
+	}, [repo, username, reponame, session?.accessToken]);
+
+	if (isLoadingRepo) {
+		return (
+			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-[#e2e8f0]">
+				<Header />
+				<div className="flex flex-col items-center gap-4">
+					<div className="h-10 w-10 rounded-full border-2 border-[#1e3a5f] border-t-[#1d4ed8] animate-spin" />
+					<p className="text-[#94a3b8]">Loading repository...</p>
+				</div>
+			</div>
+		);
+	}
 
 	if (!repo) {
 		return (

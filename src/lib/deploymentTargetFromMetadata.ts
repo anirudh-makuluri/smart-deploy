@@ -99,6 +99,27 @@ export function selectDeploymentTargetFromMetadata(
 		}
 		const result = selectSimplestFromCompatibility(compat, warnings);
 		if (result) return result;
+		
+		// Fallback: If LLM incorrectly marked amplify as false for a static SPA, fix it
+		// Static SPAs (CRA, Vite, etc.) have build_cmd but no run_cmd
+		// Check for common static SPA frameworks even if LLM incorrectly marked uses_server as true
+		if (language === "node" && !hints.has_dockerfile && core.build_cmd && !core.run_cmd) {
+			const isStaticSPA = 
+				core.framework?.toLowerCase().includes("react") && !isNextJs(metadata) || // CRA, Vite React
+				core.framework?.toLowerCase().includes("vite") ||
+				core.framework?.toLowerCase().includes("angular") ||
+				core.framework?.toLowerCase().includes("vue") ||
+				core.framework?.toLowerCase().includes("svelte");
+			const nextStatic = isNextJs(metadata) && hints.nextjs_static_export;
+			if (isStaticSPA || nextStatic) {
+				warnings.push("Detected static SPA. Using Amplify for optimal static hosting.");
+				return {
+					target: "amplify",
+					reason: "Static frontend app (SPA). AWS Amplify Hosting is perfect for static sites like Create React App, Vite, and Next.js static exports.",
+					warnings,
+				};
+			}
+		}
 	}
 
 	// Fallback: rule-based selection (same order of checks as before)
@@ -124,13 +145,15 @@ export function selectDeploymentTargetFromMetadata(
 			warnings,
 		};
 	}
-	if (language === "node" && !hints.has_dockerfile && core.build_cmd) {
+	// Amplify for static SPAs: Node apps with build_cmd but no run_cmd (or run_cmd is null)
+	// This includes: Create React App, Vite, Angular, Vue CLI, and Next.js static export
+	if (language === "node" && !hints.has_dockerfile && core.build_cmd && !core.run_cmd) {
 		const nextStatic = isNextJs(metadata) && hints.nextjs_static_export;
 		const notNext = !isNextJs(metadata);
 		if (nextStatic || notNext) {
 			return {
 				target: "amplify",
-				reason: "Frontend/static Node app. AWS Amplify Hosting for fast static deploys.",
+				reason: "Static frontend app (SPA). AWS Amplify Hosting is perfect for static sites like Create React App, Vite, and Next.js static exports.",
 				warnings,
 			};
 		}

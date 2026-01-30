@@ -258,17 +258,6 @@ export default function ConfigTabs(
 			)}
 			{projectMetadata && (
 				<>
-					{(featuresInfra?.uses_websockets || featuresInfra?.uses_cron) && (
-						<Alert variant="default" className="border-[#f59e0b]/50 bg-[#f59e0b]/10 text-[#e2e8f0]">
-							<AlertTitle className="text-[#f59e0b]">Warning!</AlertTitle>
-							<AlertDescription className="text-[#94a3b8]">
-								<p>
-									⚠️ This service uses WebSockets or Cron. Note: <strong>Cloud Run times out after 10 minutes</strong> of inactivity.
-								</p>
-							</AlertDescription>
-						</Alert>
-					)}
-
 					{(featuresInfra?.uses_mobile ||
 						featuresInfra?.is_library ||
 						isDeployDisabled) && (
