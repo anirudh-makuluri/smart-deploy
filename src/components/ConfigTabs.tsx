@@ -202,9 +202,35 @@ export default function ConfigTabs(
 
 	const featuresInfra = projectMetadata?.features_infrastructure;
 
+	// Check if deployment should be disabled
+	const isDeployDisabled = React.useMemo(() => {
+		// Mobile-only code (no server/backend)
+		if (featuresInfra?.uses_mobile && !featuresInfra?.uses_server && !projectMetadata?.core_deployment_info?.run_cmd) {
+			return true;
+		}
+		// Library (not deployable)
+		if (featuresInfra?.is_library) {
+			return true;
+		}
+		// No deployable code (no language detected or no run command)
+		if (!projectMetadata?.core_deployment_info?.language && !projectMetadata?.core_deployment_info?.run_cmd) {
+			return true;
+		}
+		// No compatible deployment target found
+		if (projectMetadata && !deploymentAnalysis) {
+			// Check if service_compatibility exists and all are false
+			const compat = (projectMetadata as any).service_compatibility;
+			if (compat && typeof compat === "object") {
+				const allFalse = Object.values(compat).every(v => v === false);
+				if (allFalse) return true;
+			}
+		}
+		return false;
+	}, [featuresInfra, projectMetadata, deploymentAnalysis]);
+
 	return (
 		<>
-			{deploymentAnalysis && (
+			{(deploymentAnalysis && !isDeployDisabled) && (
 				<Card className="mb-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
 					<CardHeader className="pb-2">
 						<CardTitle className="text-base font-medium flex items-center gap-2 text-[#e2e8f0]">
@@ -244,17 +270,29 @@ export default function ConfigTabs(
 					)}
 
 					{(featuresInfra?.uses_mobile ||
-						featuresInfra?.is_library) && (
+						featuresInfra?.is_library ||
+						isDeployDisabled) && (
 							<Alert variant="destructive" className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
-								<AlertTitle className="text-[#fca5a5]">Error!</AlertTitle>
+								<AlertTitle className="text-[#fca5a5]">Deployment Disabled</AlertTitle>
 								<AlertDescription className="text-[#94a3b8]">
 									<p>
-										❌ This project <strong>cannot be deployed</strong> to Cloud Run.
+										❌ This project <strong>cannot be deployed</strong>.
 									</p>
 									<ul className="list-disc pl-4 mt-2 text-sm">
-										{featuresInfra?.uses_mobile && <li>It is a mobile app</li>}
-										{featuresInfra?.cloud_run_compatible === false && <li>It is not compatible with Cloud Run</li>}
+										{featuresInfra?.uses_mobile && !featuresInfra?.uses_server && !projectMetadata?.core_deployment_info?.run_cmd && (
+											<li>It is a mobile-only app with no server/backend code</li>
+										)}
 										{featuresInfra?.is_library && <li>It is a library, not a deployable service</li>}
+										{!projectMetadata?.core_deployment_info?.language && !projectMetadata?.core_deployment_info?.run_cmd && (
+											<li>No deployable code detected (empty repo or docs-only)</li>
+										)}
+										{projectMetadata && !deploymentAnalysis && (() => {
+											const compat = (projectMetadata as any).service_compatibility;
+											if (compat && typeof compat === "object" && Object.values(compat).every(v => v === false)) {
+												return <li>No compatible deployment platform found</li>;
+											}
+											return null;
+										})()}
 									</ul>
 								</AlertDescription>
 							</Alert>
@@ -315,7 +353,11 @@ export default function ConfigTabs(
 										<RotateCw className={isAiFetching ? "animate-spin" : ""} />
 										Smart Project Scan
 									</Button>
-									<Button type="submit" className="landing-build-blue hover:opacity-95 text-white">
+									<Button 
+										type="submit" 
+										disabled={isDeployDisabled || isDeploying}
+										className="landing-build-blue hover:opacity-95 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+									>
 										{(deployment && deployment?.status != 'didnt_deploy') ? "Save Changes" : "Deploy"}
 									</Button>
 								</div>

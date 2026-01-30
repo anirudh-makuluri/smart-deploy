@@ -91,6 +91,12 @@ export function selectDeploymentTargetFromMetadata(
 
 	// Prefer LLM-reported compatibility: pick simplest compatible target
 	if (compat && typeof compat === "object") {
+		// Check if all compatibility flags are false (mobile-only or no deployable code)
+		const allFalse = Object.values(compat).every(v => v === false);
+		if (allFalse) {
+			// No compatible platform - this is mobile-only or has no deployable code
+			return null;
+		}
 		const result = selectSimplestFromCompatibility(compat, warnings);
 		if (result) return result;
 	}
@@ -165,6 +171,15 @@ export function selectDeploymentTargetFromMetadata(
 			reason: "Rust app requires containerization. ECS Fargate will handle the deployment.",
 			warnings,
 		};
+	}
+	// Check if this is mobile-only or has no deployable code
+	if (features.uses_mobile && !features.uses_server && !core.run_cmd) {
+		// Mobile-only app with no server code - not deployable
+		return null;
+	}
+	if (!language && !core.run_cmd) {
+		// No language and no run command - likely empty repo or docs-only
+		return null;
 	}
 	if (!language) {
 		warnings.push("Could not detect language. EC2 provides maximum flexibility.");
