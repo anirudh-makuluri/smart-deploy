@@ -38,8 +38,11 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 
 	if (!repo) {
 		return (
-			<div>Repo not found</div>
-		)
+			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-[#e2e8f0]">
+				<Header />
+				<p className="text-[#94a3b8]">Repo not found</p>
+			</div>
+		);
 	}
 
 	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
@@ -50,6 +53,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 
 		console.log("Data", data);
 		const scanConfig: DeployConfig = {
+			...existingDeployment,
 			id,
 			url: data.url || repo.html_url,
 			service_name: data.service_name || repo.name,
@@ -60,7 +64,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			workdir: data.workdir,
 			use_custom_dockerfile: data.use_custom_dockerfile ?? false,
 			env_vars: data.env_vars,
-			status: "didnt_deploy",
+			// Preserve existing status (e.g. "running") when updating after Smart Project Scan
+			status: existingDeployment?.status ?? "didnt_deploy",
 			core_deployment_info: data.core_deployment_info,
 			features_infrastructure: data.features_infrastructure,
 			final_notes: data.final_notes,
@@ -112,18 +117,20 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	}
 
 	return (
-		<div className="bg-muted flex min-h-svh flex-col">
+		<div className="landing-bg min-h-svh flex flex-col text-[#e2e8f0]">
 			<Header />
-			<div className="w-full mx-auto p-4">
+			<div className="w-full mx-auto p-6 flex-1">
 				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
 					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} />
-				{
-					deployConfigRef.current?.deployUrl ?
-						<div>Deployment Successful:
-							<Link className="underline text-blue-600" href={deployConfigRef.current?.deployUrl}> Link</Link>
-						</div> : null
-				}
+				{deployConfigRef.current?.deployUrl && (
+					<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm">
+						Deployment successful:{" "}
+						<Link className="text-[#14b8a6] hover:underline font-medium" href={deployConfigRef.current.deployUrl}>
+							Open link
+						</Link>
+					</div>
+				)}
 			</div>
 		</div>
-	)
+	);
 }

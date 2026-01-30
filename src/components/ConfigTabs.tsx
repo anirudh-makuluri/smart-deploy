@@ -205,23 +205,23 @@ export default function ConfigTabs(
 	return (
 		<>
 			{deploymentAnalysis && (
-				<Card className="mb-4 border-emerald-500/50 bg-emerald-500/5">
+				<Card className="mb-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
 					<CardHeader className="pb-2">
-						<CardTitle className="text-base font-medium flex items-center gap-2">
+						<CardTitle className="text-base font-medium flex items-center gap-2 text-[#e2e8f0]">
 							Deployment target
 						</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-1">
-						<p className="font-semibold text-foreground">
+						<p className="font-semibold text-[#e2e8f0]">
 							{deploymentAnalysis.target === "amplify" && "AWS Amplify"}
 							{deploymentAnalysis.target === "elastic-beanstalk" && "AWS Elastic Beanstalk"}
 							{deploymentAnalysis.target === "ecs" && "AWS ECS Fargate"}
 							{deploymentAnalysis.target === "ec2" && "AWS EC2"}
 							{deploymentAnalysis.target === "cloud-run" && "Google Cloud Run"}
 						</p>
-						<p className="text-sm text-muted-foreground">{deploymentAnalysis.reason}</p>
+						<p className="text-sm text-[#94a3b8]">{deploymentAnalysis.reason}</p>
 						{deploymentAnalysis.warnings.length > 0 && (
-							<ul className="text-xs text-amber-600 dark:text-amber-400 list-disc list-inside mt-1">
+							<ul className="text-xs text-[#f59e0b] list-disc list-inside mt-1">
 								{deploymentAnalysis.warnings.map((w, i) => (
 									<li key={i}>{w}</li>
 								))}
@@ -233,9 +233,9 @@ export default function ConfigTabs(
 			{projectMetadata && (
 				<>
 					{(featuresInfra?.uses_websockets || featuresInfra?.uses_cron) && (
-						<Alert variant="default">
-							<AlertTitle>Warning!</AlertTitle>
-							<AlertDescription>
+						<Alert variant="default" className="border-[#f59e0b]/50 bg-[#f59e0b]/10 text-[#e2e8f0]">
+							<AlertTitle className="text-[#f59e0b]">Warning!</AlertTitle>
+							<AlertDescription className="text-[#94a3b8]">
 								<p>
 									⚠️ This service uses WebSockets or Cron. Note: <strong>Cloud Run times out after 10 minutes</strong> of inactivity.
 								</p>
@@ -245,9 +245,9 @@ export default function ConfigTabs(
 
 					{(featuresInfra?.uses_mobile ||
 						featuresInfra?.is_library) && (
-							<Alert variant="destructive">
-								<AlertTitle>Error!</AlertTitle>
-								<AlertDescription>
+							<Alert variant="destructive" className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
+								<AlertTitle className="text-[#fca5a5]">Error!</AlertTitle>
+								<AlertDescription className="text-[#94a3b8]">
 									<p>
 										❌ This project <strong>cannot be deployed</strong> to Cloud Run.
 									</p>
@@ -261,9 +261,9 @@ export default function ConfigTabs(
 						)}
 
 					{featuresInfra?.requires_build_but_missing_cmd && (
-						<Alert variant="destructive">
-							<AlertTitle>Error!</AlertTitle>
-							<AlertDescription>
+						<Alert variant="destructive" className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
+							<AlertTitle className="text-[#fca5a5]">Error!</AlertTitle>
+							<AlertDescription className="text-[#94a3b8]">
 								<p>
 									❌ Build is required but no build command was detected. <strong>Deployment will fail.</strong>
 								</p>
@@ -272,11 +272,11 @@ export default function ConfigTabs(
 					)}
 					{
 						projectMetadata.final_notes.comment && (
-							<Card className="mt-4">
+							<Card className="my-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
 								<CardHeader>
-									<CardTitle>💡 Final AI Notes</CardTitle>
+									<CardTitle className="text-[#e2e8f0]">💡 Final AI Notes</CardTitle>
 								</CardHeader>
-								<CardContent className="text-muted-foreground text-sm whitespace-pre-wrap">
+								<CardContent className="text-[#94a3b8] text-sm whitespace-pre-wrap">
 									{projectMetadata?.final_notes.comment}
 								</CardContent>
 							</Card>
@@ -287,10 +287,10 @@ export default function ConfigTabs(
 			<Tabs defaultValue="env_config">
 				{
 					isDeploying || deployment?.status != 'didnt_deploy' ? (
-						<TabsList>
-							<TabsTrigger value="env_config">Environment & Configuration</TabsTrigger>
-							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs">Service Logs</TabsTrigger> : null}
-							{isDeploying && <TabsTrigger value="deploy_logs">Deploy Logs</TabsTrigger>}
+						<TabsList className="bg-[#132f4c]/60 border border-[#1e3a5f]/60">
+							<TabsTrigger value="env_config" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Environment & Configuration</TabsTrigger>
+							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Service Logs</TabsTrigger> : null}
+							{isDeploying && <TabsTrigger value="deploy_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Deploy Logs</TabsTrigger>}
 						</TabsList>
 					) : null
 				}
@@ -301,24 +301,28 @@ export default function ConfigTabs(
 								...data,
 								...(projectMetadata ?? {}), // merge only if not null
 							});
-						})} className="h-full py-4 px-20">
-							<p className="font-bold text-xl whitespace-nowrap my-4">Environment & Configuration</p>
-							<Separator className="bg-slate-700 h-[1px]" />
+						})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
+							<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Environment & Configuration</p>
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 							{editMode && (
-								<div className="flex flex-row items-center space-x-10 my-6">
-									<Button disabled={isAiFetching}
-										variant={'outline'} onClick={handleAIBtn}>
-										<RotateCw className={(isAiFetching ? "spin-animation" : "")} />
-										<p>Smart Project Scan</p>
+								<div className="flex flex-row items-center gap-4 my-6 flex-wrap">
+									<Button
+										disabled={isAiFetching}
+										variant="outline"
+										onClick={handleAIBtn}
+										className="border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50"
+									>
+										<RotateCw className={isAiFetching ? "animate-spin" : ""} />
+										Smart Project Scan
 									</Button>
-									<Button type="submit">
+									<Button type="submit" className="landing-build-blue hover:opacity-95 text-white">
 										{(deployment && deployment?.status != 'didnt_deploy') ? "Save Changes" : "Deploy"}
 									</Button>
 								</div>
 							)}
 
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Service Name:</span>
+							<div className="my-4 flex flex-row justify-start items-center space-x-4 flex-wrap gap-2">
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Service Name:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -326,23 +330,23 @@ export default function ConfigTabs(
 										render={({ field }) => (
 											<FormItem className="w-40">
 												<FormControl>
-													<Input {...field} />
+													<Input {...field} className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]" />
 												</FormControl>
 											</FormItem>
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.service_name}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.service_name}</span>
 								)}
-								{projectMetadata?.core_deployment_info.language && <Badge variant="outline">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
-								{projectMetadata?.core_deployment_info.framework && <Badge variant="outline">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
+								{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-[#1e3a5f] text-[#94a3b8]">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
+								{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-[#1e3a5f] text-[#94a3b8]">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
 
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Install Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Install Command:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Install Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -356,14 +360,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.install_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.install_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Build Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Build Command:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Build Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -377,14 +381,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.build_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.build_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Run Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Run Command:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Run Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -398,14 +402,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.run_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.run_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Branch */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Branch:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Branch:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -433,14 +437,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.branch}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.branch}</span>
 								)}
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Working Directory */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Working Directory:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Working Directory:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -454,14 +458,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">{deployment?.workdir || '-'}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.workdir || '-'}</span>
 								)}
 							</div>
-							<Separator className="bg-slate-700 h-[1px]" />
+							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
 
 							{/* Custom Dockerfile */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px]">Custom Dockerfile:</span>
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Custom Dockerfile:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -477,7 +481,7 @@ export default function ConfigTabs(
 												</FormControl>
 												{field.value && (
 													<div>
-														<label className="block text-sm font-medium text-gray-700 mb-1">
+														<label className="block text-sm font-medium text-[#94a3b8] mb-1">
 															Upload Dockerfile
 														</label>
 														<Input
@@ -494,7 +498,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-slate-400 w-40">
+									<span className="text-[#94a3b8] w-40">
 										{deployment?.use_custom_dockerfile ? 'Yes' : 'No'}
 									</span>
 								)}
@@ -508,7 +512,7 @@ export default function ConfigTabs(
 						} */}
 
 							{/* Env Vars */}
-							<p className="font-bold text-xl whitespace-nowrap mt-10">Environment Variables</p>
+							<p className="font-bold text-xl whitespace-nowrap mt-10 text-[#e2e8f0]">Environment Variables</p>
 							<div className="w-full mt-2">
 								{editMode ? (
 									<FormField
@@ -525,24 +529,24 @@ export default function ConfigTabs(
 								) : (
 									<>
 										{deployment?.env_vars ? (
-											<Table className="border p-2 rounded-md overflow-hidden">
-												<TableHeader className="bg-card">
-													<TableRow>
-														<TableHead>Name</TableHead>
-														<TableHead>Value</TableHead>
+											<Table className="border border-[#1e3a5f]/60 p-2 rounded-md overflow-hidden">
+												<TableHeader className="bg-[#132f4c]/80">
+													<TableRow className="border-[#1e3a5f]/40 hover:bg-transparent">
+														<TableHead className="text-[#e2e8f0]">Name</TableHead>
+														<TableHead className="text-[#e2e8f0]">Value</TableHead>
 													</TableRow>
 												</TableHeader>
 												<TableBody>
 													{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
-														<TableRow key={idx} >
-															<TableCell>{env.name}</TableCell >
-															<TableCell>{env.value}</TableCell >
+														<TableRow key={idx} className="border-[#1e3a5f]/40 hover:bg-[#1e3a5f]/30">
+															<TableCell className="text-[#94a3b8]">{env.name}</TableCell>
+															<TableCell className="text-[#e2e8f0]">{env.value}</TableCell>
 														</TableRow>
 													))}
 												</TableBody>
 											</Table>
 										) : (
-											<span className="text-slate-400">-</span>
+											<span className="text-[#94a3b8]">-</span>
 										)}
 									</>
 								)}
@@ -551,11 +555,11 @@ export default function ConfigTabs(
 					</Form>
 				</TabsContent>
 				<TabsContent value="service_logs">
-					<p className="font-bold text-xl whitespace-nowrap my-4">Service Logs</p>
+					<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Service Logs</p>
 					<ServiceLogs logs={serviceLogs} />
 				</TabsContent>
 				<TabsContent value="deploy_logs">
-					<p className="font-bold text-xl whitespace-nowrap my-4">Deploy Logs</p>
+					<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Deploy Logs</p>
 					<DeploymentAccordion steps={steps} />
 
 				</TabsContent>

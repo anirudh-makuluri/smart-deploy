@@ -1,19 +1,13 @@
-import { GalleryVerticalEnd } from "lucide-react"
+import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { LoginForm } from "@/components/login-form";
 
-import { LoginForm } from "@/components/login-form"
-
-export default function LoginPage() {
+export default function AuthPage() {
 	return (
-		<div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+		<div className="landing-bg min-h-svh flex flex-col items-center justify-center p-6 text-[#e2e8f0]">
 			<div className="flex w-full max-w-sm flex-col gap-6">
-				<a href="#" className="flex items-center gap-2 self-center font-medium">
-					<div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
-						<GalleryVerticalEnd className="size-4" />
-					</div>
-					Smart Deploy
-				</a>
+				<SmartDeployLogo showText size="md" className="self-center" />
 				<LoginForm />
 			</div>
 		</div>
-	)
+	);
 }

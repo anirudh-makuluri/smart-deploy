@@ -6,8 +6,10 @@ export async function middleware(req : NextRequest) {
 	const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
+	const isLanding = req.nextUrl.pathname === "/"
 
-	if(!token && !isAuthPage) {
+	// Allow unauthenticated access to landing (/) and auth
+	if (!token && !isAuthPage && !isLanding) {
 		return NextResponse.redirect(new URL("/auth", req.url))
 	}
 

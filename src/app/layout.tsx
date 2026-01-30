@@ -29,7 +29,7 @@ export default function RootLayout({
 	return (
 		<html lang="en" className="dark">
 			<body
-				className={`${geistSans.variable} ${geistMono.variable} bg-muted antialiased`}
+				className={`${geistSans.variable} ${geistMono.variable} landing-bg text-[#e2e8f0] antialiased`}
 			>
 				<SessionWrapper>
 					<AppDataLoader>

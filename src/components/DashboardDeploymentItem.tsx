@@ -1,62 +1,107 @@
-import { DeployConfig, repoType } from '@/app/types'
-import React from 'react'
-import { EllipsisVertical, Pause, Play } from 'lucide-react'
+"use client";
+
+import { DeployConfig, repoType } from "@/app/types";
+import { EllipsisVertical, ExternalLink, GitBranch } from "lucide-react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { formatTimestamp } from '@/lib/utils';
-import Link from 'next/link';
+} from "@/components/ui/dropdown-menu";
+import { formatTimestamp } from "@/lib/utils";
+import Link from "next/link";
 
-export default function DashboardDeploymentItem({ deployConfig, repo }: { deployConfig: DeployConfig, repo: repoType | undefined }) {
+const statusStyles: Record<string, string> = {
+	running: "bg-[#14b8a6]/20 text-[#14b8a6] border-[#14b8a6]/40",
+	paused: "bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/40",
+	stopped: "bg-[#64748b]/20 text-[#94a3b8] border-[#64748b]/40",
+};
 
+export default function DashboardDeploymentItem({
+	deployConfig,
+	repo,
+}: {
+	deployConfig: DeployConfig;
+	repo: repoType | undefined;
+}) {
 	function changeStatus(action: string) {
-		const serviceName = deployConfig.service_name;
 		fetch("/api/deployment-control", {
 			method: "PUT",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify({
-				serviceName, action
-			}),
-		})
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ serviceName: deployConfig.service_name, action }),
+		});
 	}
 
+	const statusStyle = statusStyles[deployConfig.status ?? "stopped"] ?? statusStyles.stopped;
+
 	return (
-		<div className='bg-card px-4 py-2 rounded-md flex flex-col justify-between items-center'>
-			<div className='flex flex-row items-center justify-between w-full'>
-				<div>
-					<Link href={`/services/${deployConfig.service_name}`}><p className='font-bold mb-2 hover:underline'>{deployConfig.service_name}</p></Link>
-					<a href={deployConfig.deployUrl} target='_blank'><p className='text-xs mb-4 hover:underline'>{deployConfig.deployUrl}</p></a>
+		<div className="rounded-xl border border-[#1e3a5f]/60 bg-[#132f4c]/60 flex flex-col p-4 hover:border-[#1e3a5f] transition-colors">
+			<div className="flex items-start justify-between gap-2">
+				<div className="min-w-0 flex-1">
+					<Link
+						href={`/services/${deployConfig.service_name}`}
+						className="font-semibold text-[#e2e8f0] hover:text-[#14b8a6] transition-colors truncate block"
+					>
+						{deployConfig.service_name}
+					</Link>
+					<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border mt-2 ${statusStyle}`}>
+						{deployConfig.status ?? "stopped"}
+					</span>
 				</div>
-				<div className='flex-row space-x-2 items-center hidden'>
-					<DropdownMenu>
-						<DropdownMenuTrigger className='hover:bg-muted hover:cursor-pointer p-2 rounded-xl'>
-							<EllipsisVertical />
-						</DropdownMenuTrigger>
-						<DropdownMenuContent>
-							<DropdownMenuItem onClick={() => changeStatus(deployConfig.status == 'running' ? "pause" : "resume")}>
-								{deployConfig.status == 'running' ? "Pause" : "Play"}
-							</DropdownMenuItem>
-							<DropdownMenuItem onClick={() => changeStatus("stop")}>Delete</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
-				</div>
+				<DropdownMenu>
+					<DropdownMenuTrigger className="p-1.5 rounded-lg border border-transparent hover:bg-[#1e3a5f]/50 hover:border-[#1e3a5f]/60 text-[#94a3b8] hover:text-[#e2e8f0] transition-colors">
+						<EllipsisVertical className="size-4" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="border-[#1e3a5f] bg-[#132f4c]">
+						<DropdownMenuItem
+							onClick={() => changeStatus(deployConfig.status === "running" ? "pause" : "resume")}
+							className="text-[#e2e8f0] focus:bg-[#1e3a5f]/50 focus:text-[#e2e8f0]"
+						>
+							{deployConfig.status === "running" ? "Pause" : "Resume"}
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							onClick={() => changeStatus("stop")}
+							className="text-[#e2e8f0] focus:bg-[#dc2626]/20 focus:text-[#fca5a5]"
+						>
+							Delete
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
-			<div>
-				<a href={deployConfig.url} target='_blank'>
-					<p className='bg-muted opacity-80 hover:opacity-100 rounded-2xl px-2 py-1 text-sm w-fit font-semibold flex flex-row'>
-						{repo?.full_name}
-					</p>
+			{deployConfig.deployUrl && (
+				<a
+					href={deployConfig.deployUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="flex items-center gap-1.5 text-xs text-[#14b8a6] hover:underline mt-2 truncate"
+				>
+					<ExternalLink className="size-3.5 shrink-0" />
+					<span className="truncate">{deployConfig.deployUrl}</span>
 				</a>
-				<div className='flex flex-col space-y-3 mt-6'>
-					<p className='text-sm'>{repo?.latest_commit?.message}</p>
-					<p>{formatTimestamp(repo?.latest_commit?.date)} on <strong>{repo?.default_branch}</strong></p>
+			)}
+			{repo && (
+				<div className="mt-4 pt-4 border-t border-[#1e3a5f]/60">
+					<a
+						href={repo.html_url}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="inline-flex truncate items-center gap-1.5 text-sm text-[#94a3b8] hover:text-[#14b8a6] transition-colors"
+					>
+						<GitBranch className="size-4 shrink-0" />
+						<span className="truncate">{repo.full_name}</span>
+					</a>
+					{repo.latest_commit && (
+						<>
+							<p className="text-xs text-[#64748b] mt-2 line-clamp-2" title={repo.latest_commit.message}>
+								{repo.latest_commit.message}
+							</p>
+							<p className="text-xs text-[#64748b] mt-1">
+								{formatTimestamp(repo.latest_commit.date)} on <strong className="text-[#94a3b8]">{repo.default_branch}</strong>
+							</p>
+						</>
+					)}
 				</div>
-			</div>
+			)}
 		</div>
-	)
+	);
 }

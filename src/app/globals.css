@@ -114,6 +114,18 @@
 }
 
 
+/* Landing page palette */
+:root {
+  --deploy-blue: #0c1929;
+  --deploy-blue-light: #132f4c;
+  --build-blue: #1d4ed8;
+  --build-blue-hover: #2563eb;
+  --accent-teal: #0d9488;
+  --accent-amber: #d97706;
+  --landing-foreground: #e2e8f0;
+  --landing-muted: #94a3b8;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -121,6 +133,26 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Landing page palette (deploy blue, build blue, complements) */
+.landing-bg {
+  background-color: #0c1929;
+}
+.landing-bg-muted {
+  background-color: #132f4c;
+}
+.landing-build-blue {
+  background-color: #1d4ed8;
+}
+.landing-build-blue:hover {
+  background-color: #2563eb;
+}
+.landing-accent-teal {
+  color: #14b8a6;
+}
+.landing-accent-amber {
+  color: #f59e0b;
 }
 
 @keyframes spin {

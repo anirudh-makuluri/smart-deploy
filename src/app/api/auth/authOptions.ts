@@ -1,9 +1,14 @@
 import config from "@/config";
 import { AuthOptions } from "next-auth"
 import GitHubProvider from 'next-auth/providers/github'
+import GoogleProvider from 'next-auth/providers/google'
 
 export const authOptions : AuthOptions = {
 	providers: [
+		GoogleProvider({
+			clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+			clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+		}),
 		GitHubProvider({
 			clientId: config.GITHUB_ID,
 			clientSecret: config.GITHUB_SECRET,
