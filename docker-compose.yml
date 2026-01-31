@@ -11,16 +11,23 @@ services:
         - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
     container_name: smartdeploy-app
     restart: unless-stopped
+    env_file: .env
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      # OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GITHUB_ID=${GITHUB_ID}
       - GITHUB_SECRET=${GITHUB_SECRET}
+      # NextAuth
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
       - NEXTAUTH_URL=${NEXTAUTH_URL}
+      # GCP
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
       - GCP_SERVICE_ACCOUNT_KEY=${GCP_SERVICE_ACCOUNT_KEY}
+      # Firebase
       - FIREBASE_SERVICE_ACCOUNT_KEY=${FIREBASE_SERVICE_ACCOUNT_KEY}
       - FIREBASE_API_KEY=${FIREBASE_API_KEY}
       - FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}
@@ -29,6 +36,16 @@ services:
       - FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}
       - FIREBASE_APP_ID=${FIREBASE_APP_ID}
       - FIREBASE_MEASUREMENT_ID=${FIREBASE_MEASUREMENT_ID}
+      # AWS
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - ECS_ACM_CERTIFICATE_ARN=${ECS_ACM_CERTIFICATE_ARN}
+      # LLM / environment
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOCAL_LLM_BASE_URL=${LOCAL_LLM_BASE_URL}
+      - LOCAL_LLM_MODEL=${LOCAL_LLM_MODEL}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     networks:
       - smartdeploy-network
@@ -45,22 +62,25 @@ services:
       dockerfile: Dockerfile.websocket
     container_name: smartdeploy-websocket
     restart: unless-stopped
+    env_file: .env
     ports:
       - "4001:4001"
     environment:
       - NODE_ENV=production
-      # GCP Configuration
+      # OAuth
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GITHUB_ID=${GITHUB_ID}
+      - GITHUB_SECRET=${GITHUB_SECRET}
+      # GCP
       - GCP_PROJECT_ID=${GCP_PROJECT_ID}
       - GCP_SERVICE_ACCOUNT_KEY=${GCP_SERVICE_ACCOUNT_KEY}
-      # AWS Configuration
+      # AWS
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION:-us-west-2}
-      # Firebase Configuration
+      # Firebase
       - FIREBASE_SERVICE_ACCOUNT_KEY=${FIREBASE_SERVICE_ACCOUNT_KEY}
-      # GitHub Configuration
-      - GITHUB_ID=${GITHUB_ID}
-      - GITHUB_SECRET=${GITHUB_SECRET}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

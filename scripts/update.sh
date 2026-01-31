@@ -22,6 +22,7 @@ echo "Pulling latest changes from $BRANCH..."
 git fetch origin
 git reset --hard origin/$BRANCH
 
+
 # Step 2: Rebuild and restart containers
 echo "Rebuilding Docker images..."
 docker compose build
