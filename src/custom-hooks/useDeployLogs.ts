@@ -15,6 +15,10 @@ const defaultSteps: DeployStep[] = [
 	{ id: "done", label: "✅ Done", logs: [], status: "pending" },
 ];
 
+const WS_URL = typeof process.env.NEXT_PUBLIC_WS_URL === "string" && process.env.NEXT_PUBLIC_WS_URL
+	? process.env.NEXT_PUBLIC_WS_URL.replace(/^http/, "ws")
+	: "ws://localhost:4001";
+
 export function useDeployLogs(serviceName ?: string) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -26,7 +30,7 @@ export function useDeployLogs(serviceName ?: string) {
 	const wsRef = useRef<WebSocket | null>(null);
 
 	useEffect(() => {
-		const ws = new WebSocket("ws://localhost:4001");
+		const ws = new WebSocket(WS_URL);
 		wsRef.current = ws;
 
 		ws.onopen = () => {
@@ -102,7 +106,7 @@ export function useDeployLogs(serviceName ?: string) {
 	}, []);
 
 	const openSocket = () => {
-		const ws = new WebSocket("ws://localhost:4001");
+		const ws = new WebSocket(WS_URL);
 		wsRef.current = ws;
 	}
 
