@@ -334,13 +334,13 @@ export default function ConfigTabs(
 						</Alert>
 					)}
 					{
-						projectMetadata.final_notes.comment && (
+						projectMetadata.final_notes?.comment && (
 							<Card className="my-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
 								<CardHeader>
 									<CardTitle className="text-[#e2e8f0]">💡 Final AI Notes</CardTitle>
 								</CardHeader>
 								<CardContent className="text-[#94a3b8] text-sm whitespace-pre-wrap">
-									{projectMetadata?.final_notes.comment}
+									{projectMetadata?.final_notes?.comment}
 								</CardContent>
 							</Card>
 						)
