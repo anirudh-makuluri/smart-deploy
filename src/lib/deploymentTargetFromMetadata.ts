@@ -98,6 +98,15 @@ export function selectDeploymentTargetFromMetadata(
 			return null;
 		}
 		const result = selectSimplestFromCompatibility(compat, warnings);
+		// Next.js with SSR: use ECS Fargate (Amplify is for static only)
+		if (result?.target === "amplify" && isNextJs(metadata) && !hints.nextjs_static_export) {
+			warnings.push("Next.js with SSR is not recommended on Amplify. Using ECS Fargate.");
+			return {
+				target: "ecs",
+				reason: "Next.js with SSR. ECS Fargate is used for Next.js SSR deployments.",
+				warnings,
+			};
+		}
 		if (result) return result;
 		
 		// Fallback: If LLM incorrectly marked amplify as false for a static SPA, fix it

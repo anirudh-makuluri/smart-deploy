@@ -226,15 +226,26 @@ export async function handleElasticBeanstalk(
 	}
 
 	if (environmentExists) {
-		// Update existing environment
+		// Update existing environment (optionally add HTTPS listener if cert is set)
 		send(`Updating environment: ${envName}...`, 'deploy');
-		await runAWSCommand([
+		const updateEnvArgs = [
 			"elasticbeanstalk", "update-environment",
 			`--application-name=${appName}`,
 			`--environment-name=${envName}`,
 			`--version-label=${versionLabel}`,
 			`--region=${region}`
-		], ws, 'deploy');
+		];
+		const acmCertArn = config.EB_ACM_CERTIFICATE_ARN?.trim();
+		if (acmCertArn) {
+			const httpsOptions = [
+				"Namespace=aws:elbv2:listener:443,OptionName=ListenerEnabled,Value=true",
+				"Namespace=aws:elbv2:listener:443,OptionName=Protocol,Value=HTTPS",
+				`Namespace=aws:elbv2:listener:443,OptionName=SSLCertificateArns,Value=${acmCertArn}`
+			];
+			updateEnvArgs.push("--option-settings", httpsOptions.join(" "));
+			send("Adding HTTPS listener (port 443) with your ACM certificate.", "deploy");
+		}
+		await runAWSCommand(updateEnvArgs, ws, 'deploy');
 	} else {
 		// Create new environment
 		send(`Creating environment: ${envName}...`, 'deploy');
@@ -248,6 +259,14 @@ export async function handleElasticBeanstalk(
 			`Namespace=aws:autoscaling:launchconfiguration,OptionName=IamInstanceProfile,Value=${instanceProfileName}`,
 			`Namespace=aws:elasticbeanstalk:environment,OptionName=ServiceRole,Value=${serviceRoleName}`
 		];
+		const acmCertArn = config.EB_ACM_CERTIFICATE_ARN?.trim();
+		if (acmCertArn) {
+			optionSettings.push("Namespace=aws:elasticbeanstalk:environment,OptionName=EnvironmentType,Value=LoadBalanced");
+			optionSettings.push("Namespace=aws:elbv2:listener:443,OptionName=ListenerEnabled,Value=true");
+			optionSettings.push("Namespace=aws:elbv2:listener:443,OptionName=Protocol,Value=HTTPS");
+			optionSettings.push(`Namespace=aws:elbv2:listener:443,OptionName=SSLCertificateArns,Value=${acmCertArn}`);
+			send("HTTPS listener (port 443) will be configured with your ACM certificate.", "deploy");
+		}
 		if (deployConfig.env_vars) {
 			const vars = deployConfig.env_vars.split(',');
 			for (const v of vars) {
@@ -275,8 +294,10 @@ export async function handleElasticBeanstalk(
 		await runAWSCommand(createEnvArgs, ws, 'deploy');
 	}
 
-	// Wait for environment to be ready
-	send("Waiting for environment to be ready (this may take several minutes)...", 'deploy');
+	// Wait for environment to be Ready and healthy (Green or Yellow). Red/Severe = deployment failed (e.g. command timeout).
+	const HEALTH_OK = ['Green', 'Yellow'];
+	const HEALTH_BAD = ['Red', 'Severe', 'Grey'];
+	send("Waiting for environment to be ready and healthy (this may take several minutes)...", 'deploy');
 	
 	let attempts = 0;
 	const maxAttempts = 60;
@@ -293,21 +314,27 @@ export async function handleElasticBeanstalk(
 				`--region=${region}`
 			], ws, 'deploy');
 
-			const [status, health, cname] = statusOutput.trim().split(/\s+/);
+			const parts = statusOutput.trim().split(/\s+/);
+			const status = parts[0] || '';
+			const health = parts[1] || '';
+			const cname = parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
 			
-			if (status === 'Ready' && health === 'Green') {
+			if (status === 'Ready' && HEALTH_OK.includes(health) && cname) {
 				deployedUrl = `http://${cname}`;
 				break;
 			}
 			
-			if (status === 'Ready') {
-				deployedUrl = `http://${cname}`;
-				send(`Environment ready but health is ${health}. Continuing...`, 'deploy');
-				break;
+			if (status === 'Ready' && HEALTH_BAD.includes(health)) {
+				send(`Environment is Ready but health is ${health}. Deployment may have timed out (e.g. npm install/build). Check AWS EB console for logs.`, 'deploy');
+				throw new Error(
+					`Elastic Beanstalk environment health is ${health}. The deployment command likely timed out on the instance. ` +
+					`Try increasing the timeout in AWS EB configuration or check the EB environment events/logs for errors.`
+				);
 			}
 			
 			send(`Environment status: ${status}, Health: ${health} (${attempts + 1}/${maxAttempts})`, 'deploy');
-		} catch (error) {
+		} catch (error: any) {
+			if (error?.message?.includes('Elastic Beanstalk environment health')) throw error;
 			// Continue waiting
 		}
 		
@@ -316,22 +343,31 @@ export async function handleElasticBeanstalk(
 	}
 
 	if (!deployedUrl) {
-		// Try to get URL anyway
+		// After timeout: only use URL if health is actually OK
 		try {
-			const urlOutput = await runAWSCommand([
+			const statusOutput = await runAWSCommand([
 				"elasticbeanstalk", "describe-environments",
 				`--application-name=${appName}`,
 				`--environment-names=${envName}`,
-				"--query", "Environments[0].CNAME",
+				"--query", "Environments[0].[Status,Health,CNAME]",
 				"--output", "text",
 				`--region=${region}`
 			], ws, 'deploy');
-			
-			if (urlOutput.trim() && urlOutput.trim() !== 'None') {
-				deployedUrl = `http://${urlOutput.trim()}`;
+			const parts = statusOutput.trim().split(/\s+/);
+			const status = parts[0];
+			const health = parts[1] || '';
+			const cname = parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
+			if (status === 'Ready' && HEALTH_OK.includes(health) && cname) {
+				deployedUrl = `http://${cname}`;
+			} else if (status === 'Ready' && HEALTH_BAD.includes(health)) {
+				throw new Error(
+					`Elastic Beanstalk did not become healthy (health: ${health}) within the wait time. ` +
+					`The deployment command may have timed out. Check the EB environment in AWS Console for details.`
+				);
 			}
-		} catch {
-			// Ignore
+		} catch (err: any) {
+			if (err?.message?.includes('Elastic Beanstalk')) throw err;
+			// Ignore other errors
 		}
 	}
 
@@ -341,8 +377,10 @@ export async function handleElasticBeanstalk(
 	if (deployedUrl) {
 		send(`Deployment successful! Application URL: ${deployedUrl}`, 'done');
 		return deployedUrl;
-	} else {
-		send("Deployment initiated but URL not available yet. Check AWS Console.", 'done');
-		return `https://${region}.console.aws.amazon.com/elasticbeanstalk/home?region=${region}#/environment/dashboard?applicationName=${appName}&environmentName=${envName}`;
 	}
+	send("Environment did not become healthy in time. Check AWS Elastic Beanstalk console for events and instance logs.", 'deploy');
+	throw new Error(
+		"Elastic Beanstalk environment did not become healthy (Green/Yellow) within the wait time. " +
+		"Check the EB environment in AWS Console — the deployment command may have timed out (e.g. npm install or npm run build)."
+	);
 }

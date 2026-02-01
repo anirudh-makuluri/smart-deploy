@@ -61,6 +61,46 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	return targetNames[target] || target;
 }
 
+/** Sanitize a string for use as a DNS subdomain (lowercase, a-z0-9-, max 63 chars). Exported for Vercel DNS API. */
+export function sanitizeSubdomain(s: string): string {
+	const out = s
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 63);
+	return out || "app";
+}
+
+const deploymentDomain = () =>
+	(typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim()) || "";
+
+/** URL to show for "Visit" / "Open link". Prefers stored custom_url; else *.NEXT_PUBLIC_DEPLOYMENT_DOMAIN when set; else deployUrl. */
+export function getDeploymentDisplayUrl(d: { deployUrl?: string | null; custom_url?: string | null; service_name?: string; id?: string }): string | undefined {
+	const custom = (d.custom_url ?? "").trim();
+	if (custom) return custom;
+	const base = deploymentDomain();
+	if (base) {
+		const sub = sanitizeSubdomain((d.service_name ?? d.id ?? "app").toString());
+		return `https://${sub}.${base.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
+	}
+	return d.deployUrl ?? undefined;
+}
+
+/** When using NEXT_PUBLIC_DEPLOYMENT_DOMAIN, this is the URL to point DNS to in Vercel (CNAME target). */
+export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string | undefined {
+	if (!deploymentDomain()) return undefined;
+	const url = d.deployUrl?.trim();
+	if (!url) return undefined;
+	// Return host only for CNAME (user can copy or use as target)
+	try {
+		const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+		return u.hostname;
+	} catch {
+		return url;
+	}
+}
+
 
 export function parseEnvVarsToDisplay(envVarsString: string = "") {
 	return envVarsString

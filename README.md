@@ -17,6 +17,7 @@ It uses **AI to auto-analyze your codebase**, generate build/run commands, detec
 - 📡 **Live Logs** — Real-time deployment status via WebSocket
 - 🔁 **Redeploy & Edit** — Modify config and redeploy anytime
 - 🛑 **Control** — Pause, resume, or stop deployed services
+- 🌐 **Deployment domain** — All visit links use `https://{service-name}.{your-domain}` (e.g. `*.anirudh-makuluri.xyz`) via `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`
 - 💻 **Self-Hosted Dashboard** — Run SmartDeploy itself on a tiny EC2 `t3.micro` (with swap) in your own AWS account
 
 ---
@@ -162,6 +163,26 @@ Server=/cloudsql/PROJECT_ID:REGION:INSTANCE_NAME;Database=YOUR_DB;User Id=USER;P
 - **Database Migration**: You may need to run migrations after deployment to set up your database schema
 - **Credentials**: Database passwords are auto-generated and provided via environment variables
 - **Region**: GCP databases are created in `us-central1` to match Cloud Run services; AWS RDS uses your selected region (defaults to `AWS_REGION` in config)
+
+---
+
+## 🌐 Deployment domain (*.anirudh-makuluri.xyz)
+
+All **Visit** / **Open link** URLs use your domain: `https://{service-name}.{NEXT_PUBLIC_DEPLOYMENT_DOMAIN}` (e.g. `myapp.anirudh-makuluri.xyz`). The subdomain is derived from the deployment’s **service name** (sanitized for DNS). There is no per-deployment domain option.
+
+### Automatic Vercel DNS
+
+If you manage your domain in **Vercel**, you can have SmartDeploy **automatically add the CNAME** for each deployment so the subdomain points to the deployment URL (Amplify, Cloud Run, EC2, etc.):
+
+1. **Set the domain** in `.env`: `NEXT_PUBLIC_DEPLOYMENT_DOMAIN=anirudh-makuluri.xyz` and `VERCEL_DOMAIN=anirudh-makuluri.xyz` (or omit `VERCEL_DOMAIN` to use the same value).
+2. **Add `VERCEL_TOKEN`** in `.env`: create a token at [Vercel Account → Tokens](https://vercel.com/account/tokens). The domain must already be added to your Vercel project/account.
+3. **(Optional)** For team accounts, set `VERCEL_TEAM_ID=team_xxx`.
+
+After a successful deploy, the app calls the Vercel API to create (or update) a CNAME record: subdomain → deployment URL hostname. The UI shows “Added to Vercel DNS. Your site will be at https://myapp.anirudh-makuluri.xyz once DNS propagates.” If the API call fails (e.g. token missing or domain not on Vercel), the manual “In Vercel DNS: CNAME this subdomain → {target}” hint is shown so you can add the record yourself.
+
+### Manual DNS
+
+If you don’t use the Vercel API, point **each subdomain** at your DNS provider: add a **CNAME** record (e.g. `myapp`) → the **target** shown in the UI (e.g. `xxx.amplifyapp.com`). Then in your cloud provider (Amplify, Cloud Run, etc.), add the custom domain for that deployment for HTTPS.
 
 ---
 

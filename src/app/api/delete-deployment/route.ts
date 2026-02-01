@@ -85,15 +85,16 @@ export async function POST(req: NextRequest) {
 			}
 		} catch (cmdErr: unknown) {
 			const message = cmdErr instanceof Error ? cmdErr.message : String(cmdErr);
-			// Allow "not found" errors - service may already be deleted
-			if (
+			// Allow "not found" errors - service may already be deleted; still delete from DB
+			const alreadyGone =
 				message.includes("could not be found") ||
 				message.includes("NOT_FOUND") ||
 				message.includes("does not exist") ||
-				message.includes("NotFoundException")
-			) {
-				// Service already gone; still delete from DB
-			} else {
+				message.includes("NotFoundException") ||
+				message.includes("No Environment found") ||
+				message.includes("No Application found") ||
+				message.includes("InvalidParameterValue");
+			if (!alreadyGone) {
 				console.error("Failed to delete cloud service:", message);
 				return NextResponse.json(
 					{ error: "Failed to delete cloud service", details: message },

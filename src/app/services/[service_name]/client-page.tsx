@@ -2,7 +2,7 @@
 
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
-import { formatTimestamp, formatDeploymentTargetName, parseEnvVarsToStore, readDockerfile, configSnapshotFromDeployConfig } from "@/lib/utils";
+import { formatTimestamp, formatDeploymentTargetName, getDeploymentDisplayUrl, getDeploymentDnsTarget, parseEnvVarsToStore, readDockerfile, configSnapshotFromDeployConfig } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { useState } from "react";
 import * as React from "react";
@@ -28,6 +28,7 @@ import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/type
 import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
 import DeploymentHistory from "@/components/DeploymentHistory";
 import { ExternalLink, Calendar, Hash } from "lucide-react";
+import { toast } from "sonner";
 
 export default function Page({ service_name }: { service_name: string }) {
 	const { deployments, updateDeploymentById, removeDeployment, repoList } = useAppData();
@@ -35,7 +36,7 @@ export default function Page({ service_name }: { service_name: string }) {
 	const searchParams = useSearchParams();
 	const new_change = searchParams.get("new-change");
 
-	const { steps, sendDeployConfig, deployStatus, deployConfigRef, deployError, serviceLogs } = useDeployLogs(service_name);
+	const { steps, sendDeployConfig, deployStatus, deployConfigRef, deployError, vercelDnsStatus, vercelDnsError, serviceLogs } = useDeployLogs(service_name);
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
 
@@ -168,6 +169,7 @@ export default function Page({ service_name }: { service_name: string }) {
 
 		// Stop = full delete: remove Cloud Run service and DB record (no traces left)
 		if (action === "stop") {
+			const loadingId = toast.loading("Deleting deployment…");
 			fetch("/api/delete-deployment", {
 				method: "POST",
 				body: JSON.stringify({
@@ -178,10 +180,18 @@ export default function Page({ service_name }: { service_name: string }) {
 			})
 				.then((res) => res.json())
 				.then((response) => {
+					toast.dismiss(loadingId);
 					if (response.status === "success") {
 						removeDeployment(deployment.id);
+						toast.success("Deployment deleted.");
 						router.replace("/");
+					} else {
+						toast.error(response.error || response.details || "Failed to delete deployment.");
 					}
+				})
+				.catch((err) => {
+					toast.dismiss(loadingId);
+					toast.error(err?.message || "Failed to delete deployment.");
 				});
 			return;
 		}
@@ -222,20 +232,36 @@ export default function Page({ service_name }: { service_name: string }) {
 							</p>
 						</div>
 					)}
-					{deployment.deployUrl && (
-						<div>
-							<p className="text-[#94a3b8] text-xs mb-1">Live URL</p>
-							<a
-								href={deployment.deployUrl}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="flex items-center gap-1.5 text-sm text-[#14b8a6] hover:underline truncate"
-							>
-								<ExternalLink className="size-4 shrink-0" />
-								<span className="truncate">{deployment.deployUrl}</span>
-							</a>
-						</div>
-					)}
+					{(() => {
+						const displayUrl = getDeploymentDisplayUrl(deployment);
+						const dnsTarget = getDeploymentDnsTarget(deployment);
+						return displayUrl ? (
+							<div>
+								<p className="text-[#94a3b8] text-xs mb-1">Live URL</p>
+								<a
+									href={displayUrl}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center gap-1.5 text-sm text-[#14b8a6] hover:underline truncate"
+								>
+									<ExternalLink className="size-4 shrink-0" />
+									<span className="truncate">{displayUrl}</span>
+								</a>
+								{vercelDnsStatus === "adding" && (
+									<p className="text-xs text-[#94a3b8] mt-1">Adding to Vercel DNS…</p>
+								)}
+								{vercelDnsStatus === "success" && (
+									<p className="text-xs text-[#14b8a6] mt-1">Added to Vercel DNS. Available at {displayUrl} once DNS propagates.</p>
+								)}
+								{vercelDnsStatus === "error" && vercelDnsError && (
+									<p className="text-xs text-[#f59e0b] mt-1 truncate" title={vercelDnsError}>
+										Could not add to Vercel DNS: {vercelDnsError}
+										{dnsTarget && ` — CNAME → ${dnsTarget}`}
+									</p>
+								)}
+							</div>
+						) : null;
+					})()}
 					<div className="flex items-center gap-2 text-sm text-[#94a3b8]">
 						<Calendar className="size-4" />
 						Last deployed: {formatTimestamp(deployment.last_deployment)}

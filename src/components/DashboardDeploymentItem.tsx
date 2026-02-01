@@ -8,10 +8,11 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatTimestamp } from "@/lib/utils";
+import { formatTimestamp, getDeploymentDisplayUrl } from "@/lib/utils";
 import Link from "next/link";
 import { useAppData } from "@/store/useAppData";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const statusStyles: Record<string, string> = {
 	running: "bg-[#14b8a6]/20 text-[#14b8a6] border-[#14b8a6]/40",
@@ -33,6 +34,7 @@ export default function DashboardDeploymentItem({
 		// Delete = full remove: Cloud Run + DB, no traces left
 		if (action === "stop") {
 			setIsDeleting(true);
+			const loadingId = toast.loading("Deleting deployment…");
 			fetch("/api/delete-deployment", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -43,9 +45,17 @@ export default function DashboardDeploymentItem({
 			})
 				.then((res) => res.json())
 				.then((response) => {
+					toast.dismiss(loadingId);
 					if (response.status === "success") {
 						removeDeployment(deployConfig.id);
+						toast.success("Deployment deleted.");
+					} else {
+						toast.error(response.error || response.details || "Failed to delete deployment.");
 					}
+				})
+				.catch((err) => {
+					toast.dismiss(loadingId);
+					toast.error(err?.message || "Failed to delete deployment.");
 				})
 				.finally(() => setIsDeleting(false));
 			return;
@@ -95,17 +105,20 @@ export default function DashboardDeploymentItem({
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</div>
-			{deployConfig.deployUrl && (
-				<a
-					href={deployConfig.deployUrl}
-					target="_blank"
-					rel="noopener noreferrer"
-					className="flex items-center gap-1.5 text-xs text-[#14b8a6] hover:underline mt-2 truncate"
-				>
-					<ExternalLink className="size-3.5 shrink-0" />
-					<span className="truncate">{deployConfig.deployUrl}</span>
-				</a>
-			)}
+			{(() => {
+				const displayUrl = getDeploymentDisplayUrl(deployConfig);
+				return displayUrl ? (
+					<a
+						href={displayUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="flex items-center gap-1.5 text-xs text-[#14b8a6] hover:underline mt-2 truncate"
+					>
+						<ExternalLink className="size-3.5 shrink-0" />
+						<span className="truncate">{displayUrl}</span>
+					</a>
+				) : null;
+			})()}
 			{repo && (
 				<div className="mt-4 pt-4 border-t border-[#1e3a5f]/60">
 					<a

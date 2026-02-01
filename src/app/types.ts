@@ -56,6 +56,9 @@ export type DeployConfig = {
 	use_custom_dockerfile: boolean;
 	env_vars?: string;
 	deployUrl?: string,
+	/** Custom URL (e.g. https://myapp.anirudh-makuluri.xyz) when NEXT_PUBLIC_DEPLOYMENT_DOMAIN is used. */
+	custom_url?: string,
+	custom_domain?: string,
 	service_name: string,
 	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy',
 	first_deployment?: string,

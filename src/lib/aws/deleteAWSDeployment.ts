@@ -78,9 +78,12 @@ export async function deleteElasticBeanstalk(
 		]);
 	} catch (err: any) {
 		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("does not exist") && !msg.includes("NotFound")) {
-			throw err;
-		}
+		const alreadyGone =
+			msg.includes("does not exist") ||
+			msg.includes("NotFound") ||
+			msg.includes("No Environment found") ||
+			msg.includes("InvalidParameterValue");
+		if (!alreadyGone) throw err;
 	}
 
 	// Delete application (this also deletes all versions)
@@ -93,9 +96,13 @@ export async function deleteElasticBeanstalk(
 		]);
 	} catch (err: any) {
 		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("does not exist") && !msg.includes("NotFound")) {
-			throw err;
-		}
+		const alreadyGone =
+			msg.includes("does not exist") ||
+			msg.includes("NotFound") ||
+			msg.includes("No Environment found") ||
+			msg.includes("No Application found") ||
+			msg.includes("InvalidParameterValue");
+		if (!alreadyGone) throw err;
 	}
 }
 

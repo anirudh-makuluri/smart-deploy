@@ -1,5 +1,5 @@
 import { DeployConfig, DeployStep } from "@/app/types";
-import { readDockerfile } from "@/lib/utils";
+import { readDockerfile, getDeploymentDisplayUrl } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
 type SocketStatus = "connecting" | "open" | "closed" | "error";
@@ -32,6 +32,8 @@ export function useDeployLogs(serviceName?: string) {
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
 	const [deployError, setDeployError] = useState<string | null>(null);
+	const [vercelDnsStatus, setVercelDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
+	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<{timestamp : string, message ?: string}[]>([]);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
@@ -88,22 +90,62 @@ export function useDeployLogs(serviceName?: string) {
 					setDeployStatus(payload.success ? "success" : "error");
 					if (!payload.success) {
 						setDeployError(payload.error ?? "Deployment failed");
+						setVercelDnsStatus("idle");
+						setVercelDnsError(null);
 					} else {
 						setDeployError(null);
 						if (payload.deployUrl && deployConfigRef.current) {
-							deployConfigRef.current = {
+							const updated = {
 								...deployConfigRef.current,
 								deployUrl: payload.deployUrl,
-								status: "running",
+								status: "running" as const,
 								"deployed-service":
 									payload.deploymentTarget ??
 									deployConfigRef.current.deploymentTarget ??
 									deployConfigRef.current["deployed-service"],
 							};
+							const displayUrl = getDeploymentDisplayUrl(updated);
+							updated.custom_url = displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
+							deployConfigRef.current = updated;
 						}
 						setSteps((prev) =>
 							prev.map((s) => (s.id === "done" ? { ...s, status: "success" as const } : s))
 						);
+						// Automatically add CNAME to Vercel DNS when deployment domain is configured
+						if (
+							payload.deployUrl &&
+							deployConfigRef.current?.service_name &&
+							typeof process !== "undefined" &&
+							process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim()
+						) {
+							setVercelDnsStatus("adding");
+							setVercelDnsError(null);
+							fetch("/api/vercel/add-dns-record", {
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+								body: JSON.stringify({
+									deployUrl: payload.deployUrl,
+									service_name: deployConfigRef.current.service_name,
+								}),
+							})
+								.then((res) => res.json())
+								.then((data) => {
+									if (data.success) {
+										setVercelDnsStatus("success");
+										setVercelDnsError(null);
+									} else {
+										setVercelDnsStatus("error");
+										setVercelDnsError(data.error || "Failed to add to Vercel DNS");
+									}
+								})
+								.catch((err) => {
+									setVercelDnsStatus("error");
+									setVercelDnsError(err?.message || "Failed to add to Vercel DNS");
+								});
+						} else {
+							setVercelDnsStatus("idle");
+							setVercelDnsError(null);
+						}
 					}
 					break;
 				default:
@@ -251,6 +293,8 @@ export function useDeployLogs(serviceName?: string) {
 		deployConfigRef,
 		deployStatus,
 		deployError,
+		vercelDnsStatus,
+		vercelDnsError,
 		initiateServiceLogs,
 		serviceLogs,
 	};

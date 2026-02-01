@@ -14,12 +14,12 @@ import { useAppData } from "@/store/useAppData"
 import { toast } from "sonner"
 import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
 import DeploymentHistory from "@/components/DeploymentHistory";
-import { configSnapshotFromDeployConfig } from "@/lib/utils";
+import { configSnapshotFromDeployConfig, getDeploymentDisplayUrl, getDeploymentDnsTarget } from "@/lib/utils";
 
 
 export default function Page({ params }: { params: Promise<{ id: string, username: string, reponame: string }> }) {
 	const { id, username, reponame } = use(params)
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError } = useDeployLogs();
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, vercelDnsStatus, vercelDnsError } = useDeployLogs();
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -73,6 +73,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 				branch: config.branch ?? repo?.default_branch ?? "main",
 				use_custom_dockerfile: config.use_custom_dockerfile ?? false,
 				status: deployStatus === "success" ? "running" : "didnt_deploy",
+				...(config.deployUrl && { deployUrl: config.deployUrl }),
+				...(config.custom_url && { custom_url: config.custom_url }),
 			};
 			fetch("/api/update-deployments", {
 				method: "POST",
@@ -224,14 +226,36 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			<div className="w-full mx-auto p-6 flex-1 max-w-4xl">
 				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
 					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} deployError={deployError} />
-				{deployConfigRef.current?.deployUrl && (
-					<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm">
-						Deployment successful:{" "}
-						<Link className="text-[#14b8a6] hover:underline font-medium" href={deployConfigRef.current.deployUrl}>
-							Open link
-						</Link>
-					</div>
-				)}
+				{(() => {
+					const config = deployConfigRef.current ?? {};
+					const displayUrl = getDeploymentDisplayUrl(config);
+					if (!displayUrl) return null;
+					const dnsTarget = getDeploymentDnsTarget(config);
+					return displayUrl ? (
+						<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm space-y-1">
+							<div>
+								Deployment successful:{" "}
+								<Link className="text-[#14b8a6] hover:underline font-medium" href={displayUrl}>
+									Open link
+								</Link>
+							</div>
+							{vercelDnsStatus === "adding" && (
+								<p className="text-xs text-[#94a3b8]">Adding to Vercel DNS…</p>
+							)}
+							{vercelDnsStatus === "success" && (
+								<p className="text-xs text-[#14b8a6]">
+									Added to Vercel DNS. Your site will be at {displayUrl} once DNS propagates.
+								</p>
+							)}
+							{vercelDnsStatus === "error" && vercelDnsError && (
+								<p className="text-xs text-[#f59e0b] truncate" title={vercelDnsError}>
+									Could not add to Vercel DNS: {vercelDnsError}
+									{dnsTarget && ` — CNAME this subdomain → ${dnsTarget}`}
+								</p>
+							)}
+						</div>
+					) : null;
+				})()}
 				<div className="mt-8">
 					<DeploymentHistory key={historyRefreshKey} deploymentId={id} />
 				</div>
