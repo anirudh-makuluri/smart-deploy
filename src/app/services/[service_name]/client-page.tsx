@@ -2,7 +2,7 @@
 
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
-import { formatTimestamp, formatDeploymentTargetName, parseEnvVarsToStore, readDockerfile } from "@/lib/utils";
+import { formatTimestamp, formatDeploymentTargetName, parseEnvVarsToStore, readDockerfile, configSnapshotFromDeployConfig } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { useState } from "react";
 import * as React from "react";
@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/types";
 import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
+import DeploymentHistory from "@/components/DeploymentHistory";
 import { ExternalLink, Calendar, Hash } from "lucide-react";
 
 export default function Page({ service_name }: { service_name: string }) {
@@ -34,7 +35,7 @@ export default function Page({ service_name }: { service_name: string }) {
 	const searchParams = useSearchParams();
 	const new_change = searchParams.get("new-change");
 
-	const { steps, sendDeployConfig, deployStatus, deployConfigRef, serviceLogs } = useDeployLogs(service_name);
+	const { steps, sendDeployConfig, deployStatus, deployConfigRef, deployError, serviceLogs } = useDeployLogs(service_name);
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
 
@@ -46,6 +47,8 @@ export default function Page({ service_name }: { service_name: string }) {
 	const repo = repoList.find((rep) => rep.id == deployment?.id);
 
 	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
+	const shouldRecordHistoryRef = React.useRef(false);
+	const [historyRefreshKey, setHistoryRefreshKey] = React.useState(0);
 
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
@@ -55,7 +58,26 @@ export default function Page({ service_name }: { service_name: string }) {
 		if (deployStatus === "error") {
 			setIsDeploying(false);
 		}
-	}, [deployStatus]);
+		// Record deployment history once when deploy completes (success or failure)
+		if (deployment && shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
+			shouldRecordHistoryRef.current = false;
+			const config = deployConfigRef.current;
+			fetch("/api/deployment-history", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					deploymentId: deployment.id,
+					success: deployStatus === "success",
+					steps,
+					configSnapshot: configSnapshotFromDeployConfig(config),
+					deployUrl: config.deployUrl,
+				}),
+			})
+				.then((res) => res.json())
+				.then((data) => { if (data?.status === "success") setHistoryRefreshKey((k) => k + 1); })
+				.catch((err) => console.error("Failed to save deployment history", err));
+		}
+	}, [deployStatus, deployment, steps]);
 
 	React.useEffect(() => {
 		if (!dockerfile) return;
@@ -130,6 +152,7 @@ export default function Page({ service_name }: { service_name: string }) {
 
 		if (!deployment) return;
 
+		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
 		setNewChanges(false);
 
@@ -308,7 +331,11 @@ export default function Page({ service_name }: { service_name: string }) {
 						isDeploying={isDeploying}
 						serviceLogs={serviceLogs}
 						steps={steps}
+						deployError={deployError}
 					/>
+					<div className="mt-8 max-w-3xl">
+						<DeploymentHistory key={historyRefreshKey} deploymentId={deployment.id} />
+					</div>
 				</div>
 			</div>
 		</div>

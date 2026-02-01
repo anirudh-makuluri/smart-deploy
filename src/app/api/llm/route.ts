@@ -115,24 +115,34 @@ async function callGemini(prompt: string): Promise<string> {
 	return response.text();
 }
 
-/** Calls a local LLM via OpenAI-compatible API (e.g. Ollama, LM Studio, llama.cpp server). */
 async function callLocalLLM(prompt: string): Promise<string> {
 	const baseUrl = process.env.LOCAL_LLM_BASE_URL || "";
 	if (!baseUrl) {
 		throw new Error("Missing LOCAL_LLM_BASE_URL env var (required when NODE_ENV=local)");
 	}
-	const model = process.env.LOCAL_LLM_MODEL || "llama3.2";
-	const res = await fetch(baseUrl, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			model,
-			prompt: prompt,
-			stream: false,
-			temperature: 0.2,
-			max_tokens: 8192,
-		}),
-	});
+	const model = process.env.LOCAL_LLM_MODEL || "mistral";
+	let res: Response;
+	try {
+		res = await fetch(baseUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				model,
+				prompt: prompt,
+				stream: false,
+				temperature: 0.2,
+				max_tokens: 8192,
+			}),
+		});
+	} catch (err: unknown) {
+		const cause = err instanceof Error && "cause" in err ? (err.cause as NodeJS.ErrnoException) : null;
+		if (cause?.code === "ECONNREFUSED") {
+			throw new Error(
+				`Local LLM server unreachable at ${baseUrl}. Is Ollama or your LLM server running? (ECONNREFUSED)`
+			);
+		}
+		throw err;
+	}
 	if (!res.ok) {
 		const errText = await res.text();
 		throw new Error(`Local LLM returned ${res.status}: ${errText.slice(0, 200)}`);

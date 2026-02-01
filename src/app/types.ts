@@ -138,3 +138,16 @@ export type AIGenProjectMetadata = {
 	service_compatibility?: ServiceCompatibility;
 	final_notes: FinalNotes;
 };
+
+/** One deployment attempt: success or failure, with logs for history and "Why did it fail?". */
+export type DeploymentHistoryEntry = {
+	id: string;
+	deploymentId: string;
+	timestamp: string;
+	success: boolean;
+	/** Step-by-step deploy logs. */
+	steps: DeployStep[];
+	/** Snapshot of config used (no File/binary). */
+	configSnapshot: Record<string, unknown>;
+	deployUrl?: string;
+};

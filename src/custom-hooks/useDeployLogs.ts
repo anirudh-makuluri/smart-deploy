@@ -27,14 +27,15 @@ function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName ?: string) {
+export function useDeployLogs(serviceName?: string) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
+	const [deployError, setDeployError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<{timestamp : string, message ?: string}[]>([]);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
-
+	const wasDeployingRef = useRef(false);
 	const wsRef = useRef<WebSocket | null>(null);
 
 	useEffect(() => {
@@ -42,29 +43,36 @@ export function useDeployLogs(serviceName ?: string) {
 		wsRef.current = ws;
 
 		ws.onopen = () => {
-			console.log("Connected to Server: 4001")
+			console.log("Connected to Server: 4001");
 			setSocketStatus("open");
 			initiateServiceLogs();
 		};
 
 		ws.onmessage = (e) => {
-			const data = JSON.parse(e.data);
+			let data: { type: string; payload?: any };
+			try {
+				data = JSON.parse(e.data);
+			} catch {
+				// Server sent plain text (e.g. "Error: ...") - treat as deploy failure
+				const msg = typeof e.data === "string" ? e.data : "Deployment failed";
+				setDeployStatus("error");
+				setDeployError(msg.startsWith("Error:") ? msg.slice(6).trim() : msg);
+				return;
+			}
 			const type = data.type;
-			const payload = data.payload;
-
+			const payload = data.payload ?? {};
 
 			switch (type) {
-				case 'initial_logs':
-					processServiceLogs(payload.logs);
+				case "initial_logs":
+					processServiceLogs(payload.logs ?? []);
 					break;
-				case 'stream_logs':
-					processServiceLogs([payload.log]);
+				case "stream_logs":
+					processServiceLogs([payload.log].filter(Boolean));
 					break;
-				case 'deploy_logs':
+				case "deploy_logs":
 					deployLogs(payload);
 					break;
-				case 'deploy_steps':
-					// Server sends step list for this target; merge to preserve existing logs (e.g. auth, clone)
+				case "deploy_steps":
 					setSteps((prev) => {
 						const byId = new Map(prev.map((s) => [s.id, s]));
 						return (payload.steps || []).map(({ id, label }: { id: string; label: string }) => ({
@@ -75,19 +83,24 @@ export function useDeployLogs(serviceName ?: string) {
 						}));
 					});
 					break;
-				case 'deploy_complete':
+				case "deploy_complete":
+					wasDeployingRef.current = false;
 					setDeployStatus(payload.success ? "success" : "error");
-					if (payload.success && payload.deployUrl && deployConfigRef.current) {
-						deployConfigRef.current = { 
-							...deployConfigRef.current, 
-							deployUrl: payload.deployUrl,
-							status: "running",
-							// Save deployed-service to persist actual deployed service type (even if deploymentTarget changes later)
-							"deployed-service": payload.deploymentTarget || deployConfigRef.current.deploymentTarget || deployConfigRef.current["deployed-service"]
-						};
-					}
-					// Mark done step as success when deploy completed successfully
-					if (payload.success) {
+					if (!payload.success) {
+						setDeployError(payload.error ?? "Deployment failed");
+					} else {
+						setDeployError(null);
+						if (payload.deployUrl && deployConfigRef.current) {
+							deployConfigRef.current = {
+								...deployConfigRef.current,
+								deployUrl: payload.deployUrl,
+								status: "running",
+								"deployed-service":
+									payload.deploymentTarget ??
+									deployConfigRef.current.deploymentTarget ??
+									deployConfigRef.current["deployed-service"],
+							};
+						}
 						setSteps((prev) =>
 							prev.map((s) => (s.id === "done" ? { ...s, status: "success" as const } : s))
 						);
@@ -100,12 +113,19 @@ export function useDeployLogs(serviceName ?: string) {
 
 		ws.onerror = () => {
 			setSocketStatus("error");
-			setDeployStatus("error")
+			if (wasDeployingRef.current) {
+				setDeployStatus("error");
+				setDeployError("Connection lost — deployment may have failed. Check if the deploy server is running.");
+			}
 		};
 
 		ws.onclose = () => {
 			setSocketStatus("closed");
-			setDeployStatus("error")
+			if (wasDeployingRef.current) {
+				setDeployStatus("error");
+				setDeployError("Connection lost — deployment may have failed. Check if the deploy server is running.");
+			}
+			wasDeployingRef.current = false;
 		};
 
 		return () => {
@@ -120,8 +140,9 @@ export function useDeployLogs(serviceName ?: string) {
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string) => {
 		deployConfigRef.current = deployConfig;
+		wasDeployingRef.current = true;
+		setDeployError(null);
 		setDeployStatus("running");
-		// Reset steps to default so server's deploy_steps can replace or merge; avoids showing previous deploy's steps
 		setSteps([...defaultSteps]);
 
 		const file = deployConfig.dockerfile;
@@ -222,5 +243,15 @@ export function useDeployLogs(serviceName ?: string) {
 		});
 	}
 
-	return { steps, socketStatus, sendDeployConfig, openSocket, deployConfigRef, deployStatus, initiateServiceLogs, serviceLogs };
+	return {
+		steps,
+		socketStatus,
+		sendDeployConfig,
+		openSocket,
+		deployConfigRef,
+		deployStatus,
+		deployError,
+		initiateServiceLogs,
+		serviceLogs,
+	};
 }

@@ -1,4 +1,4 @@
-import { AIGenProjectMetadata, DeploymentTarget } from "@/app/types";
+import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/types";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -161,5 +161,12 @@ export function sanitizeAndParseAIResponse(raw: any): AIGenProjectMetadata | nul
 		console.error("❌ Failed to sanitize/parse AI response:", err);
 		return null;
 	}
+}
+
+/** Build a serializable config snapshot for deployment history (no File/binary). */
+export function configSnapshotFromDeployConfig(config: DeployConfig | null): Record<string, unknown> {
+	if (!config) return {};
+	const { dockerfile, dockerfileInfo, dockerfileContent, ...rest } = config;
+	return { ...rest } as Record<string, unknown>;
 }
 

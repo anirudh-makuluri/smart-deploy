@@ -1,5 +1,5 @@
 import { db } from "@/lib/firebaseAdmin";
-import { DeployConfig, repoType } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, repoType } from "./app/types";
 
 
 export const dbHelper = {
@@ -180,7 +180,60 @@ export const dbHelper = {
 		await batch.commit();
 
 		console.log(`✅ Synced ${repoList.length} repos for user: ${userID}`);
-	}
+	},
 
+	addDeploymentHistory: async function (
+		deploymentId: string,
+		userID: string,
+		entry: Omit<DeploymentHistoryEntry, "id" | "deploymentId">
+	) {
+		console.log("deploymentId", deploymentId);
+		console.log("userID", userID);
+		console.log("entry", entry);
+		try {
+			const deploymentRef = db.collection("deployments").doc(deploymentId);
+			const deploymentDoc = await deploymentRef.get();
+			if (!deploymentDoc.exists) return { error: "Deployment not found" };
+			const data = deploymentDoc.data();
+			if (data?.ownerID !== userID) return { error: "Unauthorized" };
 
+			const historyRef = deploymentRef.collection("history").doc();
+			const fullEntry: DeploymentHistoryEntry = {
+				id: historyRef.id,
+				deploymentId,
+				...entry,
+			};
+			await historyRef.set(fullEntry);
+			return { success: true, id: historyRef.id };
+		} catch (error) {
+			console.error("addDeploymentHistory error:", error);
+			return { error };
+		}
+	},
+
+	getDeploymentHistory: async function (deploymentId: string, userID: string) {
+		try {
+			const deploymentRef = db.collection("deployments").doc(deploymentId);
+			const deploymentDoc = await deploymentRef.get();
+			if (!deploymentDoc.exists) return { error: "Deployment not found" };
+			const data = deploymentDoc.data();
+			if (data?.ownerID !== userID) return { error: "Unauthorized" };
+
+			const snapshot = await deploymentRef
+				.collection("history")
+				.orderBy("timestamp", "desc")
+				.get();
+
+			const history: DeploymentHistoryEntry[] = snapshot.docs.map((doc) => ({
+				id: doc.id,
+				deploymentId,
+				...doc.data(),
+			})) as DeploymentHistoryEntry[];
+
+			return { history };
+		} catch (error) {
+			console.error("getDeploymentHistory error:", error);
+			return { error };
+		}
+	},
 }

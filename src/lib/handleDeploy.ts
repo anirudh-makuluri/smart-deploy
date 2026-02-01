@@ -200,12 +200,11 @@ async function handleAWSDeploy(
 
 	const target = savedTarget;
 	const reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
-	
+
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
+
 	send(`Deploying to: ${target.toUpperCase()}`, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
 	send(reason, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
-
-	// Tell client which steps to show for this target (merge-friendly: preserves existing logs for auth/clone)
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
 
 	// Handle database provisioning if needed
 	let dbConnectionString: string | undefined;

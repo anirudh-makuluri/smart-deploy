@@ -12,12 +12,14 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs"
 import { parseEnvVarsToStore } from "@/lib/utils"
 import { useAppData } from "@/store/useAppData"
 import { toast } from "sonner"
-import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs"
+import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
+import DeploymentHistory from "@/components/DeploymentHistory";
+import { configSnapshotFromDeployConfig } from "@/lib/utils";
 
 
 export default function Page({ params }: { params: Promise<{ id: string, username: string, reponame: string }> }) {
 	const { id, username, reponame } = use(params)
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus } = useDeployLogs();
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError } = useDeployLogs();
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
 	const { data: session } = useSession();
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -28,6 +30,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const [isLoadingRepo, setIsLoadingRepo] = useState(false);
 	// Use existing deployment (e.g. from a previous Smart Project Scan) to pre-fill form and metadata
 	const existingDeployment = deployments.find((dep) => dep.id === id);
+	const shouldRecordHistoryRef = React.useRef(false);
+	const [historyRefreshKey, setHistoryRefreshKey] = React.useState(0);
 
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
@@ -37,7 +41,60 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		if (deployStatus === "error") {
 			setIsDeploying(false);
 		}
-	}, [deployStatus]);
+		// Record deployment history once when deploy completes (success or failure)
+		if (shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
+			shouldRecordHistoryRef.current = false;
+			const config = deployConfigRef.current;
+			console.log("config", config);
+			const recordHistory = () =>
+				fetch("/api/deployment-history", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						deploymentId: id,
+						success: deployStatus === "success",
+						steps: steps ?? [],
+						configSnapshot: configSnapshotFromDeployConfig(config),
+						deployUrl: config.deployUrl ?? "",
+					}),
+				})
+					.then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+					.then(({ ok, data }) => {
+						if (ok && data?.status === "success") setHistoryRefreshKey((k) => k + 1);
+						else if (!ok) console.error("Deployment history failed:", data?.message ?? data);
+					})
+					.catch((err) => console.error("Failed to save deployment history", err));
+
+			// Ensure deployment doc exists before recording history (e.g. failed first deploy from repo page)
+			const minimalDeployment: DeployConfig = {
+				id,
+				url: config.url ?? repo?.html_url ?? "",
+				service_name: config.service_name ?? repo?.name ?? "app",
+				branch: config.branch ?? repo?.default_branch ?? "main",
+				use_custom_dockerfile: config.use_custom_dockerfile ?? false,
+				status: deployStatus === "success" ? "running" : "didnt_deploy",
+			};
+			fetch("/api/update-deployments", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(minimalDeployment),
+			})
+				.then((res) => res.json())
+				.then((data) => {
+					if (data?.status === "success") {
+						updateDeploymentById(minimalDeployment);
+						recordHistory();
+					} else {
+						// Deployment doc may already exist (e.g. from Smart Project Scan); try recording
+						recordHistory();
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to ensure deployment doc:", err);
+					recordHistory();
+				});
+		}
+	}, [deployStatus, id, steps, repo]);
 
 	// Fetch repo if not found in repoList (public repo)
 	React.useEffect(() => {
@@ -148,6 +205,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 
 		console.log("Form Data", payload);
 
+		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
 		sendDeployConfig(payload, session?.accessToken);
 
@@ -163,9 +221,9 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	return (
 		<div className="landing-bg min-h-svh flex flex-col text-[#e2e8f0]">
 			<Header />
-			<div className="w-full mx-auto p-6 flex-1">
+			<div className="w-full mx-auto p-6 flex-1 max-w-4xl">
 				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
-					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} />
+					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} deployError={deployError} />
 				{deployConfigRef.current?.deployUrl && (
 					<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm">
 						Deployment successful:{" "}
@@ -174,6 +232,9 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 						</Link>
 					</div>
 				)}
+				<div className="mt-8">
+					<DeploymentHistory key={historyRefreshKey} deploymentId={id} />
+				</div>
 			</div>
 		</div>
 	);

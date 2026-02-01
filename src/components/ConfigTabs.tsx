@@ -79,10 +79,10 @@ const exampleProjectMetadata: AIGenProjectMetadata = {
 }
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, editMode, isDeploying, id, serviceLogs, steps, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, editMode: boolean, isDeploying: boolean, id: string,
-			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig
+			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig, deployError?: string | null
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -345,6 +345,11 @@ export default function ConfigTabs(
 							</Card>
 						)
 					}
+					<Alert className="my-4 border-[#1e3a5f]/60 bg-[#132f4c]/40 text-[#94a3b8]">
+						<AlertDescription className="text-sm">
+							AI can make mistakes. Please verify the detected settings (commands, framework, etc.) before deploying for a higher success rate.
+						</AlertDescription>
+					</Alert>
 				</>
 			)}
 			<Tabs defaultValue="env_config">
@@ -631,8 +636,13 @@ export default function ConfigTabs(
 				</TabsContent>
 				<TabsContent value="deploy_logs">
 					<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Deploy Logs</p>
+					{deployError && (
+						<Alert className="mb-4 border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
+							<AlertTitle className="text-[#fca5a5]">Deployment failed</AlertTitle>
+							<AlertDescription>{deployError}</AlertDescription>
+						</Alert>
+					)}
 					<DeploymentAccordion steps={steps} />
-
 				</TabsContent>
 			</Tabs>
 		</>
