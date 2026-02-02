@@ -226,36 +226,18 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			<div className="w-full mx-auto p-6 flex-1 max-w-4xl">
 				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
 					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} deployError={deployError} />
-				{(() => {
-					const config = deployConfigRef.current ?? {};
-					const displayUrl = getDeploymentDisplayUrl(config);
-					if (!displayUrl) return null;
-					const dnsTarget = getDeploymentDnsTarget(config);
-					return displayUrl ? (
+				{
+					deployStatus === "success" && (
 						<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm space-y-1">
 							<div>
 								Deployment successful:{" "}
-								<Link className="text-[#14b8a6] hover:underline font-medium" href={displayUrl}>
+								<Link target="_blank" rel="noopener noreferrer" className="text-[#14b8a6] hover:underline font-medium" href={deployConfigRef.current?.custom_url ?? deployConfigRef.current?.deployUrl ?? ""}>
 									Open link
 								</Link>
 							</div>
-							{vercelDnsStatus === "adding" && (
-								<p className="text-xs text-[#94a3b8]">Adding to Vercel DNS…</p>
-							)}
-							{vercelDnsStatus === "success" && (
-								<p className="text-xs text-[#14b8a6]">
-									Added to Vercel DNS. Your site will be at {displayUrl} once DNS propagates.
-								</p>
-							)}
-							{vercelDnsStatus === "error" && vercelDnsError && (
-								<p className="text-xs text-[#f59e0b] truncate" title={vercelDnsError}>
-									Could not add to Vercel DNS: {vercelDnsError}
-									{dnsTarget && ` — CNAME this subdomain → ${dnsTarget}`}
-								</p>
-							)}
 						</div>
-					) : null;
-				})()}
+					)
+				}
 				<div className="mt-8">
 					<DeploymentHistory key={historyRefreshKey} deploymentId={id} />
 				</div>

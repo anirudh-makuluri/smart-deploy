@@ -24,7 +24,7 @@ export async function runCommandLiveWithOutput(cmd: string, args: string[]): Pro
 
 		child.stderr.on("data", (data) => {
 			const str = data.toString();
-			output += str; // ✅ Add this line to capture stderr output too
+			output += str;
 			process.stderr.write(str);
 		});
 
@@ -97,7 +97,7 @@ export async function runCommandLiveWithWebSocket(
 
 		child.on("exit", (code) => {
 			if (code === 0) {
-				sendWS(`✅ Done: ${cmd}`);
+				sendWS(`Done: ${cmd}`);
 				resolve(output);
 			}
 			else {

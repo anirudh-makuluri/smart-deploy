@@ -38,12 +38,12 @@ export async function GET(req: NextRequest) {
 			if(response.data) {
 				repoList = response.data
 				await dbHelper.syncUserRepos(userID, repoList);
-				console.log("✅ Repos added for user");
+				console.log("Repos added for user");
 			} else {
 				console.log("Error occured while trying to add repos to user")
 			}			
 		} else {
-			console.log("ℹ️ Repos already exist for user");
+			console.log("Repos already exist for user");
   			reposSnapshot.forEach((doc) => repoList.push(doc.data() as repoType));
 		}
 

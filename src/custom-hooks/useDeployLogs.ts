@@ -104,44 +104,26 @@ export function useDeployLogs(serviceName?: string) {
 									deployConfigRef.current.deploymentTarget ??
 									deployConfigRef.current["deployed-service"],
 							};
-							const displayUrl = getDeploymentDisplayUrl(updated);
-							updated.custom_url = displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
+							// Use backend-provided customUrl when Vercel DNS was added there
+							updated.custom_url =
+								typeof payload.customUrl === "string" && payload.customUrl.trim()
+									? payload.customUrl.trim()
+									: (() => {
+											const displayUrl = getDeploymentDisplayUrl(updated);
+											return displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
+										})();
 							deployConfigRef.current = updated;
 						}
 						setSteps((prev) =>
 							prev.map((s) => (s.id === "done" ? { ...s, status: "success" as const } : s))
 						);
-						// Automatically add CNAME to Vercel DNS when deployment domain is configured
-						if (
-							payload.deployUrl &&
-							deployConfigRef.current?.service_name &&
-							typeof process !== "undefined" &&
-							process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim()
-						) {
-							setVercelDnsStatus("adding");
+						// Vercel DNS status from backend (added in handleDeploy before deploy_complete)
+						if (payload.vercelDnsAdded === true) {
+							setVercelDnsStatus("success");
 							setVercelDnsError(null);
-							fetch("/api/vercel/add-dns-record", {
-								method: "POST",
-								headers: { "Content-Type": "application/json" },
-								body: JSON.stringify({
-									deployUrl: payload.deployUrl,
-									service_name: deployConfigRef.current.service_name,
-								}),
-							})
-								.then((res) => res.json())
-								.then((data) => {
-									if (data.success) {
-										setVercelDnsStatus("success");
-										setVercelDnsError(null);
-									} else {
-										setVercelDnsStatus("error");
-										setVercelDnsError(data.error || "Failed to add to Vercel DNS");
-									}
-								})
-								.catch((err) => {
-									setVercelDnsStatus("error");
-									setVercelDnsError(err?.message || "Failed to add to Vercel DNS");
-								});
+						} else if (payload.vercelDnsError) {
+							setVercelDnsStatus("error");
+							setVercelDnsError(payload.vercelDnsError);
 						} else {
 							setVercelDnsStatus("idle");
 							setVercelDnsError(null);
@@ -270,7 +252,6 @@ export function useDeployLogs(serviceName?: string) {
 		setSteps((prev) => {
 			const existing = prev.find((s) => s.id === id);
 			if (!existing) {
-				// Server sent a step id we don't have yet (e.g. detect, database, amplify); append so we don't drop logs
 				return [...prev, { id, label: id, logs: [msg], status: "in_progress" as const }];
 			}
 			return prev.map((step) =>

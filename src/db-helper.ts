@@ -47,6 +47,7 @@ export const dbHelper = {
 			const deploymentDoc = await deploymentRef.get();
 
 			if (deployConfig.status === 'stopped') {
+				await dbHelper.deleteDeploymentHistory(deploymentId);
 				await deploymentRef.delete();
 
 				// Remove deployment ID from user's deploymentIds
@@ -95,6 +96,19 @@ export const dbHelper = {
 		}
 	},
 
+	/** Delete all documents in deployment's history subcollection (Firestore does not delete subcollections automatically). */
+	deleteDeploymentHistory: async function (deploymentId: string) {
+		const historyRef = db.collection("deployments").doc(deploymentId).collection("history");
+		const batchSize = 500;
+		let snapshot = await historyRef.limit(batchSize).get();
+		while (!snapshot.empty) {
+			const batch = db.batch();
+			snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+			await batch.commit();
+			snapshot = await historyRef.limit(batchSize).get();
+		}
+	},
+
 	deleteDeployment: async function (deploymentId: string, userID: string) {
 		try {
 			if (!deploymentId || !userID) {
@@ -113,6 +127,7 @@ export const dbHelper = {
 				return { error: "Unauthorized: deployment does not belong to user" };
 			}
 
+			await dbHelper.deleteDeploymentHistory(deploymentId);
 			await deploymentRef.delete();
 
 			const userRef = db.collection("users").doc(userID);
@@ -179,7 +194,7 @@ export const dbHelper = {
 
 		await batch.commit();
 
-		console.log(`✅ Synced ${repoList.length} repos for user: ${userID}`);
+		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
 	},
 
 	addDeploymentHistory: async function (

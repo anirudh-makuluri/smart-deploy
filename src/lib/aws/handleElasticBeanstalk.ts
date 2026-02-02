@@ -142,10 +142,6 @@ export async function handleElasticBeanstalk(
 	const versionLabel = `v-${Date.now()}`;
 	const bucketName = `smartdeploy-eb-${config.AWS_ACCESS_KEY_ID.slice(-8).toLowerCase()}`;
 
-	// Setup AWS credentials
-	send("Authenticating with AWS...", 'auth');
-	await setupAWSCredentials(ws);
-
 	// Detect language and get solution stack
 	const language = detectLanguage(appDir);
 	const solutionStack = getEBSolutionStack(language);
@@ -154,7 +150,7 @@ export async function handleElasticBeanstalk(
 		throw new Error(`Language ${language} is not supported by Elastic Beanstalk`);
 	}
 
-	send(`Detected ${language} application. Using solution stack: ${solutionStack}`, 'detect');
+	send(`✅ Detected ${language} application. Using solution stack: ${solutionStack}`, 'detect');
 
 	const runCmd = deployConfig.run_cmd || (language === 'node' ? 'npm start' : 'python app.py');
 	if (language === 'node') validateNodeApp(appDir, runCmd);
@@ -166,16 +162,19 @@ export async function handleElasticBeanstalk(
 	// Ensure S3 bucket exists for deployment artifacts
 	send("Setting up S3 bucket for deployment artifacts...", 'setup');
 	await ensureS3Bucket(bucketName, region, ws);
+	send("✅ S3 bucket setup completed", 'setup');
 
 	// Create deployment bundle
 	send("Creating deployment bundle...", 'bundle');
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "eb-deploy-"));
 	const zipPath = path.join(tmpDir, `${appName}.zip`);
 	await createZipBundle(appDir, zipPath, ws);
+	send("✅ Deployment bundle created", 'bundle');
 
 	// Upload to S3
 	const s3Key = `${appName}/${versionLabel}.zip`;
 	await uploadToS3(zipPath, bucketName, s3Key, ws);
+	send("✅ Deployment bundle uploaded to S3", 'upload');
 
 	// Create Elastic Beanstalk application
 	// Use key=value with quoted value so description with spaces (e.g. "SmartDeploy: portfolio-website") is not split by shell
@@ -375,10 +374,10 @@ export async function handleElasticBeanstalk(
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 
 	if (deployedUrl) {
-		send(`Deployment successful! Application URL: ${deployedUrl}`, 'done');
+		send(`✅ Deployment successful! Application URL: ${deployedUrl}`, 'done');
 		return deployedUrl;
 	}
-	send("Environment did not become healthy in time. Check AWS Elastic Beanstalk console for events and instance logs.", 'deploy');
+	send("❌ Environment did not become healthy in time. Check AWS Elastic Beanstalk console for events and instance logs.", 'deploy');
 	throw new Error(
 		"Elastic Beanstalk environment did not become healthy (Green/Yellow) within the wait time. " +
 		"Check the EB environment in AWS Console — the deployment command may have timed out (e.g. npm install or npm run build)."

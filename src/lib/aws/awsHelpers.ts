@@ -181,7 +181,7 @@ export async function createZipBundle(
 		archive.finalize();
 	});
 
-	send(`Deployment bundle created: ${outputPath}`, 'bundle');
+	send(`✅ Deployment bundle created: ${outputPath}`, 'bundle');
 	return outputPath;
 }
 
@@ -288,7 +288,8 @@ export async function ensureSecurityGroup(
 }
 
 /**
- * Generates a unique resource name based on repo name and timestamp
+ * Generates a stable resource name from repo name and optional suffix.
+ * Uniqueness for deploy artifacts (e.g. S3 zip) comes from version label, not this name.
  */
 export function generateResourceName(repoName: string, suffix?: string): string {
 	const timestamp = Date.now().toString(36);

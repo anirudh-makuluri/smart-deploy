@@ -18,6 +18,7 @@ import { createRDSInstance } from "./aws/handleRDS";
 
 // GCP imports (for Cloud SQL)
 import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
+import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 
 /**
  * Main deployment handler - routes to AWS (default) or GCP
@@ -38,9 +39,19 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 	console.log("in handle deploy");
 
+	const target = deployConfig.deploymentTarget;
+	if (!target) {
+		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
+	}
+	if (!AWS_DEPLOY_STEPS[target]) {
+		throw new Error(`Unknown deployment target: ${target}`);
+	}
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
+	send(`Deploying to: ${target.toUpperCase()}`, 'clone');
+
 	// Determine cloud provider (default to AWS)
 	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
-	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'auth');
+	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'clone');
 
 	const repoUrl = deployConfig.url;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
@@ -57,10 +68,11 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 		const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
 
+		send("✅ Clone repository completed", 'clone');
 		// Clean Next.js build cache if present (to avoid corrupted .next directory issues)
 		const nextDir = path.join(appDir, ".next");
 		if (fs.existsSync(nextDir)) {
-			send("🧹 Cleaning existing Next.js build cache...", 'clone');
+			send("Cleaning existing Next.js build cache...", 'detect');
 			try {
 				fs.rmSync(nextDir, { recursive: true, force: true });
 			} catch {
@@ -69,12 +81,12 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		}
 
 		// Analyze application structure
-		send("Analyzing application structure...", 'clone');
+		send("Analyzing application structure...", 'detect');
 		const multiServiceConfig = detectMultiService(appDir);
 		const dbConfig = detectDatabase(appDir);
 
 		if (dbConfig) {
-			send(`Detected ${dbConfig.type.toUpperCase()} database requirement`, 'detect');
+			send(`✅ Detected ${dbConfig.type.toUpperCase()} database requirement`, 'detect');
 		}
 
 		// Route to appropriate cloud provider
@@ -96,25 +108,27 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 /** Step definitions per AWS target so the client shows accurate labels */
 const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string }[]> = {
 	"amplify": [
-		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },		
 		{ id: "build", label: "🔨 Build" },
 		{ id: "amplify", label: "🚀 Deploy to Amplify" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"elastic-beanstalk": [
-		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Detecting stack" },
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "detect", label: "🔍 Analyzing app" },
 		{ id: "setup", label: "⚙️ Setup (S3, app)" },
 		{ id: "bundle", label: "📦 Create bundle" },
+		{ id: "upload", label: "📤 Upload to S3" },
 		{ id: "deploy", label: "🚀 Deploy to Elastic Beanstalk" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"ecs": [
-		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "database", label: "🗄️ Database (RDS)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, ECR, S3, CodeBuild)" },
 		{ id: "docker", label: "🐳 Build image (CodeBuild)" },
@@ -122,18 +136,18 @@ const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string 
 		{ id: "done", label: "✅ Done" },
 	],
 	"ec2": [
-		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "database", label: "🗄️ Database (RDS)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"cloud-run": [
-		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
 		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
 		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
@@ -147,16 +161,35 @@ function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	}
 }
 
-function sendDeployComplete(ws: any, deployUrl: string | undefined, success: boolean, deploymentTarget?: string) {
+function sendDeployComplete(
+	ws: any,
+	deployUrl: string | undefined,
+	success: boolean,
+	deploymentTarget?: string,
+	vercelDns?: AddVercelDnsResult | null
+) {
 	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ 
-			type: "deploy_complete", 
-			payload: { 
-				deployUrl: deployUrl ?? null, 
-				success,
-				deploymentTarget: deploymentTarget ?? null
-			} 
-		}));
+		const payload: {
+			deployUrl: string | null;
+			success: boolean;
+			deploymentTarget: string | null;
+			vercelDnsAdded?: boolean;
+			vercelDnsError?: string | null;
+			customUrl?: string | null;
+		} = {
+			deployUrl: deployUrl ?? null,
+			success,
+			deploymentTarget: deploymentTarget ?? null,
+		};
+		if (vercelDns) {
+			payload.vercelDnsAdded = vercelDns.success;
+			if (vercelDns.success) {
+				payload.customUrl = vercelDns.customUrl ?? null;
+			} else {
+				payload.vercelDnsError = vercelDns.error ?? null;
+			}
+		}
+		ws.send(JSON.stringify({ type: "deploy_complete", payload }));
 	}
 }
 
@@ -189,6 +222,7 @@ async function handleAWSDeploy(
 	// Setup AWS credentials
 	send("Authenticating with AWS...", 'auth');
 	await setupAWSCredentials(ws);
+	send("✅ AWS credentials authenticated", 'auth');
 
 	// Use saved target from Smart Project Scan
 	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
@@ -199,12 +233,8 @@ async function handleAWSDeploy(
 	}
 
 	const target = savedTarget;
-	const reason = deployConfig.deployment_target_reason || 'From Smart Project Scan';
 
 	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
-
-	send(`Deploying to: ${target.toUpperCase()}`, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
-	send(reason, AWS_DEPLOY_STEPS[target][2]?.id ?? 'deploy');
 
 	// Handle database provisioning if needed
 	let dbConnectionString: string | undefined;
@@ -226,8 +256,6 @@ async function handleAWSDeploy(
 
 	let result: string;
 	let deployUrl: string | undefined;
-
-	console.log("target: ", target);
 
 	// Route to appropriate AWS service
 	switch (target) {
@@ -288,8 +316,21 @@ async function handleAWSDeploy(
 			throw new Error(`Unknown deployment target: ${target}`);
 	}
 
+	send("Adding Vercel CNAME...", 'done');
+	// Add Vercel CNAME when deploy succeeded and domain is configured
+	let vercelResult: AddVercelDnsResult | null = null;
+	if (deployUrl && deployConfig.service_name?.trim()) {
+		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name);
+	}
+	
+	if(vercelResult && vercelResult.success) {
+		send(`✅ Vercel CNAME added successfully: ${vercelResult.customUrl}`, 'done');
+	} else {
+		send(`❌ Vercel CNAME addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
+	}
+
 	// Notify client of success and URL
-	sendDeployComplete(ws, deployUrl, true, target);
+	sendDeployComplete(ws, deployUrl, true, target, vercelResult);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -361,7 +402,12 @@ async function handleGCPDeploy(
 		}
 		send(summary, 'done');
 		const firstGcpUrl = serviceUrls.entries().next().value;
-		sendDeployComplete(ws, firstGcpUrl ? firstGcpUrl[1] : undefined, true, "cloud-run");
+		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
+		let vercelResult: AddVercelDnsResult | null = null;
+		if (gcpDeployUrl && deployConfig.service_name?.trim()) {
+			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name);
+		}
+		sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -530,7 +576,11 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 
 	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
 	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
-	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run");
+	let vercelResult: AddVercelDnsResult | null = null;
+	if (gcpDeployUrl && deployConfig.service_name?.trim()) {
+		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name);
+	}
+	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });
