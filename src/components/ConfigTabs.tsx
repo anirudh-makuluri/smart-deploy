@@ -600,7 +600,7 @@ export default function ConfigTabs(
 							<div className="w-full mt-2">
 								{editMode ? (
 									<div className="space-y-3">
-										<div className="h-[300px] overflow-y-auto space-y-2">
+										<div className="max-h-[300px] overflow-y-auto space-y-2">
 										{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
 											<div key={index} className="flex flex-wrap items-center gap-2">
 												<div className="flex-1 min-w-[140px] space-y-1">
