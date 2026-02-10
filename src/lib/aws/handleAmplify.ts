@@ -197,9 +197,6 @@ export async function handleAmplify(
 	const appName = generateResourceName(repoName, "amplify").slice(0, 255);
 	const branchName = sanitizeBranchName(deployConfig.branch?.trim() || "main");
 
-	send("Authenticating with AWS...", "auth");
-	await setupAWSCredentials(ws);
-
 	// Install dependencies
 	const installCmd = deployConfig.install_cmd?.trim() || "npm install";
 	const [installExec, ...installArgs] = installCmd.split(/\s+/).filter(Boolean);

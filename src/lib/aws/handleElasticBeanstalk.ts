@@ -82,6 +82,8 @@ option_settings:
     PORT: "${port}"
   aws:elasticbeanstalk:container:nodejs:
     NodeCommand: ""
+  aws:elasticbeanstalk:command:
+    Timeout: "1800"
 `.trim();
 	fs.writeFileSync(path.join(ebextDir, "options.config"), optionsConfig);
 
@@ -90,6 +92,13 @@ option_settings:
 
 	try {
 		const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string>; scripts?: { build?: string } };
+		const hasNext = pkg.dependencies?.next ?? pkg.devDependencies?.next;
+		const hasBuild = pkg.scripts?.build;
+		if (hasNext && !hasBuild) {
+			throw new Error(
+				"Next.js app must have a \"build\" script in package.json (e.g. \"build\": \"next build\") for Elastic Beanstalk SSR deployment."
+			);
+		}
 		// EB platform runs "npm install --production" (skips devDependencies). Set NPM_CONFIG_PRODUCTION=false
 		// and run full "npm install" so devDeps (e.g. next) are available.
 		const fullInstallConfig = `
@@ -100,19 +109,18 @@ container_commands:
 `.trim();
 		fs.writeFileSync(path.join(ebextDir, "00_npm_install.config"), fullInstallConfig);
 
-		// Next.js: run "npm run build" so .next exists before "next start".
-		const hasNext = pkg.dependencies?.next ?? pkg.devDependencies?.next;
-		const hasBuild = pkg.scripts?.build;
+		// Next.js: run "npm run build" so .next exists before "next start". Use NODE_OPTIONS for memory (build can be heavy).
 		if (hasNext && hasBuild) {
 			const buildConfig = `
 container_commands:
   01_npm_run_build:
-    command: "npm run build"
+    command: "NODE_OPTIONS=--max-old-space-size=4096 npm run build"
     leader_only: true
 `.trim();
 			fs.writeFileSync(path.join(ebextDir, "01_build.config"), buildConfig);
 		}
-	} catch {
+	} catch (e) {
+		if (e instanceof Error && e.message?.includes("Next.js app must have")) throw e;
 		// ignore invalid package.json
 	}
 }

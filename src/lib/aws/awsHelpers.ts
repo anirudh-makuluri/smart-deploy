@@ -173,9 +173,9 @@ export async function createZipBundle(
 		archive.pipe(out);
 		// false = directory contents at archive root; archiver uses forward slashes so Linux unzip works
 		archive.directory(sourceDir, false, (entry: { name: string }) => {
-			// Exclude node_modules and .git; EB runs npm install on the instance
+			// Exclude node_modules, .git, .next; EB runs npm install and npm run build on the instance
 			const n = entry.name.replace(/\\/g, "/");
-			if (/^(node_modules|\.git)(\/|$)/.test(n)) return false;
+			if (/^(node_modules|\.git|\.next)(\/|$)/.test(n)) return false;
 			return entry;
 		});
 		archive.finalize();

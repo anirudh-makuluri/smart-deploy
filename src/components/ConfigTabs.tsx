@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parseEnvVarsToDisplay, sanitizeAndParseAIResponse } from "@/lib/utils";
+import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, sanitizeAndParseAIResponse } from "@/lib/utils";
 import { selectDeploymentTargetFromMetadata, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/table"
 import DeploymentAccordion from "@/components/DeploymentAccordion";
 import ServiceLogs from "@/components/ServiceLogs";
-import { RotateCw } from "lucide-react";
+import { RotateCw, Upload, Trash2, Plus } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, DeployStep, repoType } from "@/app/types";
@@ -38,6 +38,7 @@ import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { formatDeploymentTargetName } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 
 export type FormSchemaType = z.infer<typeof formSchema>
@@ -86,6 +87,10 @@ export default function ConfigTabs(
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
+	const envFileInputRef = React.useRef<HTMLInputElement>(null);
+	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
+		parseEnvVarsToDisplay(deployment?.env_vars ?? "")
+	);
 
 	const [isAiFetching, setAiFetching] = useState(false);
 	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
@@ -160,6 +165,7 @@ export default function ConfigTabs(
 			workdir: deployment.workdir ?? "",
 			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
 		});
+		setEnvEntries(parseEnvVarsToDisplay(deployment.env_vars ?? ""));
 		if (deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes) {
 			setProjectMetadata({
 				core_deployment_info: deployment.core_deployment_info,
@@ -365,8 +371,10 @@ export default function ConfigTabs(
 				<TabsContent value="env_config">
 					<Form {...form}>
 						<form onSubmit={form.handleSubmit((data) => {
+							const envString = buildEnvVarsString(envEntries);
 							onSubmit({
 								...data,
+								env_vars: envString,
 								...(projectMetadata ?? {}), // merge only if not null
 								...(deploymentAnalysis && { 
 									deploymentTarget: deploymentAnalysis.target, 
@@ -591,17 +599,107 @@ export default function ConfigTabs(
 							<p className="font-bold text-xl whitespace-nowrap mt-10 text-[#e2e8f0]">Environment Variables</p>
 							<div className="w-full mt-2">
 								{editMode ? (
-									<FormField
-										control={form.control}
-										name="env_vars"
-										render={({ field }) => (
-											<FormItem>
-												<FormControl>
-													<Textarea {...field} rows={4} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
+									<div className="space-y-3">
+										<div className="h-[300px] overflow-y-auto space-y-2">
+										{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
+											<div key={index} className="flex flex-wrap items-center gap-2">
+												<div className="flex-1 min-w-[140px] space-y-1">
+													<Label className="text-xs text-[#94a3b8]">Key</Label>
+													<Input
+														placeholder="e.g. NODE_ENV"
+														value={row.name}
+														onChange={(e) => {
+															const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
+															const next = displayRows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r));
+															setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
+														}}
+														onPaste={(e) => {
+															const pasted = e.clipboardData?.getData("text");
+															if (pasted && /\n/.test(pasted)) {
+																e.preventDefault();
+																const parsed = parseEnvLinesToEntries(pasted);
+																const existingKeys = new Set((envEntries.length > 0 ? envEntries : []).filter((r) => r.name.trim()).map((r) => r.name));
+																const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
+																setEnvEntries([...(envEntries.length > 0 ? envEntries : []), ...toAdd]);
+															}
+														}}
+														className="bg-[#0f172a]/80 border-[#1e3a5f]/60 text-[#e2e8f0] placeholder:text-[#64748b]"
+													/>
+												</div>
+												<div className="flex-1 min-w-[140px] space-y-1">
+													<Label className="text-xs text-[#94a3b8]">Value</Label>
+													<Input
+														placeholder="e.g. production"
+														value={row.value}
+														onChange={(e) => {
+															const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
+															const next = displayRows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
+															setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
+														}}
+														className="bg-[#0f172a]/80 border-[#1e3a5f]/60 text-[#e2e8f0] placeholder:text-[#64748b]"
+														autoComplete="off"
+													/>
+												</div>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													className="mt-6 text-[#94a3b8] hover:text-[#e2e8f0] shrink-0"
+													onClick={() => {
+														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
+														const next = displayRows.filter((_, i) => i !== index);
+														setEnvEntries(next.length ? next : []);
+													}}
+													aria-label="Remove variable"
+												>
+													<Trash2 className="h-4 w-4" />
+												</Button>
+											</div>
+										))}
+										</div>
+										<div className="flex flex-wrap items-center gap-2 pt-1">
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												className="border-[#1e3a5f]/60 text-[#e2e8f0] hover:bg-[#1e3a5f]/30"
+												onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
+											>
+												<Plus className="h-4 w-4 mr-1" />
+												Add variable
+											</Button>
+											<input
+												ref={envFileInputRef}
+												type="file"
+												accept=".env,.env.*,text/plain"
+												className="hidden"
+												onChange={(e) => {
+													const file = e.target.files?.[0];
+													if (!file) return;
+													const reader = new FileReader();
+													reader.onload = () => {
+														const text = (reader.result as string) ?? "";
+														const parsed = parseEnvLinesToEntries(text);
+														const existingKeys = new Set(envEntries.filter((r) => r.name.trim()).map((r) => r.name));
+														const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
+														setEnvEntries([...envEntries, ...toAdd]);
+													};
+													reader.readAsText(file);
+													e.target.value = "";
+												}}
+											/>
+											<Button
+												type="button"
+												variant="outline"
+												size="sm"
+												className="border-[#1e3a5f]/60 text-[#e2e8f0] hover:bg-[#1e3a5f]/30"
+												onClick={() => envFileInputRef.current?.click()}
+											>
+												<Upload className="h-4 w-4 mr-1" />
+												Import .env
+											</Button>
+										</div>
+									</div>
 								) : (
 									<>
 										{deployment?.env_vars ? (

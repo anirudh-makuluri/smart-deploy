@@ -121,6 +121,26 @@ export function parseEnvVarsToStore(envString: string): string {
 		.join(",");
 }
 
+/** Parse newline-separated .env-style content (e.g. paste or uploaded file) into key/value entries. */
+export function parseEnvLinesToEntries(text: string): { name: string; value: string }[] {
+	return text
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.map((line) => {
+			const eq = line.indexOf("=");
+			if (eq === -1) return { name: line, value: "" };
+			return { name: line.slice(0, eq).trim(), value: line.slice(eq + 1).trim() };
+		})
+		.filter((e) => e.name.length > 0);
+}
+
+/** Build env vars string from entries (newline-separated KEY=value) for form/deploy. */
+export function buildEnvVarsString(entries: { name: string; value: string }[]): string {
+	return entries
+		.filter((e) => e.name.trim().length > 0)
+		.map((e) => `${e.name.trim()}=${e.value}`)
+		.join("\n");
+}
 
 export function readDockerfile(file: File): Promise<string> {
 	return new Promise((resolve, reject) => {
