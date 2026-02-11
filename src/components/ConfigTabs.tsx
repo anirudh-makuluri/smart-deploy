@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, sanitizeAndParseAIResponse } from "@/lib/utils";
+import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, parseEnvVarsToStore, sanitizeAndParseAIResponse } from "@/lib/utils";
 import { selectDeploymentTargetFromMetadata, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
@@ -79,15 +79,18 @@ const exampleProjectMetadata: AIGenProjectMetadata = {
 	}
 }
 
+const AUTO_SAVE_DEBOUNCE_MS = 500;
+
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError }:
 		{
-			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, editMode: boolean, isDeploying: boolean, id: string,
+			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, onConfigChange?: (partial: Partial<DeployConfig>) => void, editMode: boolean, isDeploying: boolean, id: string,
 			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig, deployError?: string | null
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
 	const envFileInputRef = React.useRef<HTMLInputElement>(null);
+	const lastSavedSnapshotRef = React.useRef<string | null>(null);
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment?.env_vars ?? "")
 	);
@@ -135,11 +138,11 @@ export default function ConfigTabs(
 			url: repo?.html_url,
 			service_name: service_name || repo?.name,
 			branch: deployment?.branch || "main",
-			install_cmd: deployment?.install_cmd || "",
-			build_cmd: deployment?.build_cmd || "",
-			run_cmd: deployment?.run_cmd || "",
+			install_cmd: deployment?.core_deployment_info?.install_cmd || "",
+			build_cmd: deployment?.core_deployment_info?.build_cmd || "",
+			run_cmd: deployment?.core_deployment_info?.run_cmd || "",
 			env_vars: deployment?.env_vars || "",
-			workdir: deployment?.workdir || "",
+			workdir: deployment?.core_deployment_info?.workdir || "",
 			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
 		},
 	})
@@ -158,11 +161,11 @@ export default function ConfigTabs(
 			url: repo?.html_url ?? deployment.url,
 			service_name: deployment.service_name || service_name || repo?.name,
 			branch: deployment.branch || "main",
-			install_cmd: deployment.install_cmd ?? "",
-			build_cmd: deployment.build_cmd ?? "",
-			run_cmd: deployment.run_cmd ?? "",
+			install_cmd: deployment.core_deployment_info?.install_cmd ?? "",
+			build_cmd: deployment.core_deployment_info?.build_cmd ?? "",
+			run_cmd: deployment.core_deployment_info?.run_cmd ?? "",
 			env_vars: deployment.env_vars ?? "",
-			workdir: deployment.workdir ?? "",
+			workdir: deployment.core_deployment_info?.workdir ?? "",
 			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
 		});
 		setEnvEntries(parseEnvVarsToDisplay(deployment.env_vars ?? ""));
@@ -180,7 +183,70 @@ export default function ConfigTabs(
 				warnings: [],
 			});
 		}
+		// Initialize "last saved" snapshot so we don't send a request until user actually changes something
+		const initialPartial: Partial<DeployConfig> = {
+			id: deployment.id,
+			url: deployment.url ?? repo?.html_url ?? "",
+			service_name: (deployment.service_name || service_name || repo?.name) ?? "",
+			branch: deployment.branch ?? "main",
+			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
+			env_vars: deployment.env_vars ?? "",
+			...(deployment.deploymentTarget && isDeploymentTarget(deployment.deploymentTarget) && {
+				deploymentTarget: deployment.deploymentTarget,
+				deployment_target_reason: deployment.deployment_target_reason,
+			}),
+			...(deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes && {
+				core_deployment_info: deployment.core_deployment_info,
+				features_infrastructure: deployment.features_infrastructure,
+				final_notes: deployment.final_notes,
+			}),
+		};
+		lastSavedSnapshotRef.current = JSON.stringify(initialPartial);
 	}, [deployment, repo?.html_url, service_name, repo?.name]);
+
+	// Auto-save config to DB only when something actually changed
+	const onConfigChangeRef = React.useRef(onConfigChange);
+	onConfigChangeRef.current = onConfigChange;
+	const watchedForm = form.watch();
+	useEffect(() => {
+		if (!onConfigChangeRef.current || !deployment?.id) return;
+		const timer = setTimeout(() => {
+			const values = form.getValues();
+			// Merge user-edited form fields into core_deployment_info
+			const baseCoreInfo = projectMetadata?.core_deployment_info ?? deployment?.core_deployment_info;
+			const mergedCoreInfo = baseCoreInfo
+				? {
+						...baseCoreInfo,
+						...(values.install_cmd != null && { install_cmd: values.install_cmd }),
+						...(values.run_cmd != null && { run_cmd: values.run_cmd }),
+						...(values.workdir != null && { workdir: values.workdir || null }),
+					}
+				: undefined;
+
+			const partial: Partial<DeployConfig> = {
+				id: deployment.id,
+				url: values.url,
+				service_name: values.service_name,
+				branch: values.branch,
+				use_custom_dockerfile: values.use_custom_dockerfile,
+				env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
+				...(deploymentAnalysis && {
+					deploymentTarget: deploymentAnalysis.target,
+					deployment_target_reason: deploymentAnalysis.reason,
+				}),
+				...(mergedCoreInfo && { core_deployment_info: mergedCoreInfo }),
+				...(projectMetadata && {
+					features_infrastructure: projectMetadata.features_infrastructure,
+					final_notes: projectMetadata.final_notes,
+				}),
+			};
+			const snapshot = JSON.stringify(partial);
+			if (lastSavedSnapshotRef.current === snapshot) return;
+			lastSavedSnapshotRef.current = snapshot;
+			onConfigChangeRef.current?.(partial);
+		}, AUTO_SAVE_DEBOUNCE_MS);
+		return () => clearTimeout(timer);
+	}, [watchedForm, envEntries, deploymentAnalysis, projectMetadata, deployment?.id]);
 
 	function handleAIBtn() {
 		setAiFetching(true);
@@ -201,7 +267,7 @@ export default function ConfigTabs(
 				const core_deployment_info = parsed_response?.core_deployment_info;
 				if (core_deployment_info) {
 					form.setValue('install_cmd', core_deployment_info.install_cmd);
-					form.setValue('build_cmd', core_deployment_info.build_cmd ?? undefined);
+					form.setValue('build_cmd', core_deployment_info.build_cmd);
 					form.setValue('run_cmd', core_deployment_info.run_cmd);
 					form.setValue('workdir', core_deployment_info.workdir ?? '');
 				}
@@ -444,7 +510,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.install_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.install_cmd}</span>
 								)}
 							</div>
 							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
@@ -465,7 +531,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.build_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.build_cmd}</span>
 								)}
 							</div>
 							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
@@ -486,7 +552,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.run_cmd}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.run_cmd}</span>
 								)}
 							</div>
 							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
@@ -542,7 +608,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.workdir || '-'}</span>
+									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
 								)}
 							</div>
 							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
@@ -713,8 +779,10 @@ export default function ConfigTabs(
 												<TableBody>
 													{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
 														<TableRow key={idx} className="border-[#1e3a5f]/40 hover:bg-[#1e3a5f]/30">
-															<TableCell className="text-[#94a3b8]">{env.name}</TableCell>
-															<TableCell className="text-[#e2e8f0]">{env.value}</TableCell>
+															<TableCell className="text-[#94a3b8] max-w-[100px] truncate">{env.name}</TableCell>
+															<TableCell className="text-[#e2e8f0] font-mono">
+																{"*".repeat(Math.min(env.value.length, 25))}
+															</TableCell>
 														</TableRow>
 													))}
 												</TableBody>
@@ -737,7 +805,7 @@ export default function ConfigTabs(
 					{deployError && (
 						<Alert className="mb-4 border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
 							<AlertTitle className="text-[#fca5a5]">Deployment failed</AlertTitle>
-							<AlertDescription>{deployError}</AlertDescription>
+							<AlertDescription className="overflow-x-auto">{deployError}</AlertDescription>
 						</Alert>
 					)}
 					<DeploymentAccordion steps={steps} />

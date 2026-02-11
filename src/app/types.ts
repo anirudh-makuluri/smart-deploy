@@ -45,43 +45,83 @@ export type AWSDeploymentTarget = 'amplify' | 'elastic-beanstalk' | 'ecs' | 'ec2
 export type GCPDeploymentTarget = 'cloud-run';
 export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
 
+// ── Per-service deployment details (stored after deploy; reused on redeploy) ──
+
+export type EC2DeployDetails = {
+	instanceId: string;
+	publicIp: string;
+	vpcId: string;
+	subnetId: string;
+	securityGroupId: string;
+	amiId: string;
+};
+
+export type ECSDeployDetails = {
+	clusterName: string;
+	clusterArn: string;
+	/** ECS service names (e.g. ["my-app-svc"]) */
+	serviceNames: string[];
+	vpcId: string;
+	subnetIds: string[];
+	securityGroupId: string;
+};
+
+export type AmplifyDeployDetails = {
+	appId: string;
+	appName: string;
+	branchName: string;
+};
+
+export type ElasticBeanstalkDeployDetails = {
+	appName: string;
+	envName: string;
+	s3Bucket: string;
+};
+
+export type CloudRunDeployDetails = {
+	// Expand with service name, region, etc. when needed
+};
+
+// ── Main deployment config ──
+
 export type DeployConfig = {
-	id: string,
+	id: string;
 	url: string;
 	branch: string;
-	install_cmd?: string;
-	build_cmd?: string;
-	run_cmd?: string;
-	workdir?: string;
 	use_custom_dockerfile: boolean;
 	env_vars?: string;
-	deployUrl?: string,
+	deployUrl?: string;
 	/** Custom URL (e.g. https://myapp.anirudh-makuluri.xyz) when NEXT_PUBLIC_DEPLOYMENT_DOMAIN is used. */
-	custom_url?: string,
-	custom_domain?: string,
-	service_name: string,
-	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy',
-	first_deployment?: string,
-	last_deployment?: string,
-	revision?: number
-	dockerfile?: File,
+	custom_url?: string;
+	custom_domain?: string;
+	service_name: string;
+	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy';
+	first_deployment?: string;
+	last_deployment?: string;
+	revision?: number;
+	dockerfile?: File;
 	dockerfileInfo?: {
-		name: string,
-		type: string,
-		content: string,
-	},
-	dockerfileContent?: string
+		name: string;
+		type: string;
+		content: string;
+	};
+	dockerfileContent?: string;
 	core_deployment_info?: CoreDeploymentInfo;
 	features_infrastructure?: FeaturesInfrastructure;
 	final_notes?: FinalNotes;
-	
+
 	// Cloud provider configuration
 	cloudProvider?: CloudProvider;
 	deploymentTarget?: DeploymentTarget;
 	deployment_target_reason?: string;
 	awsRegion?: string;
-	// Actual deployed service type (persists even if deploymentTarget changes on redeploy)
-	"deployed-service"?: DeploymentTarget;
+
+	// Per-service deployment details (populated after deploy, persisted for redeploy)
+	ec2?: EC2DeployDetails;
+	ecs?: ECSDeployDetails;
+	amplify?: AmplifyDeployDetails;
+	elasticBeanstalk?: ElasticBeanstalkDeployDetails;
+	cloudRun?: CloudRunDeployDetails;
 }
 
 export type DeployStep = {
@@ -92,11 +132,11 @@ export type DeployStep = {
 }
 
 
-type CoreDeploymentInfo = {
+export type CoreDeploymentInfo = {
 	language: string;
 	framework: string;
 	install_cmd: string;
-	build_cmd: string | null;
+	build_cmd: string;
 	run_cmd: string;
 	workdir: string | null;
 	port?: number;

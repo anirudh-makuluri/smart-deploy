@@ -99,10 +99,13 @@ export function useDeployLogs(serviceName?: string) {
 								...deployConfigRef.current,
 								deployUrl: payload.deployUrl,
 								status: "running" as const,
-								"deployed-service":
+								deploymentTarget:
 									payload.deploymentTarget ??
-									deployConfigRef.current.deploymentTarget ??
-									deployConfigRef.current["deployed-service"],
+									deployConfigRef.current.deploymentTarget,
+								...(payload.ec2 != null && { ec2: payload.ec2 }),
+								...(payload.ecs != null && { ecs: payload.ecs }),
+								...(payload.amplify != null && { amplify: payload.amplify }),
+								...(payload.elasticBeanstalk != null && { elasticBeanstalk: payload.elasticBeanstalk }),
 							};
 							// Use backend-provided customUrl when Vercel DNS was added there
 							updated.custom_url =

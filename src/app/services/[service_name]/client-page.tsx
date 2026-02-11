@@ -131,13 +131,18 @@ export default function Page({ service_name }: { service_name: string }) {
 		}
 	) {
 		if (!deployment) return;
+		const baseCoreInfo = data.core_deployment_info ?? deployment.core_deployment_info;
 		const merged: DeployConfig = {
 			...deployment,
-			install_cmd: data.install_cmd ?? deployment.install_cmd,
-			build_cmd: data.build_cmd ?? deployment.build_cmd,
-			run_cmd: data.run_cmd ?? deployment.run_cmd,
-			workdir: data.workdir ?? deployment.workdir,
-			core_deployment_info: data.core_deployment_info ?? deployment.core_deployment_info,
+			core_deployment_info: baseCoreInfo
+				? {
+						...baseCoreInfo,
+						...(data.install_cmd != null && { install_cmd: data.install_cmd }),	
+						...(data.build_cmd != null && { build_cmd: data.build_cmd }),
+						...(data.run_cmd != null && { run_cmd: data.run_cmd }),
+						...(data.workdir != null && { workdir: data.workdir }),
+					}
+				: deployment.core_deployment_info,
 			features_infrastructure: data.features_infrastructure ?? deployment.features_infrastructure,
 			final_notes: data.final_notes ?? deployment.final_notes,
 			deploymentTarget: data.deploymentTarget ?? deployment.deploymentTarget,
@@ -224,14 +229,14 @@ export default function Page({ service_name }: { service_name: string }) {
 							{deployment.status}
 						</span>
 					</div>
-					{(deployment["deployed-service"] || deployment.deploymentTarget) && (
-						<div>
-							<p className="text-[#94a3b8] text-xs mb-1">Deployed Service</p>
-							<p className="text-sm font-medium text-[#e2e8f0]">
-								{formatDeploymentTargetName(deployment["deployed-service"] || deployment.deploymentTarget)}
-							</p>
-						</div>
-					)}
+				{deployment.deploymentTarget && (
+					<div>
+						<p className="text-[#94a3b8] text-xs mb-1">Deployed Service</p>
+						<p className="text-sm font-medium text-[#e2e8f0]">
+							{formatDeploymentTargetName(deployment.deploymentTarget)}
+						</p>
+					</div>
+				)}
 					{(() => {
 						const displayUrl = getDeploymentDisplayUrl(deployment);
 						const dnsTarget = getDeploymentDnsTarget(deployment);
@@ -350,6 +355,10 @@ export default function Page({ service_name }: { service_name: string }) {
 						editMode={editMode}
 						onSubmit={onSubmit}
 						onScanComplete={onScanComplete}
+						onConfigChange={(partial) => {
+							if (!deployment) return;
+							updateDeploymentById({ ...deployment, ...partial });
+						}}
 						service_name={service_name}
 						repo={repo}
 						deployment={deployment}

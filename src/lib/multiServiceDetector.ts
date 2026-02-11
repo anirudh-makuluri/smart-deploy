@@ -23,6 +23,7 @@ export interface MultiServiceConfig {
  * Detects if a docker-compose.yml file exists and parses it
  */
 export function detectDockerCompose(appDir: string): MultiServiceConfig | null {
+	console.log("detectDockerCompose", appDir);
 	const composeFiles = [
 		"docker-compose.yml",
 		"docker-compose.yaml",
@@ -32,16 +33,22 @@ export function detectDockerCompose(appDir: string): MultiServiceConfig | null {
 
 	for (const file of composeFiles) {
 		const composePath = path.join(appDir, file);
+		
 		if (fs.existsSync(composePath)) {
+			console.log("composePath", composePath);
 			try {
 				const content = fs.readFileSync(composePath, "utf-8");
 				const compose = yaml.load(content) as any;
+
+				console.log("compose", compose);
 
 				if (compose && compose.services) {
 					const services: ServiceDefinition[] = [];
 
 					for (const [serviceName, serviceConfig] of Object.entries(compose.services as any)) {
 						const config = serviceConfig as any;
+
+						console.log("serviceConfig", serviceConfig);
 						
 						// Skip database services (we'll handle them separately)
 						if (isDatabaseService(serviceName, config)) {

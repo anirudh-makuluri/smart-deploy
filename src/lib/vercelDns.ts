@@ -14,6 +14,44 @@ export type AddVercelDnsResult =
 	| { success: true; customUrl: string }
 	| { success: false; error: string };
 
+export type AddVercelDnsOptions = {
+	/**
+	 * Used to decide whether EC2 should use an A record (IP) instead of a CNAME (hostname).
+	 * If omitted, we fall back to choosing A when the deployUrl hostname is an IPv4 address.
+	 */
+	deploymentTarget?: string | null;
+	/**
+	 * If present, treat conflicts as an update for the same deployment:
+	 * delete the previous record (same subdomain) and recreate it with the new target.
+	 */
+	previousCustomUrl?: string | null;
+};
+
+function isValidIpv4(host: string): boolean {
+	const parts = host.trim().split(".");
+	if (parts.length !== 4) return false;
+	return parts.every((p) => {
+		if (!/^\d+$/.test(p)) return false;
+		const n = Number(p);
+		return n >= 0 && n <= 255;
+	});
+}
+
+function getSubdomainFromCustomUrl(customUrl: string, baseDomain: string): string | null {
+	try {
+		const u = new URL(customUrl.startsWith("http") ? customUrl : `https://${customUrl}`);
+		const host = u.hostname.toLowerCase();
+		const base = baseDomain.toLowerCase();
+		if (!host.endsWith(`.${base}`)) return null;
+		const prefix = host.slice(0, -(base.length + 1)); // remove ".baseDomain"
+		// Only support a single-label subdomain (what we create)
+		if (!prefix || prefix.includes(".")) return null;
+		return prefix;
+	} catch {
+		return null;
+	}
+}
+
 
 function sanitizeSubdomain(s: string): string {
 		const out = s
@@ -26,13 +64,14 @@ function sanitizeSubdomain(s: string): string {
 	}
 
 /**
- * Add or update a CNAME record in Vercel DNS for the given deploy URL and service name.
+ * Add or update a DNS record in Vercel DNS for the given deploy URL and service name.
  * Call from backend (e.g. handleDeploy) after a successful deploy.
  * Returns success: false with error message if not configured or API fails.
  */
 export async function addVercelDnsRecord(
 	deployUrl: string,
-	serviceName: string
+	serviceName: string,
+	options?: AddVercelDnsOptions
 ): Promise<AddVercelDnsResult> {
 	const token = (process.env.VERCEL_TOKEN || "").trim();
 	const domain = (
@@ -60,101 +99,125 @@ export async function addVercelDnsRecord(
 		return { success: false, error: "Invalid deployUrl" };
 	}
 
-	const subdomain = sanitizeSubdomain(name);
 	const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+	const previousSubdomain =
+		typeof options?.previousCustomUrl === "string" && options.previousCustomUrl.trim()
+			? getSubdomainFromCustomUrl(options.previousCustomUrl.trim(), baseDomain)
+			: null;
+	const baseSubdomain = sanitizeSubdomain(name);
+	const subdomain = previousSubdomain || baseSubdomain;
+
+	// EC2 targets are commonly raw IPv4 addresses → use an A record.
+	const shouldUseARecord = isValidIpv4(targetHost);
+	const recordType: "A" | "CNAME" = shouldUseARecord ? "A" : "CNAME";
 
 	const headers: Record<string, string> = {
 		Authorization: `Bearer ${token}`,
 		"Content-Type": "application/json",
 	};
 
-	const createUrl = new URL(
-		`${VERCEL_API_BASE}/v2/domains/${encodeURIComponent(baseDomain)}/records`
-	);
+	const createUrl = new URL(`${VERCEL_API_BASE}/v2/domains/${encodeURIComponent(baseDomain)}/records`);
+	const listUrl = new URL(`${VERCEL_API_BASE}/v4/domains/${encodeURIComponent(baseDomain)}/records`);
 
-	try {
-		const createRes = await fetch(createUrl.toString(), {
+	async function listRecords(): Promise<any[]> {
+		const listRes = await fetch(listUrl.toString(), { headers });
+		if (!listRes.ok) return [];
+		const listData = await listRes.json();
+		return Array.isArray(listData.records) ? listData.records : Array.isArray(listData) ? listData : [];
+	}
+
+	function recordNameMatches(r: { name?: string }, wanted: string): boolean {
+		// Vercel sometimes represents apex as "" (we never use apex here, but keep parity with old code)
+		return r?.name === wanted || (r?.name === "" && wanted === baseDomain);
+	}
+
+	function getRecordId(r: any): string | null {
+		return (r?.id ?? r?.uid) ? String(r.id ?? r.uid) : null;
+	}
+
+	async function deleteRecordById(recordId: string): Promise<boolean> {
+		const delUrl = `${VERCEL_API_BASE}/v1/domains/records/${encodeURIComponent(recordId)}`;
+		const delRes = await fetch(delUrl, { method: "DELETE", headers });
+		return delRes.ok;
+	}
+
+	async function createRecord(recordName: string): Promise<{ ok: true; customUrl: string } | { ok: false; status: number; errMsg: string; errBody: string }> {
+		const res = await fetch(createUrl.toString(), {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
-				type: "CNAME",
-				name: subdomain,
+				type: recordType,
+				name: recordName,
 				value: targetHost,
 				ttl: 60,
 				comment: "SmartDeploy",
 			}),
 		});
-
-		if (createRes.ok) {
-			const customUrl = `https://${subdomain}.${baseDomain}`;
-			return { success: true, customUrl };
+		if (res.ok) {
+			return { ok: true, customUrl: `https://${recordName}.${baseDomain}` };
 		}
-
-		const errBody = await createRes.text();
+		const errBody = await res.text();
 		let errJson: { error?: { message?: string } } = {};
 		try {
 			errJson = JSON.parse(errBody);
 		} catch {
 			// ignore
 		}
+		return {
+			ok: false,
+			status: res.status,
+			errMsg: (errJson.error?.message || "").toLowerCase(),
+			errBody,
+		};
+	}
 
-		const errMsg = (errJson.error?.message || "").toLowerCase();
+	try {
+		// First attempt: create record for the preferred subdomain (previousCustomUrl subdomain if present)
+		const first = await createRecord(subdomain);
+		if (first.ok) return { success: true, customUrl: first.customUrl };
+
 		const isConflict =
-			createRes.status === 400 ||
-			createRes.status === 409 ||
-			errMsg.includes("already exists");
+			first.status === 400 ||
+			first.status === 409 ||
+			first.errMsg.includes("already exists");
 
-		if (isConflict) {
-			const listUrl = new URL(
-				`${VERCEL_API_BASE}/v4/domains/${encodeURIComponent(baseDomain)}/records`
-			);
-			const listRes = await fetch(listUrl.toString(), { headers });
-			if (!listRes.ok) {
-				return {
-					success: false,
-					error:
-						errJson.error?.message ||
-						"Failed to create or update DNS record",
-				};
-			}
-
-			const listData = await listRes.json();
-			const records = Array.isArray(listData.records)
-				? listData.records
-				: Array.isArray(listData)
-					? listData
-					: [];
-			const existing = records.find(
-				(r: { name?: string; recordType?: string; type?: string }) =>
-					(r.name === subdomain || (r.name === "" && subdomain === baseDomain)) &&
-					(r.recordType === "CNAME" || r.type === "CNAME")
-			);
-			const recordId =
-				(existing as { id?: string })?.id ??
-				(existing as { uid?: string })?.uid;
-			if (recordId) {
-				const updateUrl = `${VERCEL_API_BASE}/v1/domains/records/${encodeURIComponent(recordId)}`;
-				const updateRes = await fetch(updateUrl, {
-					method: "PATCH",
-					headers,
-					body: JSON.stringify({
-						name: subdomain,
-						type: "CNAME",
-						value: targetHost,
-						ttl: 60,
-					}),
-				});
-				if (updateRes.ok) {
-					const customUrl = `https://${subdomain}.${baseDomain}`;
-					return { success: true, customUrl };
-				}
-			}
+		if (!isConflict) {
+			return { success: false, error: "Vercel API error" };
 		}
 
-		return {
-			success: false,
-			error: errJson.error?.message || "Vercel API error",
-		};
+		// Conflict path:
+		// - If this deployment already had a custom URL, treat as update:
+		//   delete existing record(s) for that subdomain and recreate with new target.
+		// - Otherwise, create a unique subdomain by appending -{random} and retry.
+		const records = await listRecords();
+
+		if (previousSubdomain) {
+			const toDelete = records.filter((r: any) => recordNameMatches(r, subdomain));
+			for (const r of toDelete) {
+				const id = getRecordId(r);
+				if (id) {
+					await deleteRecordById(id);
+				}
+			}
+			const recreated = await createRecord(subdomain);
+			if (recreated.ok) return { success: true, customUrl: recreated.customUrl };
+			return { success: false, error: "Failed to recreate DNS record after deleting the previous one" };
+		}
+
+		// New deployment + name conflict: try suffixed names
+		for (let attempt = 0; attempt < 6; attempt++) {
+			const rand = Math.floor(1000 + Math.random() * 9000);
+			const candidate = sanitizeSubdomain(`${baseSubdomain}-${rand}`);
+
+			// Avoid re-trying names we already have in the domain
+			const alreadyTaken = records.some((r: any) => recordNameMatches(r, candidate));
+			if (alreadyTaken) continue;
+
+			const created = await createRecord(candidate);
+			if (created.ok) return { success: true, customUrl: created.customUrl };
+		}
+
+		return { success: false, error: `DNS name '${baseSubdomain}' already exists; failed to find an available suffix` };
 	} catch (error) {
 		const message =
 			error instanceof Error ? error.message : "Failed to add DNS record";

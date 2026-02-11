@@ -103,14 +103,16 @@ export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string
 
 
 export function parseEnvVarsToDisplay(envVarsString: string = "") {
-	return envVarsString
-		.split(",")
-		.map(pair => pair.trim())
-		.filter(pair => pair.includes("="))
-		.map(pair => {
-			const [key, ...rest] = pair.split("=")
-			return { name: key, value: rest.join("=") }
-		})
+	const result = envVarsString
+	.split(",")
+	.map(pair => pair.trim())
+	.filter(pair => pair.includes("="))
+	.map(pair => {
+		const [key, ...rest] = pair.split("=")
+		return { name: key, value: rest.join("=") }
+	})
+
+	return result;
 }
 
 export function parseEnvVarsToStore(envString: string): string {

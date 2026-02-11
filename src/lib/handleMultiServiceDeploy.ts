@@ -29,9 +29,9 @@ FROM node:18-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN npm install
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN npm run build || true"}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN npm run build || true"}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["npm", "start"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["npm", "start"])}
 			`.trim();
 			break;
 
@@ -41,9 +41,9 @@ FROM python:3.11-slim
 WORKDIR ${workdir}
 COPY . .
 RUN pip install -r requirements.txt
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : ""}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : ""}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["python", "main.py"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["python", "main.py"])}
 			`.trim();
 			break;
 
@@ -53,9 +53,9 @@ FROM golang:1.20-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN go mod tidy
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN go build -o app"}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN go build -o app"}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./app"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["./app"])}
 			`.trim();
 			break;
 
@@ -64,10 +64,10 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./app"])}
 FROM openjdk:17-alpine
 WORKDIR ${workdir}
 COPY . .
-RUN ${deployConfig.install_cmd || "./mvnw install || mvn install"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN ./mvnw package || mvn package"}
+RUN ${deployConfig.core_deployment_info?.install_cmd || "./mvnw install || mvn install"}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN ./mvnw package || mvn package"}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
 			`.trim();
 			break;
 
@@ -77,9 +77,9 @@ FROM rust:1.70-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN cargo fetch
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN cargo build --release"}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN cargo build --release"}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["./target/release/app"])}
 			`.trim();
 			break;
 
@@ -89,14 +89,14 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR ${workdir}
 COPY . .
 RUN dotnet restore
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN dotnet build -c Release"}
+${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN dotnet build -c Release"}
 RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app/publish .
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
+CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 			`.trim();
 			break;
 
@@ -251,11 +251,13 @@ export async function handleMultiServiceDeploy(
 	const repoUrl = deployConfig.url;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
 
-	const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
+	const appDir = deployConfig.core_deployment_info?.workdir
+		? path.join(cloneDir, deployConfig.core_deployment_info.workdir)
+		: cloneDir;
 
-	// Detect multi-service configuration
+	// Detect multi-service configuration from the repo root so docker-compose at root is honored
 	send("🔍 Detecting application structure...", 'detect');
-	const multiServiceConfig = detectMultiService(appDir);
+	const multiServiceConfig = detectMultiService(cloneDir);
 
 	if (!multiServiceConfig.isMultiService || multiServiceConfig.services.length === 0) {
 		throw new Error("Multi-service deployment called but no services detected");

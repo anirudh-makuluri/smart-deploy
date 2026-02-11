@@ -57,13 +57,12 @@ export async function POST(req: NextRequest) {
 		const deployConfig = data as DeployConfig;
 		const cloudProvider = deployConfig.cloudProvider || "aws";
 		
-		// Use deployed-service if present (persists actual deployed service), otherwise fall back to deploymentTarget
-		const deploymentTarget = deployConfig["deployed-service"] || deployConfig.deploymentTarget;
+		const deploymentTarget = deployConfig.deploymentTarget;
 
 		// 1. Delete cloud service based on provider and target
 		try {
 			if (cloudProvider === "aws" && deploymentTarget) {
-				// Delete AWS deployment - use deployed-service field if present, otherwise deploymentTarget
+				// Delete AWS deployment
 				await deleteAWSDeployment(deployConfig, deploymentTarget as string);
 			} else {
 				// Default: GCP Cloud Run

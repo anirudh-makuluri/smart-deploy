@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import archiver from "archiver";
 import config from "../../config";
-import { DeployConfig } from "../../app/types";
+import { DeployConfig, AmplifyDeployDetails } from "../../app/types";
 import { runCommandLiveWithWebSocket } from "../../server-helper";
 import {
 	setupAWSCredentials,
@@ -182,7 +182,7 @@ export async function handleAmplify(
 	deployConfig: DeployConfig,
 	appDir: string,
 	ws: any
-): Promise<string> {
+): Promise<{ url: string; details: AmplifyDeployDetails }> {
 	const send = (msg: string, id: string) => {
 		if (ws?.readyState === ws.OPEN) {
 			ws.send(JSON.stringify({
@@ -194,11 +194,12 @@ export async function handleAmplify(
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const appName = generateResourceName(repoName, "amplify").slice(0, 255);
+	// Reuse stored Amplify app name when available (redeploy), otherwise generate a new one
+	const appName = deployConfig.amplify?.appName?.trim() || generateResourceName(repoName, "amplify").slice(0, 255);
 	const branchName = sanitizeBranchName(deployConfig.branch?.trim() || "main");
 
 	// Install dependencies
-	const installCmd = deployConfig.install_cmd?.trim() || "npm install";
+	const installCmd = deployConfig.core_deployment_info?.install_cmd?.trim() || "npm install";
 	const [installExec, ...installArgs] = installCmd.split(/\s+/).filter(Boolean);
 	send(`Running: ${installCmd}`, "build");
 	
@@ -235,7 +236,7 @@ export async function handleAmplify(
 	}
 
 	// Build
-	let buildCmd = deployConfig.build_cmd?.trim() || "npm run build";
+	let buildCmd = deployConfig.core_deployment_info?.build_cmd?.trim() || "npm run build";
 	
 	// For Next.js apps, ensure we use the local Next.js binary to avoid module resolution issues
 	if (isNext) {
@@ -460,5 +461,5 @@ export async function handleAmplify(
 
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 	send(`Deployment successful! URL: ${url}`, "done");
-	return url;
+	return { url, details: { appId, appName, branchName } };
 }

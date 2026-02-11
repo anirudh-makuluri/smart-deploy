@@ -12,9 +12,10 @@ WORKDIR /app
 # ================================
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci --only=production && \
+# Single npm ci (full) then copy+prune for prod — avoids OOM from double install on small instances
+RUN npm ci && \
     cp -R node_modules prod_node_modules && \
-    npm ci
+    (cd prod_node_modules && npm prune --production)
 
 # ================================
 # Build stage

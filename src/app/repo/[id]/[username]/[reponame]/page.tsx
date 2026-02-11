@@ -75,6 +75,10 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 				status: deployStatus === "success" ? "running" : "didnt_deploy",
 				...(config.deployUrl && { deployUrl: config.deployUrl }),
 				...(config.custom_url && { custom_url: config.custom_url }),
+				...(config.ec2 && { ec2: config.ec2 }),
+				...(config.ecs && { ecs: config.ecs }),
+				...(config.amplify && { amplify: config.amplify }),
+				...(config.elasticBeanstalk && { elasticBeanstalk: config.elasticBeanstalk }),
 			};
 			fetch("/api/update-deployments", {
 				method: "POST",
@@ -161,15 +165,17 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			url: data.url || repo.html_url,
 			service_name: data.service_name || repo.name,
 			branch: data.branch || repo.default_branch || "main",
-			install_cmd: data.install_cmd,
 			build_cmd: data.build_cmd,
-			run_cmd: data.run_cmd,
-			workdir: data.workdir,
 			use_custom_dockerfile: data.use_custom_dockerfile ?? false,
 			env_vars: data.env_vars,
 			// Preserve existing status (e.g. "running") when updating after Smart Project Scan
 			status: existingDeployment?.status ?? "didnt_deploy",
-			core_deployment_info: data.core_deployment_info,
+			core_deployment_info: {
+				...(data.core_deployment_info || existingDeployment?.core_deployment_info || {} as any),
+				...(data.install_cmd != null && { install_cmd: data.install_cmd }),
+				...(data.run_cmd != null && { run_cmd: data.run_cmd }),
+				...(data.workdir != null && { workdir: data.workdir }),
+			},
 			features_infrastructure: data.features_infrastructure,
 			final_notes: data.final_notes,
 			deploymentTarget: (data as DeployConfig).deploymentTarget,
@@ -191,9 +197,35 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		}
 
 
+		// Build core_deployment_info by merging user-edited form fields into existing AI-scanned data
+		const baseCoreInfo = values.core_deployment_info ?? existingDeployment?.core_deployment_info;
+		const coreDeploymentInfo = baseCoreInfo
+			? {
+					...baseCoreInfo,
+					...(values.install_cmd != null && { install_cmd: values.install_cmd }),
+					...(values.run_cmd != null && { run_cmd: values.run_cmd }),
+					...(values.workdir != null && { workdir: values.workdir || null }),
+				}
+			: undefined;
+
 		const payload: DeployConfig = {
 			id,
-			...values,
+			url: values.url,
+			service_name: values.service_name,
+			branch: values.branch,
+			build_cmd: values.build_cmd,
+			use_custom_dockerfile: values.use_custom_dockerfile,
+			env_vars: values.env_vars,
+			...(coreDeploymentInfo && { core_deployment_info: coreDeploymentInfo }),
+			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
+			...(values.final_notes && { final_notes: values.final_notes }),
+			...(values.deploymentTarget && { deploymentTarget: values.deploymentTarget }),
+			...(values.deployment_target_reason && { deployment_target_reason: values.deployment_target_reason }),
+			// Preserve service details so redeploy can reuse/update/delete existing resources
+			...(existingDeployment?.ec2 && { ec2: existingDeployment.ec2 }),
+			...(existingDeployment?.ecs && { ecs: existingDeployment.ecs }),
+			...(existingDeployment?.amplify && { amplify: existingDeployment.amplify }),
+			...(existingDeployment?.elasticBeanstalk && { elasticBeanstalk: existingDeployment.elasticBeanstalk }),
 		};
 
 		if (values.use_custom_dockerfile) {
@@ -224,8 +256,30 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		<div className="landing-bg min-h-svh flex flex-col text-[#e2e8f0]">
 			<Header />
 			<div className="w-full mx-auto p-6 flex-1 max-w-4xl">
-				<ConfigTabs editMode={true} onSubmit={onSubmit} onScanComplete={onScanComplete} repo={repo}
-					deployment={existingDeployment} service_name={reponame} id={id} isDeploying={isDeploying} serviceLogs={[]} steps={steps} deployError={deployError} />
+				<ConfigTabs
+					editMode={true}
+					onSubmit={onSubmit}
+					onScanComplete={onScanComplete}
+					onConfigChange={(partial) => {
+						const base = existingDeployment ?? {
+							id,
+							url: repo?.html_url ?? "",
+							service_name: reponame,
+							branch: repo?.default_branch ?? "main",
+							use_custom_dockerfile: false,
+							status: "didnt_deploy",
+						};
+						updateDeploymentById({ ...base, ...partial });
+					}}
+					repo={repo}
+					deployment={existingDeployment ?? { id, url: repo?.html_url ?? "", service_name: reponame, branch: repo?.default_branch ?? "main", use_custom_dockerfile: false, status: "didnt_deploy" }}
+					service_name={reponame}
+					id={id}
+					isDeploying={isDeploying}
+					serviceLogs={[]}
+					steps={steps}
+					deployError={deployError}
+				/>
 				{
 					deployStatus === "success" && (
 						<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm space-y-1">

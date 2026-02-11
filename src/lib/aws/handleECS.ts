@@ -6,7 +6,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { CodeBuildClient, StartBuildCommand, BatchGetBuildsCommand, CreateProjectCommand, BatchGetProjectsCommand, UpdateProjectCommand } from "@aws-sdk/client-codebuild";
 import { IAMClient, GetRoleCommand, CreateRoleCommand, PutRolePolicyCommand, AttachRolePolicyCommand } from "@aws-sdk/client-iam";
 import config from "../../config";
-import { DeployConfig } from "../../app/types";
+import { DeployConfig, ECSDeployDetails } from "../../app/types";
 import { MultiServiceConfig, ServiceDefinition } from "../multiServiceDetector";
 import { 
 	setupAWSCredentials, 
@@ -1289,7 +1289,7 @@ export async function handleECS(
 	multiServiceConfig: MultiServiceConfig,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ serviceUrls: Map<string, string>, deployedServices: string[] }> {
+): Promise<{ serviceUrls: Map<string, string>; deployedServices: string[]; details: ECSDeployDetails }> {
 	const send = (msg: string, id: string) => {
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
@@ -1302,29 +1302,44 @@ export async function handleECS(
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const clusterName = generateResourceName(repoName, "cluster");
 	const imageTag = `v-${Date.now()}`;
 
 	// Setup AWS credentials
 	send("Authenticating with AWS...", 'auth');
 	await setupAWSCredentials(ws);
 
-	// Get networking info
-	send("Setting up networking...", 'setup');
-	const vpcId = await getDefaultVpcId(ws);
-	const subnetIds = await getSubnetIds(vpcId, ws);
-	const securityGroupId = await ensureSecurityGroup(
-		`${repoName}-ecs-sg`,
-		vpcId,
-		`Security group for ${repoName} ECS services`,
-		ws
-	);
+	// Reuse stored ECS details when available (redeploy), otherwise create new resources
+	let clusterName: string;
+	let vpcId: string;
+	let subnetIds: string[];
+	let securityGroupId: string;
 
-	// Create ECS cluster
+	const existingEcs = deployConfig.ecs;
+	if (existingEcs?.clusterName?.trim() && existingEcs?.vpcId?.trim() && existingEcs?.securityGroupId?.trim() && existingEcs?.subnetIds?.length) {
+		clusterName = existingEcs.clusterName.trim();
+		vpcId = existingEcs.vpcId.trim();
+		subnetIds = existingEcs.subnetIds;
+		securityGroupId = existingEcs.securityGroupId.trim();
+		send("Reusing existing ECS cluster, VPC, subnet, and security group...", 'setup');
+	} else {
+		clusterName = generateResourceName(repoName, "cluster");
+		send("Setting up networking...", 'setup');
+		vpcId = await getDefaultVpcId(ws);
+		subnetIds = await getSubnetIds(vpcId, ws);
+		securityGroupId = await ensureSecurityGroup(
+			`${repoName}-ecs-sg`,
+			vpcId,
+			`Security group for ${repoName} ECS services`,
+			ws
+		);
+	}
+
+	// Create/ensure ECS cluster
 	const clusterArn = await ensureECSCluster(clusterName, region, ws);
 
 	const serviceUrls = new Map<string, string>();
 	const deployedServices: string[] = [];
+	const ecsServiceNamesList: string[] = [];
 
 	// Determine services to deploy
 	const services: { name: string; dir: string; language: string; port: number }[] = [];
@@ -1420,6 +1435,8 @@ export async function handleECS(
 			.toLowerCase()
 			.replace(/[^a-z0-9-]/g, '-');
 
+		ecsServiceNamesList.push(ecsServiceName);
+
 		// --- ALB setup (stable public URL) ---
 		// One ALB + Target Group per ECS service (simple and reliable).
 		const albName = `${ecsServiceName}-alb`.toLowerCase().slice(0, 32);
@@ -1471,7 +1488,18 @@ export async function handleECS(
 	}
 	console.log('All services deployed successfully');
 	send(`\nAll ${deployedServices.length} services deployed successfully!`, 'done');
-	return { serviceUrls, deployedServices };
+	return {
+		serviceUrls,
+		deployedServices,
+		details: {
+			clusterName,
+			clusterArn,
+			serviceNames: ecsServiceNamesList,
+			vpcId,
+			subnetIds,
+			securityGroupId,
+		},
+	};
 }
 
 /**

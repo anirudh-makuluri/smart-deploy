@@ -3,7 +3,7 @@ import os from "os"
 import path from "path";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { AWSDeploymentTarget, DeployConfig, CloudProvider } from "../app/types";
+import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -66,7 +66,9 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		send(`Cloning repo from branch "${branch}"...`, 'clone');
 		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
 
-		const appDir = deployConfig.workdir ? path.join(cloneDir, deployConfig.workdir) : cloneDir;
+		const appDir = deployConfig.core_deployment_info?.workdir
+			? path.join(cloneDir, deployConfig.core_deployment_info.workdir)
+			: cloneDir;
 
 		send("✅ Clone repository completed", 'clone');
 		// Clean Next.js build cache if present (to avoid corrupted .next directory issues)
@@ -80,9 +82,11 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 			}
 		}
 
-		// Analyze application structure
+		// Analyze application structure from the repo root (so docker-compose at root is detected
+		// even when workdir points to a subdirectory)
 		send("Analyzing application structure...", 'detect');
-		const multiServiceConfig = detectMultiService(appDir);
+		const multiServiceConfig = detectMultiService(cloneDir);
+
 		const dbConfig = detectDatabase(appDir);
 
 		if (dbConfig) {
@@ -137,7 +141,6 @@ const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string 
 	],
 	"ec2": [
 		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Analyzing app" },
 		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "database", label: "🗄️ Database (RDS)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
@@ -161,12 +164,21 @@ function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	}
 }
 
+/** Per-service details to persist after deploy */
+type ServiceDeployDetails = {
+	ec2?: EC2DeployDetails;
+	ecs?: ECSDeployDetails;
+	amplify?: AmplifyDeployDetails;
+	elasticBeanstalk?: ElasticBeanstalkDeployDetails;
+};
+
 function sendDeployComplete(
 	ws: any,
 	deployUrl: string | undefined,
 	success: boolean,
 	deploymentTarget?: string,
-	vercelDns?: AddVercelDnsResult | null
+	vercelDns?: AddVercelDnsResult | null,
+	serviceDetails?: ServiceDeployDetails | null
 ) {
 	if (ws?.readyState === ws?.OPEN) {
 		const payload: {
@@ -176,11 +188,19 @@ function sendDeployComplete(
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
+			ec2?: EC2DeployDetails;
+			ecs?: ECSDeployDetails;
+			amplify?: AmplifyDeployDetails;
+			elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 		} = {
 			deployUrl: deployUrl ?? null,
 			success,
 			deploymentTarget: deploymentTarget ?? null,
 		};
+		if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
+		if (serviceDetails?.ecs) payload.ecs = serviceDetails.ecs;
+		if (serviceDetails?.amplify) payload.amplify = serviceDetails.amplify;
+		if (serviceDetails?.elasticBeanstalk) payload.elasticBeanstalk = serviceDetails.elasticBeanstalk;
 		if (vercelDns) {
 			payload.vercelDnsAdded = vercelDns.success;
 			if (vercelDns.success) {
@@ -252,21 +272,28 @@ async function handleAWSDeploy(
 		} catch (error: any) {
 			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
 		}
+	} else {
+		send("✅ No database provisioning required", 'database');
 	}
 
 	let result: string;
 	let deployUrl: string | undefined;
+	const serviceDetails: ServiceDeployDetails = {};
 
 	// Route to appropriate AWS service
 	switch (target) {
 		case 'amplify':
-			result = await handleAmplify(deployConfig, appDir, ws);
-			deployUrl = result && result !== "done" ? result : undefined;
+			const amplifyResult = await handleAmplify(deployConfig, appDir, ws);
+			deployUrl = amplifyResult.url;
+			serviceDetails.amplify = amplifyResult.details;
+			result = "done";
 			break;
 
 		case 'elastic-beanstalk':
-			result = await handleElasticBeanstalk(deployConfig, appDir, ws);
-			deployUrl = result && result !== "done" ? result : undefined;
+			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws);
+			deployUrl = ebResult.url;
+			serviceDetails.elasticBeanstalk = ebResult.details;
+			result = "done";
 			break;
 
 		case 'ecs':
@@ -286,6 +313,7 @@ async function handleAWSDeploy(
 			// Primary URL for client (first service)
 			const firstUrl = ecsResult.serviceUrls.entries().next().value;
 			deployUrl = firstUrl ? firstUrl[1] : undefined;
+			serviceDetails.ecs = ecsResult.details;
 			result = "done";
 			break;
 
@@ -309,6 +337,14 @@ async function handleAWSDeploy(
 			send(ec2Summary, 'done');
 			const ec2FirstUrl = ec2Result.serviceUrls.entries().next().value;
 			deployUrl = ec2FirstUrl ? ec2FirstUrl[1] : ec2Result.publicIp ? `http://${ec2Result.publicIp}` : undefined;
+			serviceDetails.ec2 = {
+				instanceId: ec2Result.instanceId,
+				publicIp: ec2Result.publicIp,
+				vpcId: ec2Result.vpcId,
+				subnetId: ec2Result.subnetId,
+				securityGroupId: ec2Result.securityGroupId,
+				amiId: ec2Result.amiId,
+			};
 			result = "done";
 			break;
 
@@ -316,21 +352,24 @@ async function handleAWSDeploy(
 			throw new Error(`Unknown deployment target: ${target}`);
 	}
 
-	send("Adding Vercel CNAME...", 'done');
-	// Add Vercel CNAME when deploy succeeded and domain is configured
+	send("Adding Vercel DNS record...", 'done');
+	// Add Vercel DNS record when deploy succeeded and domain is configured
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (deployUrl && deployConfig.service_name?.trim()) {
-		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name);
+		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
+			deploymentTarget: target,
+			previousCustomUrl: deployConfig.custom_url ?? null,
+		});
 	}
 	
 	if(vercelResult && vercelResult.success) {
-		send(`✅ Vercel CNAME added successfully: ${vercelResult.customUrl}`, 'done');
+		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
 	} else {
-		send(`❌ Vercel CNAME addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
+		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
 	}
 
-	// Notify client of success and URL
-	sendDeployComplete(ws, deployUrl, true, target, vercelResult);
+	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
+	sendDeployComplete(ws, deployUrl, true, target, vercelResult, serviceDetails);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -405,9 +444,12 @@ async function handleGCPDeploy(
 		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
 		let vercelResult: AddVercelDnsResult | null = null;
 		if (gcpDeployUrl && deployConfig.service_name?.trim()) {
-			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name);
+			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
+				deploymentTarget: "cloud-run",
+				previousCustomUrl: deployConfig.custom_url ?? null,
+			});
 		}
-		sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult);
+		sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult, null);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -445,81 +487,83 @@ async function handleGCPDeploy(
 
 		let dockerfileContent = "";
 
+		const coreInfo = deployConfig.core_deployment_info;
+
 		switch (language) {
 			case "node":
 				dockerfileContent = `
 FROM node:18
-WORKDIR ${deployConfig.workdir || "."}
+WORKDIR ${coreInfo?.workdir || "."}
 COPY . .
-RUN ${deployConfig.install_cmd || "npm install"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : ""}
+RUN ${coreInfo?.install_cmd || "npm install"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["npm", "start"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["npm", "start"])}
 		`.trim();
 				break;
 
 			case "python":
 				dockerfileContent = `
 FROM python:3.11
-WORKDIR ${deployConfig.workdir || "/app"}
+WORKDIR ${coreInfo?.workdir || "/app"}
 COPY . .
-RUN ${deployConfig.install_cmd || "pip install -r requirements.txt"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : ""}
+RUN ${coreInfo?.install_cmd || "pip install -r requirements.txt"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["python", "main.py"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["python", "main.py"])}
 		`.trim();
 				break;
 
 			case "go":
 				dockerfileContent = `
 FROM golang:1.20
-WORKDIR ${deployConfig.workdir || "/app"}
+WORKDIR ${coreInfo?.workdir || "/app"}
 COPY . .
-RUN ${deployConfig.install_cmd || "go mod tidy"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN go build -o app"}
+RUN ${coreInfo?.install_cmd || "go mod tidy"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN go build -o app"}
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./app"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./app"])}
 		`.trim();
 				break;
 
 			case "java":
 				dockerfileContent = `
 FROM openjdk:17
-WORKDIR ${deployConfig.workdir || "/app"}
+WORKDIR ${coreInfo?.workdir || "/app"}
 COPY . .
-RUN ${deployConfig.install_cmd || "./mvnw install"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN ./mvnw package"}
+RUN ${coreInfo?.install_cmd || "./mvnw install"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN ./mvnw package"}
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
 		`.trim();
 				break;
 
 			case "rust":
 				dockerfileContent = `
 FROM rust:1.70
-WORKDIR ${deployConfig.workdir || "/app"}
+WORKDIR ${coreInfo?.workdir || "/app"}
 COPY . .
-RUN ${deployConfig.install_cmd || "cargo fetch"}
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN cargo build --release"}
+RUN ${coreInfo?.install_cmd || "cargo fetch"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN cargo build --release"}
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["./target/release/app"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./target/release/app"])}
 		`.trim();
 				break;
 
 			case "dotnet":
 				dockerfileContent = `
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR ${deployConfig.workdir || "/app"}
+WORKDIR ${coreInfo?.workdir || "/app"}
 COPY . .
 RUN dotnet restore
-${deployConfig.build_cmd ? `RUN ${deployConfig.build_cmd}` : "RUN dotnet build -c Release"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN dotnet build -c Release"}
 RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app/publish .
 EXPOSE 8080
-CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 		`.trim();
 				break;
 
@@ -578,9 +622,12 @@ CMD ${JSON.stringify(deployConfig.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (gcpDeployUrl && deployConfig.service_name?.trim()) {
-		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name);
+		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
+			deploymentTarget: "cloud-run",
+			previousCustomUrl: deployConfig.custom_url ?? null,
+		});
 	}
-	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult);
+	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult, null);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

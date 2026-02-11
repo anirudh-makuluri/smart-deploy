@@ -1,5 +1,4 @@
 import { DeployConfig } from "../../app/types";
-import { generateResourceName } from "./awsHelpers";
 import { runCommandLiveWithOutput } from "../../server-helper";
 import config from "../../config";
 
@@ -15,75 +14,89 @@ async function setupAWSCredentialsSilent(): Promise<void> {
 }
 
 /**
- * Deletes an AWS Amplify app
+ * Deletes an AWS Amplify app using stored appId.
+ * Falls back to listing all apps by appName if appId is not stored.
  */
 export async function deleteAmplifyApp(
 	deployConfig: DeployConfig
 ): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const appName = generateResourceName(repoName, "amplify").slice(0, 255);
 
 	await setupAWSCredentialsSilent();
 
-	// List apps to find appId
-	const listOut = await runCommandLiveWithOutput("aws", [
-		"amplify", "list-apps",
-		"--output", "json",
-		"--region", region
-	]);
+	let appId = deployConfig.amplify?.appId;
 
-	let list: any = {};
-	try {
-		const output = listOut.trim();
-		const lastLine = output.split('\n').pop() || output;
-		list = JSON.parse(lastLine);
-	} catch {
-		// If parsing fails, try to find JSON in output
-		const jsonMatch = listOut.match(/\{[\s\S]*\}/);
-		if (jsonMatch) {
-			list = JSON.parse(jsonMatch[0]);
-		}
-	}
-	const app = (list.apps || []).find((a: { name?: string }) => a.name === appName);
-
-	if (app?.appId) {
-		await runCommandLiveWithOutput("aws", [
-			"amplify", "delete-app",
-			"--app-id", app.appId,
+	if (!appId && deployConfig.amplify?.appName) {
+		// Fallback: find appId by searching for the stored appName
+		const listOut = await runCommandLiveWithOutput("aws", [
+			"amplify", "list-apps",
+			"--output", "json",
 			"--region", region
 		]);
+
+		let list: any = {};
+		try {
+			const output = listOut.trim();
+			const lastLine = output.split('\n').pop() || output;
+			list = JSON.parse(lastLine);
+		} catch {
+			const jsonMatch = listOut.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				list = JSON.parse(jsonMatch[0]);
+			}
+		}
+		const app = (list.apps || []).find(
+			(a: { name?: string }) => a.name === deployConfig.amplify?.appName
+		);
+		appId = app?.appId;
 	}
+
+	if (!appId) {
+		console.warn("deleteAmplifyApp: no appId found in deployConfig.amplify — nothing to delete");
+		return;
+	}
+
+	await runCommandLiveWithOutput("aws", [
+		"amplify", "delete-app",
+		"--app-id", appId,
+		"--region", region
+	]);
 }
 
 /**
- * Deletes an AWS Elastic Beanstalk environment and application
+ * Deletes an AWS Elastic Beanstalk environment and application using stored names.
  */
 export async function deleteElasticBeanstalk(
 	deployConfig: DeployConfig
 ): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const appName = generateResourceName(repoName, "eb");
-	const envName = `${appName}-env`;
+	const appName = deployConfig.elasticBeanstalk?.appName;
+	const envName = deployConfig.elasticBeanstalk?.envName;
+
+	if (!appName) {
+		console.warn("deleteElasticBeanstalk: no appName found in deployConfig.elasticBeanstalk — nothing to delete");
+		return;
+	}
 
 	await setupAWSCredentialsSilent();
 
 	// Delete environment first
-	try {
-		await runCommandLiveWithOutput("aws", [
-			"elasticbeanstalk", "terminate-environment",
-			"--environment-name", envName,
-			"--region", region
-		]);
-	} catch (err: any) {
-		const msg = err instanceof Error ? err.message : String(err);
-		const alreadyGone =
-			msg.includes("does not exist") ||
-			msg.includes("NotFound") ||
-			msg.includes("No Environment found") ||
-			msg.includes("InvalidParameterValue");
-		if (!alreadyGone) throw err;
+	if (envName) {
+		try {
+			await runCommandLiveWithOutput("aws", [
+				"elasticbeanstalk", "terminate-environment",
+				"--environment-name", envName,
+				"--region", region
+			]);
+		} catch (err: any) {
+			const msg = err instanceof Error ? err.message : String(err);
+			const alreadyGone =
+				msg.includes("does not exist") ||
+				msg.includes("NotFound") ||
+				msg.includes("No Environment found") ||
+				msg.includes("InvalidParameterValue");
+			if (!alreadyGone) throw err;
+		}
 	}
 
 	// Delete application (this also deletes all versions)
@@ -107,14 +120,18 @@ export async function deleteElasticBeanstalk(
 }
 
 /**
- * Deletes AWS ECS services, cluster, and related resources
+ * Deletes AWS ECS services, cluster, and related resources using stored clusterName.
  */
 export async function deleteECSDeployment(
 	deployConfig: DeployConfig
 ): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const clusterName = generateResourceName(repoName, "cluster");
+	const clusterName = deployConfig.ecs?.clusterName;
+
+	if (!clusterName) {
+		console.warn("deleteECSDeployment: no clusterName found in deployConfig.ecs — nothing to delete");
+		return;
+	}
 
 	await setupAWSCredentialsSilent();
 
@@ -196,42 +213,34 @@ export async function deleteECSDeployment(
 }
 
 /**
- * Deletes an AWS EC2 instance
+ * Deletes an AWS EC2 instance using stored instanceId.
+ * Falls back to searching by name tag if instanceId is not stored.
  */
 export async function deleteEC2Instance(
 	deployConfig: DeployConfig
 ): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const instanceName = generateResourceName(repoName, "instance");
 
 	await setupAWSCredentialsSilent();
 
-	// Find instance by name tag
-	try {
-		const describeOut = await runCommandLiveWithOutput("aws", [
-			"ec2", "describe-instances",
-			"--filters", `Name=tag:Name,Values=${instanceName}`,
-			"--query", "Reservations[*].Instances[*].InstanceId",
-			"--output", "text",
-			"--region", region
-		]);
+	const instanceId = deployConfig.ec2?.instanceId;
 
-		const instanceIds = describeOut.trim().split(/\s+/).filter(Boolean);
-		
-		if (instanceIds.length > 0) {
-			// Terminate instances
+	if (instanceId) {
+		// Direct termination using stored instance ID
+		try {
 			await runCommandLiveWithOutput("aws", [
 				"ec2", "terminate-instances",
-				"--instance-ids", ...instanceIds,
+				"--instance-ids", instanceId,
 				"--region", region
 			]);
+		} catch (err: any) {
+			const msg = err instanceof Error ? err.message : String(err);
+			if (!msg.includes("does not exist") && !msg.includes("NotFound") && !msg.includes("InvalidInstanceID")) {
+				throw err;
+			}
 		}
-	} catch (err: any) {
-		const msg = err instanceof Error ? err.message : String(err);
-		if (!msg.includes("does not exist") && !msg.includes("NotFound")) {
-			throw err;
-		}
+	} else {
+		console.warn("deleteEC2Instance: no instanceId found in deployConfig.ec2 — nothing to delete");
 	}
 
 	// Note: Security Groups, Key Pairs, and other resources are not automatically deleted
@@ -239,9 +248,11 @@ export async function deleteEC2Instance(
 }
 
 /**
- * Main function to delete AWS deployment based on deployed-service or deploymentTarget
- * @param deployConfig - The deployment configuration
- * @param deploymentTarget - The target service type (from deployed-service field or deploymentTarget fallback)
+ * Main function to delete AWS deployment based on deploymentTarget.
+ * Uses stored service details (ec2, ecs, amplify, elasticBeanstalk) from DeployConfig
+ * to identify the exact resources to delete.
+ * @param deployConfig - The deployment configuration with stored service details
+ * @param deploymentTarget - The target service type (from deploymentTarget)
  */
 export async function deleteAWSDeployment(
 	deployConfig: DeployConfig,

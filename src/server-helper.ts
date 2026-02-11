@@ -101,7 +101,7 @@ export async function runCommandLiveWithWebSocket(
 				resolve(output);
 			}
 			else {
-				sendWS(`❌ Failed: ${cmd} ${args.join(" ")} (exit ${code})`);
+				sendWS(`Failed: ${cmd} ${args.join(" ")} (exit ${code})`);
 				reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code}`));
 			}
 		});

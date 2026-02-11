@@ -2,7 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import config from "../../config";
-import { DeployConfig } from "../../app/types";
+import { DeployConfig, ElasticBeanstalkDeployDetails } from "../../app/types";
 import { 
 	setupAWSCredentials, 
 	runAWSCommand, 
@@ -132,7 +132,7 @@ export async function handleElasticBeanstalk(
 	deployConfig: DeployConfig,
 	appDir: string,
 	ws: any
-): Promise<string> {
+): Promise<{ url: string; details: ElasticBeanstalkDeployDetails }> {
 	const send = (msg: string, id: string) => {
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
@@ -145,10 +145,11 @@ export async function handleElasticBeanstalk(
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const appName = generateResourceName(repoName, "eb");
-	const envName = `${appName}-env`;
+	// Reuse stored EB app/env names when available (redeploy), otherwise generate new ones
+	const appName = deployConfig.elasticBeanstalk?.appName?.trim() || generateResourceName(repoName, "eb");
+	const envName = deployConfig.elasticBeanstalk?.envName?.trim() || `${appName}-env`;
 	const versionLabel = `v-${Date.now()}`;
-	const bucketName = `smartdeploy-eb-${config.AWS_ACCESS_KEY_ID.slice(-8).toLowerCase()}`;
+	const bucketName = deployConfig.elasticBeanstalk?.s3Bucket?.trim() || `smartdeploy-eb-${config.AWS_ACCESS_KEY_ID.slice(-8).toLowerCase()}`;
 
 	// Detect language and get solution stack
 	const language = detectLanguage(appDir);
@@ -160,7 +161,7 @@ export async function handleElasticBeanstalk(
 
 	send(`✅ Detected ${language} application. Using solution stack: ${solutionStack}`, 'detect');
 
-	const runCmd = deployConfig.run_cmd || (language === 'node' ? 'npm start' : 'python app.py');
+	const runCmd = deployConfig.core_deployment_info?.run_cmd || (language === 'node' ? 'npm start' : 'python app.py');
 	if (language === 'node') validateNodeApp(appDir, runCmd);
 	ensureProcfile(appDir, runCmd);
 	
@@ -381,9 +382,11 @@ export async function handleElasticBeanstalk(
 	// Cleanup temp files
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 
+	const ebDetails: ElasticBeanstalkDeployDetails = { appName, envName, s3Bucket: bucketName };
+
 	if (deployedUrl) {
 		send(`✅ Deployment successful! Application URL: ${deployedUrl}`, 'done');
-		return deployedUrl;
+		return { url: deployedUrl, details: ebDetails };
 	}
 	send("❌ Environment did not become healthy in time. Check AWS Elastic Beanstalk console for events and instance logs.", 'deploy');
 	throw new Error(
