@@ -466,44 +466,99 @@ export async function handleEC2(
 	send(`Waiting ${initialDelayMs / 1000}s before first health check...`, 'deploy');
 	await new Promise(resolve => setTimeout(resolve, initialDelayMs));
 
-	const portsToTry = [80, 8080, 3000, 5000];
-	const nullOut = process.platform === "win32" ? "NUL" : "/dev/null";
 	let attempts = 0;
 	const maxAttempts = 24; // 24 * 15s ≈ 6 min after initial delay
-	let detectedPort: number = 80;
-
 	while (attempts < maxAttempts) {
-		let responded = false;
-		for (const port of portsToTry) {
+		attempts++;
+		send(`Fetching instance system logs (${attempts}/${maxAttempts})...`, 'deploy');
+		try {
+			const consoleOut = await runAWSCommand(
+				[
+					"ec2",
+					"get-console-output",
+					"--instance-id",
+					instanceId,
+					"--latest",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				'deploy'
+			);
+
+			if (consoleOut && consoleOut.trim()) {
+				send(consoleOut, 'deploy');
+			} else {
+				send("(no new console output from instance yet)", 'deploy');
+			}
+
+			// Stop early if user-data signalled completion
+			if (consoleOut.includes("Deployment complete!")) {
+				send("Instance user-data finished running.", 'deploy');
+				break;
+			}
+		} catch (err: any) {
+			const msg = err instanceof Error ? err.message : String(err);
+			send(`Error fetching console output: ${msg}`, 'deploy');
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, 15000));
+	}
+
+	// Quick one-shot port detection: try likely ports (including any service ports) with curl,
+	// mainly to choose a nice base URL. This doesn't block on readiness (we already streamed logs above).
+	let detectedPort: number = 80;
+	try {
+		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
+		const nullOut = process.platform === "win32" ? "NUL" : "/dev/null";
+		const candidatePorts = Array.from(
+			new Set<number>([
+				80,
+				8080,
+				3000,
+				5000,
+				...services
+					.map((svc) => svc.port)
+					.filter((p): p is number => typeof p === "number" && !Number.isNaN(p)),
+			])
+		);
+
+		for (const port of candidatePorts) {
 			try {
-				const { runCommandLiveWithWebSocket } = await import("../../server-helper");
-				const out = await runCommandLiveWithWebSocket("curl", [
-					"-s", "-o", nullOut, "-w", "%{http_code}",
-					"--connect-timeout", "8",
-					`http://${publicIp}:${port}`
-				], ws, 'deploy');
+				const out = await runCommandLiveWithWebSocket(
+					"curl",
+					[
+						"-s",
+						"-o",
+						nullOut,
+						"-w",
+						"%{http_code}",
+						"--connect-timeout",
+						"4",
+						`http://${publicIp}:${port}`,
+					],
+					ws,
+					"deploy"
+				);
 				const code = (out || "").trim();
 				if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3"))) {
-					send(`✅ Application is responding on port ${port} (HTTP ${code})!`, 'deploy');
+					send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
 					detectedPort = port;
-					responded = true;
 					break;
 				}
 			} catch {
-				// try next port
+				// ignore and try next port
 			}
 		}
-		if (responded) break;
-		attempts++;
-		send(`Waiting for application... (${attempts}/${maxAttempts}) – ensure ports 80, 8080 are open in the security group.`, 'deploy');
-		await new Promise(resolve => setTimeout(resolve, 15000));
-	}
-	if (attempts >= maxAttempts) {
-		send(`Health check did not get a response. Instance is up; check /var/log/cloud-init-output.log on the instance (SSH) to see if user-data completed.`, 'deploy');
+	} catch {
+		// If curl/runCommandLiveWithWebSocket fails, fall back to 80
 	}
 
 	const serviceUrls = new Map<string, string>();
-	const baseUrl = detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
+	const baseUrl =
+		detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
 	
 	for (const svc of services) {
 		if (services.length === 1) {
