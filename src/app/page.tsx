@@ -1,11 +1,11 @@
 "use client";
 
-import DashboardMain from "@/components/DashboardMain";
-import DashboardSideBar from "@/components/DashboardSideBar";
-import Header from "@/components/Header";
-import Landing from "@/components/Landing";
+import DashboardMain from "../components/DashboardMain";
+import DashboardSideBar from "../components/DashboardSideBar";
+import Header from "../components/Header";
+import Landing from "../components/Landing";
 import { useSession } from "next-auth/react";
-import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { SmartDeployLogo } from "../components/SmartDeployLogo";
 
 function LoadingPage() {
 	return (

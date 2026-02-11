@@ -39,15 +39,17 @@ export function useDeployLogs(serviceName?: string) {
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
 	const wsRef = useRef<WebSocket | null>(null);
-
-	useEffect(() => {
+	// Create and configure WebSocket lazily (when we actually need to deploy or fetch logs)
+	function createWebSocket(onReady?: () => void) {
 		const ws = new WebSocket(getWebSocketUrl());
 		wsRef.current = ws;
+		setSocketStatus("connecting");
 
 		ws.onopen = () => {
 			console.log("Connected to Server: 4001");
 			setSocketStatus("open");
 			initiateServiceLogs();
+			onReady?.();
 		};
 
 		ws.onmessage = (e) => {
@@ -155,15 +157,24 @@ export function useDeployLogs(serviceName?: string) {
 			wasDeployingRef.current = false;
 		};
 
+		return ws;
+	}
+
+	// Only close socket on unmount; do not auto-open on mount.
+	useEffect(() => {
 		return () => {
-			ws.close();
+			wsRef.current?.close();
 		};
 	}, []);
 
-	const openSocket = () => {
-		const ws = new WebSocket(getWebSocketUrl());
-		wsRef.current = ws;
-	}
+	const openSocket = (onReady?: () => void) => {
+		const existing = wsRef.current;
+		if (existing && existing.readyState === WebSocket.OPEN) {
+			onReady?.();
+			return existing;
+		}
+		return createWebSocket(onReady);
+	};
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string) => {
 		deployConfigRef.current = deployConfig;
@@ -175,30 +186,28 @@ export function useDeployLogs(serviceName?: string) {
 		const file = deployConfig.dockerfile;
 
 		if (!file || !deployConfig.use_custom_dockerfile) {
-			let socket = wsRef.current;
-			if (!socket) {
-				openSocket();
-			}
-			socket = wsRef.current;
-			if (socket?.readyState === WebSocket.OPEN) {
-				const object = {
-					type: 'deploy',
-					payload : {
-						deployConfig,
-						token
-					}
+			const sendDeployMessage = () => {
+				const socket = wsRef.current;
+				if (socket?.readyState === WebSocket.OPEN) {
+					const object = {
+						type: 'deploy',
+						payload : {
+							deployConfig,
+							token
+						}
+					};
+					socket.send(JSON.stringify(object));
+				} else {
+					console.error("Socket not open");
 				}
-				socket.send(JSON.stringify(object));
-			} else {
-				console.error("Socket not open");
-			}
+			};
+
+			openSocket(sendDeployMessage);
 		} else {
 			const reader = new FileReader();
 
 			reader.onload =  async () => {
 				const base64 = reader.result as string;
-				const socket = wsRef.current;
-
 				deployConfig.dockerfileInfo = {
 					name: file.name,
 					type: file.type,
@@ -209,20 +218,23 @@ export function useDeployLogs(serviceName?: string) {
 
 				deployConfigRef.current = deployConfig;
 
-				if (socket?.readyState === WebSocket.OPEN) {
-					const object = {
-						type: 'deploy',
-						payload: {
-							deployConfig,
-							token
-						}
+				const sendDeployMessageWithDockerfile = () => {
+					const socket = wsRef.current;
+					if (socket?.readyState === WebSocket.OPEN) {
+						const object = {
+							type: 'deploy',
+							payload: {
+								deployConfig,
+								token
+							}
+						};
+						socket.send(JSON.stringify(object));
+					} else {
+						console.error("Socket not open");
 					}
-					socket.send(
-						JSON.stringify(object)
-					);
-				} else {
-					console.error("Socket not open");
-				}
+				};
+
+				openSocket(sendDeployMessageWithDockerfile);
 			};
 
 			reader.readAsDataURL(file);

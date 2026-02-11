@@ -153,19 +153,15 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	}
 
 	async function onScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
-		console.log("On Scan Complete", data);
-		console.log("Session", session);
-		console.log("Repo", repo);
+
 		if (!session?.user || !repo) return;
 
-		console.log("Data", data);
 		const scanConfig: DeployConfig = {
 			...existingDeployment,
 			id,
 			url: data.url || repo.html_url,
 			service_name: data.service_name || repo.name,
 			branch: data.branch || repo.default_branch || "main",
-			build_cmd: data.build_cmd,
 			use_custom_dockerfile: data.use_custom_dockerfile ?? false,
 			env_vars: data.env_vars,
 			// Preserve existing status (e.g. "running") when updating after Smart Project Scan
@@ -173,6 +169,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			core_deployment_info: {
 				...(data.core_deployment_info || existingDeployment?.core_deployment_info || {} as any),
 				...(data.install_cmd != null && { install_cmd: data.install_cmd }),
+				...(data.build_cmd != null && { build_cmd: data.build_cmd }),
 				...(data.run_cmd != null && { run_cmd: data.run_cmd }),
 				...(data.workdir != null && { workdir: data.workdir }),
 			},
@@ -185,12 +182,17 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		toast.success("Scan saved to configuration");
 	}
 
-	function onSubmit(values: FormSchemaType & Partial<AIGenProjectMetadata>) {
+	function onSubmit(
+		values: FormSchemaType &
+			Partial<AIGenProjectMetadata> & {
+				deploymentTarget?: DeployConfig["deploymentTarget"];
+				deployment_target_reason?: string;
+			}
+	) {
 		if (!session?.accessToken) {
 			return console.log("Unauthenticated")
 		}
 
-		console.log("Values", values);
 
 		if (values.env_vars) {
 			values.env_vars = parseEnvVarsToStore(values.env_vars)
@@ -213,7 +215,6 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			url: values.url,
 			service_name: values.service_name,
 			branch: values.branch,
-			build_cmd: values.build_cmd,
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars,
 			...(coreDeploymentInfo && { core_deployment_info: coreDeploymentInfo }),

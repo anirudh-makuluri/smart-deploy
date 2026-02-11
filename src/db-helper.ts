@@ -202,9 +202,6 @@ export const dbHelper = {
 		userID: string,
 		entry: Omit<DeploymentHistoryEntry, "id" | "deploymentId">
 	) {
-		console.log("deploymentId", deploymentId);
-		console.log("userID", userID);
-		console.log("entry", entry);
 		try {
 			const deploymentRef = db.collection("deployments").doc(deploymentId);
 			const deploymentDoc = await deploymentRef.get();
