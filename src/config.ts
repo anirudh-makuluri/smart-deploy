@@ -15,6 +15,9 @@ const config = {
 	ECS_ACM_CERTIFICATE_ARN: process.env.ECS_ACM_CERTIFICATE_ARN || "",
 	// EB ALB HTTPS: ACM certificate ARN (optional). When set, new/updated EB environments get an HTTPS listener on port 443 (instance port 80).
 	EB_ACM_CERTIFICATE_ARN: process.env.EB_ACM_CERTIFICATE_ARN || "",
+
+	// Lets Encrypt (EC2 + nginx)
+	LETSENCRYPT_EMAIL: process.env.LETSENCRYPT_EMAIL || "",
 	
 	// AI
 	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",

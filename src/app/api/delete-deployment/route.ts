@@ -7,6 +7,7 @@ import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
 import { DeployConfig } from "@/app/types";
+import { deleteVercelDnsRecord } from "@/lib/vercelDns";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -102,7 +103,19 @@ export async function POST(req: NextRequest) {
 			}
 		}
 
-		// 2. Delete from DB (deployment doc + user's deploymentIds)
+		// 2. Delete Vercel DNS record (best effort; block on failure to avoid orphaned DNS)
+		const dnsResult = await deleteVercelDnsRecord({
+			customUrl: deployConfig.custom_url || deployConfig.custom_domain || null,
+			serviceName: deployConfig.service_name || serviceName || null,
+		});
+		if (!dnsResult.success) {
+			return NextResponse.json(
+				{ error: "Failed to delete Vercel DNS record", details: dnsResult.error },
+				{ status: 500 }
+			);
+		}
+
+		// 3. Delete from DB (deployment doc + user's deploymentIds)
 		const result = await dbHelper.deleteDeployment(deploymentId, userID);
 
 		if (result.error) {
@@ -112,7 +125,11 @@ export async function POST(req: NextRequest) {
 			);
 		}
 
-		return NextResponse.json({ status: "success", message: "Deployment deleted; no traces left." });
+		return NextResponse.json({
+			status: "success",
+			message: "Deployment deleted; no traces left.",
+			vercelDnsDeleted: dnsResult.success ? dnsResult.deletedCount : 0,
+		});
 	} catch (err: unknown) {
 		console.error("delete-deployment error:", err);
 		const message = err instanceof Error ? err.message : String(err);

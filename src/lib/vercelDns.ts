@@ -14,6 +14,10 @@ export type AddVercelDnsResult =
 	| { success: true; customUrl: string }
 	| { success: false; error: string };
 
+export type DeleteVercelDnsResult =
+	| { success: true; deletedCount: number }
+	| { success: false; error: string };
+
 export type AddVercelDnsOptions = {
 	/**
 	 * Used to decide whether EC2 should use an A record (IP) instead of a CNAME (hostname).
@@ -25,6 +29,11 @@ export type AddVercelDnsOptions = {
 	 * delete the previous record (same subdomain) and recreate it with the new target.
 	 */
 	previousCustomUrl?: string | null;
+};
+
+export type DeleteVercelDnsOptions = {
+	customUrl?: string | null;
+	serviceName?: string | null;
 };
 
 function isValidIpv4(host: string): boolean {
@@ -222,6 +231,91 @@ export async function addVercelDnsRecord(
 		const message =
 			error instanceof Error ? error.message : "Failed to add DNS record";
 		console.error("Vercel addVercelDnsRecord error:", error);
+		return { success: false, error: message };
+	}
+}
+
+/**
+ * Delete Vercel DNS record(s) for a deployment using its custom URL or service name.
+ * Returns deletedCount=0 if no matching records exist.
+ */
+export async function deleteVercelDnsRecord(
+	options?: DeleteVercelDnsOptions
+): Promise<DeleteVercelDnsResult> {
+	const token = (process.env.VERCEL_TOKEN || "").trim();
+	const domain = (
+		process.env.VERCEL_DOMAIN ||
+		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
+		""
+	).trim();
+
+	if (!token || !domain) {
+		return {
+			success: false,
+			error:
+				"Vercel DNS not configured. Set VERCEL_TOKEN and VERCEL_DOMAIN (or NEXT_PUBLIC_DEPLOYMENT_DOMAIN).",
+		};
+	}
+
+	const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+	const customUrl = (options?.customUrl || "").trim();
+	const serviceName = (options?.serviceName || "").trim();
+
+	let subdomain: string | null = null;
+	if (customUrl) {
+		subdomain = getSubdomainFromCustomUrl(customUrl, baseDomain);
+	}
+	if (!subdomain && serviceName) {
+		subdomain = sanitizeSubdomain(serviceName);
+	}
+	if (!subdomain) {
+		return { success: false, error: "Unable to determine DNS record name to delete." };
+	}
+
+	const headers: Record<string, string> = {
+		Authorization: `Bearer ${token}`,
+		"Content-Type": "application/json",
+	};
+	const listUrl = new URL(`${VERCEL_API_BASE}/v4/domains/${encodeURIComponent(baseDomain)}/records`);
+
+	async function listRecords(): Promise<any[]> {
+		const listRes = await fetch(listUrl.toString(), { headers });
+		if (!listRes.ok) return [];
+		const listData = await listRes.json();
+		return Array.isArray(listData.records) ? listData.records : Array.isArray(listData) ? listData : [];
+	}
+
+	function recordNameMatches(r: { name?: string }, wanted: string): boolean {
+		return r?.name === wanted || (r?.name === "" && wanted === baseDomain);
+	}
+
+	function getRecordId(r: any): string | null {
+		return (r?.id ?? r?.uid) ? String(r.id ?? r.uid) : null;
+	}
+
+	async function deleteRecordById(recordId: string): Promise<boolean> {
+		const delUrl = `${VERCEL_API_BASE}/v2/domains/${encodeURIComponent(baseDomain)}/records/${encodeURIComponent(recordId)}`;
+		const delRes = await fetch(delUrl, { method: "DELETE", headers });
+		return delRes.ok;
+	}
+
+	try {
+		const records = await listRecords();
+		const toDelete = records.filter((r: any) => recordNameMatches(r, subdomain as string));
+		if (toDelete.length === 0) return { success: true, deletedCount: 0 };
+
+		let deletedCount = 0;
+		for (const r of toDelete) {
+			const id = getRecordId(r);
+			if (!id) continue;
+			const ok = await deleteRecordById(id);
+			if (ok) deletedCount += 1;
+		}
+
+		return { success: true, deletedCount };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Failed to delete DNS record";
+		console.error("Vercel deleteVercelDnsRecord error:", error);
 		return { success: false, error: message };
 	}
 }

@@ -71,6 +71,53 @@ export async function runAWSCommand(
 }
 
 /**
+ * Runs an AWS CLI command with stdout/stderr written to a temp file, then reads the file as UTF-8.
+ * Use this for commands that can output Unicode (e.g. get-console-output) to avoid Windows
+ * console encoding errors that cause the CLI to exit with code 255.
+ */
+export async function runAWSCommandToFile(
+	args: string[],
+	ws: any,
+	stepId: string
+): Promise<string> {
+	const { spawn } = await import("child_process");
+	const os = await import("os");
+	const outPath = path.join(os.tmpdir(), `aws-console-${Date.now()}.txt`);
+	const fd = fs.openSync(outPath, "w");
+
+	return new Promise((resolve, reject) => {
+		const child = spawn("aws", args, {
+			stdio: ["ignore", fd, fd],
+			env: process.env,
+			windowsHide: true,
+		});
+		child.on("close", (code) => {
+			fs.closeSync(fd);
+			try {
+				const content = fs.readFileSync(outPath, "utf8");
+				try {
+					fs.unlinkSync(outPath);
+				} catch {
+					// ignore
+				}
+				if (code === 0) {
+					resolve(content);
+				} else {
+					reject(new Error(`aws ${args.join(" ")} exited with code ${code}${content ? "\n" + content.slice(-500) : ""}`));
+				}
+			} catch (e) {
+				reject(e);
+			}
+		});
+		child.on("error", (err) => {
+			fs.closeSync(fd);
+			try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+			reject(err);
+		});
+	});
+}
+
+/**
  * Creates an S3 bucket if it doesn't exist
  */
 export async function ensureS3Bucket(

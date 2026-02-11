@@ -1,5 +1,20 @@
 import { spawn } from "child_process";
 
+/**
+ * On Windows, the terminal often uses a codec that can't display Unicode (e.g. ✓).
+ * Sanitize so process.stdout.write doesn't throw 'charmap' codec errors.
+ */
+function safeForWindowsConsole(str: string): string {
+	if (process.platform !== "win32") return str;
+	// Replace common Unicode symbols with ASCII equivalents; strip other non-ASCII
+	return str
+		.replace(/\u2713/g, "[OK]")
+		.replace(/\u2714/g, "[OK]")
+		.replace(/\u274C/g, "[X]")
+		.replace(/\u26A0/g, "[!]")
+		.replace(/[^\x00-\x7F]/g, "?");
+}
+
 export async function runCommandLive(cmd: string, args: string[]) {
 	return new Promise<void>((resolve, reject) => {
 		const child = spawn(cmd, args, { stdio: "inherit", shell: true });
@@ -19,13 +34,13 @@ export async function runCommandLiveWithOutput(cmd: string, args: string[]): Pro
 		child.stdout.on("data", (data) => {
 			const str = data.toString('utf8');
 			output += str;
-			process.stdout.write(str); // Live stream
+			process.stdout.write(safeForWindowsConsole(str)); // Live stream
 		});
 
 		child.stderr.on("data", (data) => {
 			const str = data.toString('utf8');
 			output += str;
-			process.stderr.write(str);
+			process.stderr.write(safeForWindowsConsole(str));
 		});
 
 		child.on("exit", (code) => {
@@ -82,19 +97,18 @@ export async function runCommandLiveWithWebSocket(
 		sendWS(`🔄 Running: ${cmd} ${args.join(" ")}`);
 
 		child.stdout.on("data", (data) => {
-			// Use UTF-8 encoding explicitly to handle Unicode characters (fixes Windows charmap errors)
+			// Use UTF-8 encoding explicitly to handle Unicode characters
 			const str = data.toString('utf8');
 			output += str;
-
-			sendWS(str)
-			process.stdout.write(str);
+			sendWS(str);
+			// On Windows, writing Unicode to the terminal can cause charmap errors
+			process.stdout.write(safeForWindowsConsole(str));
 		});
 
 		child.stderr.on("data", (data) => {
-			// Use UTF-8 encoding explicitly to handle Unicode characters (fixes Windows charmap errors)
 			const err = data.toString('utf8');
-			sendWS(err)
-			process.stderr.write(err);
+			sendWS(err);
+			process.stderr.write(safeForWindowsConsole(err));
 		});
 
 		child.on("exit", (code) => {

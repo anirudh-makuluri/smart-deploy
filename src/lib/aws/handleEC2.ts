@@ -7,6 +7,7 @@ import { MultiServiceConfig } from "../multiServiceDetector";
 import { 
 	setupAWSCredentials, 
 	runAWSCommand, 
+	runAWSCommandToFile,
 	getDefaultVpcId,
 	getSubnetIds,
 	ensureSecurityGroup,
@@ -108,6 +109,17 @@ function buildEnvFileContent(entries: { key: string; value: string }[]): string 
 	return lines.join("\n");
 }
 
+function normalizeDomain(input?: string): string {
+	const raw = (input || "").trim();
+	if (!raw) return "";
+	try {
+		const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+		return url.hostname;
+	} catch {
+		return raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+	}
+}
+
 /**
  * Generates user-data script for EC2 instance
  */
@@ -118,7 +130,9 @@ function generateUserDataScript(
 	services: { name: string; dir: string; port: number }[],
 	envVars: string,
 	dbConnectionString?: string,
-	commitSha?: string
+	commitSha?: string,
+	customDomain?: string,
+	letsEncryptEmail?: string
 ): string {
 	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
 	
@@ -160,6 +174,9 @@ function generateUserDataScript(
 	}
 	const envFileContent = buildEnvFileContent(envEntries);
 	const envBase64 = envFileContent ? Buffer.from(envFileContent, "utf8").toString("base64") : "";
+
+	const domainHost = normalizeDomain(customDomain);
+	const email = (letsEncryptEmail || "").trim();
 
 	return `#!/bin/bash
 set -e
@@ -214,12 +231,19 @@ systemctl start nginx
 systemctl enable nginx
 
 # Disable the default nginx server block on port 80 in nginx.conf (it conflicts with our app.conf)
-# Comment out the listen/server_name lines for the built-in default server
+# Comment out listen/server_name lines for the built-in default server, including default_server variants
 sed -i 's/^[[:space:]]*server_name[[:space:]]\+_;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\+80;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\+\[::]:80;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\+80\(.*default_server.*\)\?;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\+\[::]:80\(.*default_server.*\)\?;$/# &/' /etc/nginx/nginx.conf
 
 # Configure nginx
+cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
+map \$http_upgrade \$connection_upgrade {
+	default upgrade;
+	'' close;
+}
+NGINXEOF
+
 cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
@@ -229,7 +253,7 @@ server {
         proxy_pass http://127.0.0.1:${ports[0] || 8080};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \\$http_upgrade;
-        proxy_set_header Connection 'upgrade';
+		proxy_set_header Connection \$connection_upgrade;
         proxy_set_header Host \\$host;
         proxy_set_header X-Real-IP \\$remote_addr;
         proxy_cache_bypass \\$http_upgrade;
@@ -243,6 +267,28 @@ rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/ngin
 # Validate and reload
 nginx -t
 systemctl reload nginx
+
+# Optional: Lets Encrypt HTTPS (requires DNS A record to this instance)
+CUSTOM_DOMAIN="${domainHost}"
+LETSENCRYPT_EMAIL="${email}"
+if [ -n "${domainHost}" ] && [ -n "${email}" ]; then
+	# Tools for DNS check and certbot
+	yum install -y certbot python3-certbot-nginx bind-utils
+	PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
+	if [ -n "$PUBLIC_IP" ]; then
+		for i in $(seq 1 80); do
+			RESOLVED=$(dig +short "$CUSTOM_DOMAIN" | head -n1)
+			if [ "$RESOLVED" = "$PUBLIC_IP" ]; then
+				break
+			fi
+			sleep 15
+		done
+	fi
+	certbot --nginx -d "$CUSTOM_DOMAIN" --non-interactive --agree-tos -m "$LETSENCRYPT_EMAIL" --redirect || true
+	systemctl enable --now certbot-renew.timer || true
+	nginx -t
+	systemctl reload nginx
+fi
 
 # Show how nginx has wired port 80 (from nginx's own view)
 echo "====== nginx servers listening on port 80 ======"
@@ -331,34 +377,32 @@ export async function handleEC2(
 			`Security group for ${repoName} EC2 instance`,
 			ws
 		);
-		// Add SSH access to security group
+	}
+
+	// Ensure ingress rules exist even when reusing a security group
+	const ingressPorts = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
+	if (deployConfig.core_deployment_info?.port) {
+		ingressPorts.add(deployConfig.core_deployment_info.port);
+	}
+	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 0) {
+		for (const svc of multiServiceConfig.services) {
+			if (typeof svc.port === "number" && !Number.isNaN(svc.port)) {
+				ingressPorts.add(svc.port);
+			}
+		}
+	}
+	for (const port of ingressPorts) {
 		try {
 			await runAWSCommand([
 				"ec2", "authorize-security-group-ingress",
 				"--group-id", securityGroupId,
 				"--protocol", "tcp",
-				"--port", "22",
+				"--port", String(port),
 				"--cidr", "0.0.0.0/0",
 				"--region", region
 			], ws, 'setup');
 		} catch {
 			// Rule might already exist
-		}
-		// Add application ports
-		const appPorts = [8080, 3000, 5000];
-		for (const port of appPorts) {
-			try {
-				await runAWSCommand([
-					"ec2", "authorize-security-group-ingress",
-					"--group-id", securityGroupId,
-					"--protocol", "tcp",
-					"--port", String(port),
-					"--cidr", "0.0.0.0/0",
-					"--region", region
-				], ws, 'setup');
-			} catch {
-				// Rule might already exist
-			}
 		}
 	}
 
@@ -402,7 +446,9 @@ export async function handleEC2(
 		services,
 		deployConfig.env_vars || '',
 		dbConnectionString,
-		deployConfig.commitSha
+		deployConfig.commitSha,
+		deployConfig.custom_domain || deployConfig.custom_url || "",
+		config.LETSENCRYPT_EMAIL
 	);
 
 	console.log("userData", userData);
@@ -469,13 +515,22 @@ export async function handleEC2(
 	send(`Waiting ${initialDelayMs / 1000}s before first health check...`, 'deploy');
 	await new Promise(resolve => setTimeout(resolve, initialDelayMs));
 
+	// Only send last N lines of console output to avoid flooding logs with full cloud-init/docker output
+	const CONSOLE_TAIL_LINES = 80;
+	function tailConsoleOutput(fullOutput: string): string {
+		const lines = fullOutput.trim().split(/\r?\n/);
+		if (lines.length <= CONSOLE_TAIL_LINES) return fullOutput.trim();
+		return "... (showing last " + CONSOLE_TAIL_LINES + " lines)\n" + lines.slice(-CONSOLE_TAIL_LINES).join("\n");
+	}
+
 	let attempts = 0;
 	const maxAttempts = 24; // 24 * 15s ≈ 6 min after initial delay
 	while (attempts < maxAttempts) {
 		attempts++;
 		send(`Fetching instance system logs (${attempts}/${maxAttempts})...`, 'deploy');
 		try {
-			const consoleOut = await runAWSCommand(
+			// Use runAWSCommandToFile to avoid Windows console encoding errors (exit 255) when output contains Unicode
+			const consoleOut = await runAWSCommandToFile(
 				[
 					"ec2",
 					"get-console-output",
@@ -492,7 +547,7 @@ export async function handleEC2(
 			);
 
 			if (consoleOut && consoleOut.trim()) {
-				send(consoleOut, 'deploy');
+				send(tailConsoleOutput(consoleOut), 'deploy');
 			} else {
 				send("(no new console output from instance yet)", 'deploy');
 			}
