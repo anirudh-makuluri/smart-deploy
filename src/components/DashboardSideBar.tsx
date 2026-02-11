@@ -15,11 +15,16 @@ import { formatTimestamp } from "@/lib/utils";
 export default function DashboardSideBar() {
 	const { data: session } = useSession();
 	const router = useRouter();
-	const { repoList, refreshRepoList } = useAppData();
+	const { repoList, deployments, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showAddRepo, setShowAddRepo] = useState(false);
 	const [repoUrl, setRepoUrl] = useState("");
 	const [isLoadingRepo, setIsLoadingRepo] = useState(false);
+
+	// Filter out repos that already have deployments/services
+	const availableRepos = repoList.filter((repo) => {
+		return !deployments.some((dep) => dep.url === repo.html_url);
+	});
 
 	async function handleRefresh() {
 		setIsRefreshing(true);
@@ -181,12 +186,14 @@ export default function DashboardSideBar() {
 					</div>
 				)}
 				<ul className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
-					{repoList.length === 0 ? (
+					{availableRepos.length === 0 ? (
 						<li className="text-[#94a3b8] text-sm py-4 px-3 rounded-lg border border-dashed border-[#1e3a5f]/60">
-							No repositories yet. Connect a repo from a service to see it here.
+							{repoList.length === 0 
+								? "No repositories yet. Connect a repo from a service to see it here."
+								: "All repositories have been deployed. Add a new repository to deploy."}
 						</li>
 					) : (
-						repoList.map((repo: repoType) => (
+						availableRepos.map((repo: repoType) => (
 							<li key={repo.id}>
 								<Link
 									href={`/repo/${repo.id}/${repo.full_name}`}

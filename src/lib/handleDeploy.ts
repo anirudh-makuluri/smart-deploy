@@ -47,7 +47,12 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		throw new Error(`Unknown deployment target: ${target}`);
 	}
 	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
-	send(`Deploying to: ${target.toUpperCase()}`, 'clone');
+	const commitSha = deployConfig.commitSha?.trim();
+	if (commitSha) {
+		send(`Deploying commit ${commitSha.substring(0, 7)} to: ${target.toUpperCase()}`, 'clone');
+	} else {
+		send(`Deploying to: ${target.toUpperCase()}`, 'clone');
+	}
 
 	// Determine cloud provider (default to AWS)
 	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
@@ -63,8 +68,22 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		// Clone repository first (common step)
 		const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
 		const branch = deployConfig.branch?.trim() || "main";
-		send(`Cloning repo from branch "${branch}"...`, 'clone');
+		const commitSha = deployConfig.commitSha?.trim();
+		
+		if (commitSha) {
+			send(`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
+		} else {
+			send(`Cloning repo from branch "${branch}"...`, 'clone');
+		}
+		
 		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
+
+		// Checkout specific commit if provided
+		if (commitSha) {
+			send(`Checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
+			await runCommandLiveWithWebSocket("git", ["checkout", commitSha], ws, 'clone', { cwd: cloneDir });
+			send(`✅ Checked out commit ${commitSha.substring(0, 7)}`, 'clone');
+		}
 
 		const appDir = deployConfig.core_deployment_info?.workdir
 			? path.join(cloneDir, deployConfig.core_deployment_info.workdir)

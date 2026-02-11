@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table"
 import DeploymentAccordion from "@/components/DeploymentAccordion";
 import ServiceLogs from "@/components/ServiceLogs";
+import DeployOptions from "@/components/DeployOptions";
 import { RotateCw, Upload, Trash2, Plus } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -82,10 +83,10 @@ const exampleProjectMetadata: AIGenProjectMetadata = {
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError, deployingCommitInfo }:
 		{
-			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, onConfigChange?: (partial: Partial<DeployConfig>) => void, editMode: boolean, isDeploying: boolean, id: string,
-			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig, deployError?: string | null
+			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, onConfigChange?: (partial: Partial<DeployConfig>) => void, editMode: boolean, isDeploying: boolean, id: string,
+			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig, deployError?: string | null, deployingCommitInfo?: { sha: string; message: string; author: string; date: string } | null
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -430,7 +431,16 @@ export default function ConfigTabs(
 						<TabsList className="bg-[#132f4c]/60 border border-[#1e3a5f]/60">
 							<TabsTrigger value="env_config" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Environment & Configuration</TabsTrigger>
 							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Service Logs</TabsTrigger> : null}
-							{isDeploying && <TabsTrigger value="deploy_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Deploy Logs</TabsTrigger>}
+							{isDeploying && (
+								<TabsTrigger value="deploy_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">
+									Deploy Logs
+									{deployingCommitInfo && (
+										<span className="ml-2 text-xs text-[#94a3b8] font-normal">
+											({deployingCommitInfo.sha.substring(0, 7)}: {deployingCommitInfo.message.split('\n')[0].substring(0, 40)}{deployingCommitInfo.message.split('\n')[0].length > 40 ? '...' : ''})
+										</span>
+									)}
+								</TabsTrigger>
+							)}
 						</TabsList>
 					) : null
 				}
@@ -461,13 +471,35 @@ export default function ConfigTabs(
 										<RotateCw className={isAiFetching ? "animate-spin" : ""} />
 										Smart Project Scan
 									</Button>
-									<Button 
-										type="submit" 
-										disabled={isDeployDisabled || isDeploying}
-										className="landing-build-blue hover:opacity-95 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-									>
-										{(deployment && deployment?.status != 'didnt_deploy') ? "Save Changes" : "Deploy"}
-									</Button>
+									{deployment && deployment?.status != 'didnt_deploy' ? (
+										<Button 
+											type="submit" 
+											disabled={isDeployDisabled || isDeploying}
+											className="landing-build-blue hover:opacity-95 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+										>
+											Save Changes
+										</Button>
+									) : (
+										<DeployOptions
+											onDeploy={(commitSha) => {
+												const formValues = form.getValues();
+												const envString = buildEnvVarsString(envEntries);
+												onSubmit({
+													...formValues,
+													env_vars: envString,
+													...(projectMetadata ?? {}),
+													...(deploymentAnalysis && { 
+														deploymentTarget: deploymentAnalysis.target, 
+														deployment_target_reason: deploymentAnalysis.reason 
+													}),
+													...(commitSha && { commitSha }),
+												});
+											}}
+											disabled={isDeployDisabled || isDeploying}
+											repo={repo}
+											branch={form.watch("branch") || deployment?.branch || "main"}
+										/>
+									)}
 								</div>
 							)}
 
@@ -801,7 +833,14 @@ export default function ConfigTabs(
 					<ServiceLogs logs={serviceLogs} />
 				</TabsContent>
 				<TabsContent value="deploy_logs">
-					<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Deploy Logs</p>
+					<div className="flex items-center gap-2 my-4">
+						<p className="font-bold text-xl whitespace-nowrap text-[#e2e8f0]">Deploy Logs</p>
+						{deployingCommitInfo && (
+							<span className="text-sm text-[#94a3b8] font-normal">
+								({deployingCommitInfo.sha.substring(0, 7)}: {deployingCommitInfo.message.split('\n')[0]})
+							</span>
+						)}
+					</div>
 					{deployError && (
 						<Alert className="mb-4 border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
 							<AlertTitle className="text-[#fca5a5]">Deployment failed</AlertTitle>

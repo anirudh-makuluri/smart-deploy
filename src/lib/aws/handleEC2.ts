@@ -117,7 +117,8 @@ function generateUserDataScript(
 	token: string,
 	services: { name: string; dir: string; port: number }[],
 	envVars: string,
-	dbConnectionString?: string
+	dbConnectionString?: string,
+	commitSha?: string
 ): string {
 	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
 	
@@ -192,6 +193,7 @@ cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docke
 cd /home/ec2-user
 git clone -b ${branch} ${authenticatedUrl} app
 cd app
+${commitSha ? `git checkout ${commitSha}` : ''}
 
 # Set environment variables (base64-decoded to support commas, newlines, quotes in values)
 ${envBase64 ? `echo '${envBase64}' | base64 -d > .env` : "touch .env"}
@@ -399,7 +401,8 @@ export async function handleEC2(
 		token,
 		services,
 		deployConfig.env_vars || '',
-		dbConnectionString
+		dbConnectionString,
+		deployConfig.commitSha
 	);
 
 	console.log("userData", userData);

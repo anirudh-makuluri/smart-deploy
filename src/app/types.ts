@@ -88,6 +88,8 @@ export type DeployConfig = {
 	id: string;
 	url: string;
 	branch: string;
+	/** Optional commit SHA to deploy a specific commit instead of branch HEAD */
+	commitSha?: string;
 	use_custom_dockerfile: boolean;
 	env_vars?: string;
 	deployUrl?: string;

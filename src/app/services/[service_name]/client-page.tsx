@@ -27,6 +27,7 @@ import { useSearchParams } from "next/navigation";
 import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/types";
 import ConfigTabs, { formSchema, FormSchemaType } from "@/components/ConfigTabs";
 import DeploymentHistory from "@/components/DeploymentHistory";
+import DeployOptions from "@/components/DeployOptions";
 import { ExternalLink, Calendar, Hash } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +39,7 @@ export default function Page({ service_name }: { service_name: string }) {
 
 	const { steps, sendDeployConfig, deployStatus, deployConfigRef, deployError, vercelDnsStatus, vercelDnsError, serviceLogs } = useDeployLogs(service_name);
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
+	const [deployingCommitInfo, setDeployingCommitInfo] = useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const { data: session } = useSession();
 
 	const [editMode, setEditMode] = useState(false);
@@ -54,10 +56,12 @@ export default function Page({ service_name }: { service_name: string }) {
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
 			setIsDeploying(false);
+			setDeployingCommitInfo(null);
 			updateDeployment(deployConfigRef.current);
 		}
 		if (deployStatus === "error") {
 			setIsDeploying(false);
+			setDeployingCommitInfo(null);
 		}
 		// Record deployment history once when deploy completes (success or failure)
 		if (deployment && shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
@@ -151,22 +155,67 @@ export default function Page({ service_name }: { service_name: string }) {
 		await updateDeployment(merged);
 	}
 
-	function handleRedeploy() {
+	function handleRedeploy(commitSha?: string) {
 		if (!session?.accessToken) {
 			return console.log("Unauthorized");
 		}
 
 		if (!deployment) return;
 
+		// Fetch commit info for the branch (always fetch to show in deploy logs)
+		if (repo) {
+			fetch("/api/commits/latest", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					owner: repo.owner.login,
+					repo: repo.name,
+					branch: deployment.branch || "main",
+				}),
+			})
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.commit) {
+						// If deploying specific commit, verify it matches; otherwise use latest
+						if (commitSha && data.commit.sha === commitSha) {
+							setDeployingCommitInfo({
+								sha: data.commit.sha,
+								message: data.commit.message,
+								author: data.commit.author,
+								date: data.commit.date,
+							});
+						} else if (!commitSha) {
+							// Deploying from branch - use latest commit
+							setDeployingCommitInfo({
+								sha: data.commit.sha,
+								message: data.commit.message,
+								author: data.commit.author,
+								date: data.commit.date,
+							});
+						}
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to fetch commit info:", err);
+				});
+		}
+
 		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
 		setNewChanges(false);
 
-		if (deployment.env_vars) {
-			deployment.env_vars = parseEnvVarsToStore(deployment.env_vars);
+		const deployConfig: DeployConfig = {
+			...deployment,
+			...(commitSha && { commitSha }),
+		};
+
+		if (deployConfig.env_vars) {
+			deployConfig.env_vars = parseEnvVarsToStore(deployConfig.env_vars);
 		}
 
-		sendDeployConfig(deployment, session?.accessToken);
+		sendDeployConfig(deployConfig, session?.accessToken);
 	}
 
 	function handleDeploymentControl(action: string) {
@@ -278,17 +327,12 @@ export default function Page({ service_name }: { service_name: string }) {
 					<div className="pt-4 border-t border-[#1e3a5f]/60">
 						<p className="font-semibold text-[#e2e8f0] mb-4">Actions</p>
 						<div className="flex flex-col gap-3">
-							<Button
-								onClick={handleRedeploy}
-								className={
-									newChanges
-										? "landing-build-blue hover:opacity-95 text-white"
-										: "border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50"
-								}
+							<DeployOptions
+								onDeploy={handleRedeploy}
 								disabled={isDeploying}
-							>
-								{isDeploying ? "Redeploying…" : deployStatus == "success" ? "Deployment success!" : "Redeploy"}
-							</Button>
+								repo={repo}
+								branch={deployment.branch || "main"}
+							/>
 							<AlertDialog>
 								<AlertDialogTrigger asChild>
 									<Button className="hidden" variant="outline">
@@ -351,6 +395,15 @@ export default function Page({ service_name }: { service_name: string }) {
 				</aside>
 				{/* Main */}
 				<div className="flex-1 min-h-0 overflow-y-auto py-6 px-8 lg:px-12">
+					{isDeploying && deployingCommitInfo && (
+						<div className="mb-4 rounded-lg border border-[#1d4ed8]/60 bg-[#1d4ed8]/10 px-4 py-3 text-sm space-y-2">
+							<div className="font-semibold text-[#e2e8f0]">🚀 Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</div>
+							<div className="text-[#94a3b8]">
+								<div className="font-medium text-[#e2e8f0]">{deployingCommitInfo.message.split('\n')[0]}</div>
+								<div className="text-xs mt-1">Author: {deployingCommitInfo.author} • {new Date(deployingCommitInfo.date).toLocaleString()}</div>
+							</div>
+						</div>
+					)}
 					<ConfigTabs
 						editMode={editMode}
 						onSubmit={onSubmit}
@@ -367,6 +420,7 @@ export default function Page({ service_name }: { service_name: string }) {
 						serviceLogs={serviceLogs}
 						steps={steps}
 						deployError={deployError}
+						deployingCommitInfo={deployingCommitInfo}
 					/>
 					<div className="mt-8 max-w-3xl">
 						<DeploymentHistory key={historyRefreshKey} deploymentId={deployment.id} />

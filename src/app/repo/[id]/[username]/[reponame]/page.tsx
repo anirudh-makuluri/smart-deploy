@@ -21,6 +21,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const { id, username, reponame } = use(params)
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, vercelDnsStatus, vercelDnsError } = useDeployLogs();
 	const [isDeploying, setIsDeploying] = useState<boolean>(false);
+	const [deployingCommitInfo, setDeployingCommitInfo] = useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const { data: session } = useSession();
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
 	const { repoList, deployments, updateDeploymentById } = useAppData();
@@ -36,10 +37,12 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
 			setIsDeploying(false);
+			setDeployingCommitInfo(null);
 			addDeployment(deployConfigRef.current);
 		}
 		if (deployStatus === "error") {
 			setIsDeploying(false);
+			setDeployingCommitInfo(null);
 		}
 		// Record deployment history once when deploy completes (success or failure)
 		if (shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
@@ -187,6 +190,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			Partial<AIGenProjectMetadata> & {
 				deploymentTarget?: DeployConfig["deploymentTarget"];
 				deployment_target_reason?: string;
+				commitSha?: string;
 			}
 	) {
 		if (!session?.accessToken) {
@@ -217,6 +221,7 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			branch: values.branch,
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars,
+			...(values.commitSha && { commitSha: values.commitSha }),
 			...(coreDeploymentInfo && { core_deployment_info: coreDeploymentInfo }),
 			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
 			...(values.final_notes && { final_notes: values.final_notes }),
@@ -239,6 +244,46 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 		}
 
 		console.log("Form Data", payload);
+
+		// Fetch commit info for the branch (always fetch to show in deploy logs)
+		if (repo) {
+			fetch("/api/commits/latest", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					owner: repo.owner.login,
+					repo: repo.name,
+					branch: payload.branch,
+				}),
+			})
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.commit) {
+						// If deploying specific commit, verify it matches; otherwise use latest
+						if (payload.commitSha && data.commit.sha === payload.commitSha) {
+							setDeployingCommitInfo({
+								sha: data.commit.sha,
+								message: data.commit.message,
+								author: data.commit.author,
+								date: data.commit.date,
+							});
+						} else if (!payload.commitSha) {
+							// Deploying from branch - use latest commit
+							setDeployingCommitInfo({
+								sha: data.commit.sha,
+								message: data.commit.message,
+								author: data.commit.author,
+								date: data.commit.date,
+							});
+						}
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to fetch commit info:", err);
+				});
+		}
 
 		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
@@ -280,7 +325,17 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 					serviceLogs={[]}
 					steps={steps}
 					deployError={deployError}
+					deployingCommitInfo={deployingCommitInfo}
 				/>
+				{isDeploying && deployingCommitInfo && (
+					<div className="mt-4 rounded-lg border border-[#1d4ed8]/60 bg-[#1d4ed8]/10 px-4 py-3 text-sm space-y-2">
+						<div className="font-semibold text-[#e2e8f0]">🚀 Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</div>
+						<div className="text-[#94a3b8]">
+							<div className="font-medium text-[#e2e8f0]">{deployingCommitInfo.message.split('\n')[0]}</div>
+							<div className="text-xs mt-1">Author: {deployingCommitInfo.author} • {new Date(deployingCommitInfo.date).toLocaleString()}</div>
+						</div>
+					</div>
+				)}
 				{
 					deployStatus === "success" && (
 						<div className="mt-4 rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/60 px-4 py-3 text-sm space-y-1">
