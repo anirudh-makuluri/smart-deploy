@@ -162,16 +162,22 @@ export default function Page({ service_name }: { service_name: string }) {
 
 		if (!deployment) return;
 
-		// Fetch commit info for the branch (always fetch to show in deploy logs)
-		if (repo) {
+		// Derive owner/repo from deployment.url (e.g. https://github.com/owner/repo) when repo.owner is missing
+		const ownerFromUrl = deployment.url?.match(/github\.com[/]([^/]+)/)?.[1];
+		const repoNameFromUrl = deployment.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
+		const owner = repo?.owner?.login ?? ownerFromUrl;
+		const repoName = repo?.name ?? repoNameFromUrl;
+
+		// Fetch commit info for the branch when we have owner/repo (always fetch to show in deploy logs)
+		if (owner && repoName) {
 			fetch("/api/commits/latest", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					owner: repo.owner.login,
-					repo: repo.name,
+					owner,
+					repo: repoName,
 					branch: deployment.branch || "main",
 				}),
 			})

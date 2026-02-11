@@ -17,13 +17,13 @@ export async function runCommandLiveWithOutput(cmd: string, args: string[]): Pro
 		const child = spawn(cmd, args, { shell: true });
 
 		child.stdout.on("data", (data) => {
-			const str = data.toString();
+			const str = data.toString('utf8');
 			output += str;
 			process.stdout.write(str); // Live stream
 		});
 
 		child.stderr.on("data", (data) => {
-			const str = data.toString();
+			const str = data.toString('utf8');
 			output += str;
 			process.stderr.write(str);
 		});
@@ -82,7 +82,8 @@ export async function runCommandLiveWithWebSocket(
 		sendWS(`🔄 Running: ${cmd} ${args.join(" ")}`);
 
 		child.stdout.on("data", (data) => {
-			const str = data.toString();
+			// Use UTF-8 encoding explicitly to handle Unicode characters (fixes Windows charmap errors)
+			const str = data.toString('utf8');
 			output += str;
 
 			sendWS(str)
@@ -90,7 +91,8 @@ export async function runCommandLiveWithWebSocket(
 		});
 
 		child.stderr.on("data", (data) => {
-			const err = data.toString();
+			// Use UTF-8 encoding explicitly to handle Unicode characters (fixes Windows charmap errors)
+			const err = data.toString('utf8');
 			sendWS(err)
 			process.stderr.write(err);
 		});

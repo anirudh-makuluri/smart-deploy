@@ -8,20 +8,13 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # ================================
-# Dependencies stage
-# ================================
-FROM base AS deps
-COPY package.json package-lock.json ./
-# Single npm ci (full) then copy+prune for prod — avoids OOM from double install on small instances
-RUN npm ci && \
-    cp -R node_modules prod_node_modules && \
-    (cd prod_node_modules && npm prune --production)
-
-# ================================
-# Build stage
+# Build stage (full install so devDependencies e.g. tw-animate-css are available)
 # ================================
 FROM base AS builder
-COPY --from=deps /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+# Full install including devDependencies required for Next.js/Tailwind build
+RUN npm ci
+
 COPY . .
 
 # Build arguments for environment variables needed at build time
