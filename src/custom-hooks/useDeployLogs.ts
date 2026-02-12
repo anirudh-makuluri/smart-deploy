@@ -176,7 +176,7 @@ export function useDeployLogs(serviceName?: string) {
 		return createWebSocket(onReady);
 	};
 
-	const sendDeployConfig = (deployConfig: DeployConfig, token: string) => {
+	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
 		deployConfigRef.current = deployConfig;
 		wasDeployingRef.current = true;
 		setDeployError(null);
@@ -193,7 +193,8 @@ export function useDeployLogs(serviceName?: string) {
 						type: 'deploy',
 						payload : {
 							deployConfig,
-							token
+							token,
+							userID
 						}
 					};
 					socket.send(JSON.stringify(object));
@@ -225,7 +226,8 @@ export function useDeployLogs(serviceName?: string) {
 							type: 'deploy',
 							payload: {
 								deployConfig,
-								token
+								token,
+								userID
 							}
 						};
 						socket.send(JSON.stringify(object));

@@ -5,11 +5,12 @@ import { streamLogs } from "./gcloud-logs/streamLogs";
 import { handleDeploy } from "./lib/handleDeploy";
 
 
-export async function deploy(payload: { deployConfig: DeployConfig, token: string }, ws: any) {
+export async function deploy(payload: { deployConfig: DeployConfig, token: string, userID?: string }, ws: any) {
 	const {
 		deployConfig,
-		token
-	}: { deployConfig: DeployConfig, token: string } = payload;
+		token,
+		userID
+	}: { deployConfig: DeployConfig, token: string, userID?: string } = payload;
 
 	if (deployConfig.dockerfileInfo) {
 		const { name, content } = deployConfig.dockerfileInfo;
@@ -20,7 +21,7 @@ export async function deploy(payload: { deployConfig: DeployConfig, token: strin
 		deployConfig.dockerfileContent = buffer.toString();
 	}
 
-	await handleDeploy(deployConfig, token, ws);
+	await handleDeploy(deployConfig, token, ws, userID);
 }
 
 export async function serviceLogs(payload: { serviceName: string }, ws: any) {

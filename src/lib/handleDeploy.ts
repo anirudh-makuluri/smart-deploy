@@ -3,10 +3,12 @@ import os from "os"
 import path from "path";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails } from "../app/types";
+import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails, DeployStep } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
+import { dbHelper } from "../db-helper";
+import { configSnapshotFromDeployConfig } from "./utils";
 
 // AWS imports
 import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
@@ -23,7 +25,7 @@ import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 /**
  * Main deployment handler - routes to AWS (default) or GCP
  */
-export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any): Promise<string> {
+export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any, userID?: string): Promise<string> {
 	const send = (msg: string, id: string) => {
 		if (ws.readyState === ws.OPEN) {
 			const object = {
@@ -114,9 +116,9 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 		// Route to appropriate cloud provider
 		if (cloudProvider === 'aws') {
-			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws);
+			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID);
 		} else {
-			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws);
+			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID);
 		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
@@ -183,6 +185,70 @@ function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	}
 }
 
+/**
+ * Save deployment to database and record history
+ * Called after deployment completes (success or failure)
+ */
+async function saveDeploymentToDB(
+	deployConfig: DeployConfig,
+	deployUrl: string | undefined,
+	success: boolean,
+	steps: DeployStep[],
+	userID: string | undefined,
+	serviceDetails: ServiceDeployDetails | null,
+	customUrl?: string | null
+): Promise<void> {
+	if (!userID) {
+		console.warn("No userID provided - skipping database save");
+		return;
+	}
+
+	try {
+		// Prepare minimal deployment config for DB
+		const minimalDeployment: DeployConfig = {
+			...deployConfig,
+			status: success ? "running" : "didnt_deploy",
+			...(deployUrl && { deployUrl }),
+			...(customUrl && { custom_url: customUrl }),
+			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
+			...(serviceDetails?.ecs && { ecs: serviceDetails.ecs }),
+			...(serviceDetails?.amplify && { amplify: serviceDetails.amplify }),
+			...(serviceDetails?.elasticBeanstalk && { elasticBeanstalk: serviceDetails.elasticBeanstalk }),
+		};
+
+		// Update deployment document (creates if doesn't exist)
+		const updateResponse = await dbHelper.updateDeployments(minimalDeployment, userID);
+		if (updateResponse.error) {
+			console.error("Failed to update deployment:", updateResponse.error);
+		} else {
+			console.log("Deployment saved to DB:", updateResponse.success);
+		}
+
+		// Record deployment history
+		const historyEntry = {
+			timestamp: new Date().toISOString(),
+			success,
+			steps,
+			configSnapshot: configSnapshotFromDeployConfig(deployConfig),
+			deployUrl,
+		};
+
+		const historyResponse = await dbHelper.addDeploymentHistory(
+			deployConfig.id,
+			userID,
+			historyEntry
+		);
+
+		if (historyResponse.error) {
+			console.error("Failed to record deployment history:", historyResponse.error);
+		} else {
+			console.log("Deployment history recorded:", historyResponse.id);
+		}
+	} catch (error) {
+		console.error("Error saving deployment to DB:", error);
+	}
+}
+
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
 	ec2?: EC2DeployDetails;
@@ -195,10 +261,24 @@ function sendDeployComplete(
 	ws: any,
 	deployUrl: string | undefined,
 	success: boolean,
+	deployConfig: DeployConfig,
+	deploySteps: DeployStep[],
+	userID: string | undefined,
 	deploymentTarget?: string,
 	vercelDns?: AddVercelDnsResult | null,
 	serviceDetails?: ServiceDeployDetails | null
 ) {
+	// Save to database before sending WebSocket message
+	saveDeploymentToDB(
+		deployConfig,
+		deployUrl,
+		success,
+		deploySteps,
+		userID,
+		serviceDetails,
+		vercelDns?.success ? vercelDns.customUrl : null
+	).catch(err => console.error("Failed to save deployment to DB:", err));
+
 	if (ws?.readyState === ws?.OPEN) {
 		const payload: {
 			deployUrl: string | null;
@@ -243,9 +323,26 @@ async function handleAWSDeploy(
 	multiServiceConfig: MultiServiceConfig,
 	dbConfig: DatabaseConfig | null,
 	token: string,
-	ws: any
+	ws: any,
+	userID: string | undefined
 ): Promise<string> {
+	const deploySteps: DeployStep[] = [];
+	
 	const send = (msg: string, id: string) => {
+		// Track step status
+		let stepIndex = deploySteps.findIndex(s => s.id === id);
+		if (stepIndex === -1) {
+			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress' });
+			stepIndex = deploySteps.length - 1;
+		} else {
+			deploySteps[stepIndex].logs.push(msg);
+			if (msg.startsWith('✅')) {
+				deploySteps[stepIndex].status = 'success';
+			} else if (msg.startsWith('❌')) {
+				deploySteps[stepIndex].status = 'error';
+			}
+		}
+		
 		if (ws.readyState === ws.OPEN) {
 			const object = {
 				type: 'deploy_logs',
@@ -354,9 +451,9 @@ async function handleAWSDeploy(
 				ec2Summary += `  - ${name}: ${url}\n`;
 			}
 			send(ec2Summary, 'done');
-			const ec2FirstUrl = ec2Result.serviceUrls.entries().next().value;
-			deployUrl = ec2FirstUrl ? ec2FirstUrl[1] : ec2Result.publicIp ? `http://${ec2Result.publicIp}` : undefined;
+			deployUrl = ec2Result.baseUrl;
 			serviceDetails.ec2 = {
+				baseUrl: ec2Result.baseUrl,
 				instanceId: ec2Result.instanceId,
 				publicIp: ec2Result.publicIp,
 				vpcId: ec2Result.vpcId,
@@ -387,8 +484,12 @@ async function handleAWSDeploy(
 		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
 	}
 
+	// Mark final step as success
+	const doneStep = deploySteps.find(s => s.id === 'done');
+	if (doneStep) doneStep.status = 'success';
+
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	sendDeployComplete(ws, deployUrl, true, target, vercelResult, serviceDetails);
+	sendDeployComplete(ws, deployUrl, true, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -406,9 +507,26 @@ async function handleGCPDeploy(
 	multiServiceConfig: MultiServiceConfig,
 	dbConfig: DatabaseConfig | null,
 	token: string,
-	ws: any
+	ws: any,
+	userID: string | undefined
 ): Promise<string> {
+	const deploySteps: DeployStep[] = [];
+	
 	const send = (msg: string, id: string) => {
+		// Track step status
+		let stepIndex = deploySteps.findIndex(s => s.id === id);
+		if (stepIndex === -1) {
+			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress' });
+			stepIndex = deploySteps.length - 1;
+		} else {
+			deploySteps[stepIndex].logs.push(msg);
+			if (msg.startsWith('✅')) {
+				deploySteps[stepIndex].status = 'success';
+			} else if (msg.startsWith('❌')) {
+				deploySteps[stepIndex].status = 'error';
+			}
+		}
+		
 		if (ws.readyState === ws.OPEN) {
 			const object = {
 				type: 'deploy_logs',
@@ -468,7 +586,9 @@ async function handleGCPDeploy(
 				previousCustomUrl: deployConfig.custom_url ?? null,
 			});
 		}
-		sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult, null);
+		const doneStep = deploySteps.find(s => s.id === 'done');
+		if (doneStep) doneStep.status = 'success';
+		sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -646,7 +766,9 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 			previousCustomUrl: deployConfig.custom_url ?? null,
 		});
 	}
-	sendDeployComplete(ws, gcpDeployUrl, true, "cloud-run", vercelResult, null);
+	const doneStep = deploySteps.find(s => s.id === 'done');
+	if (doneStep) doneStep.status = 'success';
+	sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

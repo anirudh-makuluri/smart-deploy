@@ -50,7 +50,6 @@ export default function Page({ service_name }: { service_name: string }) {
 	const repo = repoList.find((rep) => rep.id == deployment?.id);
 
 	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
-	const shouldRecordHistoryRef = React.useRef(false);
 	const [historyRefreshKey, setHistoryRefreshKey] = React.useState(0);
 
 	React.useEffect(() => {
@@ -63,24 +62,9 @@ export default function Page({ service_name }: { service_name: string }) {
 			setIsDeploying(false);
 			setDeployingCommitInfo(null);
 		}
-		// Record deployment history once when deploy completes (success or failure)
-		if (deployment && shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
-			shouldRecordHistoryRef.current = false;
-			const config = deployConfigRef.current;
-			fetch("/api/deployment-history", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					deploymentId: deployment.id,
-					success: deployStatus === "success",
-					steps,
-					configSnapshot: configSnapshotFromDeployConfig(config),
-					deployUrl: config.deployUrl,
-				}),
-			})
-				.then((res) => res.json())
-				.then((data) => { if (data?.status === "success") setHistoryRefreshKey((k) => k + 1); })
-				.catch((err) => console.error("Failed to save deployment history", err));
+		// Refresh history when deployment completes (backend handles saving)
+		if ((deployStatus === "success" || deployStatus === "error")) {
+			setHistoryRefreshKey((k) => k + 1);
 		}
 	}, [deployStatus, deployment, steps]);
 
@@ -221,7 +205,7 @@ export default function Page({ service_name }: { service_name: string }) {
 			deployConfig.env_vars = parseEnvVarsToStore(deployConfig.env_vars);
 		}
 
-		sendDeployConfig(deployConfig, session?.accessToken);
+		sendDeployConfig(deployConfig, session?.accessToken, session?.userID);
 	}
 
 	function handleDeploymentControl(action: string) {

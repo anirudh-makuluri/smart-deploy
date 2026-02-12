@@ -48,6 +48,7 @@ export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
 export type EC2DeployDetails = {
+	baseUrl: string;
 	instanceId: string;
 	publicIp: string;
 	vpcId: string;
@@ -95,7 +96,6 @@ export type DeployConfig = {
 	deployUrl?: string;
 	/** Custom URL (e.g. https://myapp.anirudh-makuluri.xyz) when NEXT_PUBLIC_DEPLOYMENT_DOMAIN is used. */
 	custom_url?: string;
-	custom_domain?: string;
 	service_name: string;
 	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy';
 	first_deployment?: string;

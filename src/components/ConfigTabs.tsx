@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, parseEnvVarsToStore, sanitizeAndParseAIResponse } from "@/lib/utils";
+import { toast } from "sonner";
 import { selectDeploymentTargetFromMetadata, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
@@ -56,6 +57,7 @@ export const formSchema = z.object({
 	env_vars: z.string().optional(),
 	workdir: z.string().optional(),
 	use_custom_dockerfile: z.boolean(),
+	custom_url: z.string().optional(),
 })
 
 const exampleProjectMetadata: AIGenProjectMetadata = {
@@ -97,6 +99,8 @@ export default function ConfigTabs(
 	);
 
 	const [isAiFetching, setAiFetching] = useState(false);
+	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
+	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
 	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
 		deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes
 			? {
@@ -145,6 +149,7 @@ export default function ConfigTabs(
 			env_vars: deployment?.env_vars || "",
 			workdir: deployment?.core_deployment_info?.workdir || "",
 			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
+			custom_url: deployment?.custom_url || "",
 		},
 	})
 
@@ -168,6 +173,7 @@ export default function ConfigTabs(
 			env_vars: deployment.env_vars ?? "",
 			workdir: deployment.core_deployment_info?.workdir ?? "",
 			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
+			custom_url: deployment.custom_url ?? "",
 		});
 		setEnvEntries(parseEnvVarsToDisplay(deployment.env_vars ?? ""));
 		if (deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes) {
@@ -192,6 +198,7 @@ export default function ConfigTabs(
 			branch: deployment.branch ?? "main",
 			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
 			env_vars: deployment.env_vars ?? "",
+			...(deployment.custom_url && { custom_url: deployment.custom_url }),
 			...(deployment.deploymentTarget && isDeploymentTarget(deployment.deploymentTarget) && {
 				deploymentTarget: deployment.deploymentTarget,
 				deployment_target_reason: deployment.deployment_target_reason,
@@ -231,6 +238,7 @@ export default function ConfigTabs(
 				branch: values.branch,
 				use_custom_dockerfile: values.use_custom_dockerfile,
 				env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
+				...(values.custom_url && { custom_url: values.custom_url }),
 				...(deploymentAnalysis && {
 					deploymentTarget: deploymentAnalysis.target,
 					deployment_target_reason: deploymentAnalysis.reason,
@@ -623,10 +631,127 @@ export default function ConfigTabs(
 								)}
 							</div>
 							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+						{/* Custom URL */}
+						<div className="my-4 flex flex-col space-y-2">
+							<div className="flex flex-row justify-start items-center space-x-4">
+								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Custom URL:</span>
+								{editMode ? (
+									<div className="flex-1 max-w-md space-y-2">
+										<div className="flex items-center gap-2">
+											<Input
+												placeholder="Enter subdomain (e.g., my-app)"
+												value={form.watch("custom_url") ? form.watch("custom_url")!.replace(/^https?:\/\//, "").split(".")[0] : ""}
+												onChange={(e) => {
+													const subdomain = e.target.value;
+													const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
+													const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+													const fullUrl = subdomain ? `https://${subdomain}.${baseDomain}` : "";
+													form.setValue("custom_url", fullUrl);
+													setCustomUrlStatus({ type: null });
+												}}
+												onKeyDown={async (e) => {
+													if (e.key === "Enter") {
+														e.preventDefault();
+														const customUrl = form.watch("custom_url");
+														if (!customUrl) return;
 
+														const subdomain = customUrl.replace(/^https?:\/\//, "").split(".")[0];
+														if (!subdomain) return;
+
+														setCustomUrlVerifying(true);
+														try {
+															const res = await fetch("/api/verify-dns", {
+																method: "POST",
+																headers: { "Content-Type": "application/json" },
+																body: JSON.stringify({ 
+																	subdomain,
+																	currentDeploymentId: id 
+																}),
+															});
+															const data = await res.json();
+
+															if (data.available) {
+																if (data.isOwned) {
+																	setCustomUrlStatus({ 
+																		type: 'owned', 
+																		message: `This is your current URL: ${data.customUrl}` 
+																	});
+																} else {
+																	setCustomUrlStatus({ 
+																		type: 'success', 
+																		message: `✓ Available: ${data.customUrl}` 
+																	});
+																}
+																form.setValue("custom_url", data.customUrl);
+															} else {
+																setCustomUrlStatus({ 
+																	type: 'error', 
+																	message: data.message || "Subdomain is already taken",
+																	alternatives: data.alternatives || []
+																});
+															}
+														} catch (error) {
+															setCustomUrlStatus({ 
+																type: 'error', 
+																message: "Failed to verify subdomain" 
+															});
+														} finally {
+															setCustomUrlVerifying(false);
+														}
+													}
+												}}
+												className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]"
+												disabled={customUrlVerifying}
+											/>
+											<span className="text-[#94a3b8] text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
+										</div>
+										{customUrlVerifying && (
+											<p className="text-xs text-[#94a3b8]">Verifying subdomain...</p>
+										)}
+										{customUrlStatus.type === 'success' && (
+											<p className="text-xs text-[#14b8a6]">{customUrlStatus.message}</p>
+										)}
+										{customUrlStatus.type === 'owned' && (
+											<p className="text-xs text-[#60a5fa]">{customUrlStatus.message}</p>
+										)}
+										{customUrlStatus.type === 'error' && (
+											<div className="text-xs space-y-1">
+												<p className="text-[#f87171]">{customUrlStatus.message}</p>
+												{customUrlStatus.alternatives && customUrlStatus.alternatives.length > 0 && (
+													<div className="space-y-1">
+														<p className="text-[#94a3b8]">Available alternatives:</p>
+														<div className="flex gap-2 flex-wrap">
+															{customUrlStatus.alternatives.map((alt) => (
+																<button
+																	key={alt}
+																	type="button"
+																	onClick={() => {
+																		const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
+																		const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+																		form.setValue("custom_url", `https://${alt}.${baseDomain}`);
+																		setCustomUrlStatus({ type: null });
+																	}}
+																	className="px-2 py-1 text-[#14b8a6] bg-[#14b8a6]/10 border border-[#14b8a6]/40 rounded hover:bg-[#14b8a6]/20 transition-colors"
+																>
+																	{alt}
+																</button>
+															))}
+														</div>
+													</div>
+												)}
+											</div>
+										)}
+										<p className="text-xs text-[#64748b]">Press Enter to verify availability</p>
+									</div>
+								) : (
+									<span className="text-[#94a3b8]">{deployment?.custom_url || 'Not set'}</span>
+								)}
+							</div>
+						</div>
+						<Separator className="bg-[#1e3a5f]/60 h-px" />
 							{/* Working Directory */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Working Directory:</span>
+								<span className="font-semibold min-w-37.5 text-[#e2e8f0]">Working Directory:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}

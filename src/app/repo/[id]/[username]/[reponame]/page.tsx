@@ -31,7 +31,6 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 	const [isLoadingRepo, setIsLoadingRepo] = useState(false);
 	// Use existing deployment (e.g. from a previous Smart Project Scan) to pre-fill form and metadata
 	const existingDeployment = deployments.find((dep) => dep.id === id);
-	const shouldRecordHistoryRef = React.useRef(false);
 	const [historyRefreshKey, setHistoryRefreshKey] = React.useState(0);
 
 	React.useEffect(() => {
@@ -44,64 +43,9 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 			setIsDeploying(false);
 			setDeployingCommitInfo(null);
 		}
-		// Record deployment history once when deploy completes (success or failure)
-		if (shouldRecordHistoryRef.current && (deployStatus === "success" || deployStatus === "error") && deployConfigRef.current) {
-			shouldRecordHistoryRef.current = false;
-			const config = deployConfigRef.current;
-			console.log("config", config);
-			const recordHistory = () =>
-				fetch("/api/deployment-history", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						deploymentId: id,
-						success: deployStatus === "success",
-						steps: steps ?? [],
-						configSnapshot: configSnapshotFromDeployConfig(config),
-						deployUrl: config.deployUrl ?? "",
-					}),
-				})
-					.then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-					.then(({ ok, data }) => {
-						if (ok && data?.status === "success") setHistoryRefreshKey((k) => k + 1);
-						else if (!ok) console.error("Deployment history failed:", data?.message ?? data);
-					})
-					.catch((err) => console.error("Failed to save deployment history", err));
-
-			// Ensure deployment doc exists before recording history (e.g. failed first deploy from repo page)
-			const minimalDeployment: DeployConfig = {
-				id,
-				url: config.url ?? repo?.html_url ?? "",
-				service_name: config.service_name ?? repo?.name ?? "app",
-				branch: config.branch ?? repo?.default_branch ?? "main",
-				use_custom_dockerfile: config.use_custom_dockerfile ?? false,
-				status: deployStatus === "success" ? "running" : "didnt_deploy",
-				...(config.deployUrl && { deployUrl: config.deployUrl }),
-				...(config.custom_url && { custom_url: config.custom_url }),
-				...(config.ec2 && { ec2: config.ec2 }),
-				...(config.ecs && { ecs: config.ecs }),
-				...(config.amplify && { amplify: config.amplify }),
-				...(config.elasticBeanstalk && { elasticBeanstalk: config.elasticBeanstalk }),
-			};
-			fetch("/api/update-deployments", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(minimalDeployment),
-			})
-				.then((res) => res.json())
-				.then((data) => {
-					if (data?.status === "success") {
-						updateDeploymentById(minimalDeployment);
-						recordHistory();
-					} else {
-						// Deployment doc may already exist (e.g. from Smart Project Scan); try recording
-						recordHistory();
-					}
-				})
-				.catch((err) => {
-					console.error("Failed to ensure deployment doc:", err);
-					recordHistory();
-				});
+		// Refresh history when deployment completes (backend handles saving)
+		if ((deployStatus === "success" || deployStatus === "error")) {
+			setHistoryRefreshKey((k) => k + 1);
 		}
 	}, [deployStatus, id, steps, repo]);
 
@@ -247,14 +191,20 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 
 		// Fetch commit info for the branch (always fetch to show in deploy logs)
 		if (repo) {
+			// Derive owner/repo from URL when repo.owner is missing
+			const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
+			const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
+			const owner = repo.owner?.login ?? ownerFromUrl ?? username;
+			const repoName = repo.name ?? repoNameFromUrl ?? reponame;
+
 			fetch("/api/commits/latest", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
-					owner: repo.owner.login,
-					repo: repo.name,
+					owner,
+					repo: repoName,
 					branch: payload.branch,
 				}),
 			})
@@ -285,9 +235,8 @@ export default function Page({ params }: { params: Promise<{ id: string, usernam
 				});
 		}
 
-		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
-		sendDeployConfig(payload, session?.accessToken);
+		sendDeployConfig(payload, session?.accessToken, session?.userID);
 
 	}
 

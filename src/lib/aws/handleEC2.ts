@@ -316,7 +316,7 @@ export async function handleEC2(
 	token: string,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string }> {
+): Promise<{ baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string }> {
 	const send = (msg: string, id: string) => {
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
@@ -447,7 +447,7 @@ export async function handleEC2(
 		deployConfig.env_vars || '',
 		dbConnectionString,
 		deployConfig.commitSha,
-		deployConfig.custom_domain || deployConfig.custom_url || "",
+		deployConfig.custom_url,
 		config.LETSENCRYPT_EMAIL
 	);
 
@@ -632,6 +632,7 @@ export async function handleEC2(
 	send(`SSH: ssh -i ${keyName}.pem ec2-user@${publicIp}`, 'done');
 
 	return {
+		baseUrl,
 		serviceUrls,
 		instanceId,
 		publicIp,
