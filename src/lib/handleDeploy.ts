@@ -9,6 +9,7 @@ import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
 import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
+import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 
 // AWS imports
 import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
@@ -26,18 +27,7 @@ import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
  * Main deployment handler - routes to AWS (default) or GCP
  */
 export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any, userID?: string): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: {
-					id,
-					msg
-				}
-			}
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	console.log("in handle deploy");
 
@@ -195,7 +185,7 @@ async function saveDeploymentToDB(
 	success: boolean,
 	steps: DeployStep[],
 	userID: string | undefined,
-	serviceDetails: ServiceDeployDetails | null,
+	serviceDetails: ServiceDeployDetails | null | undefined,
 	customUrl?: string | null
 ): Promise<void> {
 	if (!userID) {
@@ -259,7 +249,7 @@ type ServiceDeployDetails = {
 
 function sendDeployComplete(
 	ws: any,
-	deployUrl: string | undefined,
+	deployUrl: string | undefined = "",
 	success: boolean,
 	deployConfig: DeployConfig,
 	deploySteps: DeployStep[],
@@ -327,30 +317,7 @@ async function handleAWSDeploy(
 	userID: string | undefined
 ): Promise<string> {
 	const deploySteps: DeployStep[] = [];
-	
-	const send = (msg: string, id: string) => {
-		// Track step status
-		let stepIndex = deploySteps.findIndex(s => s.id === id);
-		if (stepIndex === -1) {
-			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress' });
-			stepIndex = deploySteps.length - 1;
-		} else {
-			deploySteps[stepIndex].logs.push(msg);
-			if (msg.startsWith('✅')) {
-				deploySteps[stepIndex].status = 'success';
-			} else if (msg.startsWith('❌')) {
-				deploySteps[stepIndex].status = 'error';
-			}
-		}
-		
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createDeployStepsLogger(ws, deploySteps);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -442,6 +409,23 @@ async function handleAWSDeploy(
 				dbConnectionString,
 				ws
 			);
+
+			serviceDetails.ec2 = {
+				baseUrl: ec2Result.baseUrl,
+				instanceId: ec2Result.instanceId,
+				publicIp: ec2Result.publicIp,
+				vpcId: ec2Result.vpcId,
+				subnetId: ec2Result.subnetId,
+				securityGroupId: ec2Result.securityGroupId,
+				amiId: ec2Result.amiId,
+			};
+
+			if(ec2Result.baseUrl == "") {
+				send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
+				result = "error";
+				break;
+			}
+
 			// Build summary
 			let ec2Summary = `\nDeployment completed!\n`;
 			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
@@ -452,15 +436,6 @@ async function handleAWSDeploy(
 			}
 			send(ec2Summary, 'done');
 			deployUrl = ec2Result.baseUrl;
-			serviceDetails.ec2 = {
-				baseUrl: ec2Result.baseUrl,
-				instanceId: ec2Result.instanceId,
-				publicIp: ec2Result.publicIp,
-				vpcId: ec2Result.vpcId,
-				subnetId: ec2Result.subnetId,
-				securityGroupId: ec2Result.securityGroupId,
-				amiId: ec2Result.amiId,
-			};
 			result = "done";
 			break;
 
@@ -511,30 +486,7 @@ async function handleGCPDeploy(
 	userID: string | undefined
 ): Promise<string> {
 	const deploySteps: DeployStep[] = [];
-	
-	const send = (msg: string, id: string) => {
-		// Track step status
-		let stepIndex = deploySteps.findIndex(s => s.id === id);
-		if (stepIndex === -1) {
-			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress' });
-			stepIndex = deploySteps.length - 1;
-		} else {
-			deploySteps[stepIndex].logs.push(msg);
-			if (msg.startsWith('✅')) {
-				deploySteps[stepIndex].status = 'success';
-			} else if (msg.startsWith('❌')) {
-				deploySteps[stepIndex].status = 'error';
-			}
-		}
-		
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createDeployStepsLogger(ws, deploySteps);
 
 	const projectId = config.GCP_PROJECT_ID;
 	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);

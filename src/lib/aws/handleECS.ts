@@ -8,6 +8,7 @@ import { IAMClient, GetRoleCommand, CreateRoleCommand, PutRolePolicyCommand, Att
 import config from "../../config";
 import { DeployConfig, ECSDeployDetails } from "../../app/types";
 import { MultiServiceConfig, ServiceDefinition } from "../multiServiceDetector";
+import { createWebSocketLogger } from "../websocketLogger";
 import { 
 	setupAWSCredentials, 
 	runAWSCommand, 
@@ -167,15 +168,7 @@ async function ensureECRRepository(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`Ensuring ECR repository: ${repoName}...`, 'docker');
 	let createErr: unknown;
@@ -274,15 +267,7 @@ async function zipAndUploadToS3(
  * Ensures S3 bucket exists for CodeBuild source
  */
 async function ensureS3Bucket(bucketName: string, region: string, ws: any): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		await runAWSCommand([
@@ -305,15 +290,7 @@ async function ensureS3Bucket(bucketName: string, region: string, ws: any): Prom
  * Ensures CodeBuild service role exists
  */
 async function ensureCodeBuildRole(roleName: string, accountId: string, region: string, ws: any): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const iamClient = new IAMClient({ 
 		region: "us-west-2", // IAM is global
@@ -436,15 +413,7 @@ async function ensureCodeBuildProject(
 	region: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const codeBuildClient = new CodeBuildClient({ 
 		region,
@@ -541,15 +510,7 @@ async function buildAndPushToECR(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const fullImageUri = `${ecrUri}:${imageTag}`;
 	// ECR URI format: {accountId}.dkr.ecr.{region}.amazonaws.com/{repoName}
@@ -658,15 +619,7 @@ async function ensureECSCluster(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		const output = await runAWSCommand([
@@ -711,15 +664,7 @@ async function createTaskDefinition(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`Creating task definition: ${taskFamily}...`, 'deploy');
 
@@ -1219,15 +1164,7 @@ async function createOrUpdateService(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	// Check if service exists
 	let serviceExists = false;
@@ -1290,15 +1227,7 @@ export async function handleECS(
 	dbConnectionString: string | undefined,
 	ws: any
 ): Promise<{ serviceUrls: Map<string, string>; deployedServices: string[]; details: ECSDeployDetails }> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -1523,15 +1452,7 @@ async function waitForServiceStable(
 	region: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	let attempts = 0;
 	const maxAttempts = 30;

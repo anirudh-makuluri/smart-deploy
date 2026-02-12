@@ -192,7 +192,6 @@ export default function Page({ service_name }: { service_name: string }) {
 				});
 		}
 
-		shouldRecordHistoryRef.current = true;
 		setIsDeploying(true);
 		setNewChanges(false);
 

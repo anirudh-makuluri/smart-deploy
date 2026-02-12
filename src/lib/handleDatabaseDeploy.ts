@@ -1,6 +1,7 @@
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
 import { DatabaseConfig } from "./databaseDetector";
+import { createWebSocketLogger } from "./websocketLogger";
 
 /**
  * Creates a Cloud SQL instance for MSSQL
@@ -11,18 +12,7 @@ export async function createCloudSQLInstance(
 	instanceName: string,
 	ws: any
 ): Promise<{ connectionName: string, ipAddress: string }> {
-	const send = (msg: string, id: string) => {
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: {
-					id,
-					msg
-				}
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`🗄️ Creating Cloud SQL ${dbConfig.type.toUpperCase()} instance: ${instanceName}...`, 'database');
 	send(`ℹ️ Note: This may take several minutes. Cloud SQL API must be enabled.`, 'database');
@@ -124,18 +114,7 @@ export async function connectCloudRunToCloudSQL(
 	connectionName: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: {
-					id,
-					msg
-				}
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`🔗 Connecting Cloud Run service to Cloud SQL...`, 'database');
 

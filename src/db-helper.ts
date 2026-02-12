@@ -1,4 +1,4 @@
-import { db } from "@/lib/firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import { DeployConfig, DeploymentHistoryEntry, repoType } from "./app/types";
 
 

@@ -3,20 +3,13 @@ import path from "path";
 import archiver from "archiver";
 import config from "../../config";
 import { runCommandLiveWithWebSocket } from "../../server-helper";
+import { createWebSocketLogger } from "../websocketLogger";
 
 /**
  * Sets up AWS credentials for CLI commands
  */
 export async function setupAWSCredentials(ws: any): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send("Setting up AWS credentials...", 'auth');
 
@@ -61,13 +54,16 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 
 /**
  * Runs an AWS CLI command with WebSocket logging
+ * Sets PYTHONIOENCODING=utf-8 to prevent Windows charmap encoding errors
  */
 export async function runAWSCommand(
 	args: string[],
 	ws: any,
 	stepId: string
 ): Promise<string> {
-	return runCommandLiveWithWebSocket("aws", args, ws, stepId);
+	return runCommandLiveWithWebSocket("aws", args, ws, stepId, {
+		env: { PYTHONIOENCODING: "utf-8" } as any
+	});
 }
 
 /**
@@ -88,7 +84,10 @@ export async function runAWSCommandToFile(
 	return new Promise((resolve, reject) => {
 		const child = spawn("aws", args, {
 			stdio: ["ignore", fd, fd],
-			env: process.env,
+			env: {
+				...process.env,
+				PYTHONIOENCODING: "utf-8", // Force Python (AWS CLI) to use UTF-8 encoding
+			},
 			windowsHide: true,
 		});
 		child.on("close", (code) => {
@@ -125,15 +124,7 @@ export async function ensureS3Bucket(
 	region: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		// Check if bucket exists
@@ -169,15 +160,7 @@ export async function uploadToS3(
 	s3Key: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`Uploading to S3: s3://${bucketName}/${s3Key}...`, 'upload');
 	
@@ -200,12 +183,7 @@ export async function createZipBundle(
 	outputPath: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = { type: 'deploy_logs', payload: { id, msg } };
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`Creating deployment bundle...`, 'bundle');
 
@@ -269,15 +247,7 @@ export async function ensureSecurityGroup(
 	description: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		// Check if security group exists
@@ -354,15 +324,7 @@ export async function waitForResource(
 	delaySeconds: number = 10,
 	ws: any
 ): Promise<boolean> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	for (let i = 0; i < maxAttempts; i++) {
 		try {

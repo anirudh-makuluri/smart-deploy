@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import config from "../../config";
 import { DeployConfig, ElasticBeanstalkDeployDetails } from "../../app/types";
+import { createWebSocketLogger } from "../websocketLogger";
 import { 
 	setupAWSCredentials, 
 	runAWSCommand, 
@@ -133,15 +134,7 @@ export async function handleElasticBeanstalk(
 	appDir: string,
 	ws: any
 ): Promise<{ url: string; details: ElasticBeanstalkDeployDetails }> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";

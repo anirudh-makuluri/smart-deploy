@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import config from "../../config";
 import { DeployConfig } from "../../app/types";
+import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import { 
 	setupAWSCredentials, 
@@ -43,15 +44,7 @@ async function ensureKeyPair(
 	region: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		await runAWSCommand([
@@ -317,15 +310,7 @@ export async function handleEC2(
 	dbConnectionString: string | undefined,
 	ws: any
 ): Promise<{ baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string }> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -567,7 +552,7 @@ export async function handleEC2(
 
 	// Quick one-shot port detection: try likely ports (including any service ports) with curl,
 	// mainly to choose a nice base URL. This doesn't block on readiness (we already streamed logs above).
-	let detectedPort: number = 80;
+	let detectedPort: number | null = null;
 	try {
 		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
 		const nullOut = process.platform === "win32" ? "NUL" : "/dev/null";
@@ -612,6 +597,20 @@ export async function handleEC2(
 		}
 	} catch {
 		// If curl/runCommandLiveWithWebSocket fails, fall back to 80
+	}
+
+	if (!detectedPort) {
+		send(`❌ Could not detect responding port. Server is not responding on any known ports.`, "deploy");
+		return {
+			baseUrl: "",
+			serviceUrls: new Map(),
+			instanceId,
+			publicIp,
+			vpcId,
+			subnetId: subnetIds[0],
+			securityGroupId,
+			amiId,
+		};
 	}
 
 	const serviceUrls = new Map<string, string>();

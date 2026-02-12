@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
 
 		// 2. Delete Vercel DNS record (best effort; block on failure to avoid orphaned DNS)
 		const dnsResult = await deleteVercelDnsRecord({
-			customUrl: deployConfig.custom_url || deployConfig.custom_domain || null,
+			customUrl: deployConfig.custom_url || null,
 			serviceName: deployConfig.service_name || serviceName || null,
 		});
 		if (!dnsResult.success) {

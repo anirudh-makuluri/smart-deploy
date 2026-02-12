@@ -5,6 +5,7 @@ import archiver from "archiver";
 import config from "../../config";
 import { DeployConfig, AmplifyDeployDetails } from "../../app/types";
 import { runCommandLiveWithWebSocket } from "../../server-helper";
+import { createWebSocketLogger } from "../websocketLogger";
 import {
 	setupAWSCredentials,
 	runAWSCommand,
@@ -183,14 +184,7 @@ export async function handleAmplify(
 	appDir: string,
 	ws: any
 ): Promise<{ url: string; details: AmplifyDeployDetails }> {
-	const send = (msg: string, id: string) => {
-		if (ws?.readyState === ws.OPEN) {
-			ws.send(JSON.stringify({
-				type: "deploy_logs",
-				payload: { id, msg },
-			}));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";

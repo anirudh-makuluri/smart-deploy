@@ -1,5 +1,6 @@
 import config from "../../config";
 import { DatabaseConfig } from "../databaseDetector";
+import { createWebSocketLogger } from "../websocketLogger";
 import { 
 	runAWSCommand, 
 	getDefaultVpcId,
@@ -38,15 +39,7 @@ async function ensureDBSubnetGroup(
 	region: string,
 	ws: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	try {
 		await runAWSCommand([
@@ -81,15 +74,7 @@ export async function createRDSInstance(
 	region: string,
 	ws: any
 ): Promise<{ endpoint: string; port: number; connectionString: string }> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const dbType = dbConfig.type || 'postgres';
 	const engineConfig = RDS_ENGINES[dbType];
@@ -275,15 +260,7 @@ export async function deleteRDSInstance(
 	region: string,
 	ws: any
 ): Promise<void> {
-	const send = (msg: string, id: string) => {
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg }
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	send(`Deleting RDS instance: ${instanceId}...`, 'database');
 	

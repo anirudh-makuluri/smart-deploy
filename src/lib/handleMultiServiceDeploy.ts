@@ -7,6 +7,7 @@ import { DeployConfig } from "../app/types";
 import { detectMultiService, ServiceDefinition } from "./multiServiceDetector";
 import { detectDatabase } from "./databaseDetector";
 import { createCloudSQLInstance, connectCloudRunToCloudSQL, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
+import { createWebSocketLogger } from "./websocketLogger";
 
 /**
  * Generates Dockerfile content for a service
@@ -120,18 +121,7 @@ async function deployService(
 	dbConnectionString?: string,
 	ws?: any
 ): Promise<string> {
-	const send = (msg: string, id: string) => {
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: {
-					id,
-					msg
-				}
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const serviceName = `${repoName}-${service.name}`;
 	const imageName = `${repoName}-${service.name}-image`;
@@ -234,18 +224,7 @@ export async function handleMultiServiceDeploy(
 	ws: any,
 	cloneDir: string
 ): Promise<{ serviceUrls: Map<string, string>, deployedServices: string[] }> {
-	const send = (msg: string, id: string) => {
-		if (ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: {
-					id,
-					msg
-				}
-			};
-			ws.send(JSON.stringify(object));
-		}
-	};
+	const send = createWebSocketLogger(ws);
 
 	const projectId = config.GCP_PROJECT_ID;
 	const repoUrl = deployConfig.url;
