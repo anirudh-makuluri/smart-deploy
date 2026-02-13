@@ -16,7 +16,13 @@ import {
 	getSubnetIds,
 	ensureSecurityGroup,
 	generateResourceName,
-	waitForResource
+	waitForResource,
+	ensureSharedAlb,
+	ensureTargetGroup,
+	ensureHostRule,
+	buildServiceHostname,
+	allowAlbToReachService,
+	getAccountId
 } from "./awsHelpers";
 
 /**
@@ -767,18 +773,6 @@ async function ensureCloudWatchLogGroup(
 }
 
 /**
- * Gets AWS account ID
- */
-async function getAccountId(ws: any): Promise<string> {
-	const output = await runAWSCommand([
-		"sts", "get-caller-identity",
-		"--query", "Account",
-		"--output", "text"
-	], ws, 'auth');
-	return output.trim();
-}
-
-/**
  * Ensures an ALB security group exists (ingress 80 from internet).
  */
 async function ensureAlbSecurityGroup(
@@ -809,29 +803,6 @@ async function ensureAlbSecurityGroup(
 		}
 	}
 	return sgId;
-}
-
-/**
- * Ensures ECS service SG allows inbound from ALB SG on container port.
- */
-async function allowAlbToReachService(
-	serviceSgId: string,
-	albSgId: string,
-	containerPort: number,
-	ws: any
-): Promise<void> {
-	try {
-		await runAWSCommand([
-			"ec2",
-			"authorize-security-group-ingress",
-			"--group-id",
-			serviceSgId,
-			"--ip-permissions",
-			`IpProtocol=tcp,FromPort=${containerPort},ToPort=${containerPort},UserIdGroupPairs=[{GroupId=${albSgId}}]`,
-		], ws, "setup");
-	} catch {
-		// likely already exists
-	}
 }
 
 /**
@@ -934,72 +905,6 @@ async function ensureAlb(
 	).trim();
 
 	return { albArn, dnsName };
-}
-
-/**
- * Ensures a target group exists for IP targets (Fargate) and returns its ARN.
- */
-async function ensureTargetGroup(
-	tgName: string,
-	vpcId: string,
-	containerPort: number,
-	region: string,
-	ws: any
-): Promise<string> {
-	try {
-		const tgArn = (
-			await runAWSCommand(
-				[
-					"elbv2",
-					"describe-target-groups",
-					"--names",
-					tgName,
-					"--query",
-					"TargetGroups[0].TargetGroupArn",
-					"--output",
-					"text",
-					"--region",
-					region,
-				],
-				ws,
-				"deploy"
-			)
-		).trim();
-		if (tgArn && tgArn !== "None") return tgArn;
-	} catch {
-		// does not exist
-	}
-
-	return (
-		await runAWSCommand(
-			[
-				"elbv2",
-				"create-target-group",
-				"--name",
-				tgName,
-				"--protocol",
-				"HTTP",
-				"--port",
-				String(containerPort),
-				"--target-type",
-				"ip",
-				"--vpc-id",
-				vpcId,
-				"--health-check-protocol",
-				"HTTP",
-				"--health-check-path",
-				"/",
-				"--query",
-				"TargetGroups[0].TargetGroupArn",
-				"--output",
-				"text",
-				"--region",
-				region,
-			],
-			ws,
-			"deploy"
-		)
-	).trim();
 }
 
 /**
@@ -1226,7 +1131,7 @@ export async function handleECS(
 	multiServiceConfig: MultiServiceConfig,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ serviceUrls: Map<string, string>; deployedServices: string[]; details: ECSDeployDetails }> {
+): Promise<{ serviceUrls: Map<string, string>; deployedServices: string[]; sharedAlbDns?: string; details: ECSDeployDetails }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -1298,6 +1203,33 @@ export async function handleECS(
 		});
 	}
 
+	// --- Shared ALB setup (one ALB for all services with host-based routing) ---
+	const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || undefined;
+	const baseDomain = config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim() || undefined;
+	
+	let sharedAlbArn: string | undefined;
+	let sharedAlbDns: string | undefined;
+	let sharedAlbListenerArn: string | undefined;
+	let sharedAlbSgId: string | undefined;
+	
+	if (certificateArn && baseDomain) {
+		send('\nSetting up shared ALB with host-based routing...', 'deploy');
+		const sharedAlb = await ensureSharedAlb({
+			vpcId,
+			subnetIds: subnetIds.slice(0, 2),
+			region,
+			ws,
+			certificateArn
+		});
+		sharedAlbArn = sharedAlb.albArn;
+		sharedAlbDns = sharedAlb.dnsName;
+		sharedAlbListenerArn = sharedAlb.httpsListenerArn;
+		sharedAlbSgId = sharedAlb.albSgId;
+		send(`Shared ALB ready: ${sharedAlbDns}`, 'deploy');
+	} else {
+		send('\nNo shared ALB (requires ECS_ACM_CERTIFICATE_ARN and NEXT_PUBLIC_DEPLOYMENT_DOMAIN)', 'deploy');
+	}
+
 	// Deploy each service
 	for (const service of services) {
 		send(`\nDeploying service: ${service.name}...`, 'deploy');
@@ -1366,24 +1298,57 @@ export async function handleECS(
 
 		ecsServiceNamesList.push(ecsServiceName);
 
-		// --- ALB setup (stable public URL) ---
-		// One ALB + Target Group per ECS service (simple and reliable).
-		const albName = `${ecsServiceName}-alb`.toLowerCase().slice(0, 32);
+		// --- Target Group and ALB registration ---
 		const tgName = `${ecsServiceName}-tg`.toLowerCase().slice(0, 32);
+		let targetGroupArn: string;
+		let serviceUrl: string;
 
-		send(`Ensuring ALB for ${service.name}...`, 'deploy');
-		const albSgId = await ensureAlbSecurityGroup(`${ecsServiceName}-alb-sg`.toLowerCase().slice(0, 255), vpcId, ws);
-		await allowAlbToReachService(securityGroupId, albSgId, service.port, ws);
+		if (sharedAlbArn && sharedAlbListenerArn && baseDomain) {
+			// Use shared ALB with host-based routing
+			send(`Registering ${service.name} to shared ALB...`, 'deploy');
+			
+			// Create target group for this service
+			targetGroupArn = await ensureTargetGroup(tgName, vpcId, service.port, region, ws);
+			
+			// Build service hostname
+			const serviceHostname = buildServiceHostname(service.name, baseDomain);
+			
+			if (serviceHostname) {
+				// Add host-based routing rule to HTTPS listener
+				await ensureHostRule(sharedAlbListenerArn, serviceHostname, targetGroupArn, region, ws);
+				
+				// Allow shared ALB to reach service
+				if (sharedAlbSgId) {
+					await allowAlbToReachService(securityGroupId, sharedAlbSgId, service.port, ws);
+				}
+				
+				// Service URL uses HTTPS with custom domain
+				serviceUrl = `https://${serviceHostname}`;
+				send(`Service registered: ${serviceUrl}`, 'deploy');
+			} else {
+				// Fallback if hostname build fails
+				serviceUrl = `https://${sharedAlbDns}`;
+			}
+		} else {
+			// Fallback: per-service ALB (when shared ALB not configured)
+			send(`Creating dedicated ALB for ${service.name}...`, 'deploy');
+			const albName = `${ecsServiceName}-alb`.toLowerCase().slice(0, 32);
+			const albSgId = await ensureAlbSecurityGroup(`${ecsServiceName}-alb-sg`.toLowerCase().slice(0, 255), vpcId, ws);
+			await allowAlbToReachService(securityGroupId, albSgId, service.port, ws);
 
-		const { albArn, dnsName: albDns } = await ensureAlb(albName, subnetIds.slice(0, 2), albSgId, region, ws);
-		const targetGroupArn = await ensureTargetGroup(tgName, vpcId, service.port, region, ws);
-		const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || undefined;
-		await ensureHttpListener(albArn, targetGroupArn, region, ws, {
-			redirectToHttps: !!certificateArn,
-		});
-		if (certificateArn) {
-			send("Adding HTTPS listener (443) with ACM certificate...", "deploy");
-			await ensureHttpsListener(albArn, targetGroupArn, certificateArn, region, ws);
+			const { albArn, dnsName: albDns } = await ensureAlb(albName, subnetIds.slice(0, 2), albSgId, region, ws);
+			targetGroupArn = await ensureTargetGroup(tgName, vpcId, service.port, region, ws);
+			
+			await ensureHttpListener(albArn, targetGroupArn, region, ws, {
+				redirectToHttps: !!certificateArn,
+			});
+			
+			if (certificateArn) {
+				send("Adding HTTPS listener (443) to dedicated ALB...", "deploy");
+				await ensureHttpsListener(albArn, targetGroupArn, certificateArn, region, ws);
+			}
+			
+			serviceUrl = certificateArn ? `https://${albDns}` : `http://${albDns}`;
 		}
 
 		// Create/update ECS service (behind ALB)
@@ -1405,9 +1370,7 @@ export async function handleECS(
 		send(`Waiting for service ${service.name} to be stable...`, 'deploy');
 		await waitForServiceStable(clusterArn, ecsServiceName, region, ws);
 		console.log('Service stable');
-		// Service URL: HTTPS when ACM cert is attached, else HTTP
-		//TODO:	fIX CERTICATEARN	
-		const serviceUrl = certificateArn ? `http://${albDns}` : `http://${albDns}`;
+		
 		console.log('Service URL: ', serviceUrl);
 		serviceUrls.set(service.name, serviceUrl);
 		deployedServices.push(service.name);
@@ -1415,11 +1378,14 @@ export async function handleECS(
 		console.log('Service deployed at: ', serviceUrl);
 		send(`Service ${service.name} deployed at: ${serviceUrl}`, 'deploy');
 	}
+	
 	console.log('All services deployed successfully');
 	send(`\nAll ${deployedServices.length} services deployed successfully!`, 'done');
+	
 	return {
 		serviceUrls,
 		deployedServices,
+		sharedAlbDns,
 		details: {
 			clusterName,
 			clusterArn,

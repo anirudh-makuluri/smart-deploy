@@ -173,24 +173,26 @@ ${Object.entries(fileContents)
 
 Required JSON keys:
 - core_deployment_info: { language (e.g. TypeScript, Python), framework (e.g. Next.js, Express), install_cmd, build_cmd (string or null), run_cmd, workdir (string or null) }
+  IMPORTANT FOR run_cmd: For Node.js/TypeScript projects, ALWAYS check package.json "scripts" section for the actual command to start the app. Look for "start", "start-all", or similar keys. The run_cmd must use what's defined in package.json scripts, typically "npm run <script>" or "npm start". Do NOT assume "node server.js" - that's a fallback only if no npm script exists. For example, if package.json has "scripts": { "start-all": "concurrently ..." }, then run_cmd should be "npm run start-all", not "node server.js".
   IMPORTANT: If the repo has NO deployable code (empty, only docs/README, only config files, only mobile code with no backend), set language to null or empty string, and run_cmd to null.
 ${include_extra_info ? `
 - features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, cloud_run_compatible, requires_build_but_missing_cmd } (all boolean; cloud_run_compatible = true only if stateless HTTP, no long-lived WebSockets, no mobile/lib)
   IMPORTANT: 
   - Set uses_mobile=true ONLY if the repo contains mobile code (React Native, Flutter, iOS, Android). 
-  - Set uses_server=true ONLY if there's actual server/backend code that runs on a server (Express, FastAPI, Django, Flask, NestJS, etc.). 
+  - Set uses_server=true ONLY if there's actual server/backend code that runs on a server (Express, FastAPI, Django, Flask, NestJS, etc.). Next.js with server-side rendering is a server-based framework, so uses_server=true for full Next.js apps.
   - Static SPAs (Create React App, Vite, Angular, Vue CLI, Svelte) have uses_server=false because they are client-side only and don't need a server runtime.
   - Firebase, Supabase client SDKs, and other BaaS (Backend-as-a-Service) clients are NOT server code - they run in the browser. Static SPAs using Firebase/Supabase should have uses_server=false.
   - If mobile-only with no server code, set uses_mobile=true and uses_server=false.
+  - WebSockets alone do NOT automatically mean ECS is required - they can run on Elastic Beanstalk or EC2. Only use ECS for multi-service architectures or when Dockerfile is present.
 - deployment_hints: { has_dockerfile (boolean), is_multi_service (boolean), has_database (boolean), nextjs_static_export (boolean; true only if Next.js and next.config has output: "export") }
 - service_compatibility: For each platform set true ONLY if this project can be deployed and run there. All boolean:
-  - amplify: true for static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export). These apps have build_cmd that produces build/, dist/, or out/ directory and NO run_cmd (or run_cmd is null). Static SPAs are perfect for Amplify.
-  - elastic_beanstalk: true for single-service apps in Node, Python, Java, Go, .NET, PHP, Ruby without Dockerfile; no multi-service, no built-in DB requirement
-  - ecs: true for containerized apps, multi-service, apps with DB, WebSockets, or when Dockerfile present
-  - ec2: true for complex apps requiring full control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
+  - amplify: true ONLY for static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export). These apps have build_cmd that produces build/, dist/, or out/ directory and NO run_cmd (or run_cmd is null). Static SPAs are perfect for Amplify. Do NOT set true for Next.js apps with SSR or API routes.
+  - elastic_beanstalk: true for single-service Node.js, Python, Java, Go, .NET, PHP, Ruby apps without Dockerfile; includes apps with WebSockets; no multi-service architecture required. This is the BEST fit for simple full-stack Node apps (including Next.js with SSR and WebSockets).
+  - ecs: true ONLY for: (1) apps with explicit Dockerfile present, OR (2) true multi-service architecture (multiple interconnected services, not just frontend+websocket server), OR (3) apps requiring Docker-specific features. Do NOT use ECS just because WebSockets are present - Elastic Beanstalk handles WebSockets fine.
+  - ec2: true for complex apps requiring full OS-level control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
-  Prefer marking the simplest compatible platform(s). At least one platform should be true if the project is deployable (has server/backend code OR is a static frontend app like CRA/Vite).
+  Prefer marking the simplest compatible platform(s). For Next.js apps with full-stack features (SSR, API routes, WebSockets, databases), Elastic Beanstalk is the best choice - mark it true and others false unless there's a specific reason (Dockerfile, true multi-service, etc.).
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;

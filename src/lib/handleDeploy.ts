@@ -393,9 +393,9 @@ async function handleAWSDeploy(
 				summary += `  - ${name}: ${url}\n`;
 			}
 			send(summary, 'done');
-			// Primary URL for client (first service)
+			// Primary URL for client (first service); use shared ALB DNS for Vercel DNS if available
 			const firstUrl = ecsResult.serviceUrls.entries().next().value;
-			deployUrl = firstUrl ? firstUrl[1] : undefined;
+			deployUrl = ecsResult.sharedAlbDns || (firstUrl ? firstUrl[1] : undefined);
 			serviceDetails.ecs = ecsResult.details;
 			result = "done";
 			break;
@@ -435,7 +435,7 @@ async function handleAWSDeploy(
 				ec2Summary += `  - ${name}: ${url}\n`;
 			}
 			send(ec2Summary, 'done');
-			deployUrl = ec2Result.baseUrl;
+			deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
 			result = "done";
 			break;
 

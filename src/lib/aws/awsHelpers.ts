@@ -342,3 +342,501 @@ export async function waitForResource(
 	
 	return false;
 }
+
+function getDeploymentBaseDomain(): string {
+	const domain = (
+		process.env.VERCEL_DOMAIN ||
+		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
+		""
+	).trim();
+	if (!domain) return "";
+	return domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+}
+
+function sanitizeSubdomain(value: string): string {
+	const out = value
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, 63);
+	return out || "app";
+}
+
+export function buildServiceHostname(serviceName: string, preferredSubdomain?: string): string | null {
+	const baseDomain = getDeploymentBaseDomain();
+	if (!baseDomain) return null;
+	const label = sanitizeSubdomain(preferredSubdomain?.trim() || serviceName);
+	return `${label}.${baseDomain}`;
+}
+
+export async function getAccountId(ws: any): Promise<string> {
+	const output = await runAWSCommand([
+		"sts", "get-caller-identity",
+		"--query", "Account",
+		"--output", "text"
+	], ws, "auth");
+	return output.trim();
+}
+
+export async function ensureAlbSecurityGroup(
+	albSgName: string,
+	vpcId: string,
+	ws: any
+): Promise<string> {
+	const sgId = await ensureSecurityGroup(
+		albSgName,
+		vpcId,
+		`Security group for ALB ${albSgName}`,
+		ws
+	);
+
+	for (const port of [80, 443]) {
+		try {
+			await runAWSCommand([
+				"ec2",
+				"authorize-security-group-ingress",
+				"--group-id",
+				sgId,
+				"--ip-permissions",
+				`IpProtocol=tcp,FromPort=${port},ToPort=${port},IpRanges=[{CidrIp=0.0.0.0/0}]`,
+			], ws, "setup");
+		} catch {
+			// likely already exists
+		}
+	}
+	return sgId;
+}
+
+export async function allowAlbToReachService(
+	serviceSgId: string,
+	albSgId: string,
+	containerPort: number,
+	ws: any
+): Promise<void> {
+	try {
+		await runAWSCommand([
+			"ec2",
+			"authorize-security-group-ingress",
+			"--group-id",
+			serviceSgId,
+			"--ip-permissions",
+			`IpProtocol=tcp,FromPort=${containerPort},ToPort=${containerPort},UserIdGroupPairs=[{GroupId=${albSgId}}]`,
+		], ws, "setup");
+	} catch {
+		// likely already exists
+	}
+}
+
+async function ensureAlb(
+	albName: string,
+	subnetIds: string[],
+	albSgId: string,
+	region: string,
+	ws: any
+): Promise<{ albArn: string; dnsName: string }> {
+	try {
+		const albArn = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"describe-load-balancers",
+					"--names",
+					albName,
+					"--query",
+					"LoadBalancers[0].LoadBalancerArn",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+		const dnsName = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"describe-load-balancers",
+					"--names",
+					albName,
+					"--query",
+					"LoadBalancers[0].DNSName",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+		if (albArn && albArn !== "None") return { albArn, dnsName };
+	} catch {
+		// does not exist
+	}
+
+	const albArn = (
+		await runAWSCommand(
+			[
+				"elbv2",
+				"create-load-balancer",
+				"--name",
+				albName,
+				"--type",
+				"application",
+				"--scheme",
+				"internet-facing",
+				"--subnets",
+				...subnetIds,
+				"--security-groups",
+				albSgId,
+				"--query",
+				"LoadBalancers[0].LoadBalancerArn",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		)
+	).trim();
+
+	const dnsName = (
+		await runAWSCommand(
+			[
+				"elbv2",
+				"describe-load-balancers",
+				"--load-balancer-arns",
+				albArn,
+				"--query",
+				"LoadBalancers[0].DNSName",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		)
+	).trim();
+
+	return { albArn, dnsName };
+}
+
+export async function ensureTargetGroup(
+	tgName: string,
+	vpcId: string,
+	containerPort: number,
+	region: string,
+	ws: any,
+	opts?: { targetType?: "ip" | "instance"; healthCheckPath?: string }
+): Promise<string> {
+	try {
+		const tgArn = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"describe-target-groups",
+					"--names",
+					tgName,
+					"--query",
+					"TargetGroups[0].TargetGroupArn",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+		if (tgArn && tgArn !== "None") return tgArn;
+	} catch {
+		// does not exist
+	}
+
+	const targetType = opts?.targetType || "ip";
+	const healthCheckPath = opts?.healthCheckPath || "/";
+
+	return (
+		await runAWSCommand(
+			[
+				"elbv2",
+				"create-target-group",
+				"--name",
+				tgName,
+				"--protocol",
+				"HTTP",
+				"--port",
+				String(containerPort),
+				"--target-type",
+				targetType,
+				"--vpc-id",
+				vpcId,
+				"--health-check-protocol",
+				"HTTP",
+				"--health-check-path",
+				healthCheckPath,
+				"--query",
+				"TargetGroups[0].TargetGroupArn",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		)
+	).trim();
+}
+
+async function ensureHttpListener(
+	albArn: string,
+	region: string,
+	ws: any,
+	opts?: { redirectToHttps?: boolean }
+): Promise<string> {
+	const redirectToHttps = opts?.redirectToHttps ?? false;
+	try {
+		const listenerArn = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"describe-listeners",
+					"--load-balancer-arn",
+					albArn,
+					"--query",
+					"Listeners[?Port==`80`].ListenerArn[0]",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+		if (listenerArn && listenerArn !== "None") {
+			if (redirectToHttps) {
+				await runAWSCommand(
+					[
+						"elbv2",
+						"modify-listener",
+						"--listener-arn",
+						listenerArn,
+						"--default-actions",
+						"Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}",
+						"--region",
+						region,
+					],
+					ws,
+					"deploy"
+				);
+			}
+			return listenerArn;
+		}
+	} catch {
+		// ignore
+	}
+
+	const defaultAction = redirectToHttps
+		? "Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}"
+		: "Type=fixed-response,FixedResponseConfig={StatusCode=404,ContentType=text/plain,MessageBody=NotFound}";
+
+	const createdArn = (
+		await runAWSCommand(
+			[
+				"elbv2",
+				"create-listener",
+				"--load-balancer-arn",
+				albArn,
+				"--protocol",
+				"HTTP",
+				"--port",
+				"80",
+				"--default-actions",
+				defaultAction,
+				"--query",
+				"Listeners[0].ListenerArn",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		)
+	).trim();
+
+	return createdArn;
+}
+
+async function ensureHttpsListener(
+	albArn: string,
+	certificateArn: string,
+	region: string,
+	ws: any
+): Promise<string> {
+	try {
+		const existing = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"describe-listeners",
+					"--load-balancer-arn",
+					albArn,
+					"--query",
+					"Listeners[?Port==`443`].ListenerArn[0]",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+		if (existing && existing !== "None") return existing;
+	} catch {
+		// ignore
+	}
+
+	const createdArn = (
+		await runAWSCommand(
+			[
+				"elbv2",
+				"create-listener",
+				"--load-balancer-arn",
+				albArn,
+				"--protocol",
+				"HTTPS",
+				"--port",
+				"443",
+				"--certificates",
+				`CertificateArn=${certificateArn}`,
+				"--default-actions",
+				"Type=fixed-response,FixedResponseConfig={StatusCode=404,ContentType=text/plain,MessageBody=NotFound}",
+				"--query",
+				"Listeners[0].ListenerArn",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		)
+	).trim();
+
+	return createdArn;
+}
+
+export async function ensureHostRule(
+	listenerArn: string,
+	hostname: string,
+	targetGroupArn: string,
+	region: string,
+	ws: any
+): Promise<void> {
+	const rulesRaw = await runAWSCommand([
+		"elbv2",
+		"describe-rules",
+		"--listener-arn",
+		listenerArn,
+		"--output",
+		"json",
+		"--region",
+		region,
+	], ws, "deploy");
+
+	let rules: Array<{ Priority?: string; Conditions?: Array<{ Field?: string; HostHeaderConfig?: { Values?: string[] } }>; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
+	try {
+		const parsed = JSON.parse(rulesRaw);
+		rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
+	} catch {
+		rules = [];
+	}
+
+	const hasRule = rules.some((rule) =>
+		(rule.Conditions || []).some((cond) =>
+			cond.Field === "host-header" && (cond.HostHeaderConfig?.Values || []).includes(hostname)
+		)
+	);
+	if (hasRule) return;
+
+	const numericPriorities = rules
+		.map((r) => r.Priority)
+		.filter((p): p is string => typeof p === "string" && p !== "default")
+		.map((p) => Number(p))
+		.filter((n) => Number.isFinite(n));
+
+	const maxPriority = numericPriorities.length ? Math.max(...numericPriorities) : 100;
+	let priority = maxPriority + 1;
+	if (priority > 50000) priority = 50000;
+
+	await runAWSCommand([
+		"elbv2",
+		"create-rule",
+		"--listener-arn",
+		listenerArn,
+		"--priority",
+		String(priority),
+		"--conditions",
+		`Field=host-header,HostHeaderConfig={Values=${hostname}}`,
+		"--actions",
+		`Type=forward,TargetGroupArn=${targetGroupArn}`,
+		"--region",
+		region,
+	], ws, "deploy");
+}
+
+export async function registerInstanceToTargetGroup(
+	targetGroupArn: string,
+	instanceId: string,
+	port: number,
+	region: string,
+	ws: any
+): Promise<void> {
+	await runAWSCommand([
+		"elbv2",
+		"register-targets",
+		"--target-group-arn",
+		targetGroupArn,
+		"--targets",
+		`Id=${instanceId},Port=${port}`,
+		"--region",
+		region,
+	], ws, "deploy");
+}
+
+export async function ensureSharedAlb(
+	params: {
+		vpcId: string;
+		subnetIds: string[];
+		region: string;
+		ws: any;
+		certificateArn?: string;
+	}
+): Promise<{ albArn: string; dnsName: string; albSgId: string; httpListenerArn: string; httpsListenerArn?: string }> {
+	const send = createWebSocketLogger(params.ws);
+	const accountId = await getAccountId(params.ws);
+	const suffix = accountId ? accountId.slice(-6) : "shared";
+	const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
+	const albSgName = `smartdeploy-${suffix}-alb-sg`.slice(0, 255);
+	const certificateArn = params.certificateArn?.trim() || "";
+
+	send(`Ensuring shared ALB (${albName})...`, "deploy");
+	const albSgId = await ensureAlbSecurityGroup(albSgName, params.vpcId, params.ws);
+	const { albArn, dnsName } = await ensureAlb(albName, params.subnetIds, albSgId, params.region, params.ws);
+	const httpListenerArn = await ensureHttpListener(albArn, params.region, params.ws, {
+		redirectToHttps: !!certificateArn,
+	});
+	const httpsListenerArn = certificateArn
+		? await ensureHttpsListener(albArn, certificateArn, params.region, params.ws)
+		: undefined;
+
+	return { albArn, dnsName, albSgId, httpListenerArn, httpsListenerArn };
+}

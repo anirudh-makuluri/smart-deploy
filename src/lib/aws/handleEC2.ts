@@ -12,6 +12,12 @@ import {
 	getDefaultVpcId,
 	getSubnetIds,
 	ensureSecurityGroup,
+	ensureSharedAlb,
+	ensureTargetGroup,
+	ensureHostRule,
+	registerInstanceToTargetGroup,
+	allowAlbToReachService,
+	buildServiceHostname,
 	generateResourceName
 } from "./awsHelpers";
 
@@ -261,36 +267,14 @@ rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/ngin
 nginx -t
 systemctl reload nginx
 
-# Optional: Lets Encrypt HTTPS (requires DNS A record to this instance)
-CUSTOM_DOMAIN="${domainHost}"
-LETSENCRYPT_EMAIL="${email}"
-if [ -n "${domainHost}" ] && [ -n "${email}" ]; then
-	# Tools for DNS check and certbot
-	yum install -y certbot python3-certbot-nginx bind-utils
-	PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
-	if [ -n "$PUBLIC_IP" ]; then
-		for i in $(seq 1 80); do
-			RESOLVED=$(dig +short "$CUSTOM_DOMAIN" | head -n1)
-			if [ "$RESOLVED" = "$PUBLIC_IP" ]; then
-				break
-			fi
-			sleep 15
-		done
-	fi
-	certbot --nginx -d "$CUSTOM_DOMAIN" --non-interactive --agree-tos -m "$LETSENCRYPT_EMAIL" --redirect || true
-	systemctl enable --now certbot-renew.timer || true
-	nginx -t
-	systemctl reload nginx
-fi
-
 # Show how nginx has wired port 80 (from nginx's own view)
 echo "====== nginx servers listening on port 80 ======"
 nginx -T 2>/dev/null | awk '
-  /server {/ { in_server=1; block=\"\" }
-  in_server { block = block $0 \"\\n\" }
+  /server {/ { in_server=1; block="" }
+  in_server { block = block $0 "\\n" }
   /}/ && in_server {
     in_server=0
-    if (block ~ /listen 80/ && block ~ /server_name _;/) print block \"\\n\"
+    if (block ~ /listen 80/ && block ~ /server_name _;/) print block "\\n"
   }'
 echo "==============================================="
 
@@ -309,18 +293,150 @@ export async function handleEC2(
 	token: string,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string }> {
+): Promise<{ baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string; sharedAlbDns?: string }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const instanceName = generateResourceName(repoName, "ec2");
 	const keyName = `smartdeploy`;
+	const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || "";
+	const sharedAlbEnabled = !!certificateArn && !!buildServiceHostname("app");
 
 	// If this deployment already has an EC2 instance, terminate it so we replace with a new one (redeploy = update)
 	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
 	if (existingInstanceId) {
 		try {
+			if (sharedAlbEnabled) {
+				const targetGroupName = `${repoName}-tg`
+					.toLowerCase()
+					.replace(/[^a-z0-9-]/g, "-")
+					.replace(/-+/g, "-")
+					.replace(/^-|-$/g, "")
+					.slice(0, 32) || "smartdeploy-tg";
+				try {
+					const targetGroupArn = (
+						await runAWSCommand([
+							"elbv2",
+							"describe-target-groups",
+							"--names",
+							targetGroupName,
+							"--query",
+							"TargetGroups[0].TargetGroupArn",
+							"--output",
+							"text",
+							"--region",
+							region,
+						], ws, "deploy")
+					).trim();
+					if (targetGroupArn && targetGroupArn !== "None") {
+						try {
+							const accountId = (await runAWSCommand([
+								"sts",
+								"get-caller-identity",
+								"--query",
+								"Account",
+								"--output",
+								"text"
+							], ws, "auth")).trim();
+							const suffix = accountId ? accountId.slice(-6) : "shared";
+							const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
+							const albArn = (await runAWSCommand([
+								"elbv2",
+								"describe-load-balancers",
+								"--names",
+								albName,
+								"--query",
+								"LoadBalancers[0].LoadBalancerArn",
+								"--output",
+								"text",
+								"--region",
+								region
+							], ws, "deploy")).trim();
+							if (albArn && albArn !== "None") {
+								const listenerArns: string[] = [];
+								const httpsListenerArn = (await runAWSCommand([
+									"elbv2",
+									"describe-listeners",
+									"--load-balancer-arn",
+									albArn,
+									"--query",
+									"Listeners[?Port==`443`].ListenerArn[0]",
+									"--output",
+									"text",
+									"--region",
+									region
+								], ws, "deploy")).trim();
+								if (httpsListenerArn && httpsListenerArn !== "None") listenerArns.push(httpsListenerArn);
+								const httpListenerArn = (await runAWSCommand([
+									"elbv2",
+									"describe-listeners",
+									"--load-balancer-arn",
+									albArn,
+									"--query",
+									"Listeners[?Port==`80`].ListenerArn[0]",
+									"--output",
+									"text",
+									"--region",
+									region
+								], ws, "deploy")).trim();
+								if (httpListenerArn && httpListenerArn !== "None") listenerArns.push(httpListenerArn);
+
+								for (const listenerArn of listenerArns) {
+									const rulesRaw = await runAWSCommand([
+										"elbv2",
+										"describe-rules",
+										"--listener-arn",
+										listenerArn,
+										"--output",
+										"json",
+										"--region",
+										region
+									], ws, "deploy");
+									let rules: Array<{ RuleArn?: string; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
+									try {
+										const parsed = JSON.parse(rulesRaw);
+										rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
+									} catch {
+										rules = [];
+									}
+
+									for (const rule of rules) {
+										const forwardsTarget = (rule.Actions || []).some(
+											(action) => action.Type === "forward" && action.TargetGroupArn === targetGroupArn
+										);
+										if (forwardsTarget && rule.RuleArn) {
+											await runAWSCommand([
+												"elbv2",
+												"delete-rule",
+												"--rule-arn",
+												rule.RuleArn,
+												"--region",
+												region
+											], ws, "deploy");
+										}
+									}
+								}
+							}
+						} catch {
+							// Ignore listener rule cleanup errors.
+						}
+
+						send(`Deleting shared ALB target group ${targetGroupName}...`, "setup");
+						await runAWSCommand([
+							"elbv2",
+							"delete-target-group",
+							"--target-group-arn",
+							targetGroupArn,
+							"--region",
+							region,
+						], ws, "deploy");
+					}
+				} catch {
+					// Target group may not exist; ignore cleanup errors.
+				}
+			}
+
 			const stateOutput = await runAWSCommand([
 				"ec2", "describe-instances",
 				"--instance-ids", existingInstanceId,
@@ -432,8 +548,8 @@ export async function handleEC2(
 		deployConfig.env_vars || '',
 		dbConnectionString,
 		deployConfig.commitSha,
-		deployConfig.custom_url,
-		config.LETSENCRYPT_EMAIL
+		sharedAlbEnabled ? undefined : deployConfig.custom_url,
+		sharedAlbEnabled ? undefined : config.LETSENCRYPT_EMAIL
 	);
 
 	console.log("userData", userData);
@@ -614,14 +730,62 @@ export async function handleEC2(
 	}
 
 	const serviceUrls = new Map<string, string>();
-	const baseUrl =
-		detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
-	
-	for (const svc of services) {
+	let sharedAlbDns: string | undefined;
+	let baseUrl = detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
+
+	if (sharedAlbEnabled) {
+		send("Configuring shared ALB routing...", "deploy");
+		const sharedAlb = await ensureSharedAlb({
+			vpcId,
+			subnetIds: subnetIds.slice(0, 2),
+			region,
+			ws,
+			certificateArn,
+		});
+		sharedAlbDns = sharedAlb.dnsName;
+		const listenerArnForRules = sharedAlb.httpsListenerArn || sharedAlb.httpListenerArn;
+		const customHost = normalizeDomain(deployConfig.custom_url);
+
+		// ALB forwards only to nginx on port 80.
+		await allowAlbToReachService(securityGroupId, sharedAlb.albSgId, 80, ws);
+		const targetGroupName = `${repoName}-tg`
+			.toLowerCase()
+			.replace(/[^a-z0-9-]/g, "-")
+			.replace(/-+/g, "-")
+			.replace(/^-|-$/g, "")
+			.slice(0, 32) || "smartdeploy-tg";
+
+		const targetGroupArn = await ensureTargetGroup(targetGroupName, vpcId, 80, region, ws, {
+			targetType: "instance",
+			healthCheckPath: "/",
+		});
+		await registerInstanceToTargetGroup(targetGroupArn, instanceId, 80, region, ws);
+
+		for (const svc of services) {
+			const preferredSubdomain = services.length === 1 && deployConfig.service_name?.trim()
+				? deployConfig.service_name.trim()
+				: svc.name;
+			const serviceHostname = customHost || buildServiceHostname(svc.name, preferredSubdomain);
+			if (serviceHostname) {
+				await ensureHostRule(listenerArnForRules, serviceHostname, targetGroupArn, region, ws);
+			}
+
+			const serviceUrl = serviceHostname
+				? `${certificateArn ? "https" : "http"}://${serviceHostname}`
+				: `${certificateArn ? "https" : "http"}://${sharedAlb.dnsName}`;
+			serviceUrls.set(svc.name, serviceUrl);
+		}
+
 		if (services.length === 1) {
-			serviceUrls.set(svc.name, baseUrl);
-		} else {
-			serviceUrls.set(svc.name, `http://${publicIp}:${svc.port}`);
+			baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+		}
+	} else {
+		for (const svc of services) {
+			if (services.length === 1) {
+				serviceUrls.set(svc.name, baseUrl);
+			} else {
+				serviceUrls.set(svc.name, `http://${publicIp}:${svc.port}`);
+			}
 		}
 	}
 
@@ -639,5 +803,6 @@ export async function handleEC2(
 		subnetId: subnetIds[0],
 		securityGroupId,
 		amiId,
+		sharedAlbDns,
 	};
 }

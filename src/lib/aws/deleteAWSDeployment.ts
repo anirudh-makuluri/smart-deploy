@@ -220,10 +220,149 @@ export async function deleteEC2Instance(
 	deployConfig: DeployConfig
 ): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
+	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const sharedAlbEnabled = !!config.ECS_ACM_CERTIFICATE_ARN && !!config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN;
 
 	await setupAWSCredentialsSilent();
 
 	const instanceId = deployConfig.ec2?.instanceId;
+
+	if (sharedAlbEnabled) {
+		const targetGroupName = `${repoName}-tg`
+			.toLowerCase()
+			.replace(/[^a-z0-9-]/g, "-")
+			.replace(/-+/g, "-")
+			.replace(/^-|-$/g, "")
+			.slice(0, 32) || "smartdeploy-tg";
+		try {
+			const targetGroupArn = (
+				await runCommandLiveWithOutput("aws", [
+					"elbv2",
+					"describe-target-groups",
+					"--names",
+					targetGroupName,
+					"--query",
+					"TargetGroups[0].TargetGroupArn",
+					"--output",
+					"text",
+					"--region",
+					region
+				])
+			).trim();
+			if (targetGroupArn && targetGroupArn !== "None") {
+				try {
+					const accountId = (
+						await runCommandLiveWithOutput("aws", [
+							"sts",
+							"get-caller-identity",
+							"--query",
+							"Account",
+							"--output",
+							"text"
+						])
+					).trim();
+					const suffix = accountId ? accountId.slice(-6) : "shared";
+					const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
+					const albArn = (
+						await runCommandLiveWithOutput("aws", [
+							"elbv2",
+							"describe-load-balancers",
+							"--names",
+							albName,
+							"--query",
+							"LoadBalancers[0].LoadBalancerArn",
+							"--output",
+							"text",
+							"--region",
+							region
+						])
+					).trim();
+					if (albArn && albArn !== "None") {
+						const listenerArns: string[] = [];
+						const httpsListenerArn = (
+							await runCommandLiveWithOutput("aws", [
+								"elbv2",
+								"describe-listeners",
+								"--load-balancer-arn",
+								albArn,
+								"--query",
+								"Listeners[?Port==`443`].ListenerArn[0]",
+								"--output",
+								"text",
+								"--region",
+								region
+							])
+						).trim();
+						if (httpsListenerArn && httpsListenerArn !== "None") listenerArns.push(httpsListenerArn);
+						const httpListenerArn = (
+							await runCommandLiveWithOutput("aws", [
+								"elbv2",
+								"describe-listeners",
+								"--load-balancer-arn",
+								albArn,
+								"--query",
+								"Listeners[?Port==`80`].ListenerArn[0]",
+								"--output",
+								"text",
+								"--region",
+								region
+							])
+						).trim();
+						if (httpListenerArn && httpListenerArn !== "None") listenerArns.push(httpListenerArn);
+
+						for (const listenerArn of listenerArns) {
+							const rulesRaw = await runCommandLiveWithOutput("aws", [
+								"elbv2",
+								"describe-rules",
+								"--listener-arn",
+								listenerArn,
+								"--output",
+								"json",
+								"--region",
+								region
+							]);
+							let rules: Array<{ RuleArn?: string; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
+							try {
+								const parsed = JSON.parse(rulesRaw);
+								rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
+							} catch {
+								rules = [];
+							}
+
+							for (const rule of rules) {
+								const forwardsTarget = (rule.Actions || []).some(
+									(action) => action.Type === "forward" && action.TargetGroupArn === targetGroupArn
+								);
+								if (forwardsTarget && rule.RuleArn) {
+									await runCommandLiveWithOutput("aws", [
+										"elbv2",
+										"delete-rule",
+										"--rule-arn",
+										rule.RuleArn,
+										"--region",
+										region
+									]);
+								}
+							}
+						}
+					}
+				} catch {
+					// Ignore listener rule cleanup errors.
+				}
+
+				await runCommandLiveWithOutput("aws", [
+					"elbv2",
+					"delete-target-group",
+					"--target-group-arn",
+					targetGroupArn,
+					"--region",
+					region
+				]);
+			}
+		} catch {
+			// Ignore missing or in-use target groups
+		}
+	}
 
 	if (instanceId) {
 		// Direct termination using stored instance ID

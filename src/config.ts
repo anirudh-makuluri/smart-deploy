@@ -19,6 +19,13 @@ const config = {
 	// Lets Encrypt (EC2 + nginx)
 	LETSENCRYPT_EMAIL: process.env.LETSENCRYPT_EMAIL || "",
 	
+	// Deployment domain (for host-based routing with shared ALB)
+	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "",
+	
+	// Vercel DNS (for custom domain management)
+	VERCEL_TOKEN: process.env.VERCEL_TOKEN || "",
+	VERCEL_DOMAIN: process.env.VERCEL_DOMAIN || "",
+	
 	// AI
 	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
 	
