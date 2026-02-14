@@ -10,48 +10,37 @@ import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/Depl
  
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types";
 import { parseEnvVarsToStore } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { isEqual } from "lodash";
 
-type RepoParams = { id: string; username: string; reponame: string };
-
 type DeployWorkspaceProps = {
-	repoParams?: RepoParams;
 	serviceName?: string;
 	deploymentId?: string;
 };
 
-export default function DeployWorkspace({ repoParams, serviceName, deploymentId }: DeployWorkspaceProps) {
+export default function DeployWorkspace({ serviceName, deploymentId }: DeployWorkspaceProps) {
 	const { deployments, updateDeploymentById, repoList } = useAppData();
-	const router = useRouter();
 	const { data: session } = useSession();
-	const isRepoRoute = Boolean(repoParams);
-
-	const deploymentFromRepoId = repoParams
-		? deployments.find((dep) => dep.id === repoParams.id)
-		: undefined;
 	const deploymentFromId = deploymentId
 		? deployments.find((dep) => dep.id === deploymentId)
 		: undefined;
 	const deploymentFromServiceName = serviceName
 		? deployments.find((dep) => dep.service_name === serviceName)
 		: undefined;
-	const deployment = deploymentFromRepoId ?? deploymentFromId ?? deploymentFromServiceName;
+	const deployment = deploymentFromId ?? deploymentFromServiceName;
 
-	const repoFromList = isRepoRoute && repoParams
-		? repoList.find((rep) => rep.full_name === `${repoParams.username}/${repoParams.reponame}`)
-		: repoList.find((rep) => rep.id === deployment?.id);
-	const [repo, setRepo] = React.useState<repoType | undefined>(repoFromList);
-	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
+	const repo = React.useMemo(() => {
+		if (!deployment) return undefined;
+		return repoList.find((rep) => rep.id === deployment.id || rep.html_url === deployment.url);
+	}, [repoList, deployment]);
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
-	const [historyRefreshKey, setHistoryRefreshKey] = React.useState(0);
-	const [editMode, setEditMode] = React.useState(!deployment || deployment.status === "didnt_deploy");
 	const [activeSection, setActiveSection] = React.useState<MenuSection>("overview");
+	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
+	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs);
@@ -71,52 +60,8 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 		deployStatus === "success" ? "success" : 
 		deployStatus === "error" ? "error" : "not-started";
 
-	React.useEffect(() => {
-		if (repoFromList && repoFromList !== repo) {
-			setRepo(repoFromList);
-		}
-	}, [repoFromList, repo]);
-
-	React.useEffect(() => {
-		if (!isRepoRoute) return;
-		if (!repo && session?.accessToken) {
-			const ownerFromUrl = deployment?.url?.match(/github\.com[/]([^/]+)/)?.[1];
-			const repoNameFromUrl = deployment?.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
-			const owner = repoParams?.username ?? ownerFromUrl;
-			const repoName = repoParams?.reponame ?? repoNameFromUrl;
-			if (!owner || !repoName) return;
-
-			setIsLoadingRepo(true);
-			fetch("/api/repos/public", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({ owner, repo: repoName }),
-			})
-				.then((res) => res.json())
-				.then((data) => {
-					if (data.repo) {
-						setRepo(data.repo);
-					}
-				})
-				.catch((err) => {
-					console.error("Failed to fetch repo:", err);
-				})
-				.finally(() => {
-					setIsLoadingRepo(false);
-				});
-		}
-	}, [isRepoRoute, repo, repoParams?.username, repoParams?.reponame, session?.accessToken, deployment?.url]);
-
-	React.useEffect(() => {
-		if (!isRepoRoute) return;
-		if (!isLoadingRepo && !repo) {
-			router.replace("/");
-		}
-	}, [isRepoRoute, isLoadingRepo, repo, router]);
-
 	const hasDeployment = Boolean(deployment && deployment.status !== "didnt_deploy");
+	const editMode = !hasDeployment;
 	const showMenu = isDeploying || deployStatus === "error" || hasDeployment;
 	const showFullMenu = hasDeployment;
 	const shouldShowHeader = showMenu;
@@ -142,30 +87,7 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 			setIsDeploying(false);
 			setDeployingCommitInfo(null);
 		}
-		if (deployStatus === "success" || deployStatus === "error") {
-			setHistoryRefreshKey((k) => k + 1);
-		}
 	}, [deployStatus, deployment?.id]);
-
-	React.useEffect(() => {
-		if (hasDeployment) {
-			setEditMode(false);
-		} else {
-			setEditMode(true);
-		}
-	}, [hasDeployment]);
-
-	if (isRepoRoute && isLoadingRepo) {
-		return (
-			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
-				{shouldShowHeader && <Header />}
-				<div className="flex flex-col items-center gap-4">
-					<div className="h-10 w-10 rounded-full border-2 border-border border-t-primary animate-spin" />
-					<p className="text-muted-foreground">Loading repository...</p>
-				</div>
-			</div>
-		);
-	}
 
 	if (!repo && !deployment) {
 		return (
@@ -174,12 +96,6 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 				<p className="text-muted-foreground">Service not found</p>
 			</div>
 		);
-	}
-
-	if (!repo) {
-		if (isRepoRoute) {
-			return null;
-		}
 	}
 
 	const resolvedRepo: repoType = repo ?? (() => {
@@ -216,7 +132,41 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 		};
 	})();
 	const resolvedDeployment = deployment as DeployConfig | undefined;
-	const resolvedDeploymentId = resolvedDeployment?.id ?? deploymentId ?? repoParams?.id ?? "";
+	const resolvedDeploymentId = resolvedDeployment?.id ?? deploymentId ?? "";
+
+	// Fetch deployment history once when page loads
+	React.useEffect(() => {
+		if (!resolvedDeploymentId || deploymentHistory !== null) return;
+		
+		setIsLoadingHistory(true);
+		fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(resolvedDeploymentId)}`)
+			.then((res) => res.json())
+			.then((data) => {
+				if (data.status === "success" && Array.isArray(data.history)) {
+					setDeploymentHistory(data.history);
+				}
+			})
+			.catch((err) => {
+				console.error("Failed to fetch deployment history:", err);
+			})
+			.finally(() => setIsLoadingHistory(false));
+	}, [resolvedDeploymentId, deploymentHistory]);
+
+	// Refetch history after deployment completes
+	React.useEffect(() => {
+		if ((deployStatus === "success" || deployStatus === "error") && resolvedDeploymentId) {
+			fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(resolvedDeploymentId)}`)
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.status === "success" && Array.isArray(data.history)) {
+						setDeploymentHistory(data.history);
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to refetch deployment history:", err);
+				});
+		}
+	}, [deployStatus, resolvedDeploymentId]);
 
 	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
 		const now = new Date().toISOString();
@@ -324,8 +274,8 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 
 		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
 		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
-		const owner = resolvedRepo.owner?.login ?? ownerFromUrl ?? repoParams?.username;
-		const repoName = resolvedRepo.name ?? repoNameFromUrl ?? repoParams?.reponame;
+		const owner = resolvedRepo.owner?.login ?? ownerFromUrl;
+		const repoName = resolvedRepo.name ?? repoNameFromUrl;
 		if (owner && repoName) {
 			fetch("/api/commits/latest", {
 				method: "POST",
@@ -379,7 +329,7 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 							const base = resolvedDeployment ?? {
 								id: resolvedDeploymentId,
 								url: resolvedRepo.html_url ?? "",
-								service_name: repoParams?.reponame ?? resolvedRepo.name,
+								service_name: resolvedRepo.name,
 								branch: resolvedRepo.default_branch ?? "main",
 								use_custom_dockerfile: false,
 								status: "didnt_deploy",
@@ -387,9 +337,8 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 							updateDeploymentById({ ...base, ...partial });
 						}}
 						repo={resolvedRepo}
-						deployment={resolvedDeployment ?? { id: resolvedDeploymentId, url: resolvedRepo.html_url ?? "", service_name: repoParams?.reponame ?? resolvedRepo.name, branch: resolvedRepo.default_branch ?? "main", use_custom_dockerfile: false, status: "didnt_deploy" }}
-						service_name={repoParams?.reponame ?? resolvedRepo.name}
-						id={resolvedDeploymentId}
+						deployment={resolvedDeployment ?? { id: resolvedDeploymentId, url: resolvedRepo.html_url ?? "", service_name: resolvedRepo.name, branch: resolvedRepo.default_branch ?? "main", use_custom_dockerfile: false, status: "didnt_deploy" }}
+						service_name={resolvedRepo.name}
 						isDeploying={isDeploying}
 					/>
 				</div>
@@ -406,7 +355,13 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 			case "history":
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{resolvedDeployment && <DeploymentHistory key={historyRefreshKey} deploymentId={resolvedDeployment.id} />}
+						{resolvedDeployment && (
+							<DeploymentHistory 
+								deploymentId={resolvedDeployment.id} 
+								prefetchedData={deploymentHistory} 
+								isPrefetching={isLoadingHistory}
+							/>
+						)}
 					</div>
 				);
 			case "logs":
@@ -437,7 +392,6 @@ export default function DeployWorkspace({ repoParams, serviceName, deploymentId 
 							repo={resolvedRepo}
 							deployment={resolvedDeployment}
 							service_name={resolvedDeployment?.service_name ?? resolvedRepo.name}
-							id={resolvedDeployment?.id ?? resolvedDeploymentId}
 							isDeploying={isDeploying}
 						/>
 					</div>

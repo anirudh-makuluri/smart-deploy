@@ -3,9 +3,14 @@
 import DashboardDeploymentItem from "./DashboardDeploymentItem";
 import { DeployConfig } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
-import { Boxes } from "lucide-react";
+import { Boxes, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export default function DashboardMain() {
+type DashboardMainProps = {
+	onNewDeploy: () => void;
+};
+
+export default function DashboardMain({ onNewDeploy }: DashboardMainProps) {
 	const { deployments, repoList } = useAppData();
 
 	function getRepo(dep: DeployConfig) {
@@ -17,9 +22,11 @@ export default function DashboardMain() {
 	return (
 		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
 			<div className="p-6 border-b border-border/60">
-				<div className="flex items-center gap-2">
-					<Boxes className="size-6 text-teal-400" />
-					<h1 className="font-semibold text-xl text-foreground">Services</h1>
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<div className="flex items-center gap-2">
+						<Boxes className="size-6 text-teal-400" />
+						<h1 className="font-semibold text-xl text-foreground">Services</h1>
+					</div>
 				</div>
 				<p className="text-sm text-muted-foreground mt-1">
 					{activeDeployments.length} service{activeDeployments.length !== 1 ? "s" : ""} deployed

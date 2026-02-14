@@ -15,14 +15,22 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
 
-export default function DeploymentHistory({ deploymentId }: { deploymentId: string }) {
-	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>([]);
-	const [loading, setLoading] = React.useState(true);
+export default function DeploymentHistory({ deploymentId, prefetchedData, isPrefetching }: { deploymentId: string; prefetchedData?: any; isPrefetching?: boolean }) {
+	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>(prefetchedData || []);
+	const [loading, setLoading] = React.useState(isPrefetching ? true : !prefetchedData);
 	const [error, setError] = React.useState<string | null>(null);
 	const [analyzingId, setAnalyzingId] = React.useState<string | null>(null);
 	const [analysisByEntryId, setAnalysisByEntryId] = React.useState<Record<string, string>>({});
 
 	React.useEffect(() => {
+		// If we have prefetched data, use it
+		if (prefetchedData) {
+			setHistory(prefetchedData);
+			setLoading(false);
+			return;
+		}
+
+		// Otherwise fetch it
 		if (!deploymentId) return;
 		setLoading(true);
 		setError(null);
@@ -39,7 +47,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 				setError(err?.message || "Failed to load history");
 			})
 			.finally(() => setLoading(false));
-	}, [deploymentId]);
+	}, [deploymentId, prefetchedData]);
 
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);

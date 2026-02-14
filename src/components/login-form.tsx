@@ -21,7 +21,7 @@ export function LoginForm({
 						type="button"
 						variant="outline"
 						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("google")}
+						onClick={() => signIn("google", { callbackUrl: "/home" })}
 					>
 						<GoogleIcon className="size-5 mr-2" />
 						Login with Google
@@ -30,7 +30,7 @@ export function LoginForm({
 						type="button"
 						variant="outline"
 						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("github")}
+						onClick={() => signIn("github", { callbackUrl: "/home" })}
 					>
 						<GitHubIcon className="size-5 mr-2" />
 						Login with GitHub

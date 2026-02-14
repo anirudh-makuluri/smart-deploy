@@ -4,17 +4,18 @@ import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { repoType } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import { RefreshCcw, FolderGit2, Plus, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { formatTimestamp } from "@/lib/utils";
 
-export default function DashboardSideBar() {
+type DashboardSideBarProps = {
+	onOpenDeploySheet: (repo?: repoType) => void;
+};
+
+export default function DashboardSideBar({ onOpenDeploySheet }: DashboardSideBarProps) {
 	const { data: session } = useSession();
-	const router = useRouter();
 	const { repoList, deployments, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showAddRepo, setShowAddRepo] = useState(false);
@@ -97,11 +98,6 @@ export default function DashboardSideBar() {
 			}
 
 			const repo: repoType = data.repo;
-			// Generate ID from full_name for public repos (using a hash or just the full_name)
-			const repoId = repo.id || repo.full_name.replace(/\//g, "-");
-			
-			// Navigate to the repo page
-			router.push(`/repo/${repoId}/${repo.full_name}`);
 			setRepoUrl("");
 			setShowAddRepo(false);
 			toast.success(`Added ${repo.full_name}`);
@@ -195,10 +191,11 @@ export default function DashboardSideBar() {
 					) : (
 						availableRepos.map((repo: repoType) => (
 							<li key={repo.id}>
-								<Link
-									href={`/repo/${repo.id}/${repo.full_name}`}
-									className="block rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
-								>
+									<button
+										type="button"
+										onClick={() => onOpenDeploySheet(repo)}
+										className="w-full text-left rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
+									>
 									<p className="font-medium text-foreground truncate">{repo.full_name.split("/")[1]}</p>
 									<p className="text-xs text-muted-foreground truncate mt-1">{repo.full_name}</p>
 									{repo.latest_commit && (
@@ -209,7 +206,7 @@ export default function DashboardSideBar() {
 									{repo.latest_commit?.date && (
 										<p className="text-xs text-muted-foreground/70 mt-0.5">{formatTimestamp(repo.latest_commit.date)}</p>
 									)}
-								</Link>
+								</button>
 							</li>
 						))
 					)}

@@ -32,10 +32,8 @@ export default function RootLayout({
 				className={`${geistSans.variable} ${geistMono.variable} landing-bg text-foreground antialiased`}
 			>
 				<SessionWrapper>
-					<AppDataLoader>
-						{children}
-						<Toaster />
-					</AppDataLoader>
+					{children}
+					<Toaster />
 				</SessionWrapper>
 
 			</body>

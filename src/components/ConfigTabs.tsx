@@ -57,34 +57,15 @@ export const formSchema = z.object({
 	custom_url: z.string().optional(),
 })
 
-const exampleProjectMetadata: AIGenProjectMetadata = {
-	"core_deployment_info": {
-		"language": "TypeScript",
-		"framework": "Next.js",
-		"install_cmd": "npm install",
-		"build_cmd": "next build",
-		"run_cmd": "next start",
-		"workdir": null
-	},
-	"features_infrastructure": {
-		"uses_websockets": true,
-		"uses_cron": false,
-		"uses_mobile": false,
-		"cloud_run_compatible": false, //CHANGE HERE
-		"is_library": false,
-		"requires_build_but_missing_cmd": true //CHANGE HERE
-	},
-	"final_notes": {
-		"comment": "The project is well-structured and uses a popular framework. It incorporates testing and logging, but lacks additional tooling such as docs and external logging libraries."
-	}
-}
-
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo }:
 		{
-			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, onConfigChange?: (partial: Partial<DeployConfig>) => void, editMode: boolean, isDeploying: boolean, id: string,
+			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
+			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
+			onConfigChange?: (partial: Partial<DeployConfig>) => void,
+			editMode: boolean, isDeploying: boolean,
 			repo: repoType, deployment?: DeployConfig
 		}) {
 
@@ -94,7 +75,7 @@ export default function ConfigTabs(
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment?.env_vars ?? "")
 	);
-
+	const appliedDeploymentId = React.useRef<string | null>(null);
 	const [isAiFetching, setAiFetching] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
@@ -117,10 +98,8 @@ export default function ConfigTabs(
 		return null;
 	});
 
-	// Available deployment targets
 	const deploymentTargets: AWSDeploymentTarget[] = ["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"];
 
-	// Handler for manual deployment target selection
 	const handleDeploymentTargetChange = (target: string) => {
 		if (isDeploymentTarget(target)) {
 			setDeploymentAnalysis({
@@ -131,7 +110,6 @@ export default function ConfigTabs(
 		}
 	};
 
-	const [dockerfileContent, setDockerfileContent] = useState<string | undefined>(deployment?.dockerfileContent);
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
 	const form = useForm<z.infer<typeof formSchema>>({
@@ -150,15 +128,15 @@ export default function ConfigTabs(
 		},
 	})
 
-	// When deployment becomes available (e.g. saved scan loaded from DB), pre-fill form and metadata
-	const appliedDeploymentId = React.useRef<string | null>(null);
+
 	useEffect(() => {
 		if (!deployment?.id) {
 			appliedDeploymentId.current = null;
 			return;
 		}
-		// Only sync when opening a deployment we haven't synced yet (avoid overwriting in-progress edits)
+
 		if (appliedDeploymentId.current === deployment.id) return;
+
 		appliedDeploymentId.current = deployment.id;
 		form.reset({
 			url: repo?.html_url ?? deployment.url,
@@ -187,7 +165,8 @@ export default function ConfigTabs(
 				warnings: [],
 			});
 		}
-		// Initialize "last saved" snapshot so we don't send a request until user actually changes something
+
+
 		const initialPartial: Partial<DeployConfig> = {
 			id: deployment.id,
 			url: deployment.url ?? repo?.html_url ?? "",
@@ -209,7 +188,6 @@ export default function ConfigTabs(
 		lastSavedSnapshotRef.current = JSON.stringify(initialPartial);
 	}, [deployment, repo?.html_url, service_name, repo?.name]);
 
-	// Auto-save config to DB only when something actually changed
 	const onConfigChangeRef = React.useRef(onConfigChange);
 	onConfigChangeRef.current = onConfigChange;
 	const watchedForm = form.watch();
@@ -221,11 +199,11 @@ export default function ConfigTabs(
 			const baseCoreInfo = projectMetadata?.core_deployment_info ?? deployment?.core_deployment_info;
 			const mergedCoreInfo = baseCoreInfo
 				? {
-						...baseCoreInfo,
-						...(values.install_cmd != null && { install_cmd: values.install_cmd }),
-						...(values.run_cmd != null && { run_cmd: values.run_cmd }),
-						...(values.workdir != null && { workdir: values.workdir || null }),
-					}
+					...baseCoreInfo,
+					...(values.install_cmd != null && { install_cmd: values.install_cmd }),
+					...(values.run_cmd != null && { run_cmd: values.run_cmd }),
+					...(values.workdir != null && { workdir: values.workdir || null }),
+				}
 				: undefined;
 
 			const partial: Partial<DeployConfig> = {
@@ -298,7 +276,6 @@ export default function ConfigTabs(
 
 	const featuresInfra = projectMetadata?.features_infrastructure;
 
-	// Check if deployment should be disabled
 	const isDeployDisabled = React.useMemo(() => {
 		// Mobile-only code (no server/backend)
 		if (featuresInfra?.uses_mobile && !featuresInfra?.uses_server && !projectMetadata?.core_deployment_info?.run_cmd) {
@@ -430,364 +407,367 @@ export default function ConfigTabs(
 					</Alert>
 				</>
 			)}
-				<Form {...form}>
-						<form onSubmit={form.handleSubmit((data) => {
-							const envString = buildEnvVarsString(envEntries);
-							onSubmit({
-								...data,
-								env_vars: envString,
-								...(projectMetadata ?? {}), // merge only if not null
-								...(deploymentAnalysis && { 
-									deploymentTarget: deploymentAnalysis.target, 
-									deployment_target_reason: deploymentAnalysis.reason 
-								}),
-							});
-						})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
-							<p className="font-bold text-xl whitespace-nowrap my-4 text-foreground">Environment & Configuration</p>
-							<Separator className="bg-border/60 h-[1px]" />
-							{editMode && (
-								<div className="flex flex-row items-center gap-4 my-6 flex-wrap">
-									<Button
-										disabled={isAiFetching}
-										variant="outline"
-										onClick={handleAIBtn}
-										className="border-border bg-transparent text-foreground hover:bg-secondary/50"
-									>
-										<RotateCw className={isAiFetching ? "animate-spin" : ""} />
-										Smart Project Scan
-									</Button>
-									{deployment && deployment?.status != 'didnt_deploy' ? (
-										<Button 
-											type="submit" 
-											disabled={isDeployDisabled || isDeploying}
-											className="landing-build-blue hover:opacity-95 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-										>
-											Save Changes
-										</Button>
-									) : (
-										<DeployOptions
-											onDeploy={(commitSha) => {
-												const formValues = form.getValues();
-												const envString = buildEnvVarsString(envEntries);
-												onSubmit({
-													...formValues,
-													env_vars: envString,
-													...(projectMetadata ?? {}),
-													...(deploymentAnalysis && { 
-														deploymentTarget: deploymentAnalysis.target, 
-														deployment_target_reason: deploymentAnalysis.reason 
-													}),
-													...(commitSha && { commitSha }),
-												});
-											}}
-											disabled={isDeployDisabled || isDeploying}
-											repo={repo}
-											branch={form.watch("branch") || deployment?.branch || "main"}
-										/>
-									)}
-								</div>
+			<Form {...form}>
+				<form onSubmit={form.handleSubmit((data) => {
+					const envString = buildEnvVarsString(envEntries);
+					onSubmit({
+						...data,
+						env_vars: envString,
+						...(projectMetadata ?? {}), // merge only if not null
+						...(deploymentAnalysis && {
+							deploymentTarget: deploymentAnalysis.target,
+							deployment_target_reason: deploymentAnalysis.reason
+						}),
+					});
+				})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
+					<p className="font-bold text-xl whitespace-nowrap my-4 text-foreground">Environment & Configuration</p>
+					<Separator className="bg-border/60 h-px" />
+					{editMode && (
+						<div className="flex flex-row items-center gap-4 my-6 flex-wrap">
+							<Button
+								disabled={isAiFetching}
+								variant="outline"
+								onClick={handleAIBtn}
+								className="border-border bg-transparent text-foreground hover:bg-secondary/50"
+							>
+								<RotateCw className={isAiFetching ? "animate-spin" : ""} />
+								Smart Project Scan
+							</Button>
+							{deployment && deployment?.status != 'didnt_deploy' ? (
+								<Button
+									type="submit"
+									disabled={isDeployDisabled || isDeploying}
+									className="landing-build-blue hover:opacity-95 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									Save Changes
+								</Button>
+							) : (
+								<DeployOptions
+									onDeploy={(commitSha) => {
+										const formValues = form.getValues();
+										const envString = buildEnvVarsString(envEntries);
+										onSubmit({
+											...formValues,
+											env_vars: envString,
+											...(projectMetadata ?? {}),
+											...(deploymentAnalysis && {
+												deploymentTarget: deploymentAnalysis.target,
+												deployment_target_reason: deploymentAnalysis.reason
+											}),
+											...(commitSha && { commitSha }),
+										});
+									}}
+									disabled={isDeployDisabled || isDeploying}
+									repo={repo}
+									branch={form.watch("branch") || deployment?.branch || "main"}
+								/>
 							)}
+						</div>
+					)}
 
-							<div className="my-4 flex flex-row justify-start items-center space-x-4 flex-wrap gap-2">
-								<span className="font-semibold min-w-[150px] text-foreground">Service Name:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="service_name"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Input {...field} className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary" />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.service_name}</span>
+					<div className="my-4 flex flex-row justify-start items-center space-x-4 flex-wrap gap-2">
+						<span className="font-semibold min-w-37.5 text-foreground">Service Name:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="service_name"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Input {...field} className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary" />
+										</FormControl>
+									</FormItem>
 								)}
-								{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-border text-muted-foreground">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
-								{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-border text-muted-foreground">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.service_name}</span>
+						)}
+						{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-border text-muted-foreground">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
+						{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-border text-muted-foreground">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
 
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
+					</div>
+					<Separator className="bg-border/60 h-px" />
 
-							{/* Install Command */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Install Command:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="install_cmd"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.install_cmd}</span>
-								)}
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
+					{/* Custom URL */}
+					<div className="my-4 flex flex-col space-y-2">
+						<div className="flex flex-row justify-start items-center space-x-4">
+							<span className="font-semibold min-w-37.5 text-foreground">Custom URL:</span>
+							{editMode ? (
+								<div className="flex-1 max-w-md space-y-2">
+									<div className="flex items-center gap-2">
+										<Input
+											placeholder="Enter subdomain (e.g., my-app)"
+											value={form.watch("custom_url") ? form.watch("custom_url")!.replace(/^https?:\/\//, "").split(".")[0] : ""}
+											onChange={(e) => {
+												const subdomain = e.target.value;
+												const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
+												const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+												const fullUrl = subdomain ? `https://${subdomain}.${baseDomain}` : "";
+												form.setValue("custom_url", fullUrl);
+												setCustomUrlStatus({ type: null });
+											}}
+											onKeyDown={async (e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													const customUrl = form.watch("custom_url");
+													if (!customUrl) return;
 
-							{/* Build Command */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Build Command:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="build_cmd"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.build_cmd}</span>
-								)}
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
+													const subdomain = customUrl.replace(/^https?:\/\//, "").split(".")[0];
+													if (!subdomain) return;
 
-							{/* Run Command */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Run Command:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="run_cmd"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.run_cmd}</span>
-								)}
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
+													setCustomUrlVerifying(true);
+													try {
+														const res = await fetch("/api/verify-dns", {
+															method: "POST",
+															headers: { "Content-Type": "application/json" },
+															body: JSON.stringify({
+																subdomain,
+																currentDeploymentId: deployment?.id ?? ""
+															}),
+														});
+														const data = await res.json();
 
-							{/* Branch */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Branch:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="branch"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Select
-														onValueChange={field.onChange}
-														defaultValue={field.value}
-													>
-														<SelectTrigger>
-															<SelectValue placeholder="Select a branch" />
-														</SelectTrigger>
-														<SelectContent>
-															{branches.current.map((branch) => (
-																<SelectItem key={branch} value={branch}>
-																	{branch}
-																</SelectItem>
-															))}
-														</SelectContent>
-													</Select>
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.branch}</span>
-								)}
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
-						{/* Custom URL */}
-						<div className="my-4 flex flex-col space-y-2">
-							<div className="flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Custom URL:</span>
-								{editMode ? (
-									<div className="flex-1 max-w-md space-y-2">
-										<div className="flex items-center gap-2">
-											<Input
-												placeholder="Enter subdomain (e.g., my-app)"
-												value={form.watch("custom_url") ? form.watch("custom_url")!.replace(/^https?:\/\//, "").split(".")[0] : ""}
-												onChange={(e) => {
-													const subdomain = e.target.value;
-													const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
-													const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-													const fullUrl = subdomain ? `https://${subdomain}.${baseDomain}` : "";
-													form.setValue("custom_url", fullUrl);
-													setCustomUrlStatus({ type: null });
-												}}
-												onKeyDown={async (e) => {
-													if (e.key === "Enter") {
-														e.preventDefault();
-														const customUrl = form.watch("custom_url");
-														if (!customUrl) return;
-
-														const subdomain = customUrl.replace(/^https?:\/\//, "").split(".")[0];
-														if (!subdomain) return;
-
-														setCustomUrlVerifying(true);
-														try {
-															const res = await fetch("/api/verify-dns", {
-																method: "POST",
-																headers: { "Content-Type": "application/json" },
-																body: JSON.stringify({ 
-																	subdomain,
-																	currentDeploymentId: id 
-																}),
-															});
-															const data = await res.json();
-
-															if (data.available) {
-																if (data.isOwned) {
-																	setCustomUrlStatus({ 
-																		type: 'owned', 
-																		message: `This is your current URL: ${data.customUrl}` 
-																	});
-																} else {
-																	setCustomUrlStatus({ 
-																		type: 'success', 
-																		message: `✓ Available: ${data.customUrl}` 
-																	});
-																}
-																form.setValue("custom_url", data.customUrl);
+														if (data.available) {
+															if (data.isOwned) {
+																setCustomUrlStatus({
+																	type: 'owned',
+																	message: `This is your current URL: ${data.customUrl}`
+																});
 															} else {
-																setCustomUrlStatus({ 
-																	type: 'error', 
-																	message: data.message || "Subdomain is already taken",
-																	alternatives: data.alternatives || []
+																setCustomUrlStatus({
+																	type: 'success',
+																	message: `✓ Available: ${data.customUrl}`
 																});
 															}
-														} catch (error) {
-															setCustomUrlStatus({ 
-																type: 'error', 
-																message: "Failed to verify subdomain" 
+															form.setValue("custom_url", data.customUrl);
+														} else {
+															setCustomUrlStatus({
+																type: 'error',
+																message: data.message || "Subdomain is already taken",
+																alternatives: data.alternatives || []
 															});
-														} finally {
-															setCustomUrlVerifying(false);
 														}
+													} catch (error) {
+														setCustomUrlStatus({
+															type: 'error',
+															message: "Failed to verify subdomain"
+														});
+													} finally {
+														setCustomUrlVerifying(false);
 													}
-												}}
-												className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
-												disabled={customUrlVerifying}
-											/>
-											<span className="text-muted-foreground text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
-										</div>
-										{customUrlVerifying && (
-											<p className="text-xs text-muted-foreground">Verifying subdomain...</p>
-										)}
-										{customUrlStatus.type === 'success' && (
-											<p className="text-xs text-teal-400">{customUrlStatus.message}</p>
-										)}
-										{customUrlStatus.type === 'owned' && (
-											<p className="text-xs text-sky-400">{customUrlStatus.message}</p>
-										)}
-										{customUrlStatus.type === 'error' && (
-											<div className="text-xs space-y-1">
-												<p className="text-destructive/80">{customUrlStatus.message}</p>
-												{customUrlStatus.alternatives && customUrlStatus.alternatives.length > 0 && (
-													<div className="space-y-1">
-														<p className="text-muted-foreground">Available alternatives:</p>
-														<div className="flex gap-2 flex-wrap">
-															{customUrlStatus.alternatives.map((alt) => (
-																<button
-																	key={alt}
-																	type="button"
-																	onClick={() => {
-																		const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
-																		const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-																		form.setValue("custom_url", `https://${alt}.${baseDomain}`);
-																		setCustomUrlStatus({ type: null });
-																	}}
-																	className="px-2 py-1 text-teal-400 bg-teal-400/10 border border-teal-400/40 rounded hover:bg-teal-400/20 transition-colors"
-																>
-																	{alt}
-																</button>
-															))}
-														</div>
+												}
+											}}
+											className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+											disabled={customUrlVerifying}
+										/>
+										<span className="text-muted-foreground text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
+									</div>
+									{customUrlVerifying && (
+										<p className="text-xs text-muted-foreground">Verifying subdomain...</p>
+									)}
+									{customUrlStatus.type === 'success' && (
+										<p className="text-xs text-teal-400">{customUrlStatus.message}</p>
+									)}
+									{customUrlStatus.type === 'owned' && (
+										<p className="text-xs text-sky-400">{customUrlStatus.message}</p>
+									)}
+									{customUrlStatus.type === 'error' && (
+										<div className="text-xs space-y-1">
+											<p className="text-destructive/80">{customUrlStatus.message}</p>
+											{customUrlStatus.alternatives && customUrlStatus.alternatives.length > 0 && (
+												<div className="space-y-1">
+													<p className="text-muted-foreground">Available alternatives:</p>
+													<div className="flex gap-2 flex-wrap">
+														{customUrlStatus.alternatives.map((alt) => (
+															<button
+																key={alt}
+																type="button"
+																onClick={() => {
+																	const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
+																	const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+																	form.setValue("custom_url", `https://${alt}.${baseDomain}`);
+																	setCustomUrlStatus({ type: null });
+																}}
+																className="px-2 py-1 text-teal-400 bg-teal-400/10 border border-teal-400/40 rounded hover:bg-teal-400/20 transition-colors"
+															>
+																{alt}
+															</button>
+														))}
 													</div>
-												)}
+												</div>
+											)}
+										</div>
+									)}
+									<p className="text-xs text-muted-foreground/70">Press Enter to verify availability</p>
+								</div>
+							) : (
+								<span className="text-muted-foreground">{deployment?.custom_url || 'Not set'}</span>
+							)}
+						</div>
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+					{/* Install Command */}
+					<div className="my-4 flex flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Install Command:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="install_cmd"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.install_cmd}</span>
+						)}
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+					{/* Build Command */}
+					<div className="my-4 flex flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Build Command:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="build_cmd"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.build_cmd}</span>
+						)}
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+					{/* Run Command */}
+					<div className="my-4 flex flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Run Command:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="run_cmd"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.run_cmd}</span>
+						)}
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+					{/* Branch */}
+					<div className="my-4 flex flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Branch:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="branch"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Select
+												onValueChange={field.onChange}
+												defaultValue={field.value}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder="Select a branch" />
+												</SelectTrigger>
+												<SelectContent>
+													{branches.current.map((branch) => (
+														<SelectItem key={branch} value={branch}>
+															{branch}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.branch}</span>
+						)}
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+
+					{/* Working Directory */}
+					<div className="my-4 flex flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Working Directory:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="workdir"
+								render={({ field }) => (
+									<FormItem className="w-40">
+										<FormControl>
+											<Input {...field} />
+										</FormControl>
+									</FormItem>
+								)}
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
+						)}
+					</div>
+					<Separator className="bg-border/60 h-px" />
+
+					{/* Custom Dockerfile */}
+					<div className="my-4 hidden flex-row justify-start items-center space-x-4">
+						<span className="font-semibold min-w-37.5 text-foreground">Custom Dockerfile:</span>
+						{editMode ? (
+							<FormField
+								control={form.control}
+								name="use_custom_dockerfile"
+								render={({ field }) => (
+									<FormItem>
+										<FormControl>
+											<Switch
+												disabled
+												checked={field.value}
+												onCheckedChange={field.onChange}
+											/>
+										</FormControl>
+										{field.value && (
+											<div>
+												<label className="block text-sm font-medium text-muted-foreground mb-1">
+													Upload Dockerfile
+												</label>
+												<Input
+													type="file"
+													accept=".dockerfile,.txt,.Dockerfile"
+													onChange={(e) => {
+														const file = e.target.files?.[0];
+														if (file) setDockerfile(file);
+													}}
+												/>
 											</div>
 										)}
-										<p className="text-xs text-muted-foreground/70">Press Enter to verify availability</p>
-									</div>
-								) : (
-									<span className="text-muted-foreground">{deployment?.custom_url || 'Not set'}</span>
+									</FormItem>
 								)}
-							</div>
-						</div>
-						<Separator className="bg-border/60 h-px" />
-							{/* Working Directory */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-37.5 text-foreground">Working Directory:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="workdir"
-										render={({ field }) => (
-											<FormItem className="w-40">
-												<FormControl>
-													<Input {...field} />
-												</FormControl>
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
-								)}
-							</div>
-							<Separator className="bg-border/60 h-[1px]" />
-
-							{/* Custom Dockerfile */}
-							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-foreground">Custom Dockerfile:</span>
-								{editMode ? (
-									<FormField
-										control={form.control}
-										name="use_custom_dockerfile"
-										render={({ field }) => (
-											<FormItem>
-												<FormControl>
-													<Switch
-														disabled
-														checked={field.value}
-														onCheckedChange={field.onChange}
-													/>
-												</FormControl>
-												{field.value && (
-													<div>
-														<label className="block text-sm font-medium text-muted-foreground mb-1">
-															Upload Dockerfile
-														</label>
-														<Input
-															type="file"
-															accept=".dockerfile,.txt,.Dockerfile"
-															onChange={(e) => {
-																const file = e.target.files?.[0];
-																if (file) setDockerfile(file);
-															}}
-														/>
-													</div>
-												)}
-											</FormItem>
-										)}
-									/>
-								) : (
-									<span className="text-muted-foreground w-40">
-										{deployment?.use_custom_dockerfile ? 'Yes' : 'No'}
-									</span>
-								)}
-							</div>
-							{/* {
+							/>
+						) : (
+							<span className="text-muted-foreground w-40">
+								{deployment?.use_custom_dockerfile ? 'Yes' : 'No'}
+							</span>
+						)}
+					</div>
+					{/* {
 							dockerfileContent && (
 								<div className="bg-card p-2 rounded-md">
 									<p className="text-sm">{dockerfileContent}</p>
@@ -795,140 +775,140 @@ export default function ConfigTabs(
 							)
 						} */}
 
-							{/* Env Vars */}
-							<p className="font-bold text-xl whitespace-nowrap mt-10 text-foreground">Environment Variables</p>
-							<div className="w-full mt-2">
-								{editMode ? (
-									<div className="space-y-3">
-										<div className="max-h-[300px] overflow-y-auto space-y-2">
-										{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
-											<div key={index} className="flex flex-wrap items-center gap-2">
-												<div className="flex-1 min-w-[140px] space-y-1">
-													<Label className="text-xs text-muted-foreground">Key</Label>
-													<Input
-														placeholder="e.g. NODE_ENV"
-														value={row.name}
-														onChange={(e) => {
-															const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-															const next = displayRows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r));
-															setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
-														}}
-														onPaste={(e) => {
-															const pasted = e.clipboardData?.getData("text");
-															if (pasted && /\n/.test(pasted)) {
-																e.preventDefault();
-																const parsed = parseEnvLinesToEntries(pasted);
-																const existingKeys = new Set((envEntries.length > 0 ? envEntries : []).filter((r) => r.name.trim()).map((r) => r.name));
-																const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
-																setEnvEntries([...(envEntries.length > 0 ? envEntries : []), ...toAdd]);
-															}
-														}}
-														className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
-													/>
-												</div>
-												<div className="flex-1 min-w-[140px] space-y-1">
-													<Label className="text-xs text-muted-foreground">Value</Label>
-													<Input
-														placeholder="e.g. production"
-														value={row.value}
-														onChange={(e) => {
-															const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-															const next = displayRows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
-															setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
-														}}
-														className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
-														autoComplete="off"
-													/>
-												</div>
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon"
-													className="mt-6 text-muted-foreground hover:text-foreground shrink-0"
-													onClick={() => {
+					{/* Env Vars */}
+					<p className="font-bold text-xl whitespace-nowrap mt-10 text-foreground">Environment Variables</p>
+					<div className="w-full mt-2">
+						{editMode ? (
+							<div className="space-y-3">
+								<div className="max-h-75 overflow-y-auto space-y-2">
+									{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
+										<div key={index} className="flex flex-wrap items-center gap-2">
+											<div className="flex-1 min-w-35 space-y-1">
+												<Label className="text-xs text-muted-foreground">Key</Label>
+												<Input
+													placeholder="e.g. NODE_ENV"
+													value={row.name}
+													onChange={(e) => {
 														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-														const next = displayRows.filter((_, i) => i !== index);
-														setEnvEntries(next.length ? next : []);
+														const next = displayRows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r));
+														setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
 													}}
-													aria-label="Remove variable"
-												>
-													<Trash2 className="h-4 w-4" />
-												</Button>
+													onPaste={(e) => {
+														const pasted = e.clipboardData?.getData("text");
+														if (pasted && /\n/.test(pasted)) {
+															e.preventDefault();
+															const parsed = parseEnvLinesToEntries(pasted);
+															const existingKeys = new Set((envEntries.length > 0 ? envEntries : []).filter((r) => r.name.trim()).map((r) => r.name));
+															const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
+															setEnvEntries([...(envEntries.length > 0 ? envEntries : []), ...toAdd]);
+														}
+													}}
+													className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
+												/>
 											</div>
-										))}
-										</div>
-										<div className="flex flex-wrap items-center gap-2 pt-1">
+											<div className="flex-1 min-w-35 space-y-1">
+												<Label className="text-xs text-muted-foreground">Value</Label>
+												<Input
+													placeholder="e.g. production"
+													value={row.value}
+													onChange={(e) => {
+														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
+														const next = displayRows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
+														setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
+													}}
+													className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
+													autoComplete="off"
+												/>
+											</div>
 											<Button
 												type="button"
-												variant="outline"
-												size="sm"
-												className="border-border/60 text-foreground hover:bg-secondary/30"
-												onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
-											>
-												<Plus className="h-4 w-4 mr-1" />
-												Add variable
-											</Button>
-											<input
-												ref={envFileInputRef}
-												type="file"
-												accept=".env,.env.*,text/plain"
-												className="hidden"
-												onChange={(e) => {
-													const file = e.target.files?.[0];
-													if (!file) return;
-													const reader = new FileReader();
-													reader.onload = () => {
-														const text = (reader.result as string) ?? "";
-														const parsed = parseEnvLinesToEntries(text);
-														const existingKeys = new Set(envEntries.filter((r) => r.name.trim()).map((r) => r.name));
-														const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
-														setEnvEntries([...envEntries, ...toAdd]);
-													};
-													reader.readAsText(file);
-													e.target.value = "";
+												variant="ghost"
+												size="icon"
+												className="mt-6 text-muted-foreground hover:text-foreground shrink-0"
+												onClick={() => {
+													const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
+													const next = displayRows.filter((_, i) => i !== index);
+													setEnvEntries(next.length ? next : []);
 												}}
-											/>
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												className="border-border/60 text-foreground hover:bg-secondary/30"
-												onClick={() => envFileInputRef.current?.click()}
+												aria-label="Remove variable"
 											>
-												<Upload className="h-4 w-4 mr-1" />
-												Import .env
+												<Trash2 className="h-4 w-4" />
 											</Button>
 										</div>
-									</div>
-								) : (
-									<>
-										{deployment?.env_vars ? (
-											<Table className="border border-border/60 p-2 rounded-md overflow-hidden">
-												<TableHeader className="bg-card/80">
-													<TableRow className="border-border/40 hover:bg-transparent">
-														<TableHead className="text-foreground">Name</TableHead>
-														<TableHead className="text-foreground">Value</TableHead>
-													</TableRow>
-												</TableHeader>
-												<TableBody>
-													{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
-														<TableRow key={idx} className="border-border/40 hover:bg-secondary/30">
-															<TableCell className="text-muted-foreground max-w-[100px] truncate">{env.name}</TableCell>
-															<TableCell className="text-foreground font-mono">
-																{"*".repeat(Math.min(env.value.length, 25))}
-															</TableCell>
-														</TableRow>
-													))}
-												</TableBody>
-											</Table>
-										) : (
-											<span className="text-muted-foreground">-</span>
-										)}
-									</>
-								)}
+									))}
+								</div>
+								<div className="flex flex-wrap items-center gap-2 pt-1">
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="border-border/60 text-foreground hover:bg-secondary/30"
+										onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
+									>
+										<Plus className="h-4 w-4 mr-1" />
+										Add variable
+									</Button>
+									<input
+										ref={envFileInputRef}
+										type="file"
+										accept=".env,.env.*,text/plain"
+										className="hidden"
+										onChange={(e) => {
+											const file = e.target.files?.[0];
+											if (!file) return;
+											const reader = new FileReader();
+											reader.onload = () => {
+												const text = (reader.result as string) ?? "";
+												const parsed = parseEnvLinesToEntries(text);
+												const existingKeys = new Set(envEntries.filter((r) => r.name.trim()).map((r) => r.name));
+												const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
+												setEnvEntries([...envEntries, ...toAdd]);
+											};
+											reader.readAsText(file);
+											e.target.value = "";
+										}}
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="border-border/60 text-foreground hover:bg-secondary/30"
+										onClick={() => envFileInputRef.current?.click()}
+									>
+										<Upload className="h-4 w-4 mr-1" />
+										Import .env
+									</Button>
+								</div>
 							</div>
-						</form>
-					</Form>
+						) : (
+							<>
+								{deployment?.env_vars ? (
+									<Table className="border max-h-25 overflow-y-auto border-border/60 p-2 rounded-md overflow-hidden">
+										<TableHeader className="bg-card/80">
+											<TableRow className="border-border/40 hover:bg-transparent">
+												<TableHead className="text-foreground">Name</TableHead>
+												<TableHead className="text-foreground">Value</TableHead>
+											</TableRow>
+										</TableHeader>
+										<TableBody>
+											{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
+												<TableRow key={idx} className="border-border/40 hover:bg-secondary/30">
+													<TableCell className="text-muted-foreground max-w-25 truncate">{env.name}</TableCell>
+													<TableCell className="text-foreground font-mono">
+														{"*".repeat(Math.min(env.value.length, 25))}
+													</TableCell>
+												</TableRow>
+											))}
+										</TableBody>
+									</Table>
+								) : (
+									<span className="text-muted-foreground">-</span>
+								)}
+							</>
+						)}
+					</div>
+				</form>
+			</Form>
 		</>
 	)
 }
