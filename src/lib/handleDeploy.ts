@@ -116,9 +116,21 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
-		if (ws.readyState === ws.OPEN) {
-			ws.send(JSON.stringify({ type: "deploy_complete", payload: { deployUrl: null, success: false } }));
-		}
+		const doneStep = deploySteps.find((step) => step.id === "done");
+		if (doneStep) doneStep.status = "error";
+		const durationMs = Date.now() - deployStartTime;
+		sendDeployComplete(
+			ws,
+			undefined,
+			false,
+			deployConfig,
+			deploySteps,
+			userID,
+			deployConfig.deploymentTarget,
+			null,
+			null,
+			durationMs
+		);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		throw error;
 	}

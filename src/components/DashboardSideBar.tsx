@@ -194,7 +194,7 @@ export default function DashboardSideBar({ onOpenDeploySheet }: DashboardSideBar
 									<button
 										type="button"
 										onClick={() => onOpenDeploySheet(repo)}
-										className="w-full text-left rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
+										className="w-full cursor-pointer text-left rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
 									>
 									<p className="font-medium text-foreground truncate">{repo.full_name.split("/")[1]}</p>
 									<p className="text-xs text-muted-foreground truncate mt-1">{repo.full_name}</p>

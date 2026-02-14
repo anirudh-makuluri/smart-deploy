@@ -248,4 +248,66 @@ export const dbHelper = {
 			return { error };
 		}
 	},
+
+	getAllDeploymentHistory: async function (userID: string) {
+		try {
+			const userRef = db.collection("users").doc(userID);
+			const userDoc = await userRef.get();
+			if (!userDoc.exists) return { error: "User doesn't exist" };
+
+			const userData = userDoc.data();
+			const deploymentIds: string[] = userData?.deploymentIds || [];
+			if (deploymentIds.length === 0) return { history: [] };
+
+			const deploymentDocs = await Promise.all(
+				deploymentIds.map((id) => db.collection("deployments").doc(id).get())
+			);
+
+			const deploymentMeta = new Map(
+				deploymentDocs
+					.filter((doc) => doc.exists)
+					.map((doc) => [
+						doc.id,
+						{
+							service_name: (doc.data() as DeployConfig)?.service_name,
+							url: (doc.data() as DeployConfig)?.url,
+						}
+					])
+			);
+
+			const historySnapshots = await Promise.all(
+				deploymentIds.map((deploymentId) =>
+					db
+						.collection("deployments")
+						.doc(deploymentId)
+						.collection("history")
+						.orderBy("timestamp", "desc")
+						.get()
+				)
+			);
+
+			const history = historySnapshots.flatMap((snapshot, index) => {
+				const deploymentId = deploymentIds[index];
+				const meta = deploymentMeta.get(deploymentId);
+				return snapshot.docs.map((doc) => ({
+					id: doc.id,
+					deploymentId,
+					...(doc.data() as Omit<DeploymentHistoryEntry, "id" | "deploymentId">),
+					serviceName: meta?.service_name || "Unknown",
+					repoUrl: meta?.url || "",
+				}));
+			});
+
+			history.sort((a, b) => {
+				const aTime = new Date(a.timestamp).getTime();
+				const bTime = new Date(b.timestamp).getTime();
+				return bTime - aTime;
+			});
+
+			return { history };
+		} catch (error) {
+			console.error("getAllDeploymentHistory error:", error);
+			return { error };
+		}
+	},
 }

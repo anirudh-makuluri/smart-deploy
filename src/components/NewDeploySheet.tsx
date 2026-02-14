@@ -3,13 +3,15 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { useSession } from "next-auth/react";
-import type { DeployConfig, repoType } from "@/app/types";
+import type { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import ConfigTabs, { FormSchemaType } from "@/components/ConfigTabs";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { parseEnvVarsToStore } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
+import { selectDeploymentTargetFromMetadata } from "@/lib/deploymentTargetFromMetadata";
+import { toast } from "sonner";
 
 type NewDeploySheetProps = {
 	open: boolean;
@@ -54,11 +56,49 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 		onClose();
 	}
 
-	async function handleSubmit(values: FormSchemaType & { commitSha?: string }) {
+	async function handleSubmit(
+		values: FormSchemaType &
+			Partial<AIGenProjectMetadata> & {
+				commitSha?: string;
+				deploymentTarget?: DeployConfig["deploymentTarget"];
+				deployment_target_reason?: string;
+			}
+	) {
 		if (!session?.accessToken || !repo) return;
+
+		let deploymentTarget = values.deploymentTarget;
+		let deployment_target_reason = values.deployment_target_reason;
+
+		if (
+			!deploymentTarget &&
+			values.core_deployment_info &&
+			values.features_infrastructure &&
+			values.final_notes
+		) {
+			const analysis = selectDeploymentTargetFromMetadata({
+				core_deployment_info: values.core_deployment_info,
+				features_infrastructure: values.features_infrastructure,
+				final_notes: values.final_notes,
+				deployment_hints: values.deployment_hints,
+				service_compatibility: values.service_compatibility,
+			});
+			if (analysis) {
+				deploymentTarget = analysis.target;
+				deployment_target_reason = analysis.reason;
+			}
+		}
+
+		if (!deploymentTarget) {
+			toast.error("Deployment target not set. Run Smart Project Scan or select a target.");
+			return;
+		}
+
+		const coreInfo = values.core_deployment_info;
 
 		const payload: DeployConfig = {
 			id: repo.id,
+			deploymentTarget,
+			...(deployment_target_reason && { deployment_target_reason }),
 			url: values.url,
 			service_name: values.service_name,
 			branch: values.branch,
@@ -67,13 +107,16 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 			status: "didnt_deploy",
 			...(values.commitSha && { commitSha: values.commitSha }),
 			...(values.custom_url && { custom_url: values.custom_url }),
+			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
+			...(values.final_notes && { final_notes: values.final_notes }),
 			core_deployment_info: {
-				language: "",
-				framework: "",
-				install_cmd: values.install_cmd ?? "",
-				build_cmd: values.build_cmd ?? "",
-				run_cmd: values.run_cmd ?? "",
-				workdir: values.workdir ?? null,
+				language: coreInfo?.language ?? "",
+				framework: coreInfo?.framework ?? "",
+				install_cmd: values.install_cmd ?? coreInfo?.install_cmd ?? "",
+				build_cmd: values.build_cmd ?? coreInfo?.build_cmd ?? "",
+				run_cmd: values.run_cmd ?? coreInfo?.run_cmd ?? "",
+				workdir: values.workdir ?? coreInfo?.workdir ?? null,
+				...(coreInfo?.port != null && { port: coreInfo.port }),
 			},
 		};
 
