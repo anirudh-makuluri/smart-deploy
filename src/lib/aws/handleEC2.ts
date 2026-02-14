@@ -226,10 +226,18 @@ function generateUserDataScript(
 	// Generate docker-compose.yml content
 	const composeServices: Record<string, any> = {};
 	const ports: string[] = [];
+	let websocketServiceName = "";
+	let websocketPort = "";
 	
 	for (const svc of services) {
 		const servicePort = svc.port || 8080;
 		ports.push(String(servicePort));
+		
+		// Check if this is a websocket service
+		if (svc.name.toLowerCase().includes('websocket')) {
+			websocketServiceName = svc.name;
+			websocketPort = String(servicePort);
+		}
 		
 		composeServices[svc.name] = {
 			build: {
@@ -335,15 +343,27 @@ cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
     server_name _;
-    
+    ${websocketServiceName ? `
+    # WebSocket endpoint (${websocketServiceName} service on port ${websocketPort})
+    location /ws {
+        proxy_pass http://${websocketServiceName}:${websocketPort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+` : ''}
+    # Main application
     location / {
         proxy_pass http://127.0.0.1:${ports[0] || 8080};
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \\$http_upgrade;
-		proxy_set_header Connection \$connection_upgrade;
-        proxy_set_header Host \\$host;
-        proxy_set_header X-Real-IP \\$remote_addr;
-        proxy_cache_bypass \\$http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_cache_bypass \$http_upgrade;
     }
 }
 NGINXEOF
