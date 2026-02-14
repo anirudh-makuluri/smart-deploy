@@ -139,7 +139,7 @@ export default function Home() {
 						</div>
 						<div className="flex justify-center sm:justify-start flex-wrap gap-3 mt-4">
 							<Link
-								href="/auth"
+								href={session ? "/home" : "/auth"}
 								className="bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-medium px-6 py-3 rounded-md transition-all text-sm"
 							>
 								TEST_DEPLOYMENTS --force
