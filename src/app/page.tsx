@@ -1,444 +1,447 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import Link from "next/link";
-import { Rocket, Boxes, Cloud, GitBranch, Zap, Database, Globe, CheckCircle2 } from "lucide-react";
+import { Boxes, Cloud, GitBranch, Zap, Database, Globe, CheckCircle2 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import Link from "next/link";
+import { Scan, Package, Rocket, FileText, Github, Twitter, Linkedin, CheckCircle } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
 	const { data: session } = useSession();
 
-		return (
-			<div className="landing-bg min-h-svh flex flex-col text-foreground">
-				<div className="shrink-0 flex items-center justify-between px-6 py-3 border-b border-border">
-					<SmartDeployLogo />
+	const terminalLines = [
+		"[INFO] Scanning entry points... found /pages, /api",
+		"[INFO] Target: Next.js SSR build (Node 18+)",
+		"[INFO] Installing NPM packages → 187 packages",
+		'{ service: "elastic-beanstalk", region: "us-west-2" }',
+		"Deploying services online █",
+		"→ https://my-app.smartdeploy.io",
+	];
+
+	const [displayedText, setDisplayedText] = useState<string[]>([]);
+	const [currentLineIndex, setCurrentLineIndex] = useState(0);
+	const [currentCharIndex, setCurrentCharIndex] = useState(0);
+	const [cursorVisible, setCursorVisible] = useState(true);
+	const [blinkCount, setBlinkCount] = useState(0);
+
+	useEffect(() => {
+		if (currentLineIndex >= terminalLines.length) {
+
+			const restartTimer = setTimeout(() => {
+				setDisplayedText([]);
+				setCurrentLineIndex(0);
+				setCurrentCharIndex(0);
+				setBlinkCount(0);
+				setCursorVisible(true);
+			}, 2000);
+
+			return () => clearTimeout(restartTimer);
+		}
+
+		const currentLine = terminalLines[currentLineIndex];
+		
+		if (currentCharIndex < currentLine.length) {
+			const timer = setTimeout(() => {
+				setDisplayedText(prev => {
+					const newText = [...prev];
+					if (!newText[currentLineIndex]) {
+						newText[currentLineIndex] = "";
+					}
+					newText[currentLineIndex] = currentLine.slice(0, currentCharIndex + 1);
+					return newText;
+				});
+				setCurrentCharIndex(currentCharIndex + 1);
+			}, 30); // Speed of typing (30ms per character)
+
+			return () => clearTimeout(timer);
+		} else if (blinkCount < 4) {
+			// Blink cursor at least 2 times (4 state changes: visible->hidden->visible->hidden)
+			const timer = setTimeout(() => {
+				setCursorVisible(!cursorVisible);
+				setBlinkCount(blinkCount + 1);
+			}, 500); // Blink every 500ms
+
+			return () => clearTimeout(timer);
+		} else {
+			// After blinking, move to next line
+			const timer = setTimeout(() => {
+				setCurrentLineIndex(currentLineIndex + 1);
+				setCurrentCharIndex(0);
+				setBlinkCount(0);
+				setCursorVisible(true);
+			}, 500);
+
+			return () => clearTimeout(timer);
+		}
+	}, [currentCharIndex, currentLineIndex, terminalLines, blinkCount, cursorVisible]);
+
+	const getLineColor = (index: number, text: string) => {
+		if (text.startsWith("[INFO]") || text.includes("Deploying") || text.includes("✓")) {
+			return "text-emerald-400";
+		}
+		return "text-gray-400";
+	};
+
+	return (
+		<div className="landing-bg min-h-svh flex flex-col text-foreground">
+			{/* Header */}
+			<header className="shrink-0 flex items-center justify-between px-6 lg:px-12 py-4 border-b border-border/50">
+				<SmartDeployLogo href="/" />
+				<nav className="hidden md:flex items-center gap-8 text-sm">
+					<Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+						Features
+					</Link>
+					<Link href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">
+						How It Works
+					</Link>
+					<Link href="#docs" className="text-muted-foreground hover:text-foreground transition-colors">
+						Docs
+					</Link>
+					<Link href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
+						Pricing
+					</Link>
+				</nav>
+				<div className="flex items-center gap-3">
 					<Link
 						href={session ? "/home" : "/auth"}
-						className="landing-build-blue hover:opacity-95 text-primary-foreground font-medium px-5 py-2.5 rounded-lg transition-all"
+						className="bg-emerald-500 hover:bg-emerald-600 text-black font-medium px-5 py-2 rounded-md transition-all text-sm"
 					>
-						{session ? "Dashboard" : "Get Started"}
+						{session ? "Go to Dashboard" : "Get Started"}
 					</Link>
 				</div>
-	
-				{/* Main: asymmetric layout — left copy, right "multi-service" visual */}
-				<main className="flex-1 min-h-0 flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-12 px-6 py-6 max-w-6xl mx-auto w-full">
-					{/* Left: headline + CTA */}
-					<div className="flex flex-col gap-3 lg:gap-4 text-center lg:text-left lg:max-w-xl">
-						<p className="text-primary font-mono text-xs uppercase tracking-[0.2em]">
-							Multi-service deployment platform
+			</header>
+
+			{/* Hero Section */}
+			<section className="flex-1 px-6 lg:px-12 py-16 lg:py-24">
+				<div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
+					{/* Left Side */}
+					<div className="flex flex-col gap-6">
+						<p className="text-emerald-400 font-mono text-xs uppercase tracking-wider">
+							TRYING REACT // AP.JS
 						</p>
-						<h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight tracking-tight">
-							All your services.
-							<br />
-							<span className="text-muted-foreground">One platform.</span>
+						<h1 className="text-5xl lg:text-7xl font-bold leading-tight">
+							Code to <span className="text-emerald-400">Cloud.</span>
 						</h1>
-						<p className="text-muted-foreground text-sm lg:text-base">
-							Connect repos. We pick the right target—Amplify, ECS, Cloud Run, and more. Deploy every service from one dashboard.
-						</p>
-						<div className="flex flex-col items-center sm:flex-row gap-2 justify-center lg:justify-start">
-							<Link
-								href={session ? "/home" : "/auth"}
-								className="landing-build-blue hover:opacity-95 text-primary-foreground font-semibold px-6 py-3.5 rounded-lg inline-flex items-center justify-center gap-2 transition-all"
-							>
-								<Rocket className="size-5" />
-								{session ? "Continue" : "Get started"}
-							</Link>
-							<span className="text-muted-foreground/70 text-sm self-center lg:self-auto">
-								AWS · GCP · One dashboard
-							</span>
-						</div>
-					</div>
-	
-					{/* Right: "multi-service" visual — services flowing into one deploy */}
-					<div className="relative w-full max-w-70 lg:max-w-sm aspect-square shrink-0 flex items-center justify-center">
-						{/* Connector lines (behind nodes) */}
-						<svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-							<defs>
-								<linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-									<stop offset="0%" stopColor="var(--primary)" stopOpacity="0.5" />
-									<stop offset="100%" stopColor="var(--chart-3)" stopOpacity="0.6" />
-								</linearGradient>
-							</defs>
-							{[
-								[50, 18, 50, 42],
-								[20, 32, 38, 42],
-								[80, 32, 62, 42],
-								[18, 68, 38, 58],
-								[82, 68, 62, 58],
-							].map(([x1, y1, x2, y2], i) => (
-								<line
-									key={i}
-									x1={x1}
-									y1={y1}
-									x2={x2}
-									y2={y2}
-									stroke="url(#lineGrad)"
-									strokeWidth="1.2"
-									strokeDasharray="3 2"
-									opacity="0.8"
-								/>
-							))}
-						</svg>
-						{/* Central "Deploy" node */}
-						<div className="absolute inset-0 flex items-center justify-center">
-							<div className="landing-build-blue w-24 h-24 rounded-2xl flex items-center justify-center shadow-[0_0_24px_0_rgba(0,0,0,0.35)] z-10">
-								<Rocket className="size-10 text-white" />
-							</div>
-						</div>
-						{/* Service nodes */}
-							{[
-									{ label: "API", top: "10%", left: "50%", color: "var(--primary)" },
-									{ label: "Web", top: "26%", left: "14%", color: "var(--chart-3)" },
-									{ label: "Worker", top: "26%", left: "86%", color: "var(--chart-3)" },
-									{ label: "DB", top: "68%", left: "12%", color: "var(--chart-5)" },
-									{ label: "Auth", top: "68%", left: "88%", color: "var(--chart-5)" },
-							].map((s, i) => (
-							<div
-								key={i}
-									className="absolute w-14 h-14 rounded-xl flex items-center justify-center border-2 text-xs font-medium z-10 bg-card/95"
-								style={{
-									top: s.top,
-									left: s.left,
-									transform: "translate(-50%, -50%)",
-									borderColor: s.color,
-									color: s.color,
-								}}
-							>
-								{s.label}
-							</div>
-						))}
-					</div>
-				</main>
-	
-				{/* Single value strip — not 3 cards, one clear line */}
-				<section className="shrink-0 landing-bg-muted border-t border-border py-4 px-6">
-					<div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
-						<div className="flex items-center gap-2">
-							<Boxes className="size-6 text-primary" />
-							<span className="text-foreground text-sm font-medium">Multiple services, one repo or many</span>
-						</div>
-						<div className="hidden sm:block w-px h-6 bg-border" />
-						<div className="flex items-center gap-2">
-							<Cloud className="size-6 text-amber-400" />
-							<span className="text-foreground text-sm font-medium">AWS + GCP — we choose the simplest target</span>
-						</div>
-					</div>
-				</section>
-	
-				{/* How It Works Section */}
-				<section className="flex-1 py-16 px-6 border-t border-border">
-					<div className="max-w-6xl mx-auto">
-						<div className="text-center mb-12">
-							<h2 className="text-3xl sm:text-4xl font-bold mb-3">How It Works</h2>
-							<p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-								SmartDeploy automatically analyzes your codebase and selects the optimal deployment target. Here's how we choose:
+						<div className="flex flex-col gap-2 text-muted-foreground">
+							<p className="flex items-start gap-2">
+								<span className="text-emerald-400">&gt;</span>
+								<span>AI-driven infrastructure orchestration.</span>
+							</p>
+							<p className="flex items-start gap-2">
+								<span className="text-emerald-400">&gt;</span>
+								<span>Zero-config deployments.</span>
+							</p>
+							<p className="flex items-start gap-2">
+								<span className="text-emerald-400">&gt;</span>
+								<span>Global edge distribution.</span>
 							</p>
 						</div>
-	
-						{/* Service Selection Flowchart */}
-						<div className="mb-16">
-							<h3 className="text-xl font-semibold mb-6 text-center text-primary">Service Selection Flow</h3>
-							<div className="bg-card rounded-xl p-6 sm:p-8 border border-border overflow-x-auto">
-								<div className="min-w-150 mx-auto">
-									<svg viewBox="0 0 800 900" className="w-full h-auto">
-										<defs>
-											<marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-												<polygon points="0 0, 10 3, 0 6" fill="var(--chart-3)" />
-											</marker>
-											<linearGradient id="startGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-												<stop offset="0%" stopColor="var(--primary)" stopOpacity="0.3" />
-												<stop offset="100%" stopColor="var(--chart-3)" stopOpacity="0.3" />
-											</linearGradient>
-										</defs>
-	
-										{/* Start Node */}
-										<rect x="300" y="20" width="200" height="50" rx="8" fill="url(#startGrad)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="400" y="50" textAnchor="middle" fill="var(--foreground)" fontSize="14" fontWeight="600">Connect Repository</text>
-	
-										{/* AI Analysis Node */}
-										<rect x="300" y="100" width="200" height="50" rx="8" fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="400" y="130" textAnchor="middle" fill="var(--foreground)" fontSize="13">AI Analysis</text>
-	
-										{/* Decision: LLM Compatibility */}
-										<polygon points="350,180 450,180 400,220" fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="400" y="200" textAnchor="middle" fill="var(--foreground)" fontSize="11">LLM Compatibility?</text>
-	
-										{/* Yes path - Simplest Compatible */}
-										<rect x="50" y="250" width="180" height="60" rx="8" fill="var(--secondary)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="140" y="275" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">Pick Simplest</text>
-										<text x="140" y="295" textAnchor="middle" fill="var(--foreground)" fontSize="11">Compatible Target</text>
-	
-										{/* No path - Rule-based checks */}
-										<rect x="570" y="250" width="180" height="60" rx="8" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="275" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">Rule-Based</text>
-										<text x="660" y="295" textAnchor="middle" fill="var(--foreground)" fontSize="11">Selection</text>
-	
-										{/* Multi-service check */}
-										<polygon points="620,350 700,350 660,390" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="375" textAnchor="middle" fill="var(--foreground)" fontSize="11">Multi-service?</text>
-	
-										{/* Database check */}
-										<polygon points="620,430 700,430 660,470" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="455" textAnchor="middle" fill="var(--foreground)" fontSize="11">Database?</text>
-	
-										{/* WebSocket check */}
-										<polygon points="620,510 700,510 660,550" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="535" textAnchor="middle" fill="var(--foreground)" fontSize="11">WebSockets?</text>
-	
-										{/* Node static check */}
-										<polygon points="620,590 700,590 660,630" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="615" textAnchor="middle" fill="var(--foreground)" fontSize="11">Node Static?</text>
-	
-										{/* EB language check */}
-										<polygon points="620,670 700,670 660,710" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="695" textAnchor="middle" fill="var(--foreground)" fontSize="11">EB Language?</text>
-	
-										{/* Dockerfile check */}
-										<polygon points="620,750 700,750 660,790" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="660" y="775" textAnchor="middle" fill="var(--foreground)" fontSize="11">Dockerfile?</text>
-	
-										{/* Target Results */}
-										{/* ECS */}
-										<rect x="50" y="360" width="140" height="50" rx="8" fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="120" y="385" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">ECS Fargate</text>
-										<text x="120" y="400" textAnchor="middle" fill="var(--muted-foreground)" fontSize="10">Multi-service/DB</text>
-	
-										{/* Amplify */}
-										<rect x="50" y="600" width="140" height="50" rx="8" fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="120" y="625" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">AWS Amplify</text>
-										<text x="120" y="640" textAnchor="middle" fill="var(--muted-foreground)" fontSize="10">Static/Frontend</text>
-	
-										{/* Elastic Beanstalk */}
-										<rect x="50" y="680" width="140" height="50" rx="8" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="120" y="700" textAnchor="middle" fill="var(--foreground)" fontSize="11" fontWeight="600">Elastic Beanstalk</text>
-										<text x="120" y="715" textAnchor="middle" fill="var(--muted-foreground)" fontSize="10">Simple Apps</text>
-	
-										{/* Cloud Run */}
-										<rect x="50" y="450" width="140" height="50" rx="8" fill="var(--card)" stroke="var(--primary)" strokeWidth="2" />
-										<text x="120" y="475" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">Cloud Run</text>
-										<text x="120" y="490" textAnchor="middle" fill="var(--muted-foreground)" fontSize="10">Containerized</text>
-	
-										{/* EC2 */}
-										<rect x="50" y="760" width="140" height="50" rx="8" fill="var(--card)" stroke="var(--chart-5)" strokeWidth="2" />
-										<text x="120" y="785" textAnchor="middle" fill="var(--foreground)" fontSize="12" fontWeight="600">EC2</text>
-										<text x="120" y="800" textAnchor="middle" fill="var(--muted-foreground)" fontSize="10">Full Control</text>
-	
-										{/* Arrows */}
-										<line x1="400" y1="70" x2="400" y2="100" stroke="var(--primary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="400" y1="150" x2="400" y2="180" stroke="var(--primary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="350" y1="200" x2="140" y2="250" stroke="var(--primary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="450" y1="200" x2="660" y2="250" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="140" y1="310" x2="120" y2="360" stroke="var(--primary)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="310" x2="660" y2="350" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="370" x2="120" y2="385" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="390" x2="660" y2="430" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="450" x2="120" y2="475" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="470" x2="660" y2="510" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="530" x2="120" y2="385" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="550" x2="660" y2="590" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="610" x2="120" y2="625" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="630" x2="660" y2="670" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="690" x2="120" y2="705" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="710" x2="660" y2="750" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="620" y1="770" x2="120" y2="385" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-										<line x1="660" y1="790" x2="120" y2="785" stroke="var(--chart-5)" strokeWidth="2" markerEnd="url(#arrowhead)" />
-	
-										{/* Labels */}
-										<text x="200" y="245" fill="var(--primary)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="520" y="245" fill="var(--chart-5)" fontSize="10" fontWeight="600">No</text>
-										<text x="580" y="365" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="445" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="525" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="605" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="685" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="765" fill="var(--chart-5)" fontSize="10" fontWeight="600">Yes</text>
-										<text x="580" y="845" fill="var(--chart-5)" fontSize="10" fontWeight="600">No</text>
-									</svg>
-								</div>
+						<div className="flex justify-center sm:justify-start flex-wrap gap-3 mt-4">
+							<Link
+								href="/auth"
+								className="bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-medium px-6 py-3 rounded-md transition-all text-sm"
+							>
+								TEST_DEPLOYMENTS --force
+							</Link>
+							<Link
+								href="#docs"
+								className="bg-muted hover:bg-muted/80 text-foreground font-mono font-medium px-6 py-3 rounded-md transition-all text-sm inline-flex items-center gap-2"
+							>
+								VIEW_DOCS 📄
+							</Link>
+						</div>
+					</div>
+
+					{/* Right Side - Terminal */}
+					<div className="relative">
+						<div className="bg-black/90 border border-emerald-500/30 rounded-lg p-6 font-mono text-sm shadow-2xl shadow-emerald-500/20">
+							<div className="flex items-center gap-2 mb-4 pb-3 border-b border-emerald-500/30">
+								<div className="size-3 rounded-full bg-red-500" />
+								<div className="size-3 rounded-full bg-yellow-500" />
+								<div className="size-3 rounded-full bg-green-500" />
+								<span className="ml-2 text-emerald-400 text-xs">$ ANALYSIS OUTPUT</span>
+							</div>
+							<div className="space-y-1 text-xs min-h-30">
+								{displayedText.map((line, index) => (
+									<p
+										key={index}
+										className={`${getLineColor(index, line)} ${
+											line.includes("service:") ? "opacity-60" : ""
+										}`}
+									>
+										{line}
+										{index === currentLineIndex && (
+											cursorVisible && (
+												<span>▋</span>
+											)
+										)}
+									</p>
+								))}
 							</div>
 						</div>
-	
-						{/* Key Features Grid */}
-						<div className="mb-16">
-							<h3 className="text-xl font-semibold mb-6 text-center text-primary">Key Features</h3>
-							<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<Zap className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">AI-Powered Analysis</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Automatically detects language, framework, database requirements, and generates optimal deployment configuration.
-									</p>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<Boxes className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">Multi-Service Support</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Detects and deploys complex applications with multiple services from docker-compose or algorithmic detection.
-									</p>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<Database className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">Database Provisioning</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Automatically detects database requirements and provisions Cloud SQL instances (PostgreSQL, MySQL, MSSQL).
-									</p>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<Cloud className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">Multi-Cloud Support</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Deploy to AWS (Amplify, ECS, Elastic Beanstalk, EC2) or GCP (Cloud Run) - we choose the best fit.
-									</p>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<GitBranch className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">GitHub Integration</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Connect any GitHub repository with OAuth. Deploy from public or private repos seamlessly.
-									</p>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<div className="flex items-center gap-3 mb-3">
-										<Globe className="size-6 text-primary" />
-										<h4 className="text-lg font-semibold">Live Deployment Logs</h4>
-									</div>
-									<p className="text-muted-foreground text-sm">
-										Real-time WebSocket updates during deployment. Monitor build progress and troubleshoot issues instantly.
-									</p>
-								</div>
+					</div>
+				</div>
+
+				{/* Partner Logos */}
+				<div className="max-w-7xl mx-auto mt-20 pt-12 border-t border-border/50">
+					<p className="text-center text-muted-foreground text-xs uppercase tracking-wider mb-8">
+						POWERED BY ELITE INFRASTRUCTURE TEAMS
+					</p>
+					<div className="flex flex-wrap items-center justify-center gap-12 opacity-50">
+						<div className="font-bold text-xl">AWS</div>
+						<div className="font-bold text-xl">GCP</div>
+						<div className="font-bold text-xl">VERCEL</div>
+					</div>
+				</div>
+			</section>
+			{/* The SmartDeploy Flow */}
+			<section id="how-it-works" className="px-6 lg:px-12 py-20 bg-muted/20 border-y border-border/50">
+				<div className="max-w-7xl mx-auto">
+					<p className="text-emerald-400 font-mono text-xs uppercase tracking-wider text-center mb-2">
+						QUESTION FROM // PIPELINE
+					</p>
+					<h2 className="text-4xl lg:text-5xl font-bold text-center mb-3">
+						THE SMARTDEPLOY FLOW
+					</h2>
+					<p className="text-center text-muted-foreground mb-16">
+						Simplified orchestration from source to production.
+					</p>
+
+					<div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+						{/* Step 1 */}
+						<div className="flex flex-col gap-4">
+							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+								<GitBranch className="size-8 text-emerald-400" />
+							</div>
+							<h3 className="text-xl font-bold">01. Connect Repo</h3>
+							<p className="text-sm text-muted-foreground">
+								Connect any GitHub repository with OAuth. Works instantly with public and private repositories.
+							</p>
+						</div>
+
+						{/* Step 2 */}
+						<div className="flex flex-col gap-4">
+							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+								<Scan className="size-8 text-emerald-400" />
+							</div>
+							<h3 className="text-xl font-bold">02. AI Project Scan</h3>
+							<p className="text-sm text-muted-foreground">
+								Metadata-based AI detects infrastructure requirements and generates configurations automatically.
+							</p>
+						</div>
+
+						{/* Step 3 */}
+						<div className="flex flex-col gap-4">
+							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+								<Package className="size-8 text-emerald-400" />
+							</div>
+							<h3 className="text-xl font-bold">03. Automated Build</h3>
+							<p className="text-sm text-muted-foreground">
+								Selects optimal provisioning across AWS, GCP, and Azure for instant cloud delivery.
+							</p>
+						</div>
+
+						{/* Step 4 */}
+						<div className="flex flex-col gap-4">
+							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+								<Rocket className="size-8 text-emerald-400" />
+							</div>
+							<h3 className="text-xl font-bold">04. Instant Deployment</h3>
+							<p className="text-sm text-muted-foreground">
+								Deploy at scale with real-time logs and monitoring. Zero downtime, maximum efficiency.
+							</p>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			{/* Tech Specs */}
+			<section id="features" className="px-6 lg:px-12 py-20">
+				<div className="max-w-7xl mx-auto">
+					<div className="grid lg:grid-cols-5 gap-12 mb-16">
+						{/* Left Side */}
+						<div className="lg:col-span-2 flex flex-col gap-6">
+							<h2 className="text-4xl lg:text-5xl font-bold">
+								TECH<br />SPECS
+							</h2>
+							<p className="text-muted-foreground">
+								Production-grade at the YAML level.<br />
+								Pure engineering, zero friction.
+							</p>
+							<div className="space-y-2 font-mono text-sm">
+								<p className="text-emerald-400">HTML/SLA: <span className="text-foreground">99.99%</span></p>
+								<p className="text-emerald-400">AVAILABILITY: <span className="text-foreground">&lt;10ms</span></p>
 							</div>
 						</div>
-	
-						{/* Supported Platforms */}
-						<div className="mb-16">
-							<h3 className="text-xl font-semibold mb-6 text-center text-primary">Supported Platforms & Languages</h3>
-							<div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-										<Cloud className="size-5 text-amber-400" />
-										Deployment Targets
-									</h4>
-									<ul className="space-y-2 text-muted-foreground text-sm">
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">AWS Amplify</strong> - Static sites & frontend apps</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Elastic Beanstalk</strong> - Simple serverless apps</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">ECS Fargate</strong> - Containerized & multi-service</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Cloud Run</strong> - Serverless containers (GCP)</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">EC2</strong> - Full control & complex apps</span>
-										</li>
-									</ul>
-								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border">
-									<h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-										<Zap className="size-5 text-primary" />
-										Languages & Frameworks
-									</h4>
-									<ul className="space-y-2 text-muted-foreground text-sm">
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Node.js</strong> - Next.js, Express, React, Vue</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Python</strong> - Django, FastAPI, Flask</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Go</strong> - Native Go applications</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Java</strong> - Spring Boot, Maven, Gradle</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">.NET</strong> - C# ASP.NET applications</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">Rust</strong> - Containerized deployments</span>
-										</li>
-										<li className="flex items-center gap-2">
-											<CheckCircle2 className="size-4 text-primary" />
-											<span><strong className="text-foreground">PHP & Ruby</strong> - Full framework support</span>
-										</li>
-									</ul>
+
+						{/* Right Side - Feature Grid */}
+						<div className="lg:col-span-3 grid gap-6">
+							{/* Feature 1 */}
+							<div className="bg-card border border-border/50 rounded-lg p-6">
+								<div className="flex items-start gap-4">
+									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+										<Scan className="size-6 text-emerald-400" />
+									</div>
+									<div>
+										<h3 className="font-mono text-sm font-bold mb-2">01_AUTO_SCAN</h3>
+										<p className="text-sm text-muted-foreground">
+											AI analysis of IOT to determine infrastructure requirements and metadata.
+										</p>
+									</div>
 								</div>
 							</div>
-						</div>
-	
-						{/* How It Works Steps */}
-						<div>
-							<h3 className="text-xl font-semibold mb-6 text-center text-primary">Simple 3-Step Process</h3>
-							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-								<div className="bg-card rounded-lg p-6 border border-border text-center">
-									<div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-										<span className="text-2xl font-bold text-primary">1</span>
+
+							{/* Feature 2 */}
+							<div className="bg-card border border-border/50 rounded-lg p-6">
+								<div className="flex items-start gap-4">
+									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+										<span className="text-emerald-400 text-2xl">⚡</span>
 									</div>
-									<h4 className="text-lg font-semibold mb-2">Connect Repository</h4>
-									<p className="text-muted-foreground text-sm">
-										Sign in with GitHub and select any repository. Public or private, we've got you covered.
-									</p>
+									<div>
+										<h3 className="font-mono text-sm font-bold mb-2">02_MULTI_REGION</h3>
+										<p className="text-sm text-muted-foreground">
+											Replicate fault-cloud provisioning AWS, GCP, and Azure as a single target.
+										</p>
+									</div>
 								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border text-center">
-									<div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-										<span className="text-2xl font-bold text-primary">2</span>
+							</div>
+
+							{/* Feature 3 */}
+							<div className="bg-card border border-border/50 rounded-lg p-6">
+								<div className="flex items-start gap-4">
+									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+										<span className="text-emerald-400 text-2xl">▦</span>
 									</div>
-									<h4 className="text-lg font-semibold mb-2">AI Analysis & Config</h4>
-									<p className="text-muted-foreground text-sm">
-										Our AI scans your codebase, detects services, and auto-configures deployment settings. Review and customize as needed.
-									</p>
+									<div>
+										<h3 className="font-mono text-sm font-bold mb-2">03_DB_MESH</h3>
+										<p className="text-sm text-muted-foreground">
+											Database provisioning with advanced point-in-time recovery.
+										</p>
+									</div>
 								</div>
-	
-								<div className="bg-card rounded-lg p-6 border border-border text-center">
-									<div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
-										<span className="text-2xl font-bold text-primary">3</span>
+							</div>
+
+							{/* Feature 4 */}
+							<div className="bg-card border border-border/50 rounded-lg p-6">
+								<div className="flex items-start gap-4">
+									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+										<span className="text-emerald-400 text-2xl">⚙</span>
 									</div>
-									<h4 className="text-lg font-semibold mb-2">Deploy & Monitor</h4>
-									<p className="text-muted-foreground text-sm">
-										One-click deployment with live logs. Get URLs for all services and manage them from one dashboard.
-									</p>
+									<div>
+										<h3 className="font-mono text-sm font-bold mb-2">04_STREAM_LOGS</h3>
+										<p className="text-sm text-muted-foreground">
+											Real-time developer event pipeline logs exported via standard websockets.
+										</p>
+									</div>
 								</div>
 							</div>
 						</div>
 					</div>
-				</section>
-	
-				<footer className="shrink-0 py-2 px-6 text-center text-muted-foreground/70 text-xs border-t border-border">
-					Smart Deploy — multi-service deployment, simplified.
-				</footer>
-			</div>
-		);
+				</div>
+			</section>
+			{/* CTA Section */}
+			<section className="px-6 lg:px-12 py-20 bg-muted/20">
+				<div className="max-w-4xl mx-auto">
+					<div className="bg-linear-to-br from-emerald-500/20 to-emerald-600/10 border-4 border-emerald-500/50 rounded-2xl p-12">
+						<div className="bg-black rounded-xl p-8 lg:p-12">
+							<h2 className="text-3xl lg:text-4xl font-bold text-center mb-8">
+								Ready to Initialize?
+							</h2>
+							<div className="bg-gray-900 border border-emerald-500/30 rounded-lg p-6 mb-8 font-mono text-sm lg:text-base">
+								<p className="text-emerald-400">
+									$ npx smartdeploy init --project-name=my-big-thing
+								</p>
+							</div>
+							<div className="flex flex-wrap justify-center gap-4">
+								<Link
+									href="/auth"
+									className="bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-medium px-8 py-3 rounded-md transition-all"
+								>
+									START_YOUR_BUILD
+								</Link>
+								<Link
+									href="#contact"
+									className="bg-muted hover:bg-muted/80 text-foreground font-mono font-medium px-8 py-3 rounded-md transition-all"
+								>
+									CONTACT_SUPPORT@DEPLOY.AI
+								</Link>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+{/* Footer */}
+			<footer className="border-t border-border/50 py-16 px-6 lg:px-12">
+				<div className="max-w-7xl mx-auto">
+					<div className="grid md:grid-cols-2 lg:grid-cols-5 gap-12 mb-12">
+						{/* Branding */}
+						<div className="lg:col-span-2">
+							<SmartDeployLogo href="/" className="mb-4" />
+							<p className="text-muted-foreground text-sm mb-6 max-w-sm">
+								The ultimate standard for cloud automation. Infra-as-code, scale at will.
+							</p>
+							<div className="flex items-center gap-4">
+								<a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
+									<Github className="size-5" />
+								</a>
+								<a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
+									<Twitter className="size-5" />
+								</a>
+								<a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
+									<Linkedin className="size-5" />
+								</a>
+							</div>
+						</div>
+
+						{/* Product */}
+						<div>
+							<h4 className="font-semibold mb-4">Product</h4>
+							<ul className="space-y-3 text-sm text-muted-foreground">
+								<li><Link href="#features" className="hover:text-foreground transition-colors">Features</Link></li>
+								<li><Link href="#how-it-works" className="hover:text-foreground transition-colors">How It Works</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Changelog</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Roadmap</Link></li>
+							</ul>
+						</div>
+
+						{/* Resources */}
+						<div>
+							<h4 className="font-semibold mb-4">Resources</h4>
+							<ul className="space-y-3 text-sm text-muted-foreground">
+								<li><Link href="#docs" className="hover:text-foreground transition-colors">Documentation</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Blog</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Guides</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">API Reference</Link></li>
+							</ul>
+						</div>
+
+						{/* Company */}
+						<div>
+							<h4 className="font-semibold mb-4">Company</h4>
+							<ul className="space-y-3 text-sm text-muted-foreground">
+								<li><Link href="#" className="hover:text-foreground transition-colors">About Us</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Careers</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Contact</Link></li>
+								<li><Link href="#" className="hover:text-foreground transition-colors">Privacy Policy</Link></li>
+							</ul>
+						</div>
+					</div>
+
+					{/* Bottom Bar */}
+					<div className="pt-8 border-t border-border/50 flex flex-col md:flex-row items-center justify-between gap-4">
+						<p className="text-sm text-muted-foreground">
+							© 2026 SmartDeploy Inc. All rights reserved.
+						</p>
+						<div className="flex items-center gap-2 text-sm">
+							<CheckCircle className="size-4 text-emerald-400" />
+							<span className="text-emerald-400 font-medium">ALL SYSTEMS OPERATIONAL</span>
+						</div>
+					</div>
+				</div>
+			</footer>
+		</div>
+	);
 }
 
 
