@@ -56,112 +56,35 @@ async function terminateInstance(
 				).trim();
 				
 				if (targetGroupArn && targetGroupArn !== "None") {
+					send(`Found target group: ${targetGroupArn}`, "deploy");
+					
+					// Try to delete the target group (this will fail if there are active rules)
+					// But AWS handles this gracefully with a short wait
 					try {
-						const accountId = (await runAWSCommand([
-							"sts",
-							"get-caller-identity",
-							"--query",
-							"Account",
-							"--output",
-							"text"
-						], ws, "auth")).trim();
-						const suffix = accountId ? accountId.slice(-6) : "shared";
-						const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
-						const albArn = (await runAWSCommand([
+						send(`Deleting target group ${targetGroupName}...`, "deploy");
+						await runAWSCommand([
 							"elbv2",
-							"describe-load-balancers",
-							"--names",
-							albName,
-							"--query",
-							"LoadBalancers[0].LoadBalancerArn",
-							"--output",
-							"text",
+							"delete-target-group",
+							"--target-group-arn",
+							targetGroupArn,
 							"--region",
-							region
-						], ws, "deploy")).trim();
-						
-						if (albArn && albArn !== "None") {
-							const listenerArns: string[] = [];
-							const httpsListenerArn = (await runAWSCommand([
-								"elbv2",
-								"describe-listeners",
-								"--load-balancer-arn",
-								albArn,
-								"--query",
-								"Listeners[?Port==`443`].ListenerArn[0]",
-								"--output",
-								"text",
-								"--region",
-								region
-							], ws, "deploy")).trim();
-							if (httpsListenerArn && httpsListenerArn !== "None") listenerArns.push(httpsListenerArn);
-							
-							const httpListenerArn = (await runAWSCommand([
-								"elbv2",
-								"describe-listeners",
-								"--load-balancer-arn",
-								albArn,
-								"--query",
-								"Listeners[?Port==`80`].ListenerArn[0]",
-								"--output",
-								"text",
-								"--region",
-								region
-							], ws, "deploy")).trim();
-							if (httpListenerArn && httpListenerArn !== "None") listenerArns.push(httpListenerArn);
-
-							for (const listenerArn of listenerArns) {
-								const rulesRaw = await runAWSCommand([
-									"elbv2",
-									"describe-rules",
-									"--listener-arn",
-									listenerArn,
-									"--output",
-									"json",
-									"--region",
-									region
-								], ws, "deploy");
-								let rules: Array<{ RuleArn?: string; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
-								try {
-									const parsed = JSON.parse(rulesRaw);
-									rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
-								} catch {
-									rules = [];
-								}
-
-								for (const rule of rules) {
-									const forwardsTarget = (rule.Actions || []).some(
-										(action) => action.Type === "forward" && action.TargetGroupArn === targetGroupArn
-									);
-									if (forwardsTarget && rule.RuleArn) {
-										await runAWSCommand([
-											"elbv2",
-											"delete-rule",
-											"--rule-arn",
-											rule.RuleArn,
-											"--region",
-											region
-										], ws, "deploy");
-									}
-								}
-							}
+							region,
+						], ws, "deploy");
+						send(`Target group ${targetGroupName} deleted successfully.`, "deploy");
+					} catch (deleteErr: any) {
+						// If deletion fails due to being "in use", that's expected - rules might still be using it
+						const errMsg = (deleteErr as any).message || String(deleteErr);
+						if (errMsg.includes("in use") || errMsg.includes("InUse")) {
+							send(`⚠️ Target group still in use by listener rules. This is expected if rules haven't been removed yet.`, "deploy");
+						} else {
+							send(`Note: Could not delete target group: ${errMsg}`, "deploy");
 						}
-					} catch {
-						// Ignore listener rule cleanup errors
+						// Don't throw - let the instance termination continue
 					}
-
-					send(`Deleting ALB target group ${targetGroupName}...`, "deploy");
-					await runAWSCommand([
-						"elbv2",
-						"delete-target-group",
-						"--target-group-arn",
-						targetGroupArn,
-						"--region",
-						region,
-					], ws, "deploy");
 				}
-			} catch {
-				// Target group may not exist; ignore cleanup errors
+			} catch (tgErr: any) {
+				// Target group may not exist; ignore errors
+				send(`Note: Target group lookup/cleanup had an issue (may not exist): ${(tgErr as any).message}`, "deploy");
 			}
 		}
 

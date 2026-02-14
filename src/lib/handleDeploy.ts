@@ -409,7 +409,15 @@ async function handleAWSDeploy(
 			// Primary URL for client (first service); use shared ALB DNS for Vercel DNS if available
 			const firstUrl = ecsResult.serviceUrls.entries().next().value;
 			deployUrl = ecsResult.sharedAlbDns || (firstUrl ? firstUrl[1] : undefined);
-			serviceDetails.ecs = ecsResult.details;
+		serviceDetails.ecs = {
+			success: ecsResult.success,
+			clusterName: ecsResult.details.clusterName,
+			clusterArn: ecsResult.details.clusterArn,
+			serviceNames: ecsResult.details.serviceNames,
+			vpcId: ecsResult.details.vpcId,
+			subnetIds: ecsResult.details.subnetIds,
+			securityGroupId: ecsResult.details.securityGroupId,
+		};
 			success = ecsResult.success;
 			result = "done";
 			break;
@@ -425,7 +433,17 @@ async function handleAWSDeploy(
 			);
 			success = ec2Result.success;
 
-			serviceDetails.ec2 = ec2Result;
+			// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
+			serviceDetails.ec2 = {
+				success: ec2Result.success,
+				baseUrl: ec2Result.baseUrl,
+				instanceId: ec2Result.instanceId,
+				publicIp: ec2Result.publicIp,
+				vpcId: ec2Result.vpcId,
+				subnetId: ec2Result.subnetId,
+				securityGroupId: ec2Result.securityGroupId,
+				amiId: ec2Result.amiId,
+			};
 
 			if(ec2Result.baseUrl == "") {
 				send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');

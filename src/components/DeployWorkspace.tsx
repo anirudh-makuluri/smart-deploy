@@ -15,6 +15,7 @@ import { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types";
 import { parseEnvVarsToStore } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { isEqual } from "lodash";
+import { Clock } from "lucide-react";
 
 type DeployWorkspaceProps = {
 	serviceName?: string;
@@ -42,6 +43,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
 	const [editMode, setEditMode] = React.useState(false);
+	const [elapsedTime, setElapsedTime] = React.useState(0);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs);
@@ -60,6 +62,39 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		deployStatus === "running" ? "running" : 
 		deployStatus === "success" ? "success" : 
 		deployStatus === "error" ? "error" : "not-started";
+
+	// Timer effect - starts when deployment begins
+	React.useEffect(() => {
+		if (!showDeployLogs || deployStatus === "not-started") {
+			setElapsedTime(0);
+			return;
+		}
+
+		const interval = setInterval(() => {
+			setElapsedTime(prev => prev + 1);
+		}, 1000);
+
+		// Reset timer when deployment completes
+		if (deployStatus === "success" || deployStatus === "error") {
+			clearInterval(interval);
+		}
+
+		return () => clearInterval(interval);
+	}, [showDeployLogs, deployStatus]);
+
+	const formatTime = (seconds: number) => {
+		const hrs = Math.floor(seconds / 3600);
+		const mins = Math.floor((seconds % 3600) / 60);
+		const secs = seconds % 60;
+		
+		if (hrs > 0) {
+			return `${hrs}h ${mins}m ${secs}s`;
+		} else if (mins > 0) {
+			return `${mins}m ${secs}s`;
+		} else {
+			return `${secs}s`;
+		}
+	};
 
 
 	React.useEffect(() => {
@@ -427,7 +462,15 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 			{isDeploying && deployingCommitInfo && (
 				<div className="mx-auto mt-4 w-full max-w-6xl px-6">
 					<div className="rounded-lg border border-border bg-card px-4 py-3 text-sm space-y-2">
-						<div className="font-semibold text-foreground">Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</div>
+						<div className="flex items-center justify-between">
+							<div className="font-semibold text-foreground">Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</div>
+							{elapsedTime > 0 && (
+								<div className="flex items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-1.5">
+									<Clock className="h-4 w-4 text-muted-foreground" />
+									<span className="text-sm font-mono text-muted-foreground">{formatTime(elapsedTime)}</span>
+								</div>
+							)}
+						</div>
 						<div className="text-muted-foreground">
 							<div className="font-medium text-foreground">{deployingCommitInfo.message.split("\n")[0]}</div>
 							<div className="text-xs mt-1">Author: {deployingCommitInfo.author} - {new Date(deployingCommitInfo.date).toLocaleString()}</div>

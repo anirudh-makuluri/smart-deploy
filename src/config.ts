@@ -1,4 +1,8 @@
 const config = {
+	// NextAuth
+	NEXTAUTH_URL: process.env.NEXTAUTH_URL || "http://localhost:3000",
+	NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "",
+	
 	// GitHub OAuth
 	GITHUB_ID: process.env.GITHUB_ID || "",
 	GITHUB_SECRET: process.env.GITHUB_SECRET || "",
