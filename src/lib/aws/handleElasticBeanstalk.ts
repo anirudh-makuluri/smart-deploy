@@ -133,7 +133,7 @@ export async function handleElasticBeanstalk(
 	deployConfig: DeployConfig,
 	appDir: string,
 	ws: any
-): Promise<{ url: string; details: ElasticBeanstalkDeployDetails }> {
+): Promise<{  success: boolean, url: string; details: ElasticBeanstalkDeployDetails }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -375,11 +375,11 @@ export async function handleElasticBeanstalk(
 	// Cleanup temp files
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 
-	const ebDetails: ElasticBeanstalkDeployDetails = { appName, envName, s3Bucket: bucketName };
+	const ebDetails: ElasticBeanstalkDeployDetails = { success: true, appName, envName, s3Bucket: bucketName };
 
 	if (deployedUrl) {
 		send(`✅ Deployment successful! Application URL: ${deployedUrl}`, 'done');
-		return { url: deployedUrl, details: ebDetails };
+		return { success: true, url: deployedUrl, details: ebDetails };
 	}
 	send("❌ Environment did not become healthy in time. Check AWS Elastic Beanstalk console for events and instance logs.", 'deploy');
 	throw new Error(

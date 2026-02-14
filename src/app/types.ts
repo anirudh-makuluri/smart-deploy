@@ -48,6 +48,7 @@ export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
 export type EC2DeployDetails = {
+	success: boolean;
 	baseUrl: string;
 	instanceId: string;
 	publicIp: string;
@@ -58,6 +59,7 @@ export type EC2DeployDetails = {
 };
 
 export type ECSDeployDetails = {
+	success: boolean;
 	clusterName: string;
 	clusterArn: string;
 	/** ECS service names (e.g. ["my-app-svc"]) */
@@ -68,12 +70,14 @@ export type ECSDeployDetails = {
 };
 
 export type AmplifyDeployDetails = {
+	success: boolean;
 	appId: string;
 	appName: string;
 	branchName: string;
 };
 
 export type ElasticBeanstalkDeployDetails = {
+	success: boolean;
 	appName: string;
 	envName: string;
 	s3Bucket: string;

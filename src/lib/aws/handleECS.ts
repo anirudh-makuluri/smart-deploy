@@ -1131,7 +1131,7 @@ export async function handleECS(
 	multiServiceConfig: MultiServiceConfig,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ serviceUrls: Map<string, string>; deployedServices: string[]; sharedAlbDns?: string; details: ECSDeployDetails }> {
+): Promise<{  success: boolean, serviceUrls: Map<string, string>; deployedServices: string[]; sharedAlbDns?: string; details: ECSDeployDetails }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -1383,10 +1383,12 @@ export async function handleECS(
 	send(`\nAll ${deployedServices.length} services deployed successfully!`, 'done');
 	
 	return {
+		success: true,
 		serviceUrls,
 		deployedServices,
 		sharedAlbDns,
 		details: {
+			success: true,
 			clusterName,
 			clusterArn,
 			serviceNames: ecsServiceNamesList,

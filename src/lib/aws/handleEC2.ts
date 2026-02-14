@@ -22,8 +22,173 @@ import {
 } from "./awsHelpers";
 
 /**
- * Gets the latest Amazon Linux 2023 AMI ID
+ * Terminates an EC2 instance and optionally cleans up ALB resources
  */
+async function terminateInstance(
+	instanceId: string,
+	region: string,
+	ws: any,
+	options?: { 
+		cleanupAlbTargetGroup?: boolean;
+		targetGroupName?: string;
+	}
+): Promise<void> {
+	const send = createWebSocketLogger(ws);
+
+	try {
+		// Cleanup ALB target group if requested
+		if (options?.cleanupAlbTargetGroup && options?.targetGroupName) {
+			try {
+				const targetGroupName = options.targetGroupName;
+				const targetGroupArn = (
+					await runAWSCommand([
+						"elbv2",
+						"describe-target-groups",
+						"--names",
+						targetGroupName,
+						"--query",
+						"TargetGroups[0].TargetGroupArn",
+						"--output",
+						"text",
+						"--region",
+						region,
+					], ws, "deploy")
+				).trim();
+				
+				if (targetGroupArn && targetGroupArn !== "None") {
+					try {
+						const accountId = (await runAWSCommand([
+							"sts",
+							"get-caller-identity",
+							"--query",
+							"Account",
+							"--output",
+							"text"
+						], ws, "auth")).trim();
+						const suffix = accountId ? accountId.slice(-6) : "shared";
+						const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
+						const albArn = (await runAWSCommand([
+							"elbv2",
+							"describe-load-balancers",
+							"--names",
+							albName,
+							"--query",
+							"LoadBalancers[0].LoadBalancerArn",
+							"--output",
+							"text",
+							"--region",
+							region
+						], ws, "deploy")).trim();
+						
+						if (albArn && albArn !== "None") {
+							const listenerArns: string[] = [];
+							const httpsListenerArn = (await runAWSCommand([
+								"elbv2",
+								"describe-listeners",
+								"--load-balancer-arn",
+								albArn,
+								"--query",
+								"Listeners[?Port==`443`].ListenerArn[0]",
+								"--output",
+								"text",
+								"--region",
+								region
+							], ws, "deploy")).trim();
+							if (httpsListenerArn && httpsListenerArn !== "None") listenerArns.push(httpsListenerArn);
+							
+							const httpListenerArn = (await runAWSCommand([
+								"elbv2",
+								"describe-listeners",
+								"--load-balancer-arn",
+								albArn,
+								"--query",
+								"Listeners[?Port==`80`].ListenerArn[0]",
+								"--output",
+								"text",
+								"--region",
+								region
+							], ws, "deploy")).trim();
+							if (httpListenerArn && httpListenerArn !== "None") listenerArns.push(httpListenerArn);
+
+							for (const listenerArn of listenerArns) {
+								const rulesRaw = await runAWSCommand([
+									"elbv2",
+									"describe-rules",
+									"--listener-arn",
+									listenerArn,
+									"--output",
+									"json",
+									"--region",
+									region
+								], ws, "deploy");
+								let rules: Array<{ RuleArn?: string; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
+								try {
+									const parsed = JSON.parse(rulesRaw);
+									rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
+								} catch {
+									rules = [];
+								}
+
+								for (const rule of rules) {
+									const forwardsTarget = (rule.Actions || []).some(
+										(action) => action.Type === "forward" && action.TargetGroupArn === targetGroupArn
+									);
+									if (forwardsTarget && rule.RuleArn) {
+										await runAWSCommand([
+											"elbv2",
+											"delete-rule",
+											"--rule-arn",
+											rule.RuleArn,
+											"--region",
+											region
+										], ws, "deploy");
+									}
+								}
+							}
+						}
+					} catch {
+						// Ignore listener rule cleanup errors
+					}
+
+					send(`Deleting ALB target group ${targetGroupName}...`, "deploy");
+					await runAWSCommand([
+						"elbv2",
+						"delete-target-group",
+						"--target-group-arn",
+						targetGroupArn,
+						"--region",
+						region,
+					], ws, "deploy");
+				}
+			} catch {
+				// Target group may not exist; ignore cleanup errors
+			}
+		}
+
+		// Check instance state before terminating
+		const stateOutput = await runAWSCommand([
+			"ec2", "describe-instances",
+			"--instance-ids", instanceId,
+			"--query", "Reservations[0].Instances[0].State.Name",
+			"--output", "text",
+			"--region", region
+		], ws, 'deploy');
+		
+		const state = (stateOutput || "").trim();
+		if (state && state !== "None" && state !== "terminated") {
+			send(`Terminating instance ${instanceId} (${state})...`, 'deploy');
+			await runAWSCommand([
+				"ec2", "terminate-instances",
+				"--instance-ids", instanceId,
+				"--region", region
+			], ws, 'deploy');
+			send(`Instance ${instanceId} termination initiated.`, 'deploy');
+		}
+	} catch (error: any) {
+		send(`Error terminating instance: ${error.message}`, 'deploy');
+		throw error;
+	}
+}
 async function getLatestAMI(region: string, ws: any): Promise<string> {
 	// Use key=value form with quoted query so & in JMESPath is not interpreted by Windows shell
 	const query = "sort_by(Images, &CreationDate)[-1].ImageId";
@@ -293,7 +458,7 @@ export async function handleEC2(
 	token: string,
 	dbConnectionString: string | undefined,
 	ws: any
-): Promise<{ baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string; sharedAlbDns?: string }> {
+): Promise<{ success: boolean; baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string; sharedAlbDns?: string }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -303,161 +468,8 @@ export async function handleEC2(
 	const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || "";
 	const sharedAlbEnabled = !!certificateArn && !!buildServiceHostname("app");
 
-	// If this deployment already has an EC2 instance, terminate it so we replace with a new one (redeploy = update)
+	// Save existing instance ID for later termination after new instance is confirmed working
 	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
-	if (existingInstanceId) {
-		try {
-			if (sharedAlbEnabled) {
-				const targetGroupName = `${repoName}-tg`
-					.toLowerCase()
-					.replace(/[^a-z0-9-]/g, "-")
-					.replace(/-+/g, "-")
-					.replace(/^-|-$/g, "")
-					.slice(0, 32) || "smartdeploy-tg";
-				try {
-					const targetGroupArn = (
-						await runAWSCommand([
-							"elbv2",
-							"describe-target-groups",
-							"--names",
-							targetGroupName,
-							"--query",
-							"TargetGroups[0].TargetGroupArn",
-							"--output",
-							"text",
-							"--region",
-							region,
-						], ws, "deploy")
-					).trim();
-					if (targetGroupArn && targetGroupArn !== "None") {
-						try {
-							const accountId = (await runAWSCommand([
-								"sts",
-								"get-caller-identity",
-								"--query",
-								"Account",
-								"--output",
-								"text"
-							], ws, "auth")).trim();
-							const suffix = accountId ? accountId.slice(-6) : "shared";
-							const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
-							const albArn = (await runAWSCommand([
-								"elbv2",
-								"describe-load-balancers",
-								"--names",
-								albName,
-								"--query",
-								"LoadBalancers[0].LoadBalancerArn",
-								"--output",
-								"text",
-								"--region",
-								region
-							], ws, "deploy")).trim();
-							if (albArn && albArn !== "None") {
-								const listenerArns: string[] = [];
-								const httpsListenerArn = (await runAWSCommand([
-									"elbv2",
-									"describe-listeners",
-									"--load-balancer-arn",
-									albArn,
-									"--query",
-									"Listeners[?Port==`443`].ListenerArn[0]",
-									"--output",
-									"text",
-									"--region",
-									region
-								], ws, "deploy")).trim();
-								if (httpsListenerArn && httpsListenerArn !== "None") listenerArns.push(httpsListenerArn);
-								const httpListenerArn = (await runAWSCommand([
-									"elbv2",
-									"describe-listeners",
-									"--load-balancer-arn",
-									albArn,
-									"--query",
-									"Listeners[?Port==`80`].ListenerArn[0]",
-									"--output",
-									"text",
-									"--region",
-									region
-								], ws, "deploy")).trim();
-								if (httpListenerArn && httpListenerArn !== "None") listenerArns.push(httpListenerArn);
-
-								for (const listenerArn of listenerArns) {
-									const rulesRaw = await runAWSCommand([
-										"elbv2",
-										"describe-rules",
-										"--listener-arn",
-										listenerArn,
-										"--output",
-										"json",
-										"--region",
-										region
-									], ws, "deploy");
-									let rules: Array<{ RuleArn?: string; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
-									try {
-										const parsed = JSON.parse(rulesRaw);
-										rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
-									} catch {
-										rules = [];
-									}
-
-									for (const rule of rules) {
-										const forwardsTarget = (rule.Actions || []).some(
-											(action) => action.Type === "forward" && action.TargetGroupArn === targetGroupArn
-										);
-										if (forwardsTarget && rule.RuleArn) {
-											await runAWSCommand([
-												"elbv2",
-												"delete-rule",
-												"--rule-arn",
-												rule.RuleArn,
-												"--region",
-												region
-											], ws, "deploy");
-										}
-									}
-								}
-							}
-						} catch {
-							// Ignore listener rule cleanup errors.
-						}
-
-						send(`Deleting shared ALB target group ${targetGroupName}...`, "setup");
-						await runAWSCommand([
-							"elbv2",
-							"delete-target-group",
-							"--target-group-arn",
-							targetGroupArn,
-							"--region",
-							region,
-						], ws, "deploy");
-					}
-				} catch {
-					// Target group may not exist; ignore cleanup errors.
-				}
-			}
-
-			const stateOutput = await runAWSCommand([
-				"ec2", "describe-instances",
-				"--instance-ids", existingInstanceId,
-				"--query", "Reservations[0].Instances[0].State.Name",
-				"--output", "text",
-				"--region", region
-			], ws, 'setup');
-			const state = (stateOutput || "").trim();
-			if (state && state !== "None" && state !== "terminated") {
-				send(`Terminating previous instance ${existingInstanceId} (${state})...`, 'setup');
-				await runAWSCommand([
-					"ec2", "terminate-instances",
-					"--instance-ids", existingInstanceId,
-					"--region", region
-				], ws, 'setup');
-				send("Previous instance termination initiated.", 'setup');
-			}
-		} catch {
-			// Instance may already be gone; continue to launch new one
-		}
-	}
 
 	// Reuse saved networking when present (e.g. redeploy); otherwise create
 	let vpcId: string;
@@ -552,7 +564,6 @@ export async function handleEC2(
 		sharedAlbEnabled ? undefined : config.LETSENCRYPT_EMAIL
 	);
 
-	console.log("userData", userData);
 
 	// Base64 encode user-data and write to temp file to avoid "command line too long" on Windows
 	const userDataBase64 = Buffer.from(userData).toString('base64');
@@ -716,77 +727,168 @@ export async function handleEC2(
 	}
 
 	if (!detectedPort) {
-		send(`❌ Could not detect responding port. Server is not responding on any known ports.`, "deploy");
-		return {
-			baseUrl: "",
-			serviceUrls: new Map(),
-			instanceId,
-			publicIp,
-			vpcId,
-			subnetId: subnetIds[0],
-			securityGroupId,
-			amiId,
-		};
+		send(`❌ New instance failed to respond on any known ports.`, "deploy");
+		
+		// Terminate the failed new instance
+		try {
+			send(`Cleaning up failed instance ${instanceId}...`, "deploy");
+			await terminateInstance(instanceId, region, ws);
+			send(`Failed instance ${instanceId} terminated.`, "deploy");
+		} catch (error: any) {
+			send(`⚠️ Failed to terminate failed instance: ${error.message}. Please manually clean up instance ${instanceId}.`, "deploy");
+		}
+		
+		if (existingInstanceId) {
+			send(`⚠️ Falling back to existing instance ${existingInstanceId}...`, "deploy");
+			send("New instance deployment failed. Reverting to previous instance.", "deploy");
+			return {
+				success: false,
+				baseUrl: deployConfig.deployUrl || "",
+				serviceUrls: new Map(),
+				instanceId: existingInstanceId,
+				publicIp: "",
+				vpcId,
+				subnetId: subnetIds[0],
+				securityGroupId,
+				amiId,
+			};
+		}
+		throw new Error("New instance failed to respond and no previous instance to fall back to");
 	}
 
 	const serviceUrls = new Map<string, string>();
 	let sharedAlbDns: string | undefined;
 	let baseUrl = detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
 
-	if (sharedAlbEnabled) {
-		send("Configuring shared ALB routing...", "deploy");
-		const sharedAlb = await ensureSharedAlb({
-			vpcId,
-			subnetIds: subnetIds.slice(0, 2),
-			region,
-			ws,
-			certificateArn,
-		});
-		sharedAlbDns = sharedAlb.dnsName;
-		const listenerArnForRules = sharedAlb.httpsListenerArn || sharedAlb.httpListenerArn;
-		const customHost = normalizeDomain(deployConfig.custom_url);
+	try {
+		if (sharedAlbEnabled) {
+			send("Configuring shared ALB routing to new instance...", "deploy");
+			const sharedAlb = await ensureSharedAlb({
+				vpcId,
+				subnetIds: subnetIds.slice(0, 2),
+				region,
+				ws,
+				certificateArn,
+			});
+			sharedAlbDns = sharedAlb.dnsName;
+			const listenerArnForRules = sharedAlb.httpsListenerArn || sharedAlb.httpListenerArn;
+			const customHost = normalizeDomain(deployConfig.custom_url);
 
-		// ALB forwards only to nginx on port 80.
-		await allowAlbToReachService(securityGroupId, sharedAlb.albSgId, 80, ws);
-		const targetGroupName = `${repoName}-tg`
-			.toLowerCase()
-			.replace(/[^a-z0-9-]/g, "-")
-			.replace(/-+/g, "-")
-			.replace(/^-|-$/g, "")
-			.slice(0, 32) || "smartdeploy-tg";
+			// ALB forwards only to nginx on port 80.
+			await allowAlbToReachService(securityGroupId, sharedAlb.albSgId, 80, ws);
+			const targetGroupName = `${repoName}-tg`
+				.toLowerCase()
+				.replace(/[^a-z0-9-]/g, "-")
+				.replace(/-+/g, "-")
+				.replace(/^-|-$/g, "")
+				.slice(0, 32) || "smartdeploy-tg";
 
-		const targetGroupArn = await ensureTargetGroup(targetGroupName, vpcId, 80, region, ws, {
-			targetType: "instance",
-			healthCheckPath: "/",
-		});
-		await registerInstanceToTargetGroup(targetGroupArn, instanceId, 80, region, ws);
+			const targetGroupArn = await ensureTargetGroup(targetGroupName, vpcId, 80, region, ws, {
+				targetType: "instance",
+				healthCheckPath: "/",
+			});
+			
+			// Deregister old instance from target group if it exists
+			if (existingInstanceId) {
+				try {
+					await runAWSCommand([
+						"elbv2",
+						"deregister-targets",
+						"--target-group-arn",
+						targetGroupArn,
+						"--targets",
+						`Id=${existingInstanceId},Port=80`,
+						"--region",
+						region
+					], ws, "deploy");
+					send(`Deregistered old instance ${existingInstanceId} from target group.`, "deploy");
+				} catch {
+					// Old instance may not be registered; continue
+				}
+			}
+			
+			// Register new instance to target group
+			await registerInstanceToTargetGroup(targetGroupArn, instanceId, 80, region, ws);
 
-		for (const svc of services) {
-			const preferredSubdomain = services.length === 1 && deployConfig.service_name?.trim()
-				? deployConfig.service_name.trim()
-				: svc.name;
-			const serviceHostname = customHost || buildServiceHostname(svc.name, preferredSubdomain);
-			if (serviceHostname) {
-				await ensureHostRule(listenerArnForRules, serviceHostname, targetGroupArn, region, ws);
+			for (const svc of services) {
+				const preferredSubdomain = services.length === 1 && deployConfig.service_name?.trim()
+					? deployConfig.service_name.trim()
+					: svc.name;
+				const serviceHostname = customHost || buildServiceHostname(svc.name, preferredSubdomain);
+				if (serviceHostname) {
+					await ensureHostRule(listenerArnForRules, serviceHostname, targetGroupArn, region, ws);
+				}
+
+				const serviceUrl = serviceHostname
+					? `${certificateArn ? "https" : "http"}://${serviceHostname}`
+					: `${certificateArn ? "https" : "http"}://${sharedAlb.dnsName}`;
+				serviceUrls.set(svc.name, serviceUrl);
 			}
 
-			const serviceUrl = serviceHostname
-				? `${certificateArn ? "https" : "http"}://${serviceHostname}`
-				: `${certificateArn ? "https" : "http"}://${sharedAlb.dnsName}`;
-			serviceUrls.set(svc.name, serviceUrl);
-		}
-
-		if (services.length === 1) {
-			baseUrl = serviceUrls.get(services[0].name) || baseUrl;
-		}
-	} else {
-		for (const svc of services) {
 			if (services.length === 1) {
-				serviceUrls.set(svc.name, baseUrl);
-			} else {
-				serviceUrls.set(svc.name, `http://${publicIp}:${svc.port}`);
+				baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+			}
+		} else {
+			for (const svc of services) {
+				if (services.length === 1) {
+					serviceUrls.set(svc.name, baseUrl);
+				} else {
+					serviceUrls.set(svc.name, `http://${publicIp}:${svc.port}`);
+				}
 			}
 		}
+
+		send(`\n✅ New instance is responding and ALB configured!`, 'deploy');
+		
+		// Now that new instance is confirmed working, terminate the old instance
+		if (existingInstanceId) {
+			send(`Terminating old instance ${existingInstanceId}...`, 'deploy');
+			try {
+				const targetGroupName = `${repoName}-tg`
+					.toLowerCase()
+					.replace(/[^a-z0-9-]/g, "-")
+					.replace(/-+/g, "-")
+					.replace(/^-|-$/g, "")
+					.slice(0, 32) || "smartdeploy-tg";
+				
+				await terminateInstance(existingInstanceId, region, ws, {
+					cleanupAlbTargetGroup: sharedAlbEnabled,
+					targetGroupName: sharedAlbEnabled ? targetGroupName : undefined
+				});
+				send(`Old instance ${existingInstanceId} terminated successfully.`, 'deploy');
+			} catch (error: any) {
+				send(`⚠️ Failed to terminate old instance: ${error.message}`, 'deploy');
+				send("Continuing with new instance. You may want to manually terminate the old instance.", 'deploy');
+			}
+		}
+
+	} catch (error: any) {
+		send(`❌ ALB configuration failed: ${error.message}`, 'deploy');
+		
+		// Terminate the failed new instance
+		try {
+			send(`Cleaning up failed instance ${instanceId}...`, "deploy");
+			await terminateInstance(instanceId, region, ws);
+			send(`Failed instance ${instanceId} terminated.`, "deploy");
+		} catch (cleanupError: any) {
+			send(`⚠️ Failed to terminate failed instance: ${cleanupError.message}. Please manually clean up instance ${instanceId}.`, "deploy");
+		}
+		
+		if (existingInstanceId) {
+			send(`⚠️ Falling back to existing instance ${existingInstanceId}...`, 'deploy');
+			return {
+				success: false,
+				baseUrl: deployConfig.deployUrl || "",
+				serviceUrls: new Map(),
+				instanceId: existingInstanceId,
+				publicIp: "",
+				vpcId,
+				subnetId: subnetIds[0],
+				securityGroupId,
+				amiId,
+			};
+		}
+		throw error;
 	}
 
 	send(`\nDeployment complete!`, 'done');
@@ -795,6 +897,7 @@ export async function handleEC2(
 	send(`SSH: ssh -i ${keyName}.pem ec2-user@${publicIp}`, 'done');
 
 	return {
+		success: true,
 		baseUrl,
 		serviceUrls,
 		instanceId,

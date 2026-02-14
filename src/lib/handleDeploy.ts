@@ -372,6 +372,7 @@ async function handleAWSDeploy(
 	let result: string;
 	let deployUrl: string | undefined;
 	const serviceDetails: ServiceDeployDetails = {};
+	let success = false;
 
 	// Route to appropriate AWS service
 	switch (target) {
@@ -379,6 +380,7 @@ async function handleAWSDeploy(
 			const amplifyResult = await handleAmplify(deployConfig, appDir, ws);
 			deployUrl = amplifyResult.url;
 			serviceDetails.amplify = amplifyResult.details;
+			success = amplifyResult.success;
 			result = "done";
 			break;
 
@@ -386,6 +388,7 @@ async function handleAWSDeploy(
 			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws);
 			deployUrl = ebResult.url;
 			serviceDetails.elasticBeanstalk = ebResult.details;
+			success = ebResult.success;
 			result = "done";
 			break;
 
@@ -407,6 +410,7 @@ async function handleAWSDeploy(
 			const firstUrl = ecsResult.serviceUrls.entries().next().value;
 			deployUrl = ecsResult.sharedAlbDns || (firstUrl ? firstUrl[1] : undefined);
 			serviceDetails.ecs = ecsResult.details;
+			success = ecsResult.success;
 			result = "done";
 			break;
 
@@ -419,16 +423,9 @@ async function handleAWSDeploy(
 				dbConnectionString,
 				ws
 			);
+			success = ec2Result.success;
 
-			serviceDetails.ec2 = {
-				baseUrl: ec2Result.baseUrl,
-				instanceId: ec2Result.instanceId,
-				publicIp: ec2Result.publicIp,
-				vpcId: ec2Result.vpcId,
-				subnetId: ec2Result.subnetId,
-				securityGroupId: ec2Result.securityGroupId,
-				amiId: ec2Result.amiId,
-			};
+			serviceDetails.ec2 = ec2Result;
 
 			if(ec2Result.baseUrl == "") {
 				send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
@@ -455,7 +452,7 @@ async function handleAWSDeploy(
 
 	
 	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.service_name?.trim()) {
+	if (deployUrl && deployConfig.service_name?.trim() && success) {
 		send("Adding Vercel DNS record...", 'done');
 		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
 			deploymentTarget: target,
@@ -465,8 +462,9 @@ async function handleAWSDeploy(
 	
 	if(vercelResult && vercelResult.success) {
 		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
-	} else if(deployUrl && vercelResult) {
+	} else if(deployUrl && vercelResult && success) {
 		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
+		success = false; // Mark overall deployment as failure if DNS addition failed (since custom URL is a key feature)
 	}
 
 	// Mark final step as success
@@ -476,7 +474,6 @@ async function handleAWSDeploy(
 	// Calculate deployment duration
 	const durationMs = Date.now() - deployStartTime;
 
-	const success = deployUrl ? true : false;
 
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
 	sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);

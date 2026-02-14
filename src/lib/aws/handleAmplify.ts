@@ -183,7 +183,7 @@ export async function handleAmplify(
 	deployConfig: DeployConfig,
 	appDir: string,
 	ws: any
-): Promise<{ url: string; details: AmplifyDeployDetails }> {
+): Promise<{ success: boolean, url: string; details: AmplifyDeployDetails }> {
 	const send = createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -455,5 +455,5 @@ export async function handleAmplify(
 
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 	send(`Deployment successful! URL: ${url}`, "done");
-	return { url, details: { appId, appName, branchName } };
+	return { success: true, url, details: { success: true, appId, appName, branchName } };
 }
