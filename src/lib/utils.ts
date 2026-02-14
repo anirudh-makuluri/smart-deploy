@@ -54,7 +54,7 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 		'amplify': 'AWS Amplify',
 		'elastic-beanstalk': 'AWS Elastic Beanstalk',
 		'ecs': 'AWS ECS Fargate',
-		'ec2': 'AWS EC2',
+		'ec2': 'AWS EC2 t3.micro',
 		'cloud-run': 'Google Cloud Run',
 	};
 	

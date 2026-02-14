@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { HelpCircle, History, Loader2 } from "lucide-react";
+import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
 
 export default function DeploymentHistory({ deploymentId }: { deploymentId: string }) {
 	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>([]);
@@ -73,7 +73,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 
 	if (loading) {
 		return (
-			<div className="rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/40 p-6 flex items-center gap-3 text-[#94a3b8]">
+			<div className="rounded-lg border border-border bg-card p-6 flex items-center gap-3 text-muted-foreground">
 				<Loader2 className="size-5 animate-spin" />
 				<span>Loading deployment history…</span>
 			</div>
@@ -82,7 +82,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 
 	if (error) {
 		return (
-			<Alert className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#94a3b8]">
+			<Alert className="border-destructive/50 bg-destructive/10 text-muted-foreground">
 				<AlertDescription>{error}</AlertDescription>
 			</Alert>
 		);
@@ -90,7 +90,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 
 	if (history.length === 0) {
 		return (
-			<div className="rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/40 p-6 text-[#94a3b8] text-sm">
+			<div className="rounded-lg border border-border bg-card p-6 text-muted-foreground text-sm">
 				<p className="flex items-center gap-2">
 					<History className="size-4" />
 					No deployment history yet. Deploy once to see success/failure logs here.
@@ -100,43 +100,50 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 	}
 
 	return (
-		<div className="rounded-lg border border-[#1e3a5f]/60 bg-[#132f4c]/40 overflow-hidden">
-			<div className="px-4 py-3 border-b border-[#1e3a5f]/60">
-				<h3 className="font-semibold text-[#e2e8f0] flex items-center gap-2">
-					<History className="size-4" />
-					Deployment history
-				</h3>
-			</div>
+		<div className="rounded-lg border border-border bg-card overflow-hidden">
 			<Accordion type="multiple" className="w-full">
 				{history.map((entry) => (
 					<AccordionItem
 						key={entry.id}
 						value={entry.id}
-						className="border-[#1e3a5f]/60 px-4"
+						className="border-border px-4"
 					>
-						<AccordionTrigger className="text-[#e2e8f0] hover:no-underline hover:text-[#94a3b8] py-3">
-							<div className="flex items-center gap-3 text-left">
-								<span className="text-sm">{formatTimestamp(entry.timestamp)}</span>
-								<Badge
-									variant="outline"
-									className={
-										entry.success
-											? "border-[#14b8a6]/60 text-[#14b8a6] bg-[#14b8a6]/10"
-											: "border-[#f59e0b]/60 text-[#f59e0b] bg-[#f59e0b]/10"
-									}
-								>
-									{entry.success ? "Success" : "Failed"}
-								</Badge>
-								{entry.deployUrl && entry.success && (
-									<a
-										href={entry.deployUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="text-xs text-[#14b8a6] hover:underline"
-										onClick={(e) => e.stopPropagation()}
+						<AccordionTrigger className="text-foreground hover:no-underline hover:text-muted-foreground py-3">
+							<div className="flex flex-col gap-2.5 text-left w-full">
+								<div className="flex items-center gap-3 flex-wrap">
+									<span className="text-sm font-medium">{formatTimestamp(entry.timestamp)}</span>
+									<Badge
+										variant="outline"
+										className={
+											entry.success
+												? "border-primary/60 text-primary bg-primary/10"
+												: "border-amber-400/60 text-amber-400 bg-amber-400/10"
+										}
 									>
-										Open link
-									</a>
+										{entry.success ? "Success" : "Failed"}
+									</Badge>
+									{entry.durationMs && (
+										<span className="text-xs text-muted-foreground flex items-center gap-1">
+											<Clock className="size-3" />
+											{(entry.durationMs / 1000 / 60).toFixed(1)}m
+										</span>
+									)}
+								</div>
+								{(entry.commitSha || entry.branch) && (
+									<div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+										{entry.commitSha && (
+											<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
+												<GitCommit className="size-3" />
+												<code className="font-mono">{entry.commitSha.substring(0, 7)}</code>
+											</div>
+										)}
+										{entry.branch && (
+											<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
+												<GitBranch className="size-3" />
+												<span className="font-medium text-foreground">{entry.branch}</span>
+											</div>
+										)}
+									</div>
 								)}
 							</div>
 						</AccordionTrigger>
@@ -144,16 +151,16 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 							<div className="space-y-4">
 								{/* Step logs */}
 								<div>
-									<p className="text-xs font-medium text-[#94a3b8] mb-2">Logs</p>
-									<ScrollArea className="h-48 rounded-md border border-[#1e3a5f]/60 bg-[#0c1929]/50 p-3">
-										<div className="space-y-3 text-xs font-mono text-[#94a3b8]">
+									<p className="text-xs font-medium text-muted-foreground mb-2">Logs</p>
+									<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
+										<div className="space-y-3 text-xs font-mono text-muted-foreground">
 											{entry.steps.map((step) => (
 												<div key={step.id}>
-													<p className="font-semibold text-[#e2e8f0] mb-1">
+													<p className="font-semibold text-foreground mb-1">
 														{step.label} ({step.status})
 													</p>
 													{(step.logs || []).length > 0 ? (
-														<pre className="whitespace-pre-wrap break-words text-[#94a3b8]">
+														<pre className="whitespace-pre-wrap wrap-break-word text-muted-foreground">
 															{step.logs.join("\n")}
 														</pre>
 													) : (
@@ -170,7 +177,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 										<Button
 											variant="outline"
 											size="sm"
-											className="border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50"
+											className="border-border bg-transparent text-foreground hover:bg-secondary"
 											onClick={() => handleWhyDidItFail(entry)}
 											disabled={analyzingId === entry.id}
 										>
@@ -187,7 +194,7 @@ export default function DeploymentHistory({ deploymentId }: { deploymentId: stri
 											)}
 										</Button>
 										{analysisByEntryId[entry.id] && (
-											<Alert className="mt-3 border-[#1e3a5f]/60 bg-[#132f4c]/60 text-[#e2e8f0]">
+											<Alert className="mt-3 border-border bg-card text-foreground">
 												<AlertDescription className="text-sm whitespace-pre-wrap">
 													{analysisByEntryId[entry.id]}
 												</AlertDescription>

@@ -50,13 +50,19 @@ export async function POST(req: NextRequest) {
 			success,
 			steps,
 			configSnapshot,
-			deployUrl,
+			commitSha,
+			commitMessage,
+			branch,
+			durationMs,
 		}: {
 			deploymentId: string;
 			success: boolean;
 			steps: DeployStep[];
 			configSnapshot: Record<string, unknown>;
-			deployUrl?: string;
+			commitSha?: string;
+			commitMessage?: string;
+			branch?: string;
+			durationMs?: number;
 		} = body;
 
 		if (!deploymentId || typeof success !== "boolean" || !Array.isArray(steps)) {
@@ -71,7 +77,10 @@ export async function POST(req: NextRequest) {
 			success,
 			steps,
 			configSnapshot: configSnapshot || {},
-			deployUrl,
+			...(commitSha && { commitSha }),
+			...(commitMessage && { commitMessage }),
+			...(branch && { branch }),
+			...(durationMs && { durationMs }),
 		};
 
 		const response = await dbHelper.addDeploymentHistory(deploymentId, userID, entry);

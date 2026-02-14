@@ -13,14 +13,14 @@ export function LoginForm({
 	return (
 		<div className={cn("flex flex-col gap-5", className)} {...props}>
 			{/* Card-style container with landing theme */}
-			<div className="rounded-xl border border-[#1e3a5f]/60 bg-[#132f4c]/80 p-6 shadow-lg">
-				<h2 className="text-center text-xl font-semibold text-[#e2e8f0] mb-5">Welcome</h2>
+			<div className="rounded-xl border border-border bg-card p-6 shadow-lg">
+				<h2 className="text-center text-xl font-semibold text-foreground mb-5">Welcome</h2>
 
 				<div className="flex flex-col gap-3">
 					<Button
 						type="button"
 						variant="outline"
-						className="w-full h-11 border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50 hover:text-[#e2e8f0]"
+						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
 						onClick={() => signIn("google")}
 					>
 						<GoogleIcon className="size-5 mr-2" />
@@ -29,7 +29,7 @@ export function LoginForm({
 					<Button
 						type="button"
 						variant="outline"
-						className="w-full h-11 border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50 hover:text-[#e2e8f0]"
+						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
 						onClick={() => signIn("github")}
 					>
 						<GitHubIcon className="size-5 mr-2" />
@@ -39,37 +39,37 @@ export function LoginForm({
 
 				<div className="relative my-5">
 					<div className="absolute inset-0 flex items-center">
-						<span className="w-full border-t border-[#1e3a5f]/60" />
+						<span className="w-full border-t border-border" />
 					</div>
 					<div className="relative flex justify-center text-xs uppercase tracking-wider">
-						<span className="bg-[#132f4c] px-2 text-[#94a3b8]">or</span>
+						<span className="bg-card px-2 text-muted-foreground">or</span>
 					</div>
 				</div>
 
 				{/* Sign in with email and password (UI only — functionality later) */}
 				<form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
 					<div className="space-y-2">
-						<Label htmlFor="auth-email" className="text-[#e2e8f0] text-sm">
+						<Label htmlFor="auth-email" className="text-foreground text-sm">
 							Email
 						</Label>
 						<Input
 							id="auth-email"
 							type="email"
 							placeholder="you@example.com"
-							className="h-11 border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]"
+							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
 							autoComplete="email"
 							disabled
 						/>
 					</div>
 					<div className="space-y-2">
-						<Label htmlFor="auth-password" className="text-[#e2e8f0] text-sm">
+						<Label htmlFor="auth-password" className="text-foreground text-sm">
 							Password
 						</Label>
 						<Input
 							id="auth-password"
 							type="password"
 							placeholder="••••••••"
-							className="h-11 border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]"
+							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
 							autoComplete="current-password"
 							disabled
 						/>
@@ -84,13 +84,13 @@ export function LoginForm({
 				</form>
 			</div>
 
-			<p className="text-center text-xs text-[#64748b]">
+			<p className="text-center text-xs text-muted-foreground/70">
 				By continuing, you agree to our{" "}
-				<a href="#" className="text-[#14b8a6] hover:underline">
+				<a href="#" className="text-primary hover:underline">
 					Terms of Service
 				</a>{" "}
 				and{" "}
-				<a href="#" className="text-[#14b8a6] hover:underline">
+				<a href="#" className="text-primary hover:underline">
 					Privacy Policy
 				</a>
 				.
@@ -134,3 +134,4 @@ function GitHubIcon({ className }: { className?: string }) {
 		</svg>
 	);
 }
+

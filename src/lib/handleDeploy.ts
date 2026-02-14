@@ -31,6 +31,8 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 	console.log("in handle deploy");
 
+	const deployStartTime = Date.now();
+
 	const target = deployConfig.deploymentTarget;
 	if (!target) {
 		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
@@ -106,9 +108,9 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 		// Route to appropriate cloud provider
 		if (cloudProvider === 'aws') {
-			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID);
+			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime);
 		} else {
-			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID);
+			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime);
 		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
@@ -186,7 +188,8 @@ async function saveDeploymentToDB(
 	steps: DeployStep[],
 	userID: string | undefined,
 	serviceDetails: ServiceDeployDetails | null | undefined,
-	customUrl?: string | null
+	customUrl?: string | null,
+	durationMs?: number
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
@@ -214,13 +217,15 @@ async function saveDeploymentToDB(
 			console.log("Deployment saved to DB:", updateResponse.success);
 		}
 
-		// Record deployment history
+		// Record deployment history with commit and branch info
 		const historyEntry = {
 			timestamp: new Date().toISOString(),
 			success,
 			steps,
 			configSnapshot: configSnapshotFromDeployConfig(deployConfig),
-			deployUrl,
+			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
+			...(deployConfig.branch && { branch: deployConfig.branch }),
+			...(durationMs && { durationMs }),
 		};
 
 		const historyResponse = await dbHelper.addDeploymentHistory(
@@ -256,7 +261,8 @@ function sendDeployComplete(
 	userID: string | undefined,
 	deploymentTarget?: string,
 	vercelDns?: AddVercelDnsResult | null,
-	serviceDetails?: ServiceDeployDetails | null
+	serviceDetails?: ServiceDeployDetails | null,
+	durationMs?: number
 ) {
 	// Save to database before sending WebSocket message
 	saveDeploymentToDB(
@@ -266,7 +272,8 @@ function sendDeployComplete(
 		deploySteps,
 		userID,
 		serviceDetails,
-		vercelDns?.success ? vercelDns.customUrl : null
+		vercelDns?.success ? vercelDns.customUrl : null,
+		durationMs
 	).catch(err => console.error("Failed to save deployment to DB:", err));
 
 	if (ws?.readyState === ws?.OPEN) {
@@ -314,7 +321,8 @@ async function handleAWSDeploy(
 	dbConfig: DatabaseConfig | null,
 	token: string,
 	ws: any,
-	userID: string | undefined
+	userID: string | undefined,
+	deployStartTime: number
 ): Promise<string> {
 	const deploySteps: DeployStep[] = [];
 	const send = createDeployStepsLogger(ws, deploySteps);
@@ -463,8 +471,11 @@ async function handleAWSDeploy(
 	const doneStep = deploySteps.find(s => s.id === 'done');
 	if (doneStep) doneStep.status = 'success';
 
+	// Calculate deployment duration
+	const durationMs = Date.now() - deployStartTime;
+
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	sendDeployComplete(ws, deployUrl, true, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails);
+	sendDeployComplete(ws, deployUrl, true, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -483,7 +494,8 @@ async function handleGCPDeploy(
 	dbConfig: DatabaseConfig | null,
 	token: string,
 	ws: any,
-	userID: string | undefined
+	userID: string | undefined,
+	deployStartTime: number
 ): Promise<string> {
 	const deploySteps: DeployStep[] = [];
 	const send = createDeployStepsLogger(ws, deploySteps);
@@ -540,7 +552,8 @@ async function handleGCPDeploy(
 		}
 		const doneStep = deploySteps.find(s => s.id === 'done');
 		if (doneStep) doneStep.status = 'success';
-		sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null);
+		const durationMs = Date.now() - deployStartTime;
+		sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -720,7 +733,8 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 	}
 	const doneStep = deploySteps.find(s => s.id === 'done');
 	if (doneStep) doneStep.status = 'success';
-	sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null);
+	const durationMs = Date.now() - deployStartTime;
+	sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -16,21 +16,21 @@ export default function DashboardMain() {
 
 	return (
 		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
-			<div className="p-6 border-b border-[#1e3a5f]/60">
+			<div className="p-6 border-b border-border/60">
 				<div className="flex items-center gap-2">
-					<Boxes className="size-6 text-[#14b8a6]" />
-					<h1 className="font-semibold text-xl text-[#e2e8f0]">Services</h1>
+					<Boxes className="size-6 text-teal-400" />
+					<h1 className="font-semibold text-xl text-foreground">Services</h1>
 				</div>
-				<p className="text-sm text-[#94a3b8] mt-1">
+				<p className="text-sm text-muted-foreground mt-1">
 					{activeDeployments.length} service{activeDeployments.length !== 1 ? "s" : ""} deployed
 				</p>
 			</div>
 			<div className="flex-1 min-h-0 overflow-y-auto p-6">
 				{activeDeployments.length === 0 ? (
-					<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-[#1e3a5f]/60 bg-[#132f4c]/20 text-center">
-						<Boxes className="size-12 text-[#64748b] mb-4" />
-						<p className="text-[#e2e8f0] font-medium">No services yet</p>
-						<p className="text-sm text-[#94a3b8] mt-1 max-w-sm">
+					<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
+						<Boxes className="size-12 text-muted-foreground/70 mb-4" />
+						<p className="text-foreground font-medium">No services yet</p>
+						<p className="text-sm text-muted-foreground mt-1 max-w-sm">
 							Add a repository and deploy to see your services here.
 						</p>
 					</div>
@@ -49,3 +49,4 @@ export default function DashboardMain() {
 		</main>
 	);
 }
+

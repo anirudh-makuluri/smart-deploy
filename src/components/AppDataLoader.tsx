@@ -35,14 +35,14 @@ export function AppDataLoader({ children }: React.PropsWithChildren) {
 
 	if (!isExiting) {
 		return (
-			<div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-10 landing-bg text-[#e2e8f0]">
+			<div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-10 landing-bg text-foreground">
 				{/* Subtle grid */}
 				<div
 					className="pointer-events-none absolute inset-0 opacity-[0.03]"
 					style={{
 						backgroundImage: `
-							linear-gradient(to right, #e2e8f0 1px, transparent 1px),
-							linear-gradient(to bottom, #e2e8f0 1px, transparent 1px)
+							linear-gradient(to right, var(--foreground) 1px, transparent 1px),
+							linear-gradient(to bottom, var(--foreground) 1px, transparent 1px)
 						`,
 						backgroundSize: "24px 24px",
 					}}
@@ -50,17 +50,17 @@ export function AppDataLoader({ children }: React.PropsWithChildren) {
 				<div className="relative flex flex-col items-center gap-10 px-6">
 					<div className="flex flex-col items-center gap-6">
 						<SmartDeployLogo showText size="lg" />
-						<p className="text-sm text-[#94a3b8]">Loading your repos and services…</p>
+						<p className="text-sm text-muted-foreground">Loading your repos and services…</p>
 					</div>
 					{/* Progress bar */}
 					<div className="w-full max-w-xs space-y-2">
-						<div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1e3a5f]">
+						<div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
 							<div
 								className="h-full rounded-full landing-build-blue transition-all duration-300 ease-out"
 								style={{ width: `${progress}%` }}
 							/>
 						</div>
-						<div className="flex justify-between text-xs text-[#94a3b8]">
+						<div className="flex justify-between text-xs text-muted-foreground">
 							<span>{Math.round(progress)}%</span>
 							<span className="animate-pulse">Preparing dashboard</span>
 						</div>
@@ -68,15 +68,15 @@ export function AppDataLoader({ children }: React.PropsWithChildren) {
 					{/* Loading dots */}
 					<div className="flex gap-1.5" aria-hidden>
 						<span
-							className="h-2 w-2 rounded-full bg-[#1d4ed8] animate-bounce"
+							className="h-2 w-2 rounded-full bg-primary animate-bounce"
 							style={{ animationDelay: "0ms" }}
 						/>
 						<span
-							className="h-2 w-2 rounded-full bg-[#1d4ed8] animate-bounce"
+							className="h-2 w-2 rounded-full bg-primary animate-bounce"
 							style={{ animationDelay: "150ms" }}
 						/>
 						<span
-							className="h-2 w-2 rounded-full bg-[#1d4ed8] animate-bounce"
+							className="h-2 w-2 rounded-full bg-primary animate-bounce"
 							style={{ animationDelay: "300ms" }}
 						/>
 					</div>
@@ -87,3 +87,5 @@ export function AppDataLoader({ children }: React.PropsWithChildren) {
 
 	return <>{children}</>;
 }
+
+

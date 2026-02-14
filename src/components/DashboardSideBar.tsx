@@ -113,23 +113,23 @@ export default function DashboardSideBar() {
 	}
 
 	return (
-		<aside className="flex-shrink-0 w-80 lg:w-96 flex flex-col min-h-0 border-r border-[#1e3a5f]/60 bg-[#132f4c]/40">
-			<div className="flex-shrink-0 p-4 border-b border-[#1e3a5f]/60">
-				<p className="text-[#94a3b8] text-xs uppercase tracking-wider font-medium">Signed in as</p>
-				<p className="text-[#e2e8f0] font-semibold truncate mt-0.5">{session?.user?.name ?? session?.user?.email}</p>
+		<aside className="shrink-0 w-80 lg:w-96 flex flex-col min-h-0 border-r border-border bg-card">
+			<div className="shrink-0 p-4 border-b border-border">
+				<p className="text-muted-foreground text-xs uppercase tracking-wider font-medium">Signed in as</p>
+				<p className="text-foreground font-semibold truncate mt-0.5">{session?.user?.name ?? session?.user?.email}</p>
 			</div>
 			<div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
-				<div className="flex-shrink-0 flex items-center justify-between gap-2 mb-4">
+				<div className="shrink-0 flex items-center justify-between gap-2 mb-4">
 					<div className="flex items-center gap-2">
-						<FolderGit2 className="size-5 text-[#14b8a6]" />
-						<h2 className="font-semibold text-[#e2e8f0]">Repositories</h2>
+						<FolderGit2 className="size-5 text-primary" />
+						<h2 className="font-semibold text-foreground">Repositories</h2>
 					</div>
 					<div className="flex items-center gap-2">
 						<Button
 							onClick={() => setShowAddRepo(!showAddRepo)}
 							variant="outline"
 							size="sm"
-							className="border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50 hover:text-[#e2e8f0] shrink-0"
+							className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground shrink-0"
 							title="Add public repository"
 						>
 							<Plus className="size-4" />
@@ -139,7 +139,7 @@ export default function DashboardSideBar() {
 							variant="outline"
 							size="sm"
 							disabled={isRefreshing}
-							className="border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50 hover:text-[#e2e8f0] shrink-0"
+							className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground shrink-0"
 						>
 							<RefreshCcw className={`size-4 mr-1.5 ${isRefreshing ? "animate-spin" : ""}`} />
 							Refresh
@@ -147,8 +147,8 @@ export default function DashboardSideBar() {
 					</div>
 				</div>
 				{showAddRepo && (
-					<div className="flex-shrink-0 mb-4 p-3 rounded-lg border border-[#1e3a5f]/60 bg-[#0c1929]/60">
-						<p className="text-xs text-[#94a3b8] mb-2">Add Public Repository</p>
+					<div className="shrink-0 mb-4 p-3 rounded-lg border border-border bg-background">
+						<p className="text-xs text-muted-foreground mb-2">Add Public Repository</p>
 						<div className="flex gap-2">
 							<Input
 								type="text"
@@ -164,14 +164,14 @@ export default function DashboardSideBar() {
 										setRepoUrl("");
 									}
 								}}
-								className="flex-1 border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8] text-sm"
+								className="flex-1 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary text-sm"
 								disabled={isLoadingRepo}
 							/>
 							<Button
 								onClick={handleAddPublicRepo}
 								size="sm"
 								disabled={isLoadingRepo || !repoUrl.trim()}
-								className="landing-build-blue hover:opacity-95 text-white shrink-0"
+								className="landing-build-blue hover:opacity-95 text-primary-foreground shrink-0"
 							>
 								{isLoadingRepo ? (
 									<RefreshCcw className="size-4 animate-spin" />
@@ -180,14 +180,14 @@ export default function DashboardSideBar() {
 								)}
 							</Button>
 						</div>
-						<p className="text-xs text-[#64748b] mt-2">
+						<p className="text-xs text-muted-foreground/70 mt-2">
 							Enter any public GitHub repository URL
 						</p>
 					</div>
 				)}
 				<ul className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
 					{availableRepos.length === 0 ? (
-						<li className="text-[#94a3b8] text-sm py-4 px-3 rounded-lg border border-dashed border-[#1e3a5f]/60">
+						<li className="text-muted-foreground text-sm py-4 px-3 rounded-lg border border-dashed border-border">
 							{repoList.length === 0 
 								? "No repositories yet. Connect a repo from a service to see it here."
 								: "All repositories have been deployed. Add a new repository to deploy."}
@@ -197,17 +197,17 @@ export default function DashboardSideBar() {
 							<li key={repo.id}>
 								<Link
 									href={`/repo/${repo.id}/${repo.full_name}`}
-									className="block rounded-lg border border-[#1e3a5f]/60 bg-[#0c1929]/60 hover:bg-[#1e3a5f]/30 hover:border-[#1e3a5f] p-3 transition-colors"
+									className="block rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
 								>
-									<p className="font-medium text-[#e2e8f0] truncate">{repo.full_name.split("/")[1]}</p>
-									<p className="text-xs text-[#94a3b8] truncate mt-1">{repo.full_name}</p>
+									<p className="font-medium text-foreground truncate">{repo.full_name.split("/")[1]}</p>
+									<p className="text-xs text-muted-foreground truncate mt-1">{repo.full_name}</p>
 									{repo.latest_commit && (
-										<p className="text-xs text-[#64748b] mt-2 truncate" title={repo.latest_commit.message}>
+										<p className="text-xs text-muted-foreground/70 mt-2 truncate" title={repo.latest_commit.message}>
 											{repo.latest_commit.message}
 										</p>
 									)}
 									{repo.latest_commit?.date && (
-										<p className="text-xs text-[#64748b] mt-0.5">{formatTimestamp(repo.latest_commit.date)}</p>
+										<p className="text-xs text-muted-foreground/70 mt-0.5">{formatTimestamp(repo.latest_commit.date)}</p>
 									)}
 								</Link>
 							</li>
@@ -218,3 +218,4 @@ export default function DashboardSideBar() {
 		</aside>
 	);
 }
+

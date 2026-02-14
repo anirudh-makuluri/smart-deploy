@@ -22,7 +22,7 @@ export function SmartDeployLogo({ href, size = "md", showText = true, className 
 
 	const content = (
 		<>
-			<div className={`landing-build-blue flex ${box} items-center justify-center rounded-lg flex-shrink-0`}>
+			<div className={`landing-build-blue flex ${box} items-center justify-center rounded-lg shrink-0`}>
 				<Layers className={`${icon} text-white`} />
 			</div>
 			{showText && <span className="font-semibold text-lg tracking-tight">Smart Deploy</span>}
@@ -31,11 +31,12 @@ export function SmartDeployLogo({ href, size = "md", showText = true, className 
 
 	if (href) {
 		return (
-			<Link href={href} className={`flex items-center gap-2 text-[#e2e8f0] hover:opacity-90 transition-opacity ${className}`}>
+			<Link href={href} className={`flex items-center gap-2 text-foreground hover:opacity-90 transition-opacity ${className}`}>
 				{content}
 			</Link>
 		);
 	}
 
-	return <div className={`flex items-center gap-2 text-[#e2e8f0] ${className}`}>{content}</div>;
+	return <div className={`flex items-center gap-2 text-foreground ${className}`}>{content}</div>;
 }
+

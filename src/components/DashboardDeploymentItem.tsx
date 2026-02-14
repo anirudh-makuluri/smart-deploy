@@ -15,9 +15,9 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 const statusStyles: Record<string, string> = {
-	running: "bg-[#14b8a6]/20 text-[#14b8a6] border-[#14b8a6]/40",
-	paused: "bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/40",
-	stopped: "bg-[#64748b]/20 text-[#94a3b8] border-[#64748b]/40",
+	running: "bg-primary/20 text-primary border-primary/40",
+	paused: "bg-amber-400/20 text-amber-400 border-amber-400/40",
+	stopped: "bg-muted/40 text-muted-foreground border-muted-foreground/30",
 };
 
 export default function DashboardDeploymentItem({
@@ -71,12 +71,12 @@ export default function DashboardDeploymentItem({
 	const statusStyle = statusStyles[deployConfig.status ?? "stopped"] ?? statusStyles.stopped;
 
 	return (
-		<div className="rounded-xl border border-[#1e3a5f]/60 bg-[#132f4c]/60 flex flex-col p-4 hover:border-[#1e3a5f] transition-colors">
+		<div className="rounded-xl border border-border bg-card flex flex-col p-4 hover:border-border transition-colors">
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
 					<Link
-						href={`/services/${deployConfig.service_name}`}
-						className="font-semibold text-[#e2e8f0] hover:text-[#14b8a6] transition-colors truncate block"
+						href={`/services/${deployConfig.service_name}?deploymentId=${encodeURIComponent(deployConfig.id)}`}
+						className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
 					>
 						{deployConfig.service_name}
 					</Link>
@@ -85,20 +85,20 @@ export default function DashboardDeploymentItem({
 					</span>
 				</div>
 				<DropdownMenu>
-					<DropdownMenuTrigger className="p-1.5 rounded-lg border border-transparent hover:bg-[#1e3a5f]/50 hover:border-[#1e3a5f]/60 text-[#94a3b8] hover:text-[#e2e8f0] transition-colors">
+					<DropdownMenuTrigger className="p-1.5 rounded-lg border border-transparent hover:bg-secondary hover:border-border text-muted-foreground hover:text-foreground transition-colors">
 						<EllipsisVertical className="size-4" />
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" className="border-[#1e3a5f] bg-[#132f4c]">
+					<DropdownMenuContent align="end" className="border-border bg-card">
 						<DropdownMenuItem
 							onClick={() => changeStatus(deployConfig.status === "running" ? "pause" : "resume")}
-							className="text-[#e2e8f0] focus:bg-[#1e3a5f]/50 focus:text-[#e2e8f0]"
+							className="text-foreground focus:bg-secondary focus:text-foreground"
 						>
 							{deployConfig.status === "running" ? "Pause" : "Resume"}
 						</DropdownMenuItem>
 						<DropdownMenuItem
 							onClick={() => changeStatus("stop")}
 							disabled={isDeleting}
-							className="text-[#e2e8f0] focus:bg-[#dc2626]/20 focus:text-[#fca5a5]"
+							className="text-foreground focus:bg-destructive/20 focus:text-destructive/80"
 						>
 							{isDeleting ? "Deleting…" : "Delete"}
 						</DropdownMenuItem>
@@ -112,7 +112,7 @@ export default function DashboardDeploymentItem({
 						href={displayUrl}
 						target="_blank"
 						rel="noopener noreferrer"
-						className="flex items-center gap-1.5 text-xs text-[#14b8a6] hover:underline mt-2 truncate"
+						className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-2 truncate"
 					>
 						<ExternalLink className="size-3.5 shrink-0" />
 						<span className="truncate">{displayUrl}</span>
@@ -120,23 +120,23 @@ export default function DashboardDeploymentItem({
 				) : null;
 			})()}
 			{repo && (
-				<div className="mt-4 pt-4 border-t border-[#1e3a5f]/60">
+				<div className="mt-4 pt-4 border-t border-border">
 					<a
 						href={repo.html_url}
 						target="_blank"
 						rel="noopener noreferrer"
-						className="inline-flex truncate items-center gap-1.5 text-sm text-[#94a3b8] hover:text-[#14b8a6] transition-colors"
+						className="inline-flex truncate items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
 					>
 						<GitBranch className="size-4 shrink-0" />
 						<span className="truncate">{repo.full_name}</span>
 					</a>
 					{repo.latest_commit && (
 						<>
-							<p className="text-xs text-[#64748b] mt-2 line-clamp-2" title={repo.latest_commit.message}>
+							<p className="text-xs text-muted-foreground/70 mt-2 line-clamp-2" title={repo.latest_commit.message}>
 								{repo.latest_commit.message}
 							</p>
-							<p className="text-xs text-[#64748b] mt-1">
-								{formatTimestamp(repo.latest_commit.date)} on <strong className="text-[#94a3b8]">{repo.default_branch}</strong>
+							<p className="text-xs text-muted-foreground/70 mt-1">
+								{formatTimestamp(repo.latest_commit.date)} on <strong className="text-muted-foreground">{repo.default_branch}</strong>
 							</p>
 						</>
 					)}
@@ -145,3 +145,5 @@ export default function DashboardDeploymentItem({
 		</div>
 	);
 }
+
+

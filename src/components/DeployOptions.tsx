@@ -65,10 +65,10 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 					<ChevronDown className="h-4 w-4" />
 				</Button>
 			</DropdownMenuTrigger>
-			<DropdownMenuContent className="bg-[#132f4c] border-[#1e3a5f] text-[#e2e8f0] min-w-[200px]">
+			<DropdownMenuContent className="bg-card border-border text-foreground min-w-50">
 				<DropdownMenuItem
 					onClick={() => onDeploy()}
-					className="cursor-pointer hover:bg-[#1e3a5f]/50 focus:bg-[#1e3a5f]/50"
+					className="cursor-pointer hover:bg-secondary focus:bg-secondary"
 				>
 					<GitBranch className="h-4 w-4 mr-2" />
 					Deploy from Branch ({branch})
@@ -76,7 +76,7 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 				<DropdownMenuItem
 					onClick={handleDeployLatestCommit}
 					disabled={isFetchingCommit || !repo}
-					className="cursor-pointer hover:bg-[#1e3a5f]/50 focus:bg-[#1e3a5f]/50 disabled:opacity-50"
+					className="cursor-pointer hover:bg-secondary focus:bg-secondary disabled:opacity-50"
 				>
 					<Rocket className="h-4 w-4 mr-2" />
 					{isFetchingCommit ? "Fetching..." : "Deploy Latest Commit"}
@@ -85,3 +85,4 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 		</DropdownMenu>
 	);
 }
+

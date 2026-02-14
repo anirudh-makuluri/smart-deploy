@@ -194,5 +194,12 @@ export type DeploymentHistoryEntry = {
 	steps: DeployStep[];
 	/** Snapshot of config used (no File/binary). */
 	configSnapshot: Record<string, unknown>;
-	deployUrl?: string;
+	/** Commit SHA that was deployed */
+	commitSha?: string;
+	/** Commit message */
+	commitMessage?: string;
+	/** Branch that was deployed */
+	branch?: string;
+	/** Deployment duration in milliseconds */
+	durationMs?: number;
 };

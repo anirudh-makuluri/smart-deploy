@@ -17,7 +17,6 @@ import {
 	FormField,
 	FormItem,
 } from "@/components/ui/form"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { Switch } from "@/components/ui/switch";
 import {
@@ -29,13 +28,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table"
-import DeploymentAccordion from "@/components/DeploymentAccordion";
-import ServiceLogs from "@/components/ServiceLogs";
 import DeployOptions from "@/components/DeployOptions";
 import { RotateCw, Upload, Trash2, Plus } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, DeployStep, repoType } from "@/app/types";
+import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, repoType } from "@/app/types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -85,10 +82,10 @@ const exampleProjectMetadata: AIGenProjectMetadata = {
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, serviceLogs, steps, deployment, repo, deployError, deployingCommitInfo }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, id, deployment, repo }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void, onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>, onConfigChange?: (partial: Partial<DeployConfig>) => void, editMode: boolean, isDeploying: boolean, id: string,
-			steps: DeployStep[], serviceLogs: { timestamp: string, message?: string }[], repo: repoType, deployment?: DeployConfig, deployError?: string | null, deployingCommitInfo?: { sha: string; message: string; author: string; date: string } | null
+			repo: repoType, deployment?: DeployConfig
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -330,9 +327,9 @@ export default function ConfigTabs(
 	return (
 		<>
 			{!isDeployDisabled && (
-				<Card className="mb-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
+				<Card className="mb-4 border-border/60 bg-card/60">
 					<CardHeader className="pb-2">
-						<CardTitle className="text-base font-medium flex items-center gap-2 text-[#e2e8f0]">
+						<CardTitle className="text-base font-medium flex items-center gap-2 text-foreground">
 							Deployment Target
 						</CardTitle>
 					</CardHeader>
@@ -342,7 +339,7 @@ export default function ConfigTabs(
 								value={deploymentAnalysis?.target || ""}
 								onValueChange={handleDeploymentTargetChange}
 							>
-								<SelectTrigger className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] focus:ring-[#1d4ed8]">
+								<SelectTrigger className="border-border bg-background/60 text-foreground focus:ring-primary">
 									<SelectValue placeholder="Select deployment target" />
 								</SelectTrigger>
 								<SelectContent>
@@ -354,15 +351,15 @@ export default function ConfigTabs(
 								</SelectContent>
 							</Select>
 						) : (
-							<p className="font-semibold text-[#e2e8f0]">
+							<p className="font-semibold text-foreground">
 								{deploymentAnalysis ? formatDeploymentTargetName(deploymentAnalysis.target) : "Not selected"}
 							</p>
 						)}
 						{deploymentAnalysis && (
 							<>
-								<p className="text-sm text-[#94a3b8]">{deploymentAnalysis.reason}</p>
+								<p className="text-sm text-muted-foreground">{deploymentAnalysis.reason}</p>
 								{deploymentAnalysis.warnings.length > 0 && (
-									<ul className="text-xs text-[#f59e0b] list-disc list-inside mt-1">
+									<ul className="text-xs text-amber-400 list-disc list-inside mt-1">
 										{deploymentAnalysis.warnings.map((w, i) => (
 											<li key={i}>{w}</li>
 										))}
@@ -378,9 +375,9 @@ export default function ConfigTabs(
 					{(featuresInfra?.uses_mobile ||
 						featuresInfra?.is_library ||
 						isDeployDisabled) && (
-							<Alert variant="destructive" className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
-								<AlertTitle className="text-[#fca5a5]">Deployment Disabled</AlertTitle>
-								<AlertDescription className="text-[#94a3b8]">
+							<Alert variant="destructive" className="border-destructive/50 bg-destructive/10 text-foreground">
+								<AlertTitle className="text-destructive/80">Deployment Disabled</AlertTitle>
+								<AlertDescription className="text-muted-foreground">
 									<p>
 										❌ This project <strong>cannot be deployed</strong>.
 									</p>
@@ -405,9 +402,9 @@ export default function ConfigTabs(
 						)}
 
 					{featuresInfra?.requires_build_but_missing_cmd && (
-						<Alert variant="destructive" className="border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
-							<AlertTitle className="text-[#fca5a5]">Error!</AlertTitle>
-							<AlertDescription className="text-[#94a3b8]">
+						<Alert variant="destructive" className="border-destructive/50 bg-destructive/10 text-foreground">
+							<AlertTitle className="text-destructive/80">Error!</AlertTitle>
+							<AlertDescription className="text-muted-foreground">
 								<p>
 									❌ Build is required but no build command was detected. <strong>Deployment will fail.</strong>
 								</p>
@@ -416,44 +413,24 @@ export default function ConfigTabs(
 					)}
 					{
 						projectMetadata.final_notes?.comment && (
-							<Card className="my-4 border-[#1e3a5f]/60 bg-[#132f4c]/60">
+							<Card className="my-4 border-border/60 bg-card/60">
 								<CardHeader>
-									<CardTitle className="text-[#e2e8f0]">💡 Final AI Notes</CardTitle>
+									<CardTitle className="text-foreground">💡 Final AI Notes</CardTitle>
 								</CardHeader>
-								<CardContent className="text-[#94a3b8] text-sm whitespace-pre-wrap">
+								<CardContent className="text-muted-foreground text-sm whitespace-pre-wrap">
 									{projectMetadata?.final_notes?.comment}
 								</CardContent>
 							</Card>
 						)
 					}
-					<Alert className="my-4 border-[#1e3a5f]/60 bg-[#132f4c]/40 text-[#94a3b8]">
+					<Alert className="my-4 border-border/60 bg-card/40 text-muted-foreground">
 						<AlertDescription className="text-sm">
 							AI can make mistakes. Please verify the detected settings (commands, framework, etc.) before deploying for a higher success rate.
 						</AlertDescription>
 					</Alert>
 				</>
 			)}
-			<Tabs defaultValue="env_config">
-				{
-					isDeploying || (deployment && deployment?.status != 'didnt_deploy') ? (
-						<TabsList className="bg-[#132f4c]/60 border border-[#1e3a5f]/60">
-							<TabsTrigger value="env_config" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Environment & Configuration</TabsTrigger>
-							{deployment?.status != 'didnt_deploy' ? <TabsTrigger value="service_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">Service Logs</TabsTrigger> : null}
-							{isDeploying && (
-								<TabsTrigger value="deploy_logs" className="data-[state=active]:bg-[#1d4ed8] data-[state=active]:text-white text-[#94a3b8]">
-									Deploy Logs
-									{deployingCommitInfo && (
-										<span className="ml-2 text-xs text-[#94a3b8] font-normal">
-											({deployingCommitInfo.sha.substring(0, 7)}: {deployingCommitInfo.message.split('\n')[0].substring(0, 40)}{deployingCommitInfo.message.split('\n')[0].length > 40 ? '...' : ''})
-										</span>
-									)}
-								</TabsTrigger>
-							)}
-						</TabsList>
-					) : null
-				}
-				<TabsContent value="env_config">
-					<Form {...form}>
+				<Form {...form}>
 						<form onSubmit={form.handleSubmit((data) => {
 							const envString = buildEnvVarsString(envEntries);
 							onSubmit({
@@ -466,15 +443,15 @@ export default function ConfigTabs(
 								}),
 							});
 						})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
-							<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Environment & Configuration</p>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<p className="font-bold text-xl whitespace-nowrap my-4 text-foreground">Environment & Configuration</p>
+							<Separator className="bg-border/60 h-[1px]" />
 							{editMode && (
 								<div className="flex flex-row items-center gap-4 my-6 flex-wrap">
 									<Button
 										disabled={isAiFetching}
 										variant="outline"
 										onClick={handleAIBtn}
-										className="border-[#1e3a5f] bg-transparent text-[#e2e8f0] hover:bg-[#1e3a5f]/50"
+										className="border-border bg-transparent text-foreground hover:bg-secondary/50"
 									>
 										<RotateCw className={isAiFetching ? "animate-spin" : ""} />
 										Smart Project Scan
@@ -483,7 +460,7 @@ export default function ConfigTabs(
 										<Button 
 											type="submit" 
 											disabled={isDeployDisabled || isDeploying}
-											className="landing-build-blue hover:opacity-95 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+											className="landing-build-blue hover:opacity-95 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
 										>
 											Save Changes
 										</Button>
@@ -512,7 +489,7 @@ export default function ConfigTabs(
 							)}
 
 							<div className="my-4 flex flex-row justify-start items-center space-x-4 flex-wrap gap-2">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Service Name:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Service Name:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -520,23 +497,23 @@ export default function ConfigTabs(
 										render={({ field }) => (
 											<FormItem className="w-40">
 												<FormControl>
-													<Input {...field} className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]" />
+													<Input {...field} className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary" />
 												</FormControl>
 											</FormItem>
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.service_name}</span>
+									<span className="text-muted-foreground w-40">{deployment?.service_name}</span>
 								)}
-								{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-[#1e3a5f] text-[#94a3b8]">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
-								{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-[#1e3a5f] text-[#94a3b8]">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
+								{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-border text-muted-foreground">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
+								{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-border text-muted-foreground">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
 
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 
 							{/* Install Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Install Command:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Install Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -550,14 +527,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.install_cmd}</span>
+									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.install_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 
 							{/* Build Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Build Command:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Build Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -571,14 +548,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.build_cmd}</span>
+									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.build_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 
 							{/* Run Command */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Run Command:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Run Command:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -592,14 +569,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.run_cmd}</span>
+									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.run_cmd}</span>
 								)}
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 
 							{/* Branch */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Branch:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Branch:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -627,14 +604,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.branch}</span>
+									<span className="text-muted-foreground w-40">{deployment?.branch}</span>
 								)}
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 						{/* Custom URL */}
 						<div className="my-4 flex flex-col space-y-2">
 							<div className="flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Custom URL:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Custom URL:</span>
 								{editMode ? (
 									<div className="flex-1 max-w-md space-y-2">
 										<div className="flex items-center gap-2">
@@ -700,26 +677,26 @@ export default function ConfigTabs(
 														}
 													}
 												}}
-												className="border-[#1e3a5f] bg-[#0c1929]/50 text-[#e2e8f0] placeholder:text-[#64748b] focus-visible:ring-[#1d4ed8]"
+												className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
 												disabled={customUrlVerifying}
 											/>
-											<span className="text-[#94a3b8] text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
+											<span className="text-muted-foreground text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
 										</div>
 										{customUrlVerifying && (
-											<p className="text-xs text-[#94a3b8]">Verifying subdomain...</p>
+											<p className="text-xs text-muted-foreground">Verifying subdomain...</p>
 										)}
 										{customUrlStatus.type === 'success' && (
-											<p className="text-xs text-[#14b8a6]">{customUrlStatus.message}</p>
+											<p className="text-xs text-teal-400">{customUrlStatus.message}</p>
 										)}
 										{customUrlStatus.type === 'owned' && (
-											<p className="text-xs text-[#60a5fa]">{customUrlStatus.message}</p>
+											<p className="text-xs text-sky-400">{customUrlStatus.message}</p>
 										)}
 										{customUrlStatus.type === 'error' && (
 											<div className="text-xs space-y-1">
-												<p className="text-[#f87171]">{customUrlStatus.message}</p>
+												<p className="text-destructive/80">{customUrlStatus.message}</p>
 												{customUrlStatus.alternatives && customUrlStatus.alternatives.length > 0 && (
 													<div className="space-y-1">
-														<p className="text-[#94a3b8]">Available alternatives:</p>
+														<p className="text-muted-foreground">Available alternatives:</p>
 														<div className="flex gap-2 flex-wrap">
 															{customUrlStatus.alternatives.map((alt) => (
 																<button
@@ -731,7 +708,7 @@ export default function ConfigTabs(
 																		form.setValue("custom_url", `https://${alt}.${baseDomain}`);
 																		setCustomUrlStatus({ type: null });
 																	}}
-																	className="px-2 py-1 text-[#14b8a6] bg-[#14b8a6]/10 border border-[#14b8a6]/40 rounded hover:bg-[#14b8a6]/20 transition-colors"
+																	className="px-2 py-1 text-teal-400 bg-teal-400/10 border border-teal-400/40 rounded hover:bg-teal-400/20 transition-colors"
 																>
 																	{alt}
 																</button>
@@ -741,17 +718,17 @@ export default function ConfigTabs(
 												)}
 											</div>
 										)}
-										<p className="text-xs text-[#64748b]">Press Enter to verify availability</p>
+										<p className="text-xs text-muted-foreground/70">Press Enter to verify availability</p>
 									</div>
 								) : (
-									<span className="text-[#94a3b8]">{deployment?.custom_url || 'Not set'}</span>
+									<span className="text-muted-foreground">{deployment?.custom_url || 'Not set'}</span>
 								)}
 							</div>
 						</div>
-						<Separator className="bg-[#1e3a5f]/60 h-px" />
+						<Separator className="bg-border/60 h-px" />
 							{/* Working Directory */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-37.5 text-[#e2e8f0]">Working Directory:</span>
+								<span className="font-semibold min-w-37.5 text-foreground">Working Directory:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -765,14 +742,14 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
+									<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
 								)}
 							</div>
-							<Separator className="bg-[#1e3a5f]/60 h-[1px]" />
+							<Separator className="bg-border/60 h-[1px]" />
 
 							{/* Custom Dockerfile */}
 							<div className="my-4 flex flex-row justify-start items-center space-x-4">
-								<span className="font-semibold min-w-[150px] text-[#e2e8f0]">Custom Dockerfile:</span>
+								<span className="font-semibold min-w-[150px] text-foreground">Custom Dockerfile:</span>
 								{editMode ? (
 									<FormField
 										control={form.control}
@@ -788,7 +765,7 @@ export default function ConfigTabs(
 												</FormControl>
 												{field.value && (
 													<div>
-														<label className="block text-sm font-medium text-[#94a3b8] mb-1">
+														<label className="block text-sm font-medium text-muted-foreground mb-1">
 															Upload Dockerfile
 														</label>
 														<Input
@@ -805,7 +782,7 @@ export default function ConfigTabs(
 										)}
 									/>
 								) : (
-									<span className="text-[#94a3b8] w-40">
+									<span className="text-muted-foreground w-40">
 										{deployment?.use_custom_dockerfile ? 'Yes' : 'No'}
 									</span>
 								)}
@@ -819,7 +796,7 @@ export default function ConfigTabs(
 						} */}
 
 							{/* Env Vars */}
-							<p className="font-bold text-xl whitespace-nowrap mt-10 text-[#e2e8f0]">Environment Variables</p>
+							<p className="font-bold text-xl whitespace-nowrap mt-10 text-foreground">Environment Variables</p>
 							<div className="w-full mt-2">
 								{editMode ? (
 									<div className="space-y-3">
@@ -827,7 +804,7 @@ export default function ConfigTabs(
 										{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
 											<div key={index} className="flex flex-wrap items-center gap-2">
 												<div className="flex-1 min-w-[140px] space-y-1">
-													<Label className="text-xs text-[#94a3b8]">Key</Label>
+													<Label className="text-xs text-muted-foreground">Key</Label>
 													<Input
 														placeholder="e.g. NODE_ENV"
 														value={row.name}
@@ -846,11 +823,11 @@ export default function ConfigTabs(
 																setEnvEntries([...(envEntries.length > 0 ? envEntries : []), ...toAdd]);
 															}
 														}}
-														className="bg-[#0f172a]/80 border-[#1e3a5f]/60 text-[#e2e8f0] placeholder:text-[#64748b]"
+														className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
 													/>
 												</div>
 												<div className="flex-1 min-w-[140px] space-y-1">
-													<Label className="text-xs text-[#94a3b8]">Value</Label>
+													<Label className="text-xs text-muted-foreground">Value</Label>
 													<Input
 														placeholder="e.g. production"
 														value={row.value}
@@ -859,7 +836,7 @@ export default function ConfigTabs(
 															const next = displayRows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
 															setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
 														}}
-														className="bg-[#0f172a]/80 border-[#1e3a5f]/60 text-[#e2e8f0] placeholder:text-[#64748b]"
+														className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
 														autoComplete="off"
 													/>
 												</div>
@@ -867,7 +844,7 @@ export default function ConfigTabs(
 													type="button"
 													variant="ghost"
 													size="icon"
-													className="mt-6 text-[#94a3b8] hover:text-[#e2e8f0] shrink-0"
+													className="mt-6 text-muted-foreground hover:text-foreground shrink-0"
 													onClick={() => {
 														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
 														const next = displayRows.filter((_, i) => i !== index);
@@ -885,7 +862,7 @@ export default function ConfigTabs(
 												type="button"
 												variant="outline"
 												size="sm"
-												className="border-[#1e3a5f]/60 text-[#e2e8f0] hover:bg-[#1e3a5f]/30"
+												className="border-border/60 text-foreground hover:bg-secondary/30"
 												onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
 											>
 												<Plus className="h-4 w-4 mr-1" />
@@ -915,7 +892,7 @@ export default function ConfigTabs(
 												type="button"
 												variant="outline"
 												size="sm"
-												className="border-[#1e3a5f]/60 text-[#e2e8f0] hover:bg-[#1e3a5f]/30"
+												className="border-border/60 text-foreground hover:bg-secondary/30"
 												onClick={() => envFileInputRef.current?.click()}
 											>
 												<Upload className="h-4 w-4 mr-1" />
@@ -926,18 +903,18 @@ export default function ConfigTabs(
 								) : (
 									<>
 										{deployment?.env_vars ? (
-											<Table className="border border-[#1e3a5f]/60 p-2 rounded-md overflow-hidden">
-												<TableHeader className="bg-[#132f4c]/80">
-													<TableRow className="border-[#1e3a5f]/40 hover:bg-transparent">
-														<TableHead className="text-[#e2e8f0]">Name</TableHead>
-														<TableHead className="text-[#e2e8f0]">Value</TableHead>
+											<Table className="border border-border/60 p-2 rounded-md overflow-hidden">
+												<TableHeader className="bg-card/80">
+													<TableRow className="border-border/40 hover:bg-transparent">
+														<TableHead className="text-foreground">Name</TableHead>
+														<TableHead className="text-foreground">Value</TableHead>
 													</TableRow>
 												</TableHeader>
 												<TableBody>
 													{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
-														<TableRow key={idx} className="border-[#1e3a5f]/40 hover:bg-[#1e3a5f]/30">
-															<TableCell className="text-[#94a3b8] max-w-[100px] truncate">{env.name}</TableCell>
-															<TableCell className="text-[#e2e8f0] font-mono">
+														<TableRow key={idx} className="border-border/40 hover:bg-secondary/30">
+															<TableCell className="text-muted-foreground max-w-[100px] truncate">{env.name}</TableCell>
+															<TableCell className="text-foreground font-mono">
 																{"*".repeat(Math.min(env.value.length, 25))}
 															</TableCell>
 														</TableRow>
@@ -945,36 +922,15 @@ export default function ConfigTabs(
 												</TableBody>
 											</Table>
 										) : (
-											<span className="text-[#94a3b8]">-</span>
+											<span className="text-muted-foreground">-</span>
 										)}
 									</>
 								)}
 							</div>
 						</form>
 					</Form>
-				</TabsContent>
-				<TabsContent value="service_logs">
-					<p className="font-bold text-xl whitespace-nowrap my-4 text-[#e2e8f0]">Service Logs</p>
-					<ServiceLogs logs={serviceLogs} />
-				</TabsContent>
-				<TabsContent value="deploy_logs">
-					<div className="flex items-center gap-2 my-4">
-						<p className="font-bold text-xl whitespace-nowrap text-[#e2e8f0]">Deploy Logs</p>
-						{deployingCommitInfo && (
-							<span className="text-sm text-[#94a3b8] font-normal">
-								({deployingCommitInfo.sha.substring(0, 7)}: {deployingCommitInfo.message.split('\n')[0]})
-							</span>
-						)}
-					</div>
-					{deployError && (
-						<Alert className="mb-4 border-[#dc2626]/50 bg-[#dc2626]/10 text-[#e2e8f0]">
-							<AlertTitle className="text-[#fca5a5]">Deployment failed</AlertTitle>
-							<AlertDescription className="overflow-x-auto">{deployError}</AlertDescription>
-						</Alert>
-					)}
-					<DeploymentAccordion steps={steps} />
-				</TabsContent>
-			</Tabs>
 		</>
 	)
 }
+
+
