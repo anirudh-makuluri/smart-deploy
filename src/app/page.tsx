@@ -15,7 +15,7 @@ export default function Home() {
 		"[INFO] Target: Next.js SSR build (Node 18+)",
 		"[INFO] Installing NPM packages → 187 packages",
 		'{ service: "elastic-beanstalk", region: "us-west-2" }',
-		"Deploying services online █",
+		"Deploying services online",
 		"→ https://my-app.smartdeploy.io",
 	];
 
@@ -86,7 +86,7 @@ export default function Home() {
 	return (
 		<div className="landing-bg min-h-svh flex flex-col text-foreground">
 			{/* Header */}
-			<header className="sticky top-0 z-50 shrink-0 flex items-center justify-between px-6 lg:px-12 py-4 border-b border-border/50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+			<header className="sticky top-0 z-50 shrink-0 flex items-center justify-between px-6 lg:px-12 py-4 border-b border-border/50 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
 				<SmartDeployLogo href="/" />
 				<nav className="hidden md:flex items-center gap-8 text-sm">
 					<Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">

@@ -6,7 +6,7 @@ type LogEntry = { timestamp?: string; message?: string };
 
 export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 	return (
-		<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card p-4">
+		<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card p-4" data-logs-scroll>
 			<div className="space-y-2 font-mono text-sm text-muted-foreground">
 				{logs.length == 0 ? (
 					<p className="text-center text-4xl mt-10 text-muted-foreground/70">😴 No logs yet</p>

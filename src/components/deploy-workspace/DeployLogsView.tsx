@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useEffect, useRef } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
@@ -24,6 +25,20 @@ export default function DeployLogsView({
 	deployError,
 	deployingCommitInfo,
 }: DeployLogsViewProps) {
+	const logsContainerRef = useRef<HTMLDivElement>(null);
+
+	// Auto-scroll to bottom when new logs arrive
+	useEffect(() => {
+		if (logsContainerRef.current) {
+			const scrollElement = logsContainerRef.current.querySelector("[data-logs-scroll]");
+			if (scrollElement) {
+				setTimeout(() => {
+					scrollElement.scrollTop = scrollElement.scrollHeight;
+				}, 0);
+			}
+		}
+	}, [deployLogEntries, serviceLogs]);
+
 	return (
 		<div className="space-y-4">
 			<div className="flex flex-wrap items-center justify-between gap-4">
@@ -47,7 +62,9 @@ export default function DeployLogsView({
 					<AlertDescription className="overflow-x-auto">{deployError}</AlertDescription>
 				</Alert>
 			)}
-			<ServiceLogs logs={[...deployLogEntries, ...serviceLogs]} />
+			<div ref={logsContainerRef}>
+				<ServiceLogs logs={[...deployLogEntries, ...serviceLogs]} />
+			</div>
 		</div>
 	);
 }
