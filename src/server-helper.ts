@@ -59,7 +59,7 @@ export async function runCommandLiveWithWebSocket(
 	args: string[],
 	ws?: WebSocket,
 	id?: string,
-	opts?: { cwd?: string; env?: NodeJS.ProcessEnv }
+	opts?: { cwd?: string; env?: NodeJS.ProcessEnv; send?: (msg: string, stepId: string) => void }
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let output = "";
@@ -82,6 +82,7 @@ export async function runCommandLiveWithWebSocket(
 		});
 
 		const sendWS = (msg: string) => {
+			// Send to console via WebSocket and/or send function
 			if (ws && ws.readyState === ws.OPEN) {
 				const object = {
 					type: 'deploy_logs',
@@ -91,6 +92,10 @@ export async function runCommandLiveWithWebSocket(
 					}
 				}
 				ws.send(JSON.stringify(object));
+			}
+			// Also send through the send function if provided (for deploySteps tracking)
+			if (opts?.send && id) {
+				opts.send(msg, id);
 			}
 		};
 

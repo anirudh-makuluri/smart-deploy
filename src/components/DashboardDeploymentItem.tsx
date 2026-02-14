@@ -130,7 +130,19 @@ export default function DashboardDeploymentItem({
 						<GitBranch className="size-4 shrink-0" />
 						<span className="truncate">{repo.full_name}</span>
 					</a>
-					{repo.latest_commit && (
+					{deployConfig.commitSha ? (
+						<>
+							<div className="flex items-center gap-2 mt-2">
+								<span className="text-xs text-muted-foreground/70">Deployed commit:</span>
+								<code className="text-xs bg-muted/50 px-2 py-0.5 rounded border border-border/50 font-mono text-foreground">
+									{deployConfig.commitSha.substring(0, 7)}
+								</code>
+							</div>
+							<p className="text-xs text-muted-foreground/70 mt-1">
+								on <strong className="text-muted-foreground">{deployConfig.branch}</strong>
+							</p>
+						</>
+					) : repo.latest_commit ? (
 						<>
 							<p className="text-xs text-muted-foreground/70 mt-2 line-clamp-2" title={repo.latest_commit.message}>
 								{repo.latest_commit.message}
@@ -139,7 +151,7 @@ export default function DashboardDeploymentItem({
 								{formatTimestamp(repo.latest_commit.date)} on <strong className="text-muted-foreground">{repo.default_branch}</strong>
 							</p>
 						</>
-					)}
+					) : null}
 				</div>
 			)}
 		</div>

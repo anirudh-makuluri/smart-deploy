@@ -1,22 +1,32 @@
 import * as React from "react";
-import { ExternalLink } from "lucide-react";
-import { DeployConfig } from "@/app/types";
+import { ExternalLink, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DeployConfig, repoType } from "@/app/types";
 import {
 	formatTimestamp,
 	formatDeploymentTargetName,
 	getDeploymentDisplayUrl,
 } from "@/lib/utils";
+import DeployOptions from "@/components/DeployOptions";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
 	region?: string;
 	successRate?: number;
+	isDeploying?: boolean;
+	onRedeploy?: (commitSha?: string) => void;
+	onEditConfiguration?: () => void;
+	repo?: repoType;
 };
 
 export default function DeployOverview({
 	deployment,
 	region = "us-west-2",
 	successRate = 98.8,
+	isDeploying = false,
+	onRedeploy,
+	onEditConfiguration,
+	repo,
 }: DeployOverviewProps) {
 	const displayUrl = getDeploymentDisplayUrl(deployment);
 
@@ -30,17 +40,37 @@ export default function DeployOverview({
 						{deployment.status ?? "running"}
 					</span>
 				</div>
-				{displayUrl && (
-					<a
-						href={displayUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
-					>
-						Visit Site
-						<ExternalLink className="size-4" />
-					</a>
-				)}
+				<div className="flex items-center gap-2">
+					{onEditConfiguration && (
+						<Button
+							onClick={onEditConfiguration}
+							variant="outline"
+							className="inline-flex items-center gap-2 rounded-md border-border bg-transparent text-foreground hover:bg-secondary/50 hover:text-foreground"
+						>
+							<Settings className="size-4" />
+							Edit Configuration
+						</Button>
+					)}
+					{onRedeploy && (
+						<DeployOptions
+							onDeploy={onRedeploy}
+							disabled={isDeploying}
+							repo={repo}
+							branch={deployment.branch || "main"}
+						/>
+					)}
+					{displayUrl && (
+						<a
+							href={displayUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+						>
+							Visit Site
+							<ExternalLink className="size-4" />
+						</a>
+					)}
+				</div>
 			</div>
 
 			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">

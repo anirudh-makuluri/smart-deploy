@@ -12,20 +12,15 @@ const MENU_ITEMS: MenuItem[] = [
 export type MenuSection = MenuItem["id"];
 
 type DeployWorkspaceMenuProps = {
-	showMenu: boolean;
-	showFullMenu: boolean;
 	activeSection: MenuSection;
 	onChange: (section: MenuSection) => void;
 };
 
 export default function DeployWorkspaceMenu({
-	showMenu,
-	showFullMenu,
 	activeSection,
 	onChange,
 }: DeployWorkspaceMenuProps) {
-	if (!showMenu) return null;
-	const visibleIds = showFullMenu ? MENU_ITEMS.map((item) => item.id) : ["env", "logs"];
+	const visibleIds = MENU_ITEMS.map((item) => item.id);
 
 	return (
 		<nav className="border-b border-border bg-background/90">

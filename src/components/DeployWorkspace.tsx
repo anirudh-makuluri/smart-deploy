@@ -41,6 +41,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	const [activeSection, setActiveSection] = React.useState<MenuSection>("overview");
 	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
+	const [editMode, setEditMode] = React.useState(false);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs);
@@ -60,22 +61,6 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		deployStatus === "success" ? "success" : 
 		deployStatus === "error" ? "error" : "not-started";
 
-	const hasDeployment = Boolean(deployment && deployment.status !== "didnt_deploy");
-	const editMode = !hasDeployment;
-	const showMenu = isDeploying || deployStatus === "error" || hasDeployment;
-	const showFullMenu = hasDeployment;
-	const shouldShowHeader = showMenu;
-
-	React.useEffect(() => {
-		if (!showMenu) return;
-		const allowed = showFullMenu ? ["overview", "env", "logs", "history"] : ["env", "logs"];
-		if (!allowed.includes(activeSection)) {
-			setActiveSection(showFullMenu ? "overview" : "logs");
-		}
-		if (isDeploying) {
-			setActiveSection("logs");
-		}
-	}, [showMenu, showFullMenu, isDeploying, activeSection]);
 
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
@@ -92,7 +77,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	if (!repo && !deployment) {
 		return (
 			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
-				{shouldShowHeader && <Header />}
+				{<Header />}
 				<p className="text-muted-foreground">Service not found</p>
 			</div>
 		);
@@ -216,6 +201,54 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		toast.success("Scan saved to configuration");
 	}
 
+	async function handleRedeploy(commitSha?: string) {
+		if (!session?.accessToken || !resolvedDeployment) {
+			return console.log("Unauthenticated or no deployment");
+		}
+
+		const payload: DeployConfig = {
+			...resolvedDeployment,
+			...(commitSha && { commitSha }),
+		};
+
+		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
+		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
+		const owner = resolvedRepo.owner?.login ?? ownerFromUrl;
+		const repoName = resolvedRepo.name ?? repoNameFromUrl;
+
+		if (owner && repoName) {
+			fetch("/api/commits/latest", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					owner,
+					repo: repoName,
+					branch: payload.branch,
+				}),
+			})
+				.then((res) => res.json())
+				.then((data) => {
+					if (data.commit) {
+						setDeployingCommitInfo({
+							sha: data.commit.sha,
+							message: data.commit.message,
+							author: data.commit.author,
+							date: data.commit.date,
+						});
+					}
+				})
+				.catch((err) => {
+					console.error("Failed to fetch commit info:", err);
+				});
+		}
+
+		setIsDeploying(true);
+		sendDeployConfig(payload, session?.accessToken, session?.userID);
+		setActiveSection("logs");
+	}
+
 	async function onSubmit(
 		values: FormSchemaType &
 			Partial<AIGenProjectMetadata> & {
@@ -224,6 +257,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 				commitSha?: string;
 			}
 	) {
+		setEditMode(false);
+
 		if (!session?.accessToken) {
 			return console.log("Unauthenticated");
 		}
@@ -318,40 +353,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	}
 
 	function renderActiveSection() {
-		if (!showMenu) {
-			return (
-				<div className="w-full mx-auto p-6 flex-1 max-w-4xl">
-					<ConfigTabs
-						editMode={true}
-						onSubmit={onSubmit}
-						onScanComplete={onScanComplete}
-						onConfigChange={(partial) => {
-							const base = resolvedDeployment ?? {
-								id: resolvedDeploymentId,
-								url: resolvedRepo.html_url ?? "",
-								service_name: resolvedRepo.name,
-								branch: resolvedRepo.default_branch ?? "main",
-								use_custom_dockerfile: false,
-								status: "didnt_deploy",
-							};
-							updateDeploymentById({ ...base, ...partial });
-						}}
-						repo={resolvedRepo}
-						deployment={resolvedDeployment ?? { id: resolvedDeploymentId, url: resolvedRepo.html_url ?? "", service_name: resolvedRepo.name, branch: resolvedRepo.default_branch ?? "main", use_custom_dockerfile: false, status: "didnt_deploy" }}
-						service_name={resolvedRepo.name}
-						isDeploying={isDeploying}
-					/>
-				</div>
-			);
-		}
 
 		switch (activeSection) {
-			case "overview":
-				return (
-					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{resolvedDeployment && <DeployOverview deployment={resolvedDeployment} />}
-					</div>
-				);
 			case "history":
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
@@ -378,7 +381,6 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 					</div>
 				);
 			case "env":
-			default:
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 						<ConfigTabs
@@ -396,19 +398,33 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 						/>
 					</div>
 				);
+			case "overview":
+			default:
+				return (
+					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
+						{resolvedDeployment && (
+							<DeployOverview 
+								deployment={resolvedDeployment} 
+								isDeploying={isDeploying}
+								onRedeploy={handleRedeploy}
+								onEditConfiguration={() => {setActiveSection("env"); setEditMode(true);}}
+								repo={resolvedRepo}
+							/>
+						)}
+					</div>
+				);
+
 		}
 	}
 
 	return (
 		<div className="landing-bg min-h-svh flex flex-col text-foreground">
-			{shouldShowHeader && <Header />}
+			<Header />
 			<DeployWorkspaceMenu
-				showMenu={showMenu}
-				showFullMenu={showFullMenu}
 				activeSection={activeSection}
 				onChange={setActiveSection}
 			/>
-			{isDeploying && deployingCommitInfo && showMenu && (
+			{isDeploying && deployingCommitInfo && (
 				<div className="mx-auto mt-4 w-full max-w-6xl px-6">
 					<div className="rounded-lg border border-border bg-card px-4 py-3 text-sm space-y-2">
 						<div className="font-semibold text-foreground">Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</div>

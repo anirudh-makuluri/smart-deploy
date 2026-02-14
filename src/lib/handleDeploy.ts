@@ -27,11 +27,13 @@ import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
  * Main deployment handler - routes to AWS (default) or GCP
  */
 export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any, userID?: string): Promise<string> {
-	const send = createWebSocketLogger(ws);
+	const deployStartTime = Date.now();
+	
+	// Initialize deployment steps for tracking all logs
+	const deploySteps: DeployStep[] = [];
+	const send = createDeployStepsLogger(ws, deploySteps);
 
 	console.log("in handle deploy");
-
-	const deployStartTime = Date.now();
 
 	const target = deployConfig.deploymentTarget;
 	if (!target) {
@@ -70,12 +72,12 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 			send(`Cloning repo from branch "${branch}"...`, 'clone');
 		}
 		
-		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone');
+		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone', { send });
 
 		// Checkout specific commit if provided
 		if (commitSha) {
 			send(`Checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
-			await runCommandLiveWithWebSocket("git", ["checkout", commitSha], ws, 'clone', { cwd: cloneDir });
+			await runCommandLiveWithWebSocket("git", ["checkout", commitSha], ws, 'clone', { cwd: cloneDir, send });
 			send(`✅ Checked out commit ${commitSha.substring(0, 7)}`, 'clone');
 		}
 
@@ -108,9 +110,9 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 
 		// Route to appropriate cloud provider
 		if (cloudProvider === 'aws') {
-			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime);
+			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
 		} else {
-			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime);
+			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
 		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
@@ -322,10 +324,10 @@ async function handleAWSDeploy(
 	token: string,
 	ws: any,
 	userID: string | undefined,
-	deployStartTime: number
+	deployStartTime: number,
+	send: (msg: string, stepId: string) => void,
+	deploySteps: DeployStep[]
 ): Promise<string> {
-	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -451,10 +453,10 @@ async function handleAWSDeploy(
 			throw new Error(`Unknown deployment target: ${target}`);
 	}
 
-	send("Adding Vercel DNS record...", 'done');
-	// Add Vercel DNS record when deploy succeeded and domain is configured
+	
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (deployUrl && deployConfig.service_name?.trim()) {
+		send("Adding Vercel DNS record...", 'done');
 		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
 			deploymentTarget: target,
 			previousCustomUrl: deployConfig.custom_url ?? null,
@@ -463,7 +465,7 @@ async function handleAWSDeploy(
 	
 	if(vercelResult && vercelResult.success) {
 		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
-	} else {
+	} else if(deployUrl && vercelResult) {
 		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
 	}
 
@@ -474,8 +476,10 @@ async function handleAWSDeploy(
 	// Calculate deployment duration
 	const durationMs = Date.now() - deployStartTime;
 
+	const success = deployUrl ? true : false;
+
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	sendDeployComplete(ws, deployUrl, true, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
+	sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -495,10 +499,10 @@ async function handleGCPDeploy(
 	token: string,
 	ws: any,
 	userID: string | undefined,
-	deployStartTime: number
+	deployStartTime: number,
+	send: (msg: string, stepId: string) => void,
+	deploySteps: DeployStep[]
 ): Promise<string> {
-	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps);
 
 	const projectId = config.GCP_PROJECT_ID;
 	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);
@@ -517,9 +521,9 @@ async function handleGCPDeploy(
 	sendDeploySteps(ws, gcpSteps);
 
 	send("Authenticating with Google Cloud...", 'auth');
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth');
-	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth');
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth');
+	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth', { send });
+	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth', { send });
+	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth', { send });
 
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
 	const serviceName = `${repoName}`;
@@ -553,7 +557,8 @@ async function handleGCPDeploy(
 		const doneStep = deploySteps.find(s => s.id === 'done');
 		if (doneStep) doneStep.status = 'success';
 		const durationMs = Date.now() - deployStartTime;
-		sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+		const success = gcpDeployUrl ? true : false;
+		sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -686,7 +691,7 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 		"builds", "submit",
 		"--tag", gcpImage,
 		appDir
-	], ws, 'docker');
+	], ws, 'docker', { send });
 
 	send("Deploying to Cloud Run...", 'deploy');
 	
@@ -709,7 +714,7 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 		"--region", "us-central1",
 		"--allow-unauthenticated",
 		...envArgs
-	], ws, 'deploy');
+	], ws, 'deploy', { send });
 
 	await runCommandLiveWithWebSocket("gcloud", [
 		"beta", "run", "services", "add-iam-policy-binding",
@@ -718,7 +723,7 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 		"--platform=managed",
 		"--member=allUsers",
 		"--role=roles/run.invoker",
-	], ws, 'deploy');
+	], ws, 'deploy', { send });
 
 	send(`Deployment success`, 'done');
 
@@ -734,7 +739,9 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 	const doneStep = deploySteps.find(s => s.id === 'done');
 	if (doneStep) doneStep.status = 'success';
 	const durationMs = Date.now() - deployStartTime;
-	sendDeployComplete(ws, gcpDeployUrl, true, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+	const success = gcpDeployUrl ? true : false;
+
+	sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

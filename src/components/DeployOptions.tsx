@@ -68,7 +68,7 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 			<DropdownMenuContent className="bg-card border-border text-foreground min-w-50">
 				<DropdownMenuItem
 					onClick={() => onDeploy()}
-					className="cursor-pointer hover:bg-secondary focus:bg-secondary"
+					className="cursor-pointer hover:bg-secondary text-white focus:bg-secondary"
 				>
 					<GitBranch className="h-4 w-4 mr-2" />
 					Deploy from Branch ({branch})
@@ -76,7 +76,7 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 				<DropdownMenuItem
 					onClick={handleDeployLatestCommit}
 					disabled={isFetchingCommit || !repo}
-					className="cursor-pointer hover:bg-secondary focus:bg-secondary disabled:opacity-50"
+					className="cursor-pointer hover:bg-secondary text-white focus:bg-secondary disabled:opacity-50"
 				>
 					<Rocket className="h-4 w-4 mr-2" />
 					{isFetchingCommit ? "Fetching..." : "Deploy Latest Commit"}
