@@ -218,25 +218,26 @@ function generateUserDataScript(
 	envVars: string,
 	dbConnectionString?: string,
 	commitSha?: string,
-	customDomain?: string,
-	letsEncryptEmail?: string
+	customDomain?: string
 ): string {
 	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
 	
 	// Generate docker-compose.yml content
 	const composeServices: Record<string, any> = {};
 	const ports: string[] = [];
-	let websocketServiceName = "";
+	let mainAppPort = "";
 	let websocketPort = "";
 	
 	for (const svc of services) {
 		const servicePort = svc.port || 8080;
 		ports.push(String(servicePort));
 		
-		// Check if this is a websocket service
+		// Detect WebSocket service by name
 		if (svc.name.toLowerCase().includes('websocket')) {
-			websocketServiceName = svc.name;
 			websocketPort = String(servicePort);
+		} else if (!mainAppPort) {
+			// First non-websocket service is the main app
+			mainAppPort = String(servicePort);
 		}
 		
 		composeServices[svc.name] = {
@@ -264,14 +265,21 @@ function generateUserDataScript(
 
 	// Build .env content and base64-encode so values with commas/newlines/quotes (e.g. JSON keys) are safe
 	const envEntries = parseEnvVarsAllowCommasInValues(envVars);
+	
+	// Extract domain and setup dynamic URLs
+	const domainHost = normalizeDomain(customDomain);
+	if (domainHost) {
+		// Override with production URLs
+		envEntries.push({ key: "NEXT_PUBLIC_WS_URL", value: `wss://${domainHost}/ws` });
+		envEntries.push({ key: "NEXTAUTH_URL", value: `https://${domainHost}` });
+	}
+	
 	if (dbConnectionString) {
 		envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
 	}
 	const envFileContent = buildEnvFileContent(envEntries);
 	const envBase64 = envFileContent ? Buffer.from(envFileContent, "utf8").toString("base64") : "";
 
-	const domainHost = normalizeDomain(customDomain);
-	const email = (letsEncryptEmail || "").trim();
 
 	return `#!/bin/bash
 set -e
@@ -343,21 +351,10 @@ cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
     server_name _;
-    ${websocketServiceName ? `
-    # WebSocket endpoint (${websocketServiceName} service on port ${websocketPort})
-    location /ws {
-        proxy_pass http://${websocketServiceName}:${websocketPort};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400;
-    }
-` : ''}
+
     # Main application
     location / {
-        proxy_pass http://127.0.0.1:${ports[0] || 8080};
+        proxy_pass http://127.0.0.1:${mainAppPort || 8080};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection \$connection_upgrade;
@@ -365,6 +362,18 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_cache_bypass \$http_upgrade;
     }
+	${websocketPort ? `
+    # WebSocket endpoint (service on port ${websocketPort})
+    location /ws {
+        proxy_pass http://127.0.0.1:${websocketPort};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_read_timeout 86400;
+    }
+` : ''}
 }
 NGINXEOF
 
@@ -503,8 +512,7 @@ export async function handleEC2(
 		deployConfig.env_vars || '',
 		dbConnectionString,
 		deployConfig.commitSha,
-		sharedAlbEnabled ? undefined : deployConfig.custom_url,
-		sharedAlbEnabled ? undefined : config.LETSENCRYPT_EMAIL
+		sharedAlbEnabled ? undefined : deployConfig.custom_url
 	);
 
 
