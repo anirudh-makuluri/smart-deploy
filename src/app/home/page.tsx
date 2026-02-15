@@ -13,6 +13,7 @@ export default function HomePage() {
 	const { repoList, deployments } = useAppData();
 	const [isDeploySheetOpen, setIsDeploySheetOpen] = React.useState(false);
 	const [selectedRepo, setSelectedRepo] = React.useState<repoType | null>(null);
+	const [activeView, setActiveView] = React.useState<"overview" | "deployments">("overview");
 
 	const availableRepos = React.useMemo(() => {
 		return repoList.filter((repo) => !deployments.some((dep) => dep.url === repo.html_url));
@@ -36,9 +37,13 @@ export default function HomePage() {
 			<div className="landing-bg h-svh overflow-hidden flex flex-col text-foreground">
 				<Header />
 				<div className="flex flex-1 min-h-0 flex-row w-full overflow-hidden">
-					<DashboardSideBar onOpenDeploySheet={openDeploySheet} />
+					<DashboardSideBar
+						onOpenDeploySheet={openDeploySheet}
+						activeView={activeView}
+						onViewChange={setActiveView}
+					/>
 					<div className="w-px shrink-0 bg-border/60" aria-hidden />
-					<DashboardMain onNewDeploy={() => openDeploySheet()} />
+					<DashboardMain onNewDeploy={() => openDeploySheet()} activeView={activeView} />
 				</div>
 			</div>
 			{selectedRepo && (

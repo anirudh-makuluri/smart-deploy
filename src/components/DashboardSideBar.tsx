@@ -6,15 +6,17 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { repoType } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
-import { RefreshCcw, FolderGit2, Plus, ExternalLink } from "lucide-react";
+import { RefreshCcw, FolderGit2, Plus, ExternalLink, LayoutGrid, History, LineChart } from "lucide-react";
 import { toast } from "sonner";
 import { formatTimestamp } from "@/lib/utils";
 
 type DashboardSideBarProps = {
 	onOpenDeploySheet: (repo?: repoType) => void;
+	activeView: "overview" | "deployments";
+	onViewChange: (view: "overview" | "deployments") => void;
 };
 
-export default function DashboardSideBar({ onOpenDeploySheet }: DashboardSideBarProps) {
+export default function DashboardSideBar({ onOpenDeploySheet, activeView, onViewChange }: DashboardSideBarProps) {
 	const { data: session } = useSession();
 	const { repoList, deployments, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
@@ -115,6 +117,39 @@ export default function DashboardSideBar({ onOpenDeploySheet }: DashboardSideBar
 				<p className="text-foreground font-semibold truncate mt-0.5">{session?.user?.name ?? session?.user?.email}</p>
 			</div>
 			<div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
+				<div className="shrink-0 mb-5">
+					<p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Main</p>
+					<div className="space-y-2">
+						<button
+							type="button"
+							onClick={() => onViewChange("overview")}
+							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+								activeView === "overview"
+									? "border-primary/40 bg-primary/10 text-primary"
+									: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
+							}`}
+						>
+							<LayoutGrid className="size-4" />
+							Overview
+						</button>
+						<button
+							type="button"
+							onClick={() => onViewChange("deployments")}
+							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
+								activeView === "deployments"
+									? "border-primary/40 bg-primary/10 text-primary"
+									: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
+							}`}
+						>
+							<History className="size-4" />
+							Deployments
+						</button>
+						<div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background text-muted-foreground/60 cursor-not-allowed">
+							<LineChart className="size-4" />
+							Analytics
+						</div>
+					</div>
+				</div>
 				<div className="shrink-0 flex items-center justify-between gap-2 mb-4">
 					<div className="flex items-center gap-2">
 						<FolderGit2 className="size-5 text-primary" />
