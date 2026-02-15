@@ -58,7 +58,7 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 			<DropdownMenuTrigger asChild>
 				<Button
 					disabled={disabled || isFetchingCommit}
-					className="landing-build-blue hover:opacity-95 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+					className="landing-build-blue hover:opacity-45 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
 				>
 					<Rocket className="h-4 w-4" />
 					{isFetchingCommit ? "Fetching..." : "Deploy"}

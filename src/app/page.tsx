@@ -24,6 +24,27 @@ export default function Home() {
 	const [currentCharIndex, setCurrentCharIndex] = useState(0);
 	const [cursorVisible, setCursorVisible] = useState(true);
 	const [blinkCount, setBlinkCount] = useState(0);
+	const [accentColor, setAccentColor] = useState<"green" | "blue" | "red">("green");
+
+	useEffect(() => {
+		const stored = typeof window !== "undefined"
+			? localStorage.getItem("smartdeploy-accent")
+			: null;
+		if (stored === "green" || stored === "blue" || stored === "red") {
+			setAccentColor(stored);
+			document.documentElement.setAttribute("data-accent", stored);
+			return;
+		}
+		document.documentElement.setAttribute("data-accent", "green");
+	}, []);
+
+	function handleAccentChange(color: "green" | "blue" | "red") {
+		setAccentColor(color);
+		if (typeof window !== "undefined") {
+			localStorage.setItem("smartdeploy-accent", color);
+		}
+		document.documentElement.setAttribute("data-accent", color);
+	}
 
 	useEffect(() => {
 		if (currentLineIndex >= terminalLines.length) {
@@ -78,9 +99,9 @@ export default function Home() {
 
 	const getLineColor = (index: number, text: string) => {
 		if (text.startsWith("[INFO]") || text.includes("Deploying") || text.includes("✓")) {
-			return "text-emerald-400";
+			return "text-primary";
 		}
-		return "text-gray-400";
+		return "text-muted-foreground";
 	};
 
 	return (
@@ -105,7 +126,7 @@ export default function Home() {
 				<div className="flex items-center gap-3">
 					<Link
 						href={session ? "/home" : "/auth"}
-						className="bg-emerald-500 hover:bg-emerald-600 text-black font-medium px-5 py-2 rounded-md transition-all text-sm"
+						className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium px-5 py-2 rounded-md transition-all text-sm"
 					>
 						{session ? "Go to Dashboard" : "Get Started"}
 					</Link>
@@ -117,30 +138,30 @@ export default function Home() {
 				<div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
 					{/* Left Side */}
 					<div className="flex flex-col gap-6">
-						<p className="text-emerald-400 font-mono text-xs uppercase tracking-wider">
+						<p className="text-primary font-mono text-xs uppercase tracking-wider">
 							TRYING REACT // AP.JS
 						</p>
 						<h1 className="text-5xl lg:text-7xl font-bold leading-tight">
-							Code to <span className="text-emerald-400">Cloud.</span>
+							Code to <span className="text-primary">Cloud.</span>
 						</h1>
 						<div className="flex flex-col gap-2 text-muted-foreground">
 							<p className="flex items-start gap-2">
-								<span className="text-emerald-400">&gt;</span>
+								<span className="text-primary">&gt;</span>
 								<span>AI-driven infrastructure orchestration.</span>
 							</p>
 							<p className="flex items-start gap-2">
-								<span className="text-emerald-400">&gt;</span>
+								<span className="text-primary">&gt;</span>
 								<span>Zero-config deployments.</span>
 							</p>
 							<p className="flex items-start gap-2">
-								<span className="text-emerald-400">&gt;</span>
+								<span className="text-primary">&gt;</span>
 								<span>Global edge distribution.</span>
 							</p>
 						</div>
 						<div className="flex justify-center sm:justify-start flex-wrap gap-3 mt-4">
 							<Link
 								href={session ? "/home" : "/auth"}
-								className="bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-medium px-6 py-3 rounded-md transition-all text-sm"
+								className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono font-medium px-6 py-3 rounded-md transition-all text-sm"
 							>
 								TEST_DEPLOYMENTS --force
 							</Link>
@@ -155,12 +176,50 @@ export default function Home() {
 
 					{/* Right Side - Terminal */}
 					<div className="relative">
-						<div className="bg-black/90 border border-emerald-500/30 rounded-lg p-6 font-mono text-sm shadow-2xl shadow-emerald-500/20">
-							<div className="flex items-center gap-2 mb-4 pb-3 border-b border-emerald-500/30">
-								<div className="size-3 rounded-full bg-red-500" />
-								<div className="size-3 rounded-full bg-yellow-500" />
-								<div className="size-3 rounded-full bg-green-500" />
-								<span className="ml-2 text-emerald-400 text-xs">$ ANALYSIS OUTPUT</span>
+						<div className="bg-black/90 border border-primary/30 rounded-lg p-6 font-mono text-sm shadow-2xl shadow-primary/20">
+							<div className="flex items-center gap-2 mb-4 pb-3 border-b border-primary/30">
+								<div className="flex items-center gap-2 ml-2">
+									<button
+										type="button"
+										onClick={() => handleAccentChange("green")}
+										className={`size-4 rounded-full border transition-all ${
+											accentColor === "green"
+												? "border-primary/70 ring-2 ring-primary/40"
+												: "border-border/70 hover:border-primary/40"
+										}`}
+										aria-label="Set accent color to green"
+										aria-pressed={accentColor === "green"}
+									>
+										<span className="block size-full rounded-full bg-[#25f46a]" />
+									</button>
+									<button
+										type="button"
+										onClick={() => handleAccentChange("blue")}
+										className={`size-4 rounded-full border transition-all ${
+											accentColor === "blue"
+												? "border-primary/70 ring-2 ring-primary/40"
+												: "border-border/70 hover:border-primary/40"
+										}`}
+										aria-label="Set accent color to blue"
+										aria-pressed={accentColor === "blue"}
+									>
+										<span className="block size-full rounded-full bg-[#3b82f6]" />
+									</button>
+									<button
+										type="button"
+										onClick={() => handleAccentChange("red")}
+										className={`size-4 rounded-full border transition-all ${
+											accentColor === "red"
+												? "border-primary/70 ring-2 ring-primary/40"
+												: "border-border/70 hover:border-primary/40"
+										}`}
+										aria-label="Set accent color to red"
+										aria-pressed={accentColor === "red"}
+									>
+										<span className="block size-full rounded-full bg-[#ef4444]" />
+									</button>
+								</div>
+								<span className="ml-2 text-primary text-xs">$ ANALYSIS OUTPUT</span>
 							</div>
 							<div className="space-y-1 text-xs min-h-30">
 								{displayedText.map((line, index) => (
@@ -198,7 +257,7 @@ export default function Home() {
 			{/* The SmartDeploy Flow */}
 			<section id="how-it-works" className="px-6 lg:px-12 py-20 bg-muted/20 border-y border-border/50">
 				<div className="max-w-7xl mx-auto">
-					<p className="text-emerald-400 font-mono text-xs uppercase tracking-wider text-center mb-2">
+					<p className="text-primary font-mono text-xs uppercase tracking-wider text-center mb-2">
 						QUESTION FROM // PIPELINE
 					</p>
 					<h2 className="text-4xl lg:text-5xl font-bold text-center mb-3">
@@ -211,8 +270,8 @@ export default function Home() {
 					<div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
 						{/* Step 1 */}
 						<div className="flex flex-col gap-4">
-							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-								<GitBranch className="size-8 text-emerald-400" />
+							<div className="size-16 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+								<GitBranch className="size-8 text-primary" />
 							</div>
 							<h3 className="text-xl font-bold">01. Connect Repo</h3>
 							<p className="text-sm text-muted-foreground">
@@ -222,8 +281,8 @@ export default function Home() {
 
 						{/* Step 2 */}
 						<div className="flex flex-col gap-4">
-							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-								<Scan className="size-8 text-emerald-400" />
+							<div className="size-16 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+								<Scan className="size-8 text-primary" />
 							</div>
 							<h3 className="text-xl font-bold">02. AI Project Scan</h3>
 							<p className="text-sm text-muted-foreground">
@@ -233,8 +292,8 @@ export default function Home() {
 
 						{/* Step 3 */}
 						<div className="flex flex-col gap-4">
-							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-								<Package className="size-8 text-emerald-400" />
+							<div className="size-16 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+								<Package className="size-8 text-primary" />
 							</div>
 							<h3 className="text-xl font-bold">03. Automated Build</h3>
 							<p className="text-sm text-muted-foreground">
@@ -244,8 +303,8 @@ export default function Home() {
 
 						{/* Step 4 */}
 						<div className="flex flex-col gap-4">
-							<div className="size-16 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-								<Rocket className="size-8 text-emerald-400" />
+							<div className="size-16 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+								<Rocket className="size-8 text-primary" />
 							</div>
 							<h3 className="text-xl font-bold">04. Instant Deployment</h3>
 							<p className="text-sm text-muted-foreground">
@@ -270,8 +329,8 @@ export default function Home() {
 								Pure engineering, zero friction.
 							</p>
 							<div className="space-y-2 font-mono text-sm">
-								<p className="text-emerald-400">HTML/SLA: <span className="text-foreground">99.99%</span></p>
-								<p className="text-emerald-400">AVAILABILITY: <span className="text-foreground">&lt;10ms</span></p>
+								<p className="text-primary">HTML/SLA: <span className="text-foreground">99.99%</span></p>
+								<p className="text-primary">AVAILABILITY: <span className="text-foreground">&lt;10ms</span></p>
 							</div>
 						</div>
 
@@ -280,8 +339,8 @@ export default function Home() {
 							{/* Feature 1 */}
 							<div className="bg-card border border-border/50 rounded-lg p-6">
 								<div className="flex items-start gap-4">
-									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-										<Scan className="size-6 text-emerald-400" />
+									<div className="size-12 shrink-0 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+										<Scan className="size-6 text-primary" />
 									</div>
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">01_AUTO_SCAN</h3>
@@ -295,8 +354,8 @@ export default function Home() {
 							{/* Feature 2 */}
 							<div className="bg-card border border-border/50 rounded-lg p-6">
 								<div className="flex items-start gap-4">
-									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-										<span className="text-emerald-400 text-2xl">⚡</span>
+									<div className="size-12 shrink-0 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+										<span className="text-primary text-2xl">⚡</span>
 									</div>
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">02_MULTI_REGION</h3>
@@ -310,8 +369,8 @@ export default function Home() {
 							{/* Feature 3 */}
 							<div className="bg-card border border-border/50 rounded-lg p-6">
 								<div className="flex items-start gap-4">
-									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-										<span className="text-emerald-400 text-2xl">▦</span>
+									<div className="size-12 shrink-0 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+										<span className="text-primary text-2xl">▦</span>
 									</div>
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">03_DB_MESH</h3>
@@ -325,8 +384,8 @@ export default function Home() {
 							{/* Feature 4 */}
 							<div className="bg-card border border-border/50 rounded-lg p-6">
 								<div className="flex items-start gap-4">
-									<div className="size-12 shrink-0 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-										<span className="text-emerald-400 text-2xl">⚙</span>
+									<div className="size-12 shrink-0 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+										<span className="text-primary text-2xl">⚙</span>
 									</div>
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">04_STREAM_LOGS</h3>
@@ -343,20 +402,20 @@ export default function Home() {
 			{/* CTA Section */}
 			<section className="px-6 lg:px-12 py-20 bg-muted/20">
 				<div className="max-w-4xl mx-auto">
-					<div className="bg-linear-to-br from-emerald-500/20 to-emerald-600/10 border-4 border-emerald-500/50 rounded-2xl p-12">
+					<div className="bg-linear-to-br from-primary/20 to-primary/10 border-4 border-primary/50 rounded-2xl p-12">
 						<div className="bg-black rounded-xl p-8 lg:p-12">
 							<h2 className="text-3xl lg:text-4xl font-bold text-center mb-8">
 								Ready to Initialize?
 							</h2>
-							<div className="bg-gray-900 border border-emerald-500/30 rounded-lg p-6 mb-8 font-mono text-sm lg:text-base">
-								<p className="text-emerald-400">
+							<div className="bg-gray-900 border border-primary/30 rounded-lg p-6 mb-8 font-mono text-sm lg:text-base">
+								<p className="text-primary">
 									$ npx smartdeploy init --project-name=my-big-thing
 								</p>
 							</div>
 							<div className="flex flex-wrap justify-center gap-4">
 								<Link
 									href="/auth"
-									className="bg-emerald-500 hover:bg-emerald-600 text-black font-mono font-medium px-8 py-3 rounded-md transition-all"
+									className="bg-primary hover:bg-primary/90 text-primary-foreground font-mono font-medium px-8 py-3 rounded-md transition-all"
 								>
 									START_YOUR_BUILD
 								</Link>
@@ -434,8 +493,8 @@ export default function Home() {
 							© 2026 SmartDeploy Inc. All rights reserved.
 						</p>
 						<div className="flex items-center gap-2 text-sm">
-							<CheckCircle className="size-4 text-emerald-400" />
-							<span className="text-emerald-400 font-medium">ALL SYSTEMS OPERATIONAL</span>
+							<CheckCircle className="size-4 text-primary" />
+							<span className="text-primary font-medium">ALL SYSTEMS OPERATIONAL</span>
 						</div>
 					</div>
 				</div>

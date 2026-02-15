@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="6" fill="#25f46a"/>
+  <rect width="32" height="32" rx="6" fill="#0b0f0d"/>
   <!-- Layers icon: 3 stacked shapes -->
   <path d="M16 6L6 11v3l10 5 10-5v-3L16 6z" fill="white" fill-opacity="0.95"/>
   <path d="M6 14l10 5 10-5v3l-10 5-10-5v-3z" fill="white" fill-opacity="0.85"/>
