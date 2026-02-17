@@ -1,6 +1,7 @@
 import fs from "fs";
-import os from "os"
+import os from "os";
 import path from "path";
+import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
 import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails, DeployStep } from "../app/types";
@@ -209,11 +210,18 @@ async function saveDeploymentToDB(
 		console.warn("No userID provided - skipping database save");
 		return;
 	}
+	// Use provided deployment ID or create one on the spot so we always persist the deployment
+	let deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
+	if (!deploymentId) {
+		deploymentId = crypto.randomUUID?.() ?? `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+		console.log("No deployment ID provided - created:", deploymentId);
+	}
 
 	try {
-		// Prepare minimal deployment config for DB
+		// Prepare minimal deployment config for DB (use resolved id so new deployments get saved)
 		const minimalDeployment: DeployConfig = {
 			...deployConfig,
+			id: deploymentId,
 			status: success ? "running" : "didnt_deploy",
 			...(deployUrl && { deployUrl }),
 			...(customUrl && { custom_url: customUrl }),
@@ -231,7 +239,7 @@ async function saveDeploymentToDB(
 			console.log("Deployment saved to DB:", updateResponse.success);
 		}
 
-		// Record deployment history with commit and branch info
+		// Record deployment history under user so it survives service deletion
 		const historyEntry = {
 			timestamp: new Date().toISOString(),
 			success,
@@ -240,10 +248,12 @@ async function saveDeploymentToDB(
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
+			...(deployConfig.service_name?.trim() && { serviceName: deployConfig.service_name.trim() }),
+			...(deployConfig.url?.trim() && { repoUrl: deployConfig.url.trim() }),
 		};
 
 		const historyResponse = await dbHelper.addDeploymentHistory(
-			deployConfig.id,
+			deploymentId,
 			userID,
 			historyEntry
 		);
@@ -392,7 +402,7 @@ async function handleAWSDeploy(
 	// Route to appropriate AWS service
 	switch (target) {
 		case 'amplify':
-			const amplifyResult = await handleAmplify(deployConfig, appDir, ws);
+			const amplifyResult = await handleAmplify(deployConfig, appDir, ws, send);
 			deployUrl = amplifyResult.url;
 			serviceDetails.amplify = amplifyResult.details;
 			success = amplifyResult.success;
@@ -400,7 +410,7 @@ async function handleAWSDeploy(
 			break;
 
 		case 'elastic-beanstalk':
-			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws);
+			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws, send);
 			deployUrl = ebResult.url;
 			serviceDetails.elasticBeanstalk = ebResult.details;
 			success = ebResult.success;
@@ -413,7 +423,8 @@ async function handleAWSDeploy(
 				appDir,
 				multiServiceConfig,
 				dbConnectionString,
-				ws
+				ws,
+				send
 			);
 			// Build summary
 			let summary = `\nDeployment completed!\n\nDeployed services:\n`;
@@ -444,7 +455,8 @@ async function handleAWSDeploy(
 				multiServiceConfig,
 				token,
 				dbConnectionString,
-				ws
+				ws,
+				send
 			);
 			success = ec2Result.success;
 

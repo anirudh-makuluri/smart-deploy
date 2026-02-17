@@ -605,7 +605,23 @@ async function buildAndPushToECR(
 		}
 
 		if (buildStatus === "FAILED" || buildStatus === "FAULT" || buildStatus === "TIMED_OUT" || buildStatus === "STOPPED") {
-			throw new Error(`CodeBuild build failed with status: ${buildStatus}. Check AWS CodeBuild console for details.`);
+			// Extract detailed failure info from the build response
+			const failedPhases = (build.phases || [])
+				.filter((p: any) => p.phaseStatus === "FAILED")
+				.map((p: any) => {
+					const contexts = (p.contexts || [])
+						.map((c: any) => c.message)
+						.filter(Boolean)
+						.join('; ');
+					return `${p.phaseType}: ${contexts || 'no details'}`;
+				});
+			const phaseDetail = failedPhases.length > 0
+				? `\nFailed phases:\n  ${failedPhases.join('\n  ')}`
+				: '';
+			const logsUrl = build.logs?.deepLink || '';
+			const logsInfo = logsUrl ? `\nBuild logs: ${logsUrl}` : '';
+			send(`❌ CodeBuild build ${buildStatus}${phaseDetail}${logsInfo}`, 'docker');
+			throw new Error(`CodeBuild build failed with status: ${buildStatus}.${phaseDetail}${logsInfo}`);
 		}
 	}
 	console.log('Build status: ', buildStatus);
@@ -1124,15 +1140,17 @@ async function createOrUpdateService(
 
 /**
  * Handles deployment to AWS ECS Fargate
+ * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
  */
 export async function handleECS(
 	deployConfig: DeployConfig,
 	appDir: string,
 	multiServiceConfig: MultiServiceConfig,
 	dbConnectionString: string | undefined,
-	ws: any
+	ws: any,
+	parentSend?: (msg: string, id: string) => void
 ): Promise<{  success: boolean, serviceUrls: Map<string, string>; deployedServices: string[]; sharedAlbDns?: string; details: ECSDeployDetails }> {
-	const send = createWebSocketLogger(ws);
+	const send = parentSend || createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -1368,7 +1386,7 @@ export async function handleECS(
 		console.log('ECS service created/updated: ', ecsServiceName);	
 		// Wait for service to be stable
 		send(`Waiting for service ${service.name} to be stable...`, 'deploy');
-		await waitForServiceStable(clusterArn, ecsServiceName, region, ws);
+		await waitForServiceStable(clusterArn, ecsServiceName, region, ws, send);
 		console.log('Service stable');
 		
 		console.log('Service URL: ', serviceUrl);
@@ -1413,41 +1431,133 @@ function detectLanguage(dir: string): string {
 
 /**
  * Waits for ECS service to be stable
+ * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
  */
 async function waitForServiceStable(
 	clusterArn: string,
 	serviceName: string,
 	region: string,
-	ws: any
+	ws: any,
+	parentSend?: (msg: string, id: string) => void
 ): Promise<void> {
-	const send = createWebSocketLogger(ws);
+	const send = parentSend || createWebSocketLogger(ws);
 
 	let attempts = 0;
 	const maxAttempts = 30;
+	let lastEventMessage = '';
 
 	while (attempts < maxAttempts) {
 		try {
-			const output = await runAWSCommand([
+			// Fetch detailed deployment status (desired, running, pending, failed counts and rollout state)
+			const statusOutput = await runAWSCommand([
 				"ecs", "describe-services",
 				"--cluster", clusterArn,
 				"--services", serviceName,
-				"--query", "services[0].deployments[0].runningCount",
+				"--query", "services[0].deployments[0].[desiredCount,runningCount,pendingCount,failedTasks,rolloutState]",
 				"--output", "text",
 				"--region", region
 			], ws, 'deploy');
 
-			const runningCount = parseInt(output.trim());
-			if (runningCount > 0) {
-				send(`Service is running with ${runningCount} task(s)`, 'deploy');
+			const parts = statusOutput.trim().split(/\t|\s+/);
+			const desired = parseInt(parts[0]) || 0;
+			const running = parseInt(parts[1]) || 0;
+			const pending = parseInt(parts[2]) || 0;
+			const failed = parseInt(parts[3]) || 0;
+			const rollout = parts[4] || 'UNKNOWN';
+
+			if (running >= desired && desired > 0) {
+				send(`✅ Service is running with ${running} task(s) (desired: ${desired})`, 'deploy');
 				return;
 			}
+
+			if (rollout === 'FAILED') {
+				send(`❌ Service deployment rollout FAILED`, 'deploy');
+				// Fetch stopped task reason for diagnostic info
+				try {
+					const stoppedTasksOutput = await runAWSCommand([
+						"ecs", "list-tasks",
+						"--cluster", clusterArn,
+						"--service-name", serviceName,
+						"--desired-status", "STOPPED",
+						"--query", "taskArns[:1]",
+						"--output", "text",
+						"--region", region
+					], ws, 'deploy');
+					const stoppedTaskArn = stoppedTasksOutput.trim();
+					if (stoppedTaskArn && stoppedTaskArn !== 'None') {
+						const taskDetail = await runAWSCommand([
+							"ecs", "describe-tasks",
+							"--cluster", clusterArn,
+							"--tasks", stoppedTaskArn,
+							"--query", "tasks[0].stoppedReason",
+							"--output", "text",
+							"--region", region
+						], ws, 'deploy');
+						if (taskDetail.trim() && taskDetail.trim() !== 'None') {
+							send(`  Stopped task reason: ${taskDetail.trim()}`, 'deploy');
+						}
+					}
+				} catch { /* ignore diagnostic errors */ }
+				break;
+			}
+
+			send(`  Tasks — Desired: ${desired}, Running: ${running}, Pending: ${pending}, Failed: ${failed} (Rollout: ${rollout}) — (${attempts + 1}/${maxAttempts})`, 'deploy');
+
+			// Show stopped task reasons if any tasks have failed
+			if (failed > 0) {
+				try {
+					const stoppedOutput = await runAWSCommand([
+						"ecs", "list-tasks",
+						"--cluster", clusterArn,
+						"--service-name", serviceName,
+						"--desired-status", "STOPPED",
+						"--query", "taskArns[:1]",
+						"--output", "text",
+						"--region", region
+					], ws, 'deploy');
+					const taskArn = stoppedOutput.trim();
+					if (taskArn && taskArn !== 'None') {
+						const reason = await runAWSCommand([
+							"ecs", "describe-tasks",
+							"--cluster", clusterArn,
+							"--tasks", taskArn,
+							"--query", "tasks[0].stoppedReason",
+							"--output", "text",
+							"--region", region
+						], ws, 'deploy');
+						if (reason.trim() && reason.trim() !== 'None') {
+							send(`  ⚠️ Stopped task reason: ${reason.trim()}`, 'deploy');
+						}
+					}
+				} catch { /* ignore diagnostic errors */ }
+			}
+
+			// Fetch latest ECS service event (e.g. "has reached a steady state", "registered 1 targets")
+			try {
+				const eventsOutput = await runAWSCommand([
+					"ecs", "describe-services",
+					"--cluster", clusterArn,
+					"--services", serviceName,
+					"--query", "services[0].events[:1].message",
+					"--output", "text",
+					"--region", region
+				], ws, 'deploy');
+				const latestEvent = eventsOutput.trim();
+				if (latestEvent && latestEvent !== 'None' && latestEvent !== lastEventMessage) {
+					send(`  → ${latestEvent}`, 'deploy');
+					lastEventMessage = latestEvent;
+				}
+			} catch { /* ignore event fetch errors */ }
 		} catch {
-			// Continue waiting
+			send(`  (waiting for service to respond...) (${attempts + 1}/${maxAttempts})`, 'deploy');
 		}
 
 		attempts++;
-		send(`Waiting for service to start... (${attempts}/${maxAttempts})`, 'deploy');
 		await new Promise(resolve => setTimeout(resolve, 10000));
+	}
+
+	if (attempts >= maxAttempts) {
+		send(`⚠️ Service did not stabilize within ${maxAttempts * 10}s. Check ECS console for details.`, 'deploy');
 	}
 }
 

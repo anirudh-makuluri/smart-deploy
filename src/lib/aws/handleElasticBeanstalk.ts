@@ -14,6 +14,56 @@ import {
 } from "./awsHelpers";
 import { getEBSolutionStack } from "./awsDeploymentSelector";
 
+/** Substring patterns to find a matching solution stack per language (AWS returns stacks newest-first) */
+const EB_LANGUAGE_STACK_PATTERNS: Record<string, string> = {
+	node: "Node.js 20",
+	python: "Python 3.11",
+	java: "Corretto 17",
+	go: "Go 1",
+	dotnet: "IIS 10.0",
+	php: "PHP 8.2",
+	ruby: "Ruby 3.2",
+};
+
+/**
+ * Resolves the Elastic Beanstalk solution stack by querying AWS for available stacks in the region.
+ * Uses the first available stack matching the language (e.g. "Python 3.11"); falls back to the
+ * default from getEBSolutionStack if the API call fails or no match is found.
+ */
+async function resolveEBSolutionStack(
+	language: string,
+	region: string,
+	ws: any,
+	send: (msg: string, id: string) => void,
+	fallback: string | null
+): Promise<string | null> {
+	const pattern = EB_LANGUAGE_STACK_PATTERNS[language];
+	if (!pattern || !fallback) return fallback;
+	try {
+		const out = await runAWSCommand(
+			[
+				"elasticbeanstalk",
+				"list-available-solution-stacks",
+				"--output",
+				"json",
+				`--region=${region}`,
+			],
+			ws,
+			"deploy"
+		);
+		const data = JSON.parse(out.trim());
+		const stacks: string[] = data.SolutionStacks || [];
+		const match = stacks.find((s: string) => s.includes(pattern));
+		if (match) {
+			send(`Resolved solution stack from AWS: ${match}`, "detect");
+			return match;
+		}
+	} catch {
+		// Use fallback if list fails or no match
+	}
+	return fallback;
+}
+
 /**
  * Detects the language of an application
  */
@@ -128,13 +178,15 @@ container_commands:
 
 /**
  * Handles deployment to AWS Elastic Beanstalk
+ * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
  */
 export async function handleElasticBeanstalk(
 	deployConfig: DeployConfig,
 	appDir: string,
-	ws: any
+	ws: any,
+	parentSend?: (msg: string, id: string) => void
 ): Promise<{  success: boolean, url: string; details: ElasticBeanstalkDeployDetails }> {
-	const send = createWebSocketLogger(ws);
+	const send = parentSend || createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -144,15 +196,15 @@ export async function handleElasticBeanstalk(
 	const versionLabel = `v-${Date.now()}`;
 	const bucketName = deployConfig.elasticBeanstalk?.s3Bucket?.trim() || `smartdeploy-eb-${config.AWS_ACCESS_KEY_ID.slice(-8).toLowerCase()}`;
 
-	// Detect language and get solution stack
+	// Detect language and resolve solution stack (from AWS when possible, so we use a stack that exists in this region)
 	const language = detectLanguage(appDir);
-	const solutionStack = getEBSolutionStack(language);
-	
-	if (!solutionStack) {
+	const defaultStack = getEBSolutionStack(language);
+	if (!defaultStack) {
 		throw new Error(`Language ${language} is not supported by Elastic Beanstalk`);
 	}
+	const solutionStack = (await resolveEBSolutionStack(language, region, ws, send, defaultStack)) || defaultStack;
 
-	send(`✅ Detected ${language} application. Using solution stack: ${solutionStack}`, 'detect');
+	send(`✅ Detected ${language} application. Using solution stack: ${solutionStack}`, "detect");
 
 	const runCmd = deployConfig.core_deployment_info?.run_cmd || (language === 'node' ? 'npm start' : 'python app.py');
 	if (language === 'node') validateNodeApp(appDir, runCmd);
@@ -303,6 +355,7 @@ export async function handleElasticBeanstalk(
 	let attempts = 0;
 	const maxAttempts = 60;
 	let deployedUrl = '';
+	let lastEventMessage = '';
 	
 	while (attempts < maxAttempts) {
 		try {
@@ -310,7 +363,7 @@ export async function handleElasticBeanstalk(
 				"elasticbeanstalk", "describe-environments",
 				`--application-name=${appName}`,
 				`--environment-names=${envName}`,
-				"--query", "Environments[0].[Status,Health,CNAME]",
+				"--query", "Environments[0].[Status,Health,HealthStatus,CNAME]",
 				"--output", "text",
 				`--region=${region}`
 			], ws, 'deploy');
@@ -318,25 +371,70 @@ export async function handleElasticBeanstalk(
 			const parts = statusOutput.trim().split(/\s+/);
 			const status = parts[0] || '';
 			const health = parts[1] || '';
-			const cname = parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
+			const healthStatus = parts[2] || '';
+			const cname = parts[3] || parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
 			
-			if (status === 'Ready' && HEALTH_OK.includes(health) && cname) {
+			if (status === 'Ready' && HEALTH_OK.includes(health) && cname && !cname.startsWith('None')) {
 				deployedUrl = `http://${cname}`;
+				send(`Environment is Ready and healthy (${health})`, 'deploy');
 				break;
 			}
 			
 			if (status === 'Ready' && HEALTH_BAD.includes(health)) {
 				send(`Environment is Ready but health is ${health}. Deployment may have timed out (e.g. npm install/build). Check AWS EB console for logs.`, 'deploy');
+				// Fetch the latest events to provide more context about the failure
+				try {
+					const failEvents = await runAWSCommand([
+						"elasticbeanstalk", "describe-events",
+						`--application-name=${appName}`,
+						`--environment-name=${envName}`,
+						"--max-items", "5",
+						"--query", "Events[:5].Message",
+						"--output", "json",
+						`--region=${region}`
+					], ws, 'deploy');
+					const failEventList = JSON.parse(failEvents.trim());
+					if (Array.isArray(failEventList)) {
+						for (const evt of failEventList) {
+							if (evt) send(`  EB Event: ${evt}`, 'deploy');
+						}
+					}
+				} catch { /* ignore event fetch errors */ }
 				throw new Error(
 					`Elastic Beanstalk environment health is ${health}. The deployment command likely timed out on the instance. ` +
 					`Try increasing the timeout in AWS EB configuration or check the EB environment events/logs for errors.`
 				);
 			}
 			
-			send(`Environment status: ${status}, Health: ${health} (${attempts + 1}/${maxAttempts})`, 'deploy');
+			// Build a rich status message
+			const healthInfo = healthStatus && healthStatus !== 'None' ? ` (${healthStatus})` : '';
+			send(`Environment status: ${status}, Health: ${health}${healthInfo} — (${attempts + 1}/${maxAttempts})`, 'deploy');
+
+			// Fetch the latest EB environment events for more context on what's happening
+			try {
+				const eventsOutput = await runAWSCommand([
+					"elasticbeanstalk", "describe-events",
+					`--application-name=${appName}`,
+					`--environment-name=${envName}`,
+					"--max-items", "3",
+					"--query", "Events[:3].Message",
+					"--output", "json",
+					`--region=${region}`
+				], ws, 'deploy');
+				const eventList = JSON.parse(eventsOutput.trim());
+				if (Array.isArray(eventList) && eventList.length > 0) {
+					const latestEvent = eventList[0];
+					if (latestEvent && latestEvent !== lastEventMessage) {
+						send(`  → ${latestEvent}`, 'deploy');
+						lastEventMessage = latestEvent;
+					}
+				}
+			} catch {
+				// Ignore event fetch errors — non-critical
+			}
 		} catch (error: any) {
 			if (error?.message?.includes('Elastic Beanstalk environment health')) throw error;
-			// Continue waiting
+			send(`  (waiting for environment to respond...)`, 'deploy');
 		}
 		
 		attempts++;
@@ -345,22 +443,44 @@ export async function handleElasticBeanstalk(
 
 	if (!deployedUrl) {
 		// After timeout: only use URL if health is actually OK
+		send("Health wait timed out. Checking final environment status...", 'deploy');
 		try {
 			const statusOutput = await runAWSCommand([
 				"elasticbeanstalk", "describe-environments",
 				`--application-name=${appName}`,
 				`--environment-names=${envName}`,
-				"--query", "Environments[0].[Status,Health,CNAME]",
+				"--query", "Environments[0].[Status,Health,HealthStatus,CNAME]",
 				"--output", "text",
 				`--region=${region}`
 			], ws, 'deploy');
 			const parts = statusOutput.trim().split(/\s+/);
 			const status = parts[0];
 			const health = parts[1] || '';
-			const cname = parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
-			if (status === 'Ready' && HEALTH_OK.includes(health) && cname) {
+			const healthStatus = parts[2] || '';
+			const cname = parts[3] || parts[2] || (parts[1]?.includes('.') ? parts[1] : '');
+			send(`Final status: ${status}, Health: ${health} (${healthStatus})`, 'deploy');
+			if (status === 'Ready' && HEALTH_OK.includes(health) && cname && !cname.startsWith('None')) {
 				deployedUrl = `http://${cname}`;
 			} else if (status === 'Ready' && HEALTH_BAD.includes(health)) {
+				// Fetch recent events for failure context
+				try {
+					const eventsOutput = await runAWSCommand([
+						"elasticbeanstalk", "describe-events",
+						`--application-name=${appName}`,
+						`--environment-name=${envName}`,
+						"--max-items", "5",
+						"--query", "Events[:5].Message",
+						"--output", "json",
+						`--region=${region}`
+					], ws, 'deploy');
+					const eventList = JSON.parse(eventsOutput.trim());
+					if (Array.isArray(eventList)) {
+						send(`Recent EB events:`, 'deploy');
+						for (const evt of eventList) {
+							if (evt) send(`  → ${evt}`, 'deploy');
+						}
+					}
+				} catch { /* ignore */ }
 				throw new Error(
 					`Elastic Beanstalk did not become healthy (health: ${health}) within the wait time. ` +
 					`The deployment command may have timed out. Check the EB environment in AWS Console for details.`

@@ -11,6 +11,16 @@ const statusIcon = {
 	error: "❌",
 };
 
+function stepTimeLabel(step: DeployStep): string {
+	if (step.endedAt) {
+		return new Date(step.endedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+	}
+	if (step.startedAt) {
+		return new Date(step.startedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+	}
+	return "";
+}
+
 export default function DeploymentAccordion({ steps }: { steps: DeployStep[] }) {
 	const [openItem, setOpenItem] = useState<string | undefined>(steps[0]?.id);
 
@@ -21,6 +31,11 @@ export default function DeploymentAccordion({ steps }: { steps: DeployStep[] }) 
 					<AccordionTrigger className="text-foreground hover:text-teal-400 hover:no-underline">
 						<span className="flex items-center gap-2">
 							{statusIcon[step.status]} {step.label}
+							{stepTimeLabel(step) && (
+								<span className="text-muted-foreground text-xs font-normal">
+									{stepTimeLabel(step)}
+								</span>
+							)}
 						</span>
 					</AccordionTrigger>
 					<AccordionContent>

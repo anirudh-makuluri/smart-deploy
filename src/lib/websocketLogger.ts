@@ -25,17 +25,19 @@ export function createWebSocketLogger(ws: any) {
  */
 export function createDeployStepsLogger(ws: any, deploySteps: DeployStep[]) {
 	return (msg: string, id: string) => {
-		// Track step status
+		const now = new Date().toISOString();
 		let stepIndex = deploySteps.findIndex(s => s.id === id);
 		if (stepIndex === -1) {
-			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress' });
+			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress', startedAt: now });
 			stepIndex = deploySteps.length - 1;
 		} else {
 			deploySteps[stepIndex].logs.push(msg);
 			if (msg.startsWith('✅')) {
 				deploySteps[stepIndex].status = 'success';
+				deploySteps[stepIndex].endedAt = now;
 			} else if (msg.startsWith('❌')) {
 				deploySteps[stepIndex].status = 'error';
+				deploySteps[stepIndex].endedAt = now;
 			}
 		}
 		

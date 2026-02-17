@@ -63,6 +63,7 @@ export async function runCommandLiveWithWebSocket(
 ): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let output = "";
+		let stderrOutput = "";
 		// Create isolated environment - don't inherit parent NODE_PATH or other module resolution paths
 		const isolatedEnv = {
 			...process.env,
@@ -112,6 +113,7 @@ export async function runCommandLiveWithWebSocket(
 
 		child.stderr.on("data", (data) => {
 			const err = data.toString('utf8');
+			stderrOutput += err;
 			sendWS(err);
 			process.stderr.write(safeForWindowsConsole(err));
 		});
@@ -122,8 +124,12 @@ export async function runCommandLiveWithWebSocket(
 				resolve(output);
 			}
 			else {
+				// Include the last portion of stderr in the error message so callers
+				// (and deployment history) capture the actual failure reason, not just the exit code.
+				const stderrTail = stderrOutput.trim().slice(-1000);
+				const errorDetail = stderrTail ? `\n${stderrTail}` : '';
 				sendWS(`Failed: ${cmd} ${args.join(" ")} (exit ${code})`);
-				reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code}`));
+				reject(new Error(`${cmd} ${args.join(" ")} exited with code ${code}${errorDetail}`));
 			}
 		});
 

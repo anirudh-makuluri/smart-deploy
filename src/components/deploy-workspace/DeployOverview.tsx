@@ -7,6 +7,7 @@ import {
 	formatDeploymentTargetName,
 	getDeploymentDisplayUrl,
 } from "@/lib/utils";
+import { isDeploymentDisabled } from "@/lib/deploymentTargetFromMetadata";
 import DeployOptions from "@/components/DeployOptions";
 
 type DeployOverviewProps = {
@@ -29,6 +30,7 @@ export default function DeployOverview({
 	repo,
 }: DeployOverviewProps) {
 	const displayUrl = getDeploymentDisplayUrl(deployment);
+	const deployDisabled = isDeploymentDisabled(deployment);
 
 	return (
 		<div className="space-y-6">
@@ -54,7 +56,7 @@ export default function DeployOverview({
 					{onRedeploy && (
 						<DeployOptions
 							onDeploy={onRedeploy}
-							disabled={isDeploying}
+							disabled={isDeploying || deployDisabled}
 							repo={repo}
 							branch={deployment.branch || "main"}
 						/>
@@ -98,14 +100,16 @@ export default function DeployOverview({
 
 					<div className="rounded-xl border border-border bg-card">
 						<div className="grid grid-cols-1 divide-y divide-border text-sm text-muted-foreground">
-							<div className="flex items-center justify-between px-4 py-3">
-								<span>Deployed Service</span>
-								<span className="text-foreground">
-									{deployment.deploymentTarget
-										? formatDeploymentTargetName(deployment.deploymentTarget)
-										: "Pending"}
-								</span>
-							</div>
+							{!deployDisabled && (
+								<div className="flex items-center justify-between px-4 py-3">
+									<span>Deployed Service</span>
+									<span className="text-foreground">
+										{deployment.deploymentTarget
+											? formatDeploymentTargetName(deployment.deploymentTarget)
+											: "Pending"}
+									</span>
+								</div>
+							)}
 							<div className="flex items-center justify-between px-4 py-3">
 								<span>Live URL</span>
 								{displayUrl ? (

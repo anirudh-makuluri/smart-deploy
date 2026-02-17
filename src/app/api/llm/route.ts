@@ -22,22 +22,41 @@ export async function POST(req: Request) {
 	const { filePaths, fileContents } = await getRepoFilePaths(full_name, branch, token);
 	const prompt = createPrompt(filePaths, fileContents, include_extra_info);
 
-	const nodeEnv = process.env.ENVIRONMENT as string | undefined;
-	const isProd = nodeEnv == "production";
-
 	try {
-		const text = isProd ? await callGemini(prompt) : await callLocalLLM(prompt);
+		const text = await callLLMWithFallback(prompt);
 		return NextResponse.json({ response: text, filePaths, fileContents });
 	} catch (error: any) {
-		console.error(isProd ? "Bedrock API error:" : "Local LLM error:", error);
+		console.error("LLM error (Gemini and local fallback failed):", error);
 		return NextResponse.json(
 			{
-				error: isProd ? "Bedrock API request failed" : "Local LLM request failed",
+				error: "LLM request failed",
 				details: error?.message || "Unknown error",
 			},
 			{ status: 502 }
 		);
 	}
+}
+
+/** Try Gemini first; if it fails, run the same prompt on the local LLM. */
+async function callLLMWithFallback(prompt: string): Promise<string> {
+	const hasGemini = !!process.env.GEMINI_API_KEY?.trim();
+	const hasLocal = !!process.env.LOCAL_LLM_BASE_URL?.trim();
+
+	if (hasGemini) {
+		try {
+			return await callGemini(prompt);
+		} catch (geminiError) {
+			console.warn("Gemini failed, falling back to local LLM:", geminiError);
+			if (hasLocal) {
+				return await callLocalLLM(prompt);
+			}
+			throw geminiError;
+		}
+	}
+	if (hasLocal) {
+		return await callLocalLLM(prompt);
+	}
+	throw new Error("No LLM configured. Set GEMINI_API_KEY and/or LOCAL_LLM_BASE_URL.");
 }
 
 async function callBedrock(prompt: string): Promise<string> {
@@ -99,8 +118,8 @@ async function callBedrock(prompt: string): Promise<string> {
 
 async function callGemini(prompt: string): Promise<string> {
 	const geminiApiKey = process.env.GEMINI_API_KEY;
-	if (!geminiApiKey) {
-		throw new Error("Missing GEMINI_API_KEY env var (required when NODE_ENV=prod)");
+	if (!geminiApiKey?.trim()) {
+		throw new Error("Missing GEMINI_API_KEY env var");
 	}
 	const genAI = new GoogleGenerativeAI(geminiApiKey);
 	const model = genAI.getGenerativeModel({
@@ -117,8 +136,8 @@ async function callGemini(prompt: string): Promise<string> {
 
 async function callLocalLLM(prompt: string): Promise<string> {
 	const baseUrl = process.env.LOCAL_LLM_BASE_URL || "";
-	if (!baseUrl) {
-		throw new Error("Missing LOCAL_LLM_BASE_URL env var (required when NODE_ENV=local)");
+	if (!baseUrl?.trim()) {
+		throw new Error("Missing LOCAL_LLM_BASE_URL env var");
 	}
 	const model = process.env.LOCAL_LLM_MODEL || "mistral";
 	let res: Response;
@@ -188,13 +207,13 @@ ${include_extra_info ? `
   - WebSockets alone do NOT automatically mean ECS is required - they can run on Elastic Beanstalk or EC2. Only use ECS for multi-service architectures or when Dockerfile is present.
 - deployment_hints: { has_dockerfile (boolean), is_multi_service (boolean), has_database (boolean), nextjs_static_export (boolean; true only if Next.js and next.config has output: "export") }
 - service_compatibility: For each platform set true ONLY if this project can be deployed and run there. All boolean:
-  - amplify: true ONLY for static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export). These apps have build_cmd that produces build/, dist/, or out/ directory and NO run_cmd (or run_cmd is null). Static SPAs are perfect for Amplify. Do NOT set true for Next.js apps with SSR or API routes.
-  - elastic_beanstalk: true for single-service Node.js, Python, Java, Go, .NET, PHP, Ruby apps without Dockerfile; includes apps with WebSockets; no multi-service architecture required. This is the BEST fit for simple full-stack Node apps (including Next.js with SSR and WebSockets).
+  - amplify: true for (1) static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export with output: "export"), OR (2) minimal/simple Next.js apps (e.g. hello-world examples: no api/ directory, no API routes, no getServerSideProps – just a few simple pages). Amplify supports these; prefer it as the simplest option. Do NOT set true for Next.js with API routes, getServerSideProps, or clear backend complexity.
+  - elastic_beanstalk: true for single-service Node.js, Python, Java, Go, .NET, PHP, Ruby apps without Dockerfile; includes apps with WebSockets; no multi-service architecture required. Best fit for full-stack Next.js (API routes, SSR, databases). For minimal Next.js (hello-world style) you may set both amplify and elastic_beanstalk true so Amplify is preferred.
   - ecs: true ONLY for: (1) apps with explicit Dockerfile present, OR (2) true multi-service architecture (multiple interconnected services, not just frontend+websocket server), OR (3) apps requiring Docker-specific features. Do NOT use ECS just because WebSockets are present - Elastic Beanstalk handles WebSockets fine.
   - ec2: true for complex apps requiring full OS-level control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
-  Prefer marking the simplest compatible platform(s). For Next.js apps with full-stack features (SSR, API routes, WebSockets, databases), Elastic Beanstalk is the best choice - mark it true and others false unless there's a specific reason (Dockerfile, true multi-service, etc.).
+  Prefer the simplest compatible platform. For minimal Next.js (e.g. examples/hello-world: no api/, no API routes), set amplify=true so Amplify is recommended. For full Next.js with API routes or SSR complexity, set elastic_beanstalk=true (and amplify=false).
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;

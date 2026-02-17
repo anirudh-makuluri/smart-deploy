@@ -33,8 +33,10 @@ export const dbHelper = {
 
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
-			const deploymentId = deployConfig.id;
+			const deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
 			if (!deploymentId) return { error: "Deployment ID is required" };
+			// Firestore document IDs cannot contain '/' or be only whitespace
+			if (deploymentId.includes("/")) return { error: "Deployment ID cannot contain '/'." };
 
 			const userRef = db.collection("users").doc(userID);
 			const userDoc = await userRef.get();
@@ -47,7 +49,7 @@ export const dbHelper = {
 			const deploymentDoc = await deploymentRef.get();
 
 			if (deployConfig.status === 'stopped') {
-				await dbHelper.deleteDeploymentHistory(deploymentId);
+				// Do not delete deployment history — it is stored under the user and preserved
 				await deploymentRef.delete();
 
 				// Remove deployment ID from user's deploymentIds
@@ -127,7 +129,7 @@ export const dbHelper = {
 				return { error: "Unauthorized: deployment does not belong to user" };
 			}
 
-			await dbHelper.deleteDeploymentHistory(deploymentId);
+			// Do not delete deployment history — it is stored under the user and preserved
 			await deploymentRef.delete();
 
 			const userRef = db.collection("users").doc(userID);
@@ -203,16 +205,18 @@ export const dbHelper = {
 		entry: Omit<DeploymentHistoryEntry, "id" | "deploymentId">
 	) {
 		try {
-			const deploymentRef = db.collection("deployments").doc(deploymentId);
-			const deploymentDoc = await deploymentRef.get();
-			if (!deploymentDoc.exists) return { error: "Deployment not found" };
-			const data = deploymentDoc.data();
-			if (data?.ownerID !== userID) return { error: "Unauthorized" };
+			const id = deploymentId != null ? String(deploymentId).trim() : "";
+			if (!id || id.includes("/")) return { error: "Deployment ID is required and cannot contain '/'." };
 
-			const historyRef = deploymentRef.collection("history").doc();
+			const userRef = db.collection("users").doc(userID);
+			const userDoc = await userRef.get();
+			if (!userDoc.exists) return { error: "User not found" };
+
+			// Store history under user so it survives when the deployment (service) is deleted
+			const historyRef = userRef.collection("deploymentHistory").doc();
 			const fullEntry: DeploymentHistoryEntry = {
 				id: historyRef.id,
-				deploymentId,
+				deploymentId: id,
 				...entry,
 			};
 			await historyRef.set(fullEntry);
@@ -225,14 +229,15 @@ export const dbHelper = {
 
 	getDeploymentHistory: async function (deploymentId: string, userID: string) {
 		try {
-			const deploymentRef = db.collection("deployments").doc(deploymentId);
-			const deploymentDoc = await deploymentRef.get();
-			if (!deploymentDoc.exists) return { error: "Deployment not found" };
-			const data = deploymentDoc.data();
-			if (data?.ownerID !== userID) return { error: "Unauthorized" };
+			const userRef = db.collection("users").doc(userID);
+			const userDoc = await userRef.get();
+			if (!userDoc.exists) return { error: "User not found" };
 
-			const snapshot = await deploymentRef
-				.collection("history")
+			// History is stored under user; filter by deploymentId (works for active and deleted deployments)
+			// Requires composite index: deploymentHistory (deploymentId Ascending, timestamp Descending)
+			const snapshot = await userRef
+				.collection("deploymentHistory")
+				.where("deploymentId", "==", deploymentId)
 				.orderBy("timestamp", "desc")
 				.get();
 
@@ -255,54 +260,18 @@ export const dbHelper = {
 			const userDoc = await userRef.get();
 			if (!userDoc.exists) return { error: "User doesn't exist" };
 
-			const userData = userDoc.data();
-			const deploymentIds: string[] = userData?.deploymentIds || [];
-			if (deploymentIds.length === 0) return { history: [] };
+			const snapshot = await userRef
+				.collection("deploymentHistory")
+				.orderBy("timestamp", "desc")
+				.get();
 
-			const deploymentDocs = await Promise.all(
-				deploymentIds.map((id) => db.collection("deployments").doc(id).get())
-			);
-
-			const deploymentMeta = new Map(
-				deploymentDocs
-					.filter((doc) => doc.exists)
-					.map((doc) => [
-						doc.id,
-						{
-							service_name: (doc.data() as DeployConfig)?.service_name,
-							url: (doc.data() as DeployConfig)?.url,
-						}
-					])
-			);
-
-			const historySnapshots = await Promise.all(
-				deploymentIds.map((deploymentId) =>
-					db
-						.collection("deployments")
-						.doc(deploymentId)
-						.collection("history")
-						.orderBy("timestamp", "desc")
-						.get()
-				)
-			);
-
-			const history = historySnapshots.flatMap((snapshot, index) => {
-				const deploymentId = deploymentIds[index];
-				const meta = deploymentMeta.get(deploymentId);
-				return snapshot.docs.map((doc) => ({
+			const history: (DeploymentHistoryEntry & { serviceName?: string; repoUrl?: string })[] = snapshot.docs.map(
+				(doc) => ({
 					id: doc.id,
-					deploymentId,
-					...(doc.data() as Omit<DeploymentHistoryEntry, "id" | "deploymentId">),
-					serviceName: meta?.service_name || "Unknown",
-					repoUrl: meta?.url || "",
-				}));
-			});
-
-			history.sort((a, b) => {
-				const aTime = new Date(a.timestamp).getTime();
-				const bTime = new Date(b.timestamp).getTime();
-				return bTime - aTime;
-			});
+					deploymentId: (doc.data() as DeploymentHistoryEntry).deploymentId,
+					...doc.data(),
+				})
+			) as (DeploymentHistoryEntry & { serviceName?: string; repoUrl?: string })[];
 
 			return { history };
 		} catch (error) {

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, parseEnvVarsToStore, sanitizeAndParseAIResponse } from "@/lib/utils";
 import { toast } from "sonner";
-import { selectDeploymentTargetFromMetadata, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
+import { selectDeploymentTargetFromMetadata, isDeploymentDisabled, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
@@ -274,32 +274,24 @@ export default function ConfigTabs(
 	}
 
 
-	const featuresInfra = projectMetadata?.features_infrastructure;
-
 	const isDeployDisabled = React.useMemo(() => {
-		// Mobile-only code (no server/backend)
-		if (featuresInfra?.uses_mobile && !featuresInfra?.uses_server && !projectMetadata?.core_deployment_info?.run_cmd) {
-			return true;
-		}
-		// Library (not deployable)
-		if (featuresInfra?.is_library) {
-			return true;
-		}
-		// No deployable code (no language detected or no run command)
-		if (!projectMetadata?.core_deployment_info?.language && !projectMetadata?.core_deployment_info?.run_cmd) {
-			return true;
-		}
-		// No compatible deployment target found
+		const base = deployment ?? {};
+		const effective: DeployConfig = {
+			...base,
+			features_infrastructure: projectMetadata?.features_infrastructure ?? deployment?.features_infrastructure,
+			core_deployment_info: projectMetadata?.core_deployment_info ?? deployment?.core_deployment_info,
+		} as DeployConfig;
+		if (isDeploymentDisabled(effective)) return true;
+		// No compatible deployment target (LLM set all platforms false)
 		if (projectMetadata && !deploymentAnalysis) {
-			// Check if service_compatibility exists and all are false
-			const compat = (projectMetadata as any).service_compatibility;
-			if (compat && typeof compat === "object") {
-				const allFalse = Object.values(compat).every(v => v === false);
-				if (allFalse) return true;
-			}
+			const compat = (projectMetadata as AIGenProjectMetadata).service_compatibility;
+			if (compat && typeof compat === "object" && Object.values(compat).every((v) => v === false))
+				return true;
 		}
 		return false;
-	}, [featuresInfra, projectMetadata, deploymentAnalysis]);
+	}, [deployment, projectMetadata, deploymentAnalysis]);
+
+	const featuresInfra = projectMetadata?.features_infrastructure;
 
 	return (
 		<>

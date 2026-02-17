@@ -51,17 +51,14 @@ Analyze why the deployment likely failed. In a clear, concise response:
 2. Give concrete steps the user can take to fix the issue and succeed on the next deploy (e.g. "Set build_cmd to X", "Add NODE_ENV=production to env vars").
 Keep the answer practical and short (a few paragraphs at most). Use plain text, no markdown code fences.`;
 
-	const nodeEnv = process.env.ENVIRONMENT as string | undefined;
-	const isProd = nodeEnv === "production";
-
 	try {
-		const text = isProd ? await callGemini(prompt) : await callLocalLLM(prompt);
+		const text = await callLLMWithFallback(prompt);
 		return NextResponse.json({ response: text });
 	} catch (error: unknown) {
 		console.error("analyze-failure LLM error:", error);
 		return NextResponse.json(
 			{
-				error: isProd ? "LLM request failed" : "Local LLM request failed",
+				error: "LLM request failed",
 				details: error instanceof Error ? error.message : "Unknown error",
 			},
 			{ status: 502 }
@@ -69,9 +66,31 @@ Keep the answer practical and short (a few paragraphs at most). Use plain text, 
 	}
 }
 
+/** Try Gemini first; if it fails, run the same prompt on the local LLM. */
+async function callLLMWithFallback(prompt: string): Promise<string> {
+	const hasGemini = !!process.env.GEMINI_API_KEY?.trim();
+	const hasLocal = !!process.env.LOCAL_LLM_BASE_URL?.trim();
+
+	if (hasGemini) {
+		try {
+			return await callGemini(prompt);
+		} catch (geminiError) {
+			console.warn("Gemini failed, falling back to local LLM:", geminiError);
+			if (hasLocal) {
+				return await callLocalLLM(prompt);
+			}
+			throw geminiError;
+		}
+	}
+	if (hasLocal) {
+		return await callLocalLLM(prompt);
+	}
+	throw new Error("No LLM configured. Set GEMINI_API_KEY and/or LOCAL_LLM_BASE_URL.");
+}
+
 async function callGemini(prompt: string): Promise<string> {
 	const geminiApiKey = process.env.GEMINI_API_KEY;
-	if (!geminiApiKey) {
+	if (!geminiApiKey?.trim()) {
 		throw new Error("Missing GEMINI_API_KEY env var");
 	}
 	const genAI = new GoogleGenerativeAI(geminiApiKey);
@@ -89,7 +108,7 @@ async function callGemini(prompt: string): Promise<string> {
 
 async function callLocalLLM(prompt: string): Promise<string> {
 	const baseUrl = process.env.LOCAL_LLM_BASE_URL || "";
-	if (!baseUrl) {
+	if (!baseUrl?.trim()) {
 		throw new Error("Missing LOCAL_LLM_BASE_URL env var");
 	}
 	const model = process.env.LOCAL_LLM_MODEL || "llama3.2";

@@ -178,13 +178,15 @@ function parseAwsJson(output: string): any {
 /**
  * Deploys a Node frontend/static app to AWS Amplify Hosting (zip deploy).
  * Builds the app, zips the build output, creates/gets Amplify app and branch, then deploys.
+ * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
  */
 export async function handleAmplify(
 	deployConfig: DeployConfig,
 	appDir: string,
-	ws: any
+	ws: any,
+	parentSend?: (msg: string, id: string) => void
 ): Promise<{ success: boolean, url: string; details: AmplifyDeployDetails }> {
-	const send = createWebSocketLogger(ws);
+	const send = parentSend || createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -427,7 +429,23 @@ export async function handleAmplify(
 		send(`Deployment status: ${status || "PENDING"} (${i + 1}/${maxAttempts})`, "amplify");
 		if (status === "SUCCEED") break;
 		if (status === "FAILED" || status === "CANCELLED") {
-			throw new Error(`Amplify job ${status}: ${job.jobSummary?.jobArn || jobId}`);
+			// Extract step-level failure details from the job response
+			const steps = job.steps as Array<{ stepName?: string; status?: string; logUrl?: string; statusReason?: string }> | undefined;
+			if (Array.isArray(steps)) {
+				const failedSteps = steps.filter((s) => s.status === "FAILED" || s.status === "CANCELLED");
+				if (failedSteps.length > 0) {
+					send(`Amplify deployment ${status}. Failed steps:`, "amplify");
+					for (const step of failedSteps) {
+						const reason = step.statusReason ? ` — ${step.statusReason}` : '';
+						const logInfo = step.logUrl ? ` (logs: ${step.logUrl})` : '';
+						send(`  ❌ ${step.stepName || 'unknown'}: ${step.status}${reason}${logInfo}`, "amplify");
+					}
+				} else {
+					send(`Amplify deployment ${status}. No individual step failures found.`, "amplify");
+				}
+			}
+			const jobArn = job.jobSummary?.jobArn || jobId;
+			throw new Error(`Amplify job ${status}: ${jobArn}`);
 		}
 	}
 	if (status !== "SUCCEED") {

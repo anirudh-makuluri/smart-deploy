@@ -1,5 +1,19 @@
-import type { AWSDeploymentTarget } from "@/app/types";
+import type { AWSDeploymentTarget, DeployConfig } from "@/app/types";
 import type { AIGenProjectMetadata, ServiceCompatibility } from "@/app/types";
+
+/**
+ * Returns true when this deployment cannot be deployed (mobile-only, library, no deployable code, or no compatible platform).
+ * Use to disable the deploy button and hide the deployment target UI.
+ */
+export function isDeploymentDisabled(deployment: DeployConfig | null | undefined): boolean {
+	if (!deployment) return false;
+	const fi = deployment.features_infrastructure;
+	const core = deployment.core_deployment_info;
+	if (fi?.uses_mobile && !fi?.uses_server && !core?.run_cmd) return true;
+	if (fi?.is_library) return true;
+	if (!core?.language && !core?.run_cmd) return true;
+	return false;
+}
 
 export type DeploymentAnalysisFromMetadata = {
 	target: AWSDeploymentTarget;
@@ -98,15 +112,7 @@ export function selectDeploymentTargetFromMetadata(
 			return null;
 		}
 		const result = selectSimplestFromCompatibility(compat, warnings);
-		// Next.js with SSR: use ECS Fargate (Amplify is for static only)
-		if (result?.target === "amplify" && isNextJs(metadata) && !hints.nextjs_static_export) {
-			warnings.push("Next.js with SSR is not recommended on Amplify. Using ECS Fargate.");
-			return {
-				target: "ecs",
-				reason: "Next.js with SSR. ECS Fargate is used for Next.js SSR deployments.",
-				warnings,
-			};
-		}
+		// Allow Amplify when LLM marked it for Next.js (e.g. minimal hello-world); Amplify supports simple Next.js
 		if (result) return result;
 		
 		// Fallback: If LLM incorrectly marked amplify as false for a static SPA, fix it

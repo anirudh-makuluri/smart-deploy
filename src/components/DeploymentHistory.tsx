@@ -166,6 +166,13 @@ export default function DeploymentHistory({ deploymentId, prefetchedData, isPref
 												<div key={step.id}>
 													<p className="font-semibold text-foreground mb-1">
 														{step.label} ({step.status})
+														{(step.startedAt || step.endedAt) && (
+															<span className="text-muted-foreground font-normal ml-1">
+																— {step.endedAt
+																	? new Date(step.endedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+																	: new Date(step.startedAt!).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+															</span>
+														)}
 													</p>
 													{(step.logs || []).length > 0 ? (
 														<pre className="whitespace-pre-wrap wrap-break-word text-muted-foreground">

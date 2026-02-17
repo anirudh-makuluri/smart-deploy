@@ -401,7 +401,32 @@ echo "====================================== Deployment complete! ==============
 }
 
 /**
+ * Sanitizes EC2 console output to remove problematic characters.
+ * EC2 get-console-output can contain ANSI escape sequences, control characters,
+ * and non-printable bytes that cause encoding errors or garbled display.
+ */
+function sanitizeConsoleOutput(raw: string): string {
+	return raw
+		// Remove ANSI escape sequences (e.g. colors, cursor movement)
+		.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+		// Remove OSC sequences (e.g. terminal title)
+		.replace(/\x1b\][^\x07]*\x07/g, '')
+		// Remove character set selection sequences
+		.replace(/\x1b[()][AB012]/g, '')
+		// Remove other single-char escape sequences
+		.replace(/\x1b[^[\]()a-zA-Z]?[a-zA-Z]/g, '')
+		// Remove null bytes and control chars (keep \n \t \r)
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+		// Normalize line endings
+		.replace(/\r\n/g, '\n')
+		.replace(/\r/g, '\n')
+		// Collapse runs of blank lines into at most 2
+		.replace(/\n{3,}/g, '\n\n');
+}
+
+/**
  * Handles deployment to AWS EC2
+ * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
  */
 export async function handleEC2(
 	deployConfig: DeployConfig,
@@ -409,9 +434,10 @@ export async function handleEC2(
 	multiServiceConfig: MultiServiceConfig,
 	token: string,
 	dbConnectionString: string | undefined,
-	ws: any
+	ws: any,
+	parentSend?: (msg: string, id: string) => void
 ): Promise<{ success: boolean; baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string; sharedAlbDns?: string }> {
-	const send = createWebSocketLogger(ws);
+	const send = parentSend || createWebSocketLogger(ws);
 
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
@@ -581,12 +607,14 @@ export async function handleEC2(
 	// Only send last N lines of console output to avoid flooding logs with full cloud-init/docker output
 	const CONSOLE_TAIL_LINES = 80;
 	function tailConsoleOutput(fullOutput: string): string {
-		const lines = fullOutput.trim().split(/\r?\n/);
-		if (lines.length <= CONSOLE_TAIL_LINES) return fullOutput.trim();
+		const sanitized = sanitizeConsoleOutput(fullOutput);
+		const lines = sanitized.trim().split(/\n/).filter(l => l.trim());
+		if (lines.length <= CONSOLE_TAIL_LINES) return lines.join("\n");
 		return "... (showing last " + CONSOLE_TAIL_LINES + " lines)\n" + lines.slice(-CONSOLE_TAIL_LINES).join("\n");
 	}
 
 	let attempts = 0;
+	let lastConsoleLength = 0;
 	const maxAttempts = 24; // 24 * 15s ≈ 6 min after initial delay
 	while (attempts < maxAttempts) {
 		attempts++;
@@ -610,19 +638,34 @@ export async function handleEC2(
 			);
 
 			if (consoleOut && consoleOut.trim()) {
-				send(tailConsoleOutput(consoleOut), 'deploy');
+				// Sanitize to remove ANSI sequences, control chars, and encoding artifacts
+				const cleanOutput = sanitizeConsoleOutput(consoleOut);
+				// Only send new content since last check to avoid flooding with duplicate logs
+				if (cleanOutput.length > lastConsoleLength) {
+					const newContent = cleanOutput.substring(lastConsoleLength);
+					const newLines = newContent.trim().split(/\n/).filter(l => l.trim());
+					if (newLines.length > 0) {
+						// Show last N lines of new content
+						const displayLines = newLines.length > 30 ? newLines.slice(-30) : newLines;
+						send(displayLines.join("\n"), 'deploy');
+					}
+					lastConsoleLength = cleanOutput.length;
+				} else {
+					send("(no new console output from instance yet)", 'deploy');
+				}
+
+				// Stop early if user-data signalled completion
+				if (cleanOutput.includes("Deployment complete!")) {
+					send("Instance user-data finished running.", 'deploy');
+					break;
+				}
 			} else {
 				send("(no new console output from instance yet)", 'deploy');
 			}
-
-			// Stop early if user-data signalled completion
-			if (consoleOut.includes("Deployment complete!")) {
-				send("Instance user-data finished running.", 'deploy');
-				break;
-			}
 		} catch (err: any) {
-			const msg = err instanceof Error ? err.message : String(err);
-			send(`Error fetching console output: ${msg}`, 'deploy');
+			const errMsg = err instanceof Error ? err.message : String(err);
+			// Sanitize the error message too — AWS CLI errors can include encoded chars
+			send(`Error fetching console output: ${sanitizeConsoleOutput(errMsg)}`, 'deploy');
 		}
 
 		await new Promise((resolve) => setTimeout(resolve, 15000));

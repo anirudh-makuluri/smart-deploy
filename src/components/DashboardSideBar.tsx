@@ -61,6 +61,7 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			// Handle various GitHub URL formats:
 			// https://github.com/owner/repo
 			// https://github.com/owner/repo.git
+			// https://github.com/owner/repo/tree/branch/path  (e.g. next.js examples)
 			// github.com/owner/repo
 			// owner/repo
 			let cleanUrl = url.trim();
@@ -77,8 +78,9 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			// Remove trailing slash
 			cleanUrl = cleanUrl.replace(/\/$/, "");
 			
-			const parts = cleanUrl.split("/");
-			if (parts.length === 2) {
+			const parts = cleanUrl.split("/").filter(Boolean);
+			// Need at least owner and repo; extra segments (tree, branch, path) are ignored for "add repo"
+			if (parts.length >= 2) {
 				return { owner: parts[0], repo: parts[1] };
 			}
 			return null;
@@ -123,6 +125,7 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			setRepoUrl("");
 			setShowAddRepo(false);
 			toast.success(`Added ${repo.full_name}`);
+			onOpenDeploySheet(repo);
 		} catch (error: any) {
 			toast.error(error.message || "Failed to fetch repository");
 		} finally {

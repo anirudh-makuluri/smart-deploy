@@ -134,7 +134,11 @@ export type DeployStep = {
 	id: string,
 	label: string,
 	logs: string[],
-	status: 'pending' | 'in_progress' | "success" | "error"
+	status: 'pending' | 'in_progress' | "success" | "error",
+	/** When this step first received a log (ISO string) */
+	startedAt?: string,
+	/** When this step completed — success or error (ISO string) */
+	endedAt?: string,
 }
 
 
@@ -206,4 +210,8 @@ export type DeploymentHistoryEntry = {
 	branch?: string;
 	/** Deployment duration in milliseconds */
 	durationMs?: number;
+	/** Service name at deploy time (kept so history is readable after deployment is deleted) */
+	serviceName?: string;
+	/** Repo URL at deploy time (kept so history is readable after deployment is deleted) */
+	repoUrl?: string;
 };
