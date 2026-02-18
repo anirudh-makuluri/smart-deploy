@@ -295,7 +295,9 @@ export default function ConfigTabs(
 
 	return (
 		<>
-			{!isDeployDisabled && (
+			{!(featuresInfra?.uses_mobile ||
+						featuresInfra?.is_library ||
+						isDeployDisabled) && (
 				<Card className="mb-4 border-border/60 bg-card/60">
 					<CardHeader className="pb-2">
 						<CardTitle className="text-base font-medium flex items-center gap-2 text-foreground">
@@ -449,7 +451,9 @@ export default function ConfigTabs(
 											...(commitSha && { commitSha }),
 										});
 									}}
-									disabled={isDeployDisabled || isDeploying}
+									disabled={(featuresInfra?.uses_mobile ||
+										featuresInfra?.is_library ||
+										isDeployDisabled) || isDeploying}
 									repo={repo}
 									branch={form.watch("branch") || deployment?.branch || "main"}
 								/>
