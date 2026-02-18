@@ -19,7 +19,7 @@ type DeploymentHistoryAllEntry = {
 	deploymentId: string;
 	timestamp: string;
 	success: boolean;
-	steps: { id: string; label: string; logs: string[]; status: string }[];
+	steps: { id: string; label: string; logs: string[]; status: string; startedAt?: string; endedAt?: string }[];
 	configSnapshot: Record<string, unknown>;
 	commitSha?: string;
 	commitMessage?: string;
