@@ -7,9 +7,12 @@ export async function middleware(req : NextRequest) {
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
 	const isLanding = req.nextUrl.pathname === "/"
+	const isWaitingList = req.nextUrl.pathname === "/waiting-list"
+	const isAuthError = req.nextUrl.pathname === "/api/auth/error"
+	const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth")
 
-	// Allow unauthenticated access to landing (/) and auth
-	if (!token && !isAuthPage && !isLanding) {
+	// Allow unauthenticated access to landing (/), auth, waiting list, and auth API routes
+	if (!token && !isAuthPage && !isLanding && !isWaitingList && !isAuthApi) {
 		return NextResponse.redirect(new URL("/auth", req.url))
 	}
 
@@ -17,7 +20,8 @@ export async function middleware(req : NextRequest) {
 		return NextResponse.redirect(new URL("/", req.url))
 	}
 
-	if (req.nextUrl.pathname.startsWith("/api") && !token) {
+	// Only block non-auth API routes
+	if (req.nextUrl.pathname.startsWith("/api") && !isAuthApi && !token) {
 		return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 	}
 

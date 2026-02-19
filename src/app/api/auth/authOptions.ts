@@ -20,6 +20,26 @@ export const authOptions : AuthOptions = {
 		})
 	],
 	callbacks: {
+		async signIn({ user, account, profile }) {
+			// In production, only allow emails containing "anirudh"
+			if (process.env.ENVIRONMENT === 'production') {
+				const email = user.email || profile?.email || '';
+				if (!email.toLowerCase().includes('anirudh')) {
+					// Deny sign in - will redirect to error page
+					return false;
+				}
+			}
+			return true;
+		},
+
+		async redirect({ url, baseUrl }) {
+			// Allow relative callback URLs
+			if (url.startsWith("/")) return `${baseUrl}${url}`;
+			// Allow callback URLs on the same origin
+			if (new URL(url).origin === baseUrl) return url;
+			return baseUrl;
+		},
+
 		async jwt({ token, account, user }) {
 			if(account && user) {
 				console.log("GitHub access token:", account.access_token);

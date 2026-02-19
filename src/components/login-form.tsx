@@ -18,6 +18,7 @@ export function LoginForm({
 
 				<div className="flex flex-col gap-3">
 					<Button
+						disabled={process.env.ENVIRONMENT === 'production'}
 						type="button"
 						variant="outline"
 						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
