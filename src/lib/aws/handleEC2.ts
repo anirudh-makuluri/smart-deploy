@@ -5,9 +5,8 @@ import config from "../../config";
 import { DeployConfig } from "../../app/types";
 import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
-import { 
-	setupAWSCredentials, 
-	runAWSCommand, 
+import {
+	runAWSCommand,
 	runAWSCommandToFile,
 	getDefaultVpcId,
 	getSubnetIds,
@@ -18,158 +17,49 @@ import {
 	registerInstanceToTargetGroup,
 	allowAlbToReachService,
 	buildServiceHostname,
-	generateResourceName
+	generateResourceName,
 } from "./awsHelpers";
+import {
+	ensureSSMInstanceProfile,
+	getInstanceState,
+	buildRedeployScript,
+	runRedeployViaSsm,
+	SSM_PROFILE_NAME,
+} from "./ec2SsmHelpers";
 
-/**
- * Terminates an EC2 instance and optionally cleans up ALB resources
- */
-async function terminateInstance(
-	instanceId: string,
-	region: string,
-	ws: any,
-	options?: { 
-		cleanupAlbTargetGroup?: boolean;
-		targetGroupName?: string;
-	}
-): Promise<void> {
-	const send = createWebSocketLogger(ws);
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-	try {
-		// Cleanup ALB target group if requested
-		if (options?.cleanupAlbTargetGroup && options?.targetGroupName) {
-			try {
-				const targetGroupName = options.targetGroupName;
-				const targetGroupArn = (
-					await runAWSCommand([
-						"elbv2",
-						"describe-target-groups",
-						"--names",
-						targetGroupName,
-						"--query",
-						"TargetGroups[0].TargetGroupArn",
-						"--output",
-						"text",
-						"--region",
-						region,
-					], ws, "deploy")
-				).trim();
-				
-				if (targetGroupArn && targetGroupArn !== "None") {
-					send(`Found target group: ${targetGroupArn}`, "deploy");
-					
-					// Try to delete the target group (this will fail if there are active rules)
-					// But AWS handles this gracefully with a short wait
-					try {
-						send(`Deleting target group ${targetGroupName}...`, "deploy");
-						await runAWSCommand([
-							"elbv2",
-							"delete-target-group",
-							"--target-group-arn",
-							targetGroupArn,
-							"--region",
-							region,
-						], ws, "deploy");
-						send(`Target group ${targetGroupName} deleted successfully.`, "deploy");
-					} catch (deleteErr: any) {
-						// If deletion fails due to being "in use", that's expected - rules might still be using it
-						const errMsg = (deleteErr as any).message || String(deleteErr);
-						if (errMsg.includes("in use") || errMsg.includes("InUse")) {
-							send(`⚠️ Target group still in use by listener rules. This is expected if rules haven't been removed yet.`, "deploy");
-						} else {
-							send(`Note: Could not delete target group: ${errMsg}`, "deploy");
-						}
-						// Don't throw - let the instance termination continue
-					}
-				}
-			} catch (tgErr: any) {
-				// Target group may not exist; ignore errors
-				send(`Note: Target group lookup/cleanup had an issue (may not exist): ${(tgErr as any).message}`, "deploy");
-			}
-		}
+type SendFn = (msg: string, stepId: string) => void;
 
-		// Check instance state before terminating
-		const stateOutput = await runAWSCommand([
-			"ec2", "describe-instances",
-			"--instance-ids", instanceId,
-			"--query", "Reservations[0].Instances[0].State.Name",
-			"--output", "text",
-			"--region", region
-		], ws, 'deploy');
-		
-		const state = (stateOutput || "").trim();
-		if (state && state !== "None" && state !== "terminated") {
-			send(`Terminating instance ${instanceId} (${state})...`, 'deploy');
-			await runAWSCommand([
-				"ec2", "terminate-instances",
-				"--instance-ids", instanceId,
-				"--region", region
-			], ws, 'deploy');
-			send(`Instance ${instanceId} termination initiated.`, 'deploy');
-		}
-	} catch (error: any) {
-		send(`Error terminating instance: ${error.message}`, 'deploy');
-		throw error;
-	}
-}
-async function getLatestAMI(region: string, ws: any): Promise<string> {
-	// Use key=value form with quoted query so & in JMESPath is not interpreted by Windows shell
-	const query = "sort_by(Images, &CreationDate)[-1].ImageId";
-	const queryArg = process.platform === 'win32' ? `--query="${query}"` : `--query=${query}`;
-	const output = await runAWSCommand([
-		"ec2", "describe-images",
-		"--owners", "amazon",
-		"--filters",
-		"Name=name,Values=al2023-ami-*-x86_64",
-		"Name=state,Values=available",
-		queryArg,
-		"--output", "text",
-		`--region=${region}`
-	], ws, 'setup');
+type ServiceDef = { name: string; dir: string; port: number };
 
-	return output.trim();
-}
+type NetworkingResult = {
+	vpcId: string;
+	subnetIds: string[];
+	securityGroupId: string;
+};
 
-/**
- * Creates a key pair for SSH access
- */
-async function ensureKeyPair(
-	keyName: string,
-	region: string,
-	ws: any
-): Promise<void> {
-	const send = createWebSocketLogger(ws);
+export type EC2Result = {
+	success: boolean;
+	baseUrl: string;
+	serviceUrls: Map<string, string>;
+	instanceId: string;
+	publicIp: string;
+	vpcId: string;
+	subnetId: string;
+	securityGroupId: string;
+	amiId: string;
+	sharedAlbDns?: string;
+};
 
-	try {
-		await runAWSCommand([
-			"ec2", "describe-key-pairs",
-			"--key-names", keyName,
-			"--region", region
-		], ws, 'setup');
-		send(`Key pair ${keyName} already exists`, 'setup');
-	} catch {
-		send(`Creating key pair: ${keyName}...`, 'setup');
-		await runAWSCommand([
-			"ec2", "create-key-pair",
-			"--key-name", keyName,
-			"--query", "KeyMaterial",
-			"--output", "text",
-			"--region", region
-		], ws, 'setup');
-	}
-}
+// ─── Pure helpers (env / compose / user-data) ───────────────────────────────
 
-/**
- * Parses comma-separated KEY=value string, allowing commas inside values
- * (splits only at comma followed by a key pattern, e.g. ,NEXT_KEY=)
- */
 function parseEnvVarsAllowCommasInValues(envVarsString: string): { key: string; value: string }[] {
 	const trimmed = envVarsString.trim();
 	if (!trimmed) return [];
-	// Split at comma that is followed by a valid env key (letters/underscore then =)
-	const segments = trimmed.split(/,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map((s) => s.trim()).filter(Boolean);
+	const segments = trimmed.split(/,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map(s => s.trim()).filter(Boolean);
 	return segments
-		.map((segment) => {
+		.map(segment => {
 			const eqIdx = segment.indexOf("=");
 			if (eqIdx === -1) return null;
 			const key = segment.slice(0, eqIdx).trim();
@@ -179,255 +69,850 @@ function parseEnvVarsAllowCommasInValues(envVarsString: string): { key: string; 
 		.filter((e): e is { key: string; value: string } => e != null);
 }
 
-/**
- * Builds .env file content with safe escaping (values with newlines/quotes get quoted)
- */
 function buildEnvFileContent(entries: { key: string; value: string }[]): string {
-	const lines: string[] = [];
-	for (const { key, value } of entries) {
-		const needsQuoting = /[\n"\\]/.test(value);
-		if (needsQuoting) {
-			const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
-			lines.push(`${key}="${escaped}"`);
-		} else {
-			lines.push(`${key}=${value}`);
-		}
-	}
-	return lines.join("\n");
+	return entries
+		.map(({ key, value }) => {
+			if (/[\n"\\]/.test(value)) {
+				const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+				return `${key}="${escaped}"`;
+			}
+			return `${key}=${value}`;
+		})
+		.join("\n");
 }
 
 function normalizeDomain(input?: string): string {
 	const raw = (input || "").trim();
 	if (!raw) return "";
 	try {
-		const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
-		return url.hostname;
+		return new URL(raw.startsWith("http") ? raw : `https://${raw}`).hostname;
 	} catch {
 		return raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 	}
 }
 
 /**
- * Generates user-data script for EC2 instance
+ * Generates Dockerfile content based on deployConfig
  */
+function generateDockerfileContent(
+	deployConfig: DeployConfig,
+	serviceDir: string = "."
+): string {
+	// Use custom Dockerfile if provided
+	if (deployConfig.dockerfileContent) {
+		return deployConfig.dockerfileContent;
+	}
+
+	const coreInfo = deployConfig.core_deployment_info;
+	const language = (coreInfo?.language || "node").toLowerCase();
+	const workdir = coreInfo?.workdir || (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
+	const port = coreInfo?.port || 8080;
+	const installCmd = coreInfo?.install_cmd || "";
+	const buildCmd = coreInfo?.build_cmd || "";
+	const runCmd = coreInfo?.run_cmd || "";
+
+	let dockerfileContent = "";
+
+	switch (language) {
+		case "node":
+		case "javascript":
+		case "typescript":
+			dockerfileContent = `
+FROM node:20-alpine
+WORKDIR ${workdir}
+COPY package*.json ./
+RUN ${installCmd || "npm ci --production=false"}
+COPY . .
+${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
+			`.trim();
+			break;
+
+		case "python":
+			dockerfileContent = `
+FROM python:3.11-slim
+WORKDIR ${workdir}
+COPY requirements.txt* ./
+RUN ${installCmd || "pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || true"}
+COPY . .
+${buildCmd ? `RUN ${buildCmd}` : ""}
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["python", "app.py"])}
+			`.trim();
+			break;
+
+		case "go":
+		case "golang":
+			dockerfileContent = `
+FROM golang:1.21-alpine AS builder
+WORKDIR ${workdir}
+COPY go.* ./
+RUN ${installCmd || "go mod download"}
+COPY . .
+${buildCmd ? `RUN ${buildCmd}` : "RUN CGO_ENABLED=0 go build -o main ."}
+
+FROM alpine:latest
+WORKDIR /app
+RUN apk --no-cache add ca-certificates
+COPY --from=builder ${workdir}/main .
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./main"])}
+			`.trim();
+			break;
+
+		case "java":
+			dockerfileContent = `
+FROM openjdk:17-alpine
+WORKDIR ${workdir}
+COPY . .
+RUN ${installCmd || "./mvnw install || mvn install || true"}
+${buildCmd ? `RUN ${buildCmd}` : "RUN ./mvnw package || mvn package || true"}
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["java", "-jar", "target/app.jar"])}
+			`.trim();
+			break;
+
+		case "rust":
+			dockerfileContent = `
+FROM rust:1.70-alpine AS builder
+WORKDIR ${workdir}
+COPY Cargo.* ./
+RUN cargo fetch
+COPY . .
+${buildCmd ? `RUN ${buildCmd}` : "RUN cargo build --release"}
+
+FROM alpine:latest
+WORKDIR /app
+RUN apk --no-cache add ca-certificates
+COPY --from=builder ${workdir}/target/release/app .
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./app"])}
+			`.trim();
+			break;
+
+		case "dotnet":
+		case "csharp":
+			dockerfileContent = `
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR ${workdir}
+COPY *.csproj ./
+RUN ${installCmd || "dotnet restore"}
+COPY . .
+${buildCmd ? `RUN ${buildCmd}` : "RUN dotnet build -c Release"}
+RUN dotnet publish -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["dotnet", "*.dll"])}
+			`.trim();
+			break;
+
+		default:
+			// Default to Node.js
+			dockerfileContent = `
+FROM node:20-alpine
+WORKDIR ${workdir}
+COPY package*.json ./
+RUN npm install
+COPY . .
+ENV PORT=${port}
+EXPOSE ${port}
+CMD ["npm", "start"]
+			`.trim();
+	}
+
+	return dockerfileContent;
+}
+
+function buildComposeAndEnv(
+	services: ServiceDef[],
+	envVars: string,
+	dbConnectionString?: string,
+	customDomain?: string,
+): { composeYml: string; envBase64: string } {
+	const composeServices: Record<string, unknown> = {};
+	for (const svc of services) {
+		const p = svc.port || 8080;
+		const env: string[] = [`PORT=${p}`, "NODE_ENV=production"];
+		if (dbConnectionString) env.push(`DATABASE_URL=${dbConnectionString}`);
+		composeServices[svc.name] = {
+			build: { context: svc.dir === "." ? "." : `./${svc.dir}`, dockerfile: "Dockerfile" },
+			ports: [`${p}:${p}`],
+			environment: env,
+			restart: "unless-stopped",
+		};
+	}
+	const composeYml = JSON.stringify({ version: "3.8", services: composeServices }, null, 2);
+
+	const envEntries = parseEnvVarsAllowCommasInValues(envVars);
+	const host = normalizeDomain(customDomain);
+	if (host) {
+		envEntries.push({ key: "NEXT_PUBLIC_WS_URL", value: `wss://${host}/ws` });
+		envEntries.push({ key: "NEXTAUTH_URL", value: `https://${host}` });
+	}
+	if (dbConnectionString) envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
+	const raw = buildEnvFileContent(envEntries);
+	return { composeYml, envBase64: raw ? Buffer.from(raw, "utf8").toString("base64") : "" };
+}
+
 function generateUserDataScript(
+	deployConfig: DeployConfig,
 	repoUrl: string,
 	branch: string,
 	token: string,
-	services: { name: string; dir: string; port: number }[],
+	services: ServiceDef[],
 	envVars: string,
 	dbConnectionString?: string,
 	commitSha?: string,
-	customDomain?: string
+	customDomain?: string,
 ): string {
-	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
-	
-	// Generate docker-compose.yml content
-	const composeServices: Record<string, any> = {};
+	const authUrl = repoUrl.replace("https://", `https://${token}@`);
+	const { composeYml, envBase64 } = buildComposeAndEnv(services, envVars, dbConnectionString, customDomain);
+	let mainPort = "";
+	let wsPort = "";
 	const ports: string[] = [];
-	let mainAppPort = "";
-	let websocketPort = "";
+	const serviceDirs = services.map(s => s.dir === "." ? "." : `./${s.dir}`).join(" ");
+	
+	// Generate Dockerfile content for each service
+	const dockerfileContents: Record<string, string> = {};
+	for (const svc of services) {
+		dockerfileContents[svc.dir] = generateDockerfileContent(deployConfig, svc.dir);
+	}
 	
 	for (const svc of services) {
-		const servicePort = svc.port || 8080;
-		ports.push(String(servicePort));
-		
-		// Detect WebSocket service by name
-		if (svc.name.toLowerCase().includes('websocket')) {
-			websocketPort = String(servicePort);
-		} else if (!mainAppPort) {
-			// First non-websocket service is the main app
-			mainAppPort = String(servicePort);
-		}
-		
-		composeServices[svc.name] = {
-			build: {
-				context: svc.dir === '.' ? '.' : `./${svc.dir}`,
-				dockerfile: 'Dockerfile'
-			},
-			ports: [`${servicePort}:${servicePort}`],
-			environment: [
-				`PORT=${servicePort}`,
-				'NODE_ENV=production'
-			],
-			restart: 'unless-stopped'
-		};
-
-		if (dbConnectionString) {
-			composeServices[svc.name].environment.push(`DATABASE_URL=${dbConnectionString}`);
-		}
+		const p = svc.port || 8080;
+		ports.push(String(p));
+		if (svc.name.toLowerCase().includes("websocket")) wsPort = String(p);
+		else if (!mainPort) mainPort = String(p);
 	}
-
-	const composeContent = {
-		version: '3.8',
-		services: composeServices
-	};
-
-	// Build .env content and base64-encode so values with commas/newlines/quotes (e.g. JSON keys) are safe
-	const envEntries = parseEnvVarsAllowCommasInValues(envVars);
-	
-	// Extract domain and setup dynamic URLs
-	const domainHost = normalizeDomain(customDomain);
-	if (domainHost) {
-		// Override with production URLs
-		envEntries.push({ key: "NEXT_PUBLIC_WS_URL", value: `wss://${domainHost}/ws` });
-		envEntries.push({ key: "NEXTAUTH_URL", value: `https://${domainHost}` });
-	}
-	
-	if (dbConnectionString) {
-		envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
-	}
-	const envFileContent = buildEnvFileContent(envEntries);
-	const envBase64 = envFileContent ? Buffer.from(envFileContent, "utf8").toString("base64") : "";
-
 
 	return `#!/bin/bash
+# Use set -e but trap errors to ensure we always output completion signal
 set -e
+trap 'EXIT_CODE=$?; echo "Script error at line $LINENO, exit code $EXIT_CODE"; exit $EXIT_CODE' ERR
 
-# Update system
-yum update -y
+# Clean up cloud-init logs and temp files immediately to free space
+# (cloud-init may have failed due to disk space, leaving temp files behind)
+rm -rf /var/lib/cloud/data/tmp_* 2>/dev/null || true
+rm -rf /var/lib/cloud/instances/*/sem/* 2>/dev/null || true
+find /tmp -type f -mtime +0 -delete 2>/dev/null || true
 
-# Create 2 GB swap file — t3.micro (1 GB RAM) runs out of memory during Docker builds
-dd if=/dev/zero of=/swapfile bs=1M count=2048
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Log disk space at start
+echo "=== Initial disk space ==="
+df -h /
+echo "=========================="
 
-# Install Docker
+# Install essential packages first (skip full update to save space)
 yum install -y docker git
-systemctl start docker
-systemctl enable docker
 
-# Install Docker Compose
-curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
+# Clean up yum cache immediately to free space
+yum clean all
+rm -rf /var/cache/yum/*
 
-# Install Docker Buildx (required by docker-compose build; Amazon Linux Docker may not include 0.17+)
+# Check disk space before creating swap
+AVAILABLE=$(df / | tail -1 | awk '{print $4}')
+AVAILABLE_MB=$((AVAILABLE / 1024))
+echo "Available disk space: $AVAILABLE_MB MB"
+
+# Create swap file only if we have enough space (use 1GB instead of 2GB to be safer)
+if [ $AVAILABLE_MB -gt 1200 ]; then
+    echo "Creating 1GB swap file..."
+    dd if=/dev/zero of=/swapfile bs=1M count=1024
+    chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+else
+    echo "Warning: Insufficient space for swap file (need ~1200MB, have $AVAILABLE_MB MB)"
+fi
+
+# Start Docker and configure
+systemctl start docker && systemctl enable docker
+
+# Configure Docker to clean up unused resources automatically
+cat > /etc/docker/daemon.json << 'DOCKEREOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+DOCKEREOF
+systemctl restart docker
+
+# Install docker-compose
+curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose
+
+# Install docker buildx
 mkdir -p /usr/libexec/docker/cli-plugins /root/.docker/cli-plugins
 curl -sSL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-amd64" -o /usr/libexec/docker/cli-plugins/docker-buildx
 chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
 cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx
 
+# Clean up any existing Docker images/containers to free space
+docker system prune -af --volumes 2>/dev/null || true
+
+echo "=== Disk space before clone ==="
+df -h /
+echo "==============================="
+
 # Clone repository
 cd /home/ec2-user
-git clone -b ${branch} ${authenticatedUrl} app
-cd app
-${commitSha ? `git checkout ${commitSha}` : ''}
+git clone -b ${branch} ${authUrl} app && cd app
+${commitSha ? `git checkout ${commitSha}` : ""}
 
-# Set environment variables (base64-decoded to support commas, newlines, quotes in values)
+# Clean up git history to save space (keep only current commit)
+git gc --aggressive --prune=now || true
+
 ${envBase64 ? `echo '${envBase64}' | base64 -d > .env` : "touch .env"}
 
-# Create docker-compose.yml if not exists
-if [ ! -f docker-compose.yml ]; then
-cat > docker-compose.yml << 'COMPOSEEOF'
-${JSON.stringify(composeContent, null, 2)}
+# Check if repo has its own docker-compose.yml
+if [ -f docker-compose.yml ]; then
+    echo "Using existing docker-compose.yml from repository"
+    # Validate docker-compose.yml syntax
+    if ! docker-compose config > /dev/null 2>&1; then
+        echo "ERROR: Invalid docker-compose.yml syntax"
+        docker-compose config
+        exit 1
+    fi
+    echo "docker-compose.yml syntax is valid"
+else
+    echo "No docker-compose.yml found. Creating Dockerfiles and docker-compose.yml..."
+    
+    # Create Dockerfiles if they don't exist
+    echo "Creating Dockerfiles..."
+    ${services.map(svc => {
+		const dir = svc.dir === "." ? "." : svc.dir;
+		const dockerfilePath = dir === "." ? "Dockerfile" : `${dir}/Dockerfile`;
+		const dockerfileContent = dockerfileContents[svc.dir];
+		// Escape for bash heredoc - need to escape $ and backticks
+		const escapedContent = dockerfileContent
+			.replace(/\\/g, '\\\\')
+			.replace(/\$/g, '\\$')
+			.replace(/`/g, '\\`');
+		return `
+if [ ! -f ${dockerfilePath} ]; then
+    echo "Creating Dockerfile at ${dockerfilePath}..."
+    mkdir -p ${dir === "." ? "." : dir}
+    cat > ${dockerfilePath} << 'DOCKERFILEEOF'
+${escapedContent}
+DOCKERFILEEOF
+    echo "✅ Dockerfile created at ${dockerfilePath}"
+else
+    echo "Dockerfile already exists at ${dockerfilePath}, skipping creation"
+fi
+`;
+	}).join("\n")}
+    
+    # Create docker-compose.yml
+    echo "Creating docker-compose.yml..."
+    cat > docker-compose.yml << 'COMPOSEEOF'
+${composeYml}
 COMPOSEEOF
+    echo "✅ docker-compose.yml created"
 fi
 
-# Build and start containers
-docker-compose up -d --build
+echo "=== Disk space before build ==="
+df -h /
+echo "==============================="
 
-# Setup nginx reverse proxy
-yum install -y nginx
-systemctl start nginx
-systemctl enable nginx
+# Build and start containers (critical step - if this fails, deployment failed)
+echo "Building and starting containers..."
+if ! docker-compose up -d --build 2>&1 | tee /tmp/docker-build.log; then
+    echo "ERROR: docker-compose up failed"
+    echo "=== Docker-compose configuration ==="
+    docker-compose config || true
+    echo "=== Build log ==="
+    cat /tmp/docker-build.log || true
+    echo "=== Available Dockerfiles ==="
+    find . -name "Dockerfile" -type f || echo "No Dockerfiles found"
+    echo "=== Directory structure ==="
+    ls -la
+    echo "=== Service directories ==="
+    ls -la */ 2>/dev/null || echo "No subdirectories found"
+    exit 1
+fi
 
-# Disable the default nginx server block on port 80 in nginx.conf (it conflicts with our app.conf)
-# Comment out listen/server_name lines for the built-in default server, including default_server variants
-sed -i 's/^[[:space:]]*server_name[[:space:]]\+_;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\+80\(.*default_server.*\)\?;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\+\[::]:80\(.*default_server.*\)\?;$/# &/' /etc/nginx/nginx.conf
+# Clean up Docker build cache and unused images after build
+docker system prune -af --volumes 2>/dev/null || true
 
-# Configure nginx
+echo "=== Disk space after build ==="
+df -h /
+echo "=============================="
+
+# Install and configure nginx
+yum install -y nginx && systemctl start nginx && systemctl enable nginx
+
+# Clean up yum cache again after nginx install
+yum clean all
+
+sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
 cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
-map \$http_upgrade \$connection_upgrade {
-	default upgrade;
-	'' close;
-}
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 NGINXEOF
-
 cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
 server {
     listen 80 default_server;
     server_name _;
-
-    # Main application
     location / {
-        proxy_pass http://127.0.0.1:${mainAppPort || 8080};
+        proxy_pass http://127.0.0.1:${mainPort || 8080};
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$connection_upgrade;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
     }
-	${websocketPort ? `
-    # WebSocket endpoint (service on port ${websocketPort})
-    location /ws {
-        proxy_pass http://127.0.0.1:${websocketPort};
+${wsPort ? `    location /ws {
+        proxy_pass http://127.0.0.1:${wsPort};
         proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$connection_upgrade;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 86400;
-    }
-` : ''}
+    }` : ""}
 }
 NGINXEOF
-
-# Remove any default server config that might take precedence
 rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true
 
-# Validate and reload
-nginx -t
-systemctl reload nginx
+# Test and reload nginx (critical step)
+if ! nginx -t; then
+    echo "ERROR: nginx configuration test failed"
+    cat /etc/nginx/conf.d/app.conf || true
+    exit 1
+fi
 
-# Show how nginx has wired port 80 (from nginx's own view)
-echo "====== nginx servers listening on port 80 ======"
-nginx -T 2>/dev/null | awk '
-  /server {/ { in_server=1; block="" }
-  in_server { block = block $0 "\\n" }
-  /}/ && in_server {
-    in_server=0
-    if (block ~ /listen 80/ && block ~ /server_name _;/) print block "\\n"
-  }'
-echo "==============================================="
+if ! systemctl reload nginx; then
+    echo "ERROR: nginx reload failed"
+    systemctl status nginx || true
+    exit 1
+fi
 
-echo "Nginx configured to proxy to the application on port ${ports[0] || 8080}"
-echo "====================================== Deployment complete! ======================================"
+echo "=== Final disk space ==="
+df -h /
+echo "========================"
+
+# Verify containers are running
+if docker-compose ps | grep -q "Up"; then
+    echo "====================================== Deployment complete! ======================================"
+else
+    echo "WARNING: Some containers may not be running"
+    docker-compose ps || true
+    echo "====================================== Deployment complete! ======================================"
+fi
 `;
 }
 
-/**
- * Sanitizes EC2 console output to remove problematic characters.
- * EC2 get-console-output can contain ANSI escape sequences, control characters,
- * and non-printable bytes that cause encoding errors or garbled display.
- */
 function sanitizeConsoleOutput(raw: string): string {
 	return raw
-		// Remove ANSI escape sequences (e.g. colors, cursor movement)
-		.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-		// Remove OSC sequences (e.g. terminal title)
-		.replace(/\x1b\][^\x07]*\x07/g, '')
-		// Remove character set selection sequences
-		.replace(/\x1b[()][AB012]/g, '')
-		// Remove other single-char escape sequences
-		.replace(/\x1b[^[\]()a-zA-Z]?[a-zA-Z]/g, '')
-		// Remove null bytes and control chars (keep \n \t \r)
-		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
-		// Normalize line endings
-		.replace(/\r\n/g, '\n')
-		.replace(/\r/g, '\n')
-		// Collapse runs of blank lines into at most 2
-		.replace(/\n{3,}/g, '\n\n');
+		.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+		.replace(/\x1b\][^\x07]*\x07/g, "")
+		.replace(/\x1b[()][AB012]/g, "")
+		.replace(/\x1b[^[\]()a-zA-Z]?[a-zA-Z]/g, "")
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "")
+		// Remove Unicode arrow characters and other symbols that cause Windows encoding issues
+		.replace(/[\u2190-\u21FF]/g, "") // Arrows
+		.replace(/[\u2600-\u26FF]/g, "") // Miscellaneous symbols
+		.replace(/[\u2700-\u27BF]/g, "") // Dingbats
+		.replace(/\r\n/g, "\n")
+		.replace(/\r/g, "\n")
+		.replace(/\n{3,}/g, "\n\n");
 }
 
-/**
- * Handles deployment to AWS EC2
- * @param parentSend - Optional logger from parent that also tracks deploy steps for history storage
- */
+// ─── Focused async functions ────────────────────────────────────────────────
+
+/** Sets up VPC, subnets, security group, and opens ingress ports. */
+async function ensureNetworking(
+	deployConfig: DeployConfig,
+	repoName: string,
+	region: string,
+	services: ServiceDef[],
+	multiServiceConfig: MultiServiceConfig,
+	ws: any,
+	send: SendFn,
+): Promise<NetworkingResult> {
+	let vpcId: string;
+	let subnetIds: string[];
+	let securityGroupId: string;
+
+	if (deployConfig.ec2?.vpcId?.trim() && deployConfig.ec2?.subnetId?.trim() && deployConfig.ec2?.securityGroupId?.trim()) {
+		vpcId = deployConfig.ec2.vpcId.trim();
+		subnetIds = [deployConfig.ec2.subnetId.trim()];
+		securityGroupId = deployConfig.ec2.securityGroupId.trim();
+		send("Reusing existing VPC, subnet, and security group...", "setup");
+	} else {
+		send("Setting up networking...", "setup");
+		vpcId = await getDefaultVpcId(ws);
+		subnetIds = await getSubnetIds(vpcId, ws);
+		securityGroupId = await ensureSecurityGroup(`${repoName}-ec2-sg`, vpcId, `Security group for ${repoName} EC2 instance`, ws);
+	}
+
+	const ports = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
+	if (deployConfig.core_deployment_info?.port) ports.add(deployConfig.core_deployment_info.port);
+	for (const svc of services) if (typeof svc.port === "number" && !Number.isNaN(svc.port)) ports.add(svc.port);
+	if (multiServiceConfig.isMultiService) {
+		for (const svc of multiServiceConfig.services) if (typeof svc.port === "number") ports.add(svc.port);
+	}
+	for (const port of ports) {
+		try {
+			await runAWSCommand(["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region], ws, "setup");
+		} catch { /* rule may already exist */ }
+	}
+
+	return { vpcId, subnetIds, securityGroupId };
+}
+
+/** Redeploys to an existing running instance via SSM. */
+async function redeployInstance(params: {
+	deployConfig: DeployConfig;
+	existingInstanceId: string;
+	region: string;
+	services: ServiceDef[];
+	repoName: string;
+	token: string;
+	composeYml: string;
+	envBase64: string;
+	net: NetworkingResult;
+	amiId: string;
+	certificateArn: string;
+	sharedAlbEnabled: boolean;
+	ws: any;
+	send: SendFn;
+}): Promise<EC2Result> {
+	const { deployConfig, existingInstanceId, region, services, repoName, token, composeYml, envBase64, net, amiId, certificateArn, sharedAlbEnabled, ws, send } = params;
+
+	send("Reusing existing instance (SSM redeploy)...", "deploy");
+	const script = buildRedeployScript({
+		repoUrl: deployConfig.url,
+		branch: deployConfig.branch || "main",
+		token,
+		commitSha: deployConfig.commitSha,
+		envFileContentBase64: envBase64,
+		dockerComposeYml: composeYml,
+		deployConfig,
+		services: services.map(s => ({ dir: s.dir, port: s.port })),
+	});
+	const { success } = await runRedeployViaSsm({ instanceId: existingInstanceId, region, script, send });
+
+	if (!success) {
+		send("Redeploy command failed. Check logs above.", "deploy");
+		return {
+			success: false,
+			baseUrl: deployConfig.deployUrl || deployConfig.ec2?.baseUrl || "",
+			serviceUrls: new Map(),
+			instanceId: existingInstanceId,
+			publicIp: deployConfig.ec2?.publicIp || "",
+			...net, subnetId: net.subnetIds[0], amiId,
+		};
+	}
+
+	const publicIp = deployConfig.ec2?.publicIp?.trim() || (
+		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
+	).trim();
+
+	const { baseUrl, serviceUrls } = buildServiceUrls(deployConfig, services, repoName, publicIp, certificateArn, sharedAlbEnabled);
+	send("Redeploy complete.", "done");
+	send(`Application URL: ${baseUrl}`, "done");
+	return { success: true, baseUrl, serviceUrls, instanceId: existingInstanceId, publicIp, ...net, subnetId: net.subnetIds[0], amiId };
+}
+
+/** Launches a brand-new EC2 instance, waits for user-data to finish, and detects a healthy port. */
+async function launchNewInstance(params: {
+	deployConfig: DeployConfig;
+	instanceName: string;
+	region: string;
+	services: ServiceDef[];
+	token: string;
+	dbConnectionString: string | undefined;
+	net: NetworkingResult;
+	amiId: string;
+	sharedAlbEnabled: boolean;
+	ws: any;
+	send: SendFn;
+}): Promise<{ instanceId: string; publicIp: string; detectedPort: number }> {
+	const { deployConfig, instanceName, region, services, token, dbConnectionString, net, amiId, sharedAlbEnabled, ws, send } = params;
+	const keyName = "smartdeploy";
+
+	await ensureSSMInstanceProfile(region, ws);
+	await ensureKeyPair(keyName, region, ws);
+
+	const userData = generateUserDataScript(
+		deployConfig,
+		deployConfig.url,
+		deployConfig.branch || "main",
+		token,
+		services,
+		deployConfig.env_vars || "",
+		dbConnectionString,
+		deployConfig.commitSha,
+		sharedAlbEnabled ? undefined : deployConfig.custom_url,
+	);
+	const b64 = Buffer.from(userData).toString("base64");
+	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.b64`);
+	fs.writeFileSync(tmpFile, b64, "utf8");
+	const fileUri = "fileb://" + path.resolve(tmpFile).replace(/\\/g, "/");
+
+	let instanceId: string;
+	try {
+		send(`Launching EC2 instance: ${instanceName}...`, "deploy");
+		// Increase root EBS volume to 20GB (default is 8GB which is too small for Docker builds)
+		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=20,VolumeType=gp3,DeleteOnTermination=true}`;
+		const out = await runAWSCommand([
+			"ec2", "run-instances",
+			"--image-id", amiId,
+			"--instance-type", "t3.micro",
+			"--key-name", keyName,
+			"--security-group-ids", net.securityGroupId,
+			"--subnet-id", net.subnetIds[0],
+			"--user-data", fileUri,
+			"--iam-instance-profile", `Name=${SSM_PROFILE_NAME}`,
+			"--block-device-mappings", blockDeviceMapping,
+			"--tag-specifications", `ResourceType=instance,Tags=[{Key=Name,Value=${instanceName}},{Key=Project,Value=SmartDeploy}]`,
+			"--query", "Instances[0].InstanceId",
+			"--output", "text",
+			"--region", region,
+		], ws, "deploy");
+		instanceId = out.trim();
+		send(`Instance launched: ${instanceId} (20GB EBS volume)`, "deploy");
+	} finally {
+		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+	}
+
+	send("Waiting for instance to be running...", "deploy");
+	await runAWSCommand(["ec2", "wait", "instance-running", "--instance-ids", instanceId, "--region", region], ws, "deploy");
+
+	const publicIp = (await runAWSCommand(["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")).trim();
+	send(`Instance public IP: ${publicIp}`, "deploy");
+
+	await waitForUserData(instanceId, region, ws, send);
+	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
+
+	if (!detectedPort) {
+		send("❌ Instance failed to respond on any known ports.", "deploy");
+		try { await terminateInstance(instanceId, region, ws); } catch { /* ignore */ }
+		throw new Error("Instance failed to respond on any known ports");
+	}
+
+	return { instanceId, publicIp, detectedPort };
+}
+
+/** Configures the shared ALB for a new instance (target group, listener rules, host routing). */
+async function configureAlb(params: {
+	deployConfig: DeployConfig;
+	instanceId: string;
+	existingInstanceId: string | undefined;
+	services: ServiceDef[];
+	repoName: string;
+	net: NetworkingResult;
+	region: string;
+	certificateArn: string;
+	ws: any;
+	send: SendFn;
+}): Promise<{ sharedAlbDns: string; serviceUrls: Map<string, string> }> {
+	const { deployConfig, instanceId, existingInstanceId, services, repoName, net, region, certificateArn, ws, send } = params;
+
+	send("Configuring shared ALB routing...", "deploy");
+	const alb = await ensureSharedAlb({ vpcId: net.vpcId, subnetIds: net.subnetIds.slice(0, 2), region, ws, certificateArn });
+	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
+	const customHost = normalizeDomain(deployConfig.custom_url);
+
+	await allowAlbToReachService(net.securityGroupId, alb.albSgId, 80, ws);
+
+	const tgName = `${repoName}-tg`.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "smartdeploy-tg";
+	const tgArn = await ensureTargetGroup(tgName, net.vpcId, 80, region, ws, { targetType: "instance", healthCheckPath: "/" });
+
+	if (existingInstanceId) {
+		try {
+			await runAWSCommand(["elbv2", "deregister-targets", "--target-group-arn", tgArn, "--targets", `Id=${existingInstanceId},Port=80`, "--region", region], ws, "deploy");
+		} catch { /* may not be registered */ }
+	}
+	await registerInstanceToTargetGroup(tgArn, instanceId, 80, region, ws);
+
+	const serviceUrls = new Map<string, string>();
+	for (const svc of services) {
+		const sub = services.length === 1 && deployConfig.service_name?.trim() ? deployConfig.service_name.trim() : svc.name;
+		const hostname = customHost || buildServiceHostname(svc.name, sub);
+		if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
+		const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
+		serviceUrls.set(svc.name, url);
+	}
+
+	return { sharedAlbDns: alb.dnsName, serviceUrls };
+}
+
+// ─── Small helpers used by the main functions ───────────────────────────────
+
+async function ensureKeyPair(keyName: string, region: string, ws: any): Promise<void> {
+	const send = createWebSocketLogger(ws);
+	try {
+		await runAWSCommand(["ec2", "describe-key-pairs", "--key-names", keyName, "--region", region], ws, "setup");
+		send(`Key pair ${keyName} already exists`, "setup");
+	} catch {
+		send(`Creating key pair: ${keyName}...`, "setup");
+		await runAWSCommand(["ec2", "create-key-pair", "--key-name", keyName, "--query", "KeyMaterial", "--output", "text", "--region", region], ws, "setup");
+	}
+}
+
+async function getLatestAMI(region: string, ws: any): Promise<string> {
+	const q = "sort_by(Images, &CreationDate)[-1].ImageId";
+	const qArg = process.platform === "win32" ? `--query="${q}"` : `--query=${q}`;
+	return (await runAWSCommand(["ec2", "describe-images", "--owners", "amazon", "--filters", "Name=name,Values=al2023-ami-*-x86_64", "Name=state,Values=available", qArg, "--output", "text", `--region=${region}`], ws, "setup")).trim();
+}
+
+async function terminateInstance(instanceId: string, region: string, ws: any): Promise<void> {
+	const send = createWebSocketLogger(ws);
+	const state = (await runAWSCommand(["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].State.Name", "--output", "text", "--region", region], ws, "deploy")).trim();
+	if (state && state !== "None" && state !== "terminated") {
+		send(`Terminating instance ${instanceId} (${state})...`, "deploy");
+		await runAWSCommand(["ec2", "terminate-instances", "--instance-ids", instanceId, "--region", region], ws, "deploy");
+	}
+}
+
+async function waitForUserData(instanceId: string, region: string, ws: any, send: SendFn): Promise<void> {
+	send("Waiting for user-data to finish (this may take 5+ minutes)...", "deploy");
+	await new Promise(r => setTimeout(r, 90_000));
+	let lastLen = 0;
+	let consecutiveErrors = 0;
+	let encodingErrorShown = false;
+	let cloudInitFailureDetected = false;
+	for (let i = 1; i <= 24; i++) {
+		send(`Fetching instance system logs (${i}/24)...`, "deploy");
+		try {
+			const raw = await runAWSCommandToFile(["ec2", "get-console-output", "--instance-id", instanceId, "--latest", "--output", "text", "--region", region], ws, "deploy");
+			consecutiveErrors = 0; // Reset error counter on success
+			if (raw?.trim()) {
+				const clean = sanitizeConsoleOutput(raw);
+				
+				// Check for cloud-init failures
+				if (!cloudInitFailureDetected) {
+					const failurePatterns = [
+						/Failed to start.*cloud-final/i,
+						/cloud-init.*failed/i,
+						/cloud-final.*failed/i,
+						/Error.*cloud-init/i,
+					];
+					for (const pattern of failurePatterns) {
+						if (pattern.test(clean)) {
+							cloudInitFailureDetected = true;
+							send("⚠️ Warning: Cloud-init failure detected. User-data script may have failed. Checking if application is running anyway...", "deploy");
+							break;
+						}
+					}
+				}
+				
+				if (clean.length > lastLen) {
+					const lines = clean.substring(lastLen).trim().split(/\n/).filter(l => l.trim());
+					if (lines.length) send((lines.length > 30 ? lines.slice(-30) : lines).join("\n"), "deploy");
+					lastLen = clean.length;
+				}
+				
+				// Check for success signal
+				if (clean.includes("Deployment complete!")) {
+					if (cloudInitFailureDetected) {
+						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
+					} else {
+						send("Instance user-data finished.", "deploy");
+					}
+					return;
+				}
+				
+				// If cloud-init finished but we haven't seen "Deployment complete!", wait a bit more
+				if (clean.includes("Cloud-init v.") && clean.includes("finished") && i >= 12) {
+					send("Cloud-init finished. Checking if deployment completed...", "deploy");
+					// Give it a few more attempts to see if deployment completed
+					if (i >= 18) {
+						send("Cloud-init finished but no deployment completion signal found. Proceeding to check application status...", "deploy");
+						return;
+					}
+				}
+			}
+		} catch (e: any) {
+			consecutiveErrors++;
+			const errorMsg = e.message ?? String(e);
+			const sanitized = sanitizeConsoleOutput(errorMsg.replace(/[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF]/g, ""));
+			
+			if (errorMsg.includes("charmap") || errorMsg.includes("codec") || errorMsg.includes("encode")) {
+				if (!encodingErrorShown) {
+					send(`Note: Console output encoding issue detected (Windows compatibility). Continuing...`, "deploy");
+					encodingErrorShown = true;
+				}
+				consecutiveErrors = Math.max(0, consecutiveErrors - 1);
+			} else {
+				send(`Error fetching console: ${sanitized}`, "deploy");
+			}
+			
+			if (consecutiveErrors >= 5) {
+				send("Too many consecutive errors fetching console output. Continuing deployment...", "deploy");
+				break;
+			}
+		}
+		await new Promise(r => setTimeout(r, 15_000));
+	}
+	
+	if (cloudInitFailureDetected) {
+		send("⚠️ Cloud-init failure was detected. Proceeding to check if application is running despite the failure...", "deploy");
+	}
+}
+
+async function detectRespondingPort(publicIp: string, services: ServiceDef[], ws: any, send: SendFn): Promise<number | null> {
+	try {
+		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
+		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
+		const candidates = Array.from(new Set([80, 8080, 3000, 5000, ...services.map(s => s.port).filter(Boolean)]));
+		for (const port of candidates) {
+			try {
+				const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
+				if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3"))) {
+					send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
+					return port;
+				}
+			} catch { /* try next */ }
+		}
+	} catch { /* curl unavailable */ }
+	return null;
+}
+
+function buildServiceUrls(
+	deployConfig: DeployConfig,
+	services: ServiceDef[],
+	repoName: string,
+	publicIp: string,
+	certificateArn: string,
+	sharedAlbEnabled: boolean,
+): { baseUrl: string; serviceUrls: Map<string, string> } {
+	const serviceUrls = new Map<string, string>();
+	let baseUrl: string;
+	if (sharedAlbEnabled && deployConfig.service_name) {
+		const host = buildServiceHostname(deployConfig.service_name, deployConfig.service_name);
+		baseUrl = host ? `${certificateArn ? "https" : "http"}://${host}` : deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+		serviceUrls.set(services[0]?.name || repoName, baseUrl);
+	} else {
+		baseUrl = deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+		for (const svc of services) serviceUrls.set(svc.name, baseUrl);
+	}
+	return { baseUrl, serviceUrls };
+}
+
+function resolveServices(repoName: string, deployConfig: DeployConfig, multi: MultiServiceConfig): ServiceDef[] {
+	if (multi.isMultiService && multi.services.length > 0) {
+		return multi.services.map(s => ({ name: s.name, dir: s.workdir, port: s.port || 8080 }));
+	}
+	return [{ name: repoName, dir: ".", port: deployConfig.core_deployment_info?.port || 8080 }];
+}
+
+// ─── Main entry point ───────────────────────────────────────────────────────
+
 export async function handleEC2(
 	deployConfig: DeployConfig,
 	appDir: string,
@@ -435,471 +920,59 @@ export async function handleEC2(
 	token: string,
 	dbConnectionString: string | undefined,
 	ws: any,
-	parentSend?: (msg: string, id: string) => void
-): Promise<{ success: boolean; baseUrl: string, serviceUrls: Map<string, string>; instanceId: string; publicIp: string; vpcId: string; subnetId: string; securityGroupId: string; amiId: string; sharedAlbDns?: string }> {
-	const send = parentSend || createWebSocketLogger(ws);
-
+	parentSend?: SendFn,
+): Promise<EC2Result> {
+	const send: SendFn = parentSend || createWebSocketLogger(ws);
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const instanceName = generateResourceName(repoName, "ec2");
-	const keyName = `smartdeploy`;
 	const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || "";
 	const sharedAlbEnabled = !!certificateArn && !!buildServiceHostname("app");
-
-	// Save existing instance ID for later termination after new instance is confirmed working
 	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
 
-	// Reuse saved networking when present (e.g. redeploy); otherwise create
-	let vpcId: string;
-	let subnetIds: string[];
-	let securityGroupId: string;
-	if (deployConfig.ec2?.vpcId?.trim() && deployConfig.ec2?.subnetId?.trim() && deployConfig.ec2?.securityGroupId?.trim()) {
-		vpcId = deployConfig.ec2.vpcId.trim();
-		subnetIds = [deployConfig.ec2.subnetId.trim()];
-		securityGroupId = deployConfig.ec2.securityGroupId.trim();
-		send("Reusing existing VPC, subnet, and security group...", 'setup');
-	} else {
-		send("Setting up networking...", 'setup');
-		vpcId = await getDefaultVpcId(ws);
-		subnetIds = await getSubnetIds(vpcId, ws);
-		securityGroupId = await ensureSecurityGroup(
-			`${repoName}-ec2-sg`,
-			vpcId,
-			`Security group for ${repoName} EC2 instance`,
-			ws
-		);
-	}
+	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
+	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
+	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
+	const customDomain = sharedAlbEnabled ? undefined : deployConfig.custom_url;
+	const { composeYml, envBase64 } = buildComposeAndEnv(services, deployConfig.env_vars || "", dbConnectionString, customDomain);
 
-	// Ensure ingress rules exist even when reusing a security group
-	const ingressPorts = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
-	if (deployConfig.core_deployment_info?.port) {
-		ingressPorts.add(deployConfig.core_deployment_info.port);
-	}
-	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 0) {
-		for (const svc of multiServiceConfig.services) {
-			if (typeof svc.port === "number" && !Number.isNaN(svc.port)) {
-				ingressPorts.add(svc.port);
-			}
-		}
-	}
-	for (const port of ingressPorts) {
-		try {
-			await runAWSCommand([
-				"ec2", "authorize-security-group-ingress",
-				"--group-id", securityGroupId,
-				"--protocol", "tcp",
-				"--port", String(port),
-				"--cidr", "0.0.0.0/0",
-				"--region", region
-			], ws, 'setup');
-		} catch {
-			// Rule might already exist
-		}
-	}
-
-	// Create key pair
-	await ensureKeyPair(keyName, region, ws);
-
-	// Use stored AMI when present (redeploy); otherwise get latest
-	let amiId: string;
-	if (deployConfig.ec2?.amiId?.trim()) {
-		amiId = deployConfig.ec2.amiId.trim();
-		send(`✅ Using stored AMI: ${amiId}`, 'setup');
-	} else {
-		send("Finding latest AMI...", 'setup');
-		amiId = await getLatestAMI(region, ws);
-		send(`✅ Using AMI: ${amiId}`, 'setup');
-	}
-
-	// Determine services to deploy
-	const services: { name: string; dir: string; port: number }[] = [];
-	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 0) {
-		for (const svc of multiServiceConfig.services) {
-			services.push({
-				name: svc.name,
-				dir: svc.workdir,
-				port: svc.port || 8080
+	// ── Redeploy path: reuse existing running instance via SSM ──
+	if (existingInstanceId) {
+		const state = await getInstanceState(existingInstanceId, region, ws);
+		if (state === "running") {
+			return redeployInstance({
+				deployConfig, existingInstanceId, region, services, repoName, token,
+				composeYml, envBase64, net, amiId, certificateArn, sharedAlbEnabled, ws, send,
 			});
 		}
-	} else {
-		services.push({
-			name: repoName,
-			dir: '.',
-			port: deployConfig.core_deployment_info?.port || 8080
-		});
 	}
 
-	// Generate user-data script
-	const userData = generateUserDataScript(
-		deployConfig.url,
-		deployConfig.branch || 'main',
-		token,
-		services,
-		deployConfig.env_vars || '',
-		dbConnectionString,
-		deployConfig.commitSha,
-		sharedAlbEnabled ? undefined : deployConfig.custom_url
-	);
+	// ── Fresh deploy path: launch new instance ──
+	const instanceName = generateResourceName(repoName, "ec2");
+	const { instanceId, publicIp, detectedPort } = await launchNewInstance({
+		deployConfig, instanceName, region, services, token, dbConnectionString,
+		net, amiId, sharedAlbEnabled, ws, send,
+	});
 
-
-	// Base64 encode user-data and write to temp file to avoid "command line too long" on Windows
-	const userDataBase64 = Buffer.from(userData).toString('base64');
-	const userDataFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.b64`);
-	fs.writeFileSync(userDataFile, userDataBase64, 'utf8');
-	const userDataFileUri = "fileb://" + path.resolve(userDataFile).replace(/\\/g, '/');
-
-	let instanceId: string;
-	try {
-		// Launch EC2 instance
-		send(`Launching EC2 instance: ${instanceName}...`, 'deploy');
-
-		const runOutput = await runAWSCommand([
-			"ec2", "run-instances",
-			"--image-id", amiId,
-			"--instance-type", "t3.micro",
-			"--key-name", keyName,
-			"--security-group-ids", securityGroupId,
-			"--subnet-id", subnetIds[0],
-			"--user-data", userDataFileUri,
-			"--tag-specifications", `ResourceType=instance,Tags=[{Key=Name,Value=${instanceName}},{Key=Project,Value=SmartDeploy}]`,
-			"--query", "Instances[0].InstanceId",
-			"--output", "text",
-			"--region", region
-		], ws, 'deploy');
-
-		instanceId = runOutput.trim();
-		send(`Instance launched: ${instanceId}`, 'deploy');
-	} finally {
-		try {
-			fs.unlinkSync(userDataFile);
-		} catch {
-			// ignore cleanup errors
-		}
-	}
-
-	// Wait for instance to be running
-	send("Waiting for instance to be running...", 'deploy');
-	await runAWSCommand([
-		"ec2", "wait", "instance-running",
-		"--instance-ids", instanceId,
-		"--region", region
-	], ws, 'deploy');
-
-	// Get public IP
-	send("Getting instance public IP...", 'deploy');
-	const ipOutput = await runAWSCommand([
-		"ec2", "describe-instances",
-		"--instance-ids", instanceId,
-		"--query", "Reservations[0].Instances[0].PublicIpAddress",
-		"--output", "text",
-		"--region", region
-	], ws, 'deploy');
-
-	const publicIp = ipOutput.trim();
-	send(`Instance public IP: ${publicIp}`, 'deploy');
-
-	// Give user-data time to run (install docker, clone, build can take 2–5+ minutes)
-	send("Waiting for application to deploy (user-data runs in background; this may take 5+ minutes)...", 'deploy');
-	const initialDelayMs = 90 * 1000;
-	send(`Waiting ${initialDelayMs / 1000}s before first health check...`, 'deploy');
-	await new Promise(resolve => setTimeout(resolve, initialDelayMs));
-
-	// Only send last N lines of console output to avoid flooding logs with full cloud-init/docker output
-	const CONSOLE_TAIL_LINES = 80;
-	function tailConsoleOutput(fullOutput: string): string {
-		const sanitized = sanitizeConsoleOutput(fullOutput);
-		const lines = sanitized.trim().split(/\n/).filter(l => l.trim());
-		if (lines.length <= CONSOLE_TAIL_LINES) return lines.join("\n");
-		return "... (showing last " + CONSOLE_TAIL_LINES + " lines)\n" + lines.slice(-CONSOLE_TAIL_LINES).join("\n");
-	}
-
-	let attempts = 0;
-	let lastConsoleLength = 0;
-	const maxAttempts = 24; // 24 * 15s ≈ 6 min after initial delay
-	while (attempts < maxAttempts) {
-		attempts++;
-		send(`Fetching instance system logs (${attempts}/${maxAttempts})...`, 'deploy');
-		try {
-			// Use runAWSCommandToFile to avoid Windows console encoding errors (exit 255) when output contains Unicode
-			const consoleOut = await runAWSCommandToFile(
-				[
-					"ec2",
-					"get-console-output",
-					"--instance-id",
-					instanceId,
-					"--latest",
-					"--output",
-					"text",
-					"--region",
-					region,
-				],
-				ws,
-				'deploy'
-			);
-
-			if (consoleOut && consoleOut.trim()) {
-				// Sanitize to remove ANSI sequences, control chars, and encoding artifacts
-				const cleanOutput = sanitizeConsoleOutput(consoleOut);
-				// Only send new content since last check to avoid flooding with duplicate logs
-				if (cleanOutput.length > lastConsoleLength) {
-					const newContent = cleanOutput.substring(lastConsoleLength);
-					const newLines = newContent.trim().split(/\n/).filter(l => l.trim());
-					if (newLines.length > 0) {
-						// Show last N lines of new content
-						const displayLines = newLines.length > 30 ? newLines.slice(-30) : newLines;
-						send(displayLines.join("\n"), 'deploy');
-					}
-					lastConsoleLength = cleanOutput.length;
-				} else {
-					send("(no new console output from instance yet)", 'deploy');
-				}
-
-				// Stop early if user-data signalled completion
-				if (cleanOutput.includes("Deployment complete!")) {
-					send("Instance user-data finished running.", 'deploy');
-					break;
-				}
-			} else {
-				send("(no new console output from instance yet)", 'deploy');
-			}
-		} catch (err: any) {
-			const errMsg = err instanceof Error ? err.message : String(err);
-			// Sanitize the error message too — AWS CLI errors can include encoded chars
-			send(`Error fetching console output: ${sanitizeConsoleOutput(errMsg)}`, 'deploy');
-		}
-
-		await new Promise((resolve) => setTimeout(resolve, 15000));
-	}
-
-	// Quick one-shot port detection: try likely ports (including any service ports) with curl,
-	// mainly to choose a nice base URL. This doesn't block on readiness (we already streamed logs above).
-	let detectedPort: number | null = null;
-	try {
-		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
-		const nullOut = process.platform === "win32" ? "NUL" : "/dev/null";
-		const candidatePorts = Array.from(
-			new Set<number>([
-				80,
-				8080,
-				3000,
-				5000,
-				...services
-					.map((svc) => svc.port)
-					.filter((p): p is number => typeof p === "number" && !Number.isNaN(p)),
-			])
-		);
-
-		for (const port of candidatePorts) {
-			try {
-				const out = await runCommandLiveWithWebSocket(
-					"curl",
-					[
-						"-s",
-						"-o",
-						nullOut,
-						"-w",
-						"%{http_code}",
-						"--connect-timeout",
-						"4",
-						`http://${publicIp}:${port}`,
-					],
-					ws,
-					"deploy"
-				);
-				const code = (out || "").trim();
-				if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3"))) {
-					send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
-					detectedPort = port;
-					break;
-				}
-			} catch {
-				// ignore and try next port
-			}
-		}
-	} catch {
-		// If curl/runCommandLiveWithWebSocket fails, fall back to 80
-	}
-
-	if (!detectedPort) {
-		send(`❌ New instance failed to respond on any known ports.`, "deploy");
-		
-		// Terminate the failed new instance
-		try {
-			send(`Cleaning up failed instance ${instanceId}...`, "deploy");
-			await terminateInstance(instanceId, region, ws);
-			send(`Failed instance ${instanceId} terminated.`, "deploy");
-		} catch (error: any) {
-			send(`⚠️ Failed to terminate failed instance: ${error.message}. Please manually clean up instance ${instanceId}.`, "deploy");
-		}
-		
-		if (existingInstanceId) {
-			send(`⚠️ Falling back to existing instance ${existingInstanceId}...`, "deploy");
-			send("New instance deployment failed. Reverting to previous instance.", "deploy");
-			return {
-				success: false,
-				baseUrl: deployConfig.deployUrl || "",
-				serviceUrls: new Map(),
-				instanceId: existingInstanceId,
-				publicIp: "",
-				vpcId,
-				subnetId: subnetIds[0],
-				securityGroupId,
-				amiId,
-			};
-		}
-		throw new Error("New instance failed to respond and no previous instance to fall back to");
-	}
-
-	const serviceUrls = new Map<string, string>();
+	let baseUrl = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
+	let serviceUrls = new Map<string, string>();
 	let sharedAlbDns: string | undefined;
-	let baseUrl = detectedPort == 80 || detectedPort == 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
 
-	try {
-		if (sharedAlbEnabled) {
-			send("Configuring shared ALB routing to new instance...", "deploy");
-			const sharedAlb = await ensureSharedAlb({
-				vpcId,
-				subnetIds: subnetIds.slice(0, 2),
-				region,
-				ws,
-				certificateArn,
-			});
-			sharedAlbDns = sharedAlb.dnsName;
-			const listenerArnForRules = sharedAlb.httpsListenerArn || sharedAlb.httpListenerArn;
-			const customHost = normalizeDomain(deployConfig.custom_url);
-
-			// ALB forwards only to nginx on port 80.
-			await allowAlbToReachService(securityGroupId, sharedAlb.albSgId, 80, ws);
-			const targetGroupName = `${repoName}-tg`
-				.toLowerCase()
-				.replace(/[^a-z0-9-]/g, "-")
-				.replace(/-+/g, "-")
-				.replace(/^-|-$/g, "")
-				.slice(0, 32) || "smartdeploy-tg";
-
-			const targetGroupArn = await ensureTargetGroup(targetGroupName, vpcId, 80, region, ws, {
-				targetType: "instance",
-				healthCheckPath: "/",
-			});
-			
-			// Deregister old instance from target group if it exists
-			if (existingInstanceId) {
-				try {
-					await runAWSCommand([
-						"elbv2",
-						"deregister-targets",
-						"--target-group-arn",
-						targetGroupArn,
-						"--targets",
-						`Id=${existingInstanceId},Port=80`,
-						"--region",
-						region
-					], ws, "deploy");
-					send(`Deregistered old instance ${existingInstanceId} from target group.`, "deploy");
-				} catch {
-					// Old instance may not be registered; continue
-				}
-			}
-			
-			// Register new instance to target group
-			await registerInstanceToTargetGroup(targetGroupArn, instanceId, 80, region, ws);
-
-			for (const svc of services) {
-				const preferredSubdomain = services.length === 1 && deployConfig.service_name?.trim()
-					? deployConfig.service_name.trim()
-					: svc.name;
-				const serviceHostname = customHost || buildServiceHostname(svc.name, preferredSubdomain);
-				if (serviceHostname) {
-					await ensureHostRule(listenerArnForRules, serviceHostname, targetGroupArn, region, ws);
-				}
-
-				const serviceUrl = serviceHostname
-					? `${certificateArn ? "https" : "http"}://${serviceHostname}`
-					: `${certificateArn ? "https" : "http"}://${sharedAlb.dnsName}`;
-				serviceUrls.set(svc.name, serviceUrl);
-			}
-
-			if (services.length === 1) {
-				baseUrl = serviceUrls.get(services[0].name) || baseUrl;
-			}
-		} else {
-			for (const svc of services) {
-				if (services.length === 1) {
-					serviceUrls.set(svc.name, baseUrl);
-				} else {
-					serviceUrls.set(svc.name, `http://${publicIp}:${svc.port}`);
-				}
-			}
+	if (sharedAlbEnabled) {
+		const alb = await configureAlb({
+			deployConfig, instanceId, existingInstanceId, services, repoName, net, region, certificateArn, ws, send,
+		});
+		sharedAlbDns = alb.sharedAlbDns;
+		serviceUrls = alb.serviceUrls;
+		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+	} else {
+		for (const svc of services) {
+			serviceUrls.set(svc.name, services.length === 1 ? baseUrl : `http://${publicIp}:${svc.port}`);
 		}
-
-		send(`\n✅ New instance is responding and ALB configured!`, 'deploy');
-		
-		// Now that new instance is confirmed working, terminate the old instance
-		if (existingInstanceId) {
-			send(`Terminating old instance ${existingInstanceId}...`, 'deploy');
-			try {
-				const targetGroupName = `${repoName}-tg`
-					.toLowerCase()
-					.replace(/[^a-z0-9-]/g, "-")
-					.replace(/-+/g, "-")
-					.replace(/^-|-$/g, "")
-					.slice(0, 32) || "smartdeploy-tg";
-				
-				await terminateInstance(existingInstanceId, region, ws, {
-					cleanupAlbTargetGroup: sharedAlbEnabled,
-					targetGroupName: sharedAlbEnabled ? targetGroupName : undefined
-				});
-				send(`Old instance ${existingInstanceId} terminated successfully.`, 'deploy');
-			} catch (error: any) {
-				send(`⚠️ Failed to terminate old instance: ${error.message}`, 'deploy');
-				send("Continuing with new instance. You may want to manually terminate the old instance.", 'deploy');
-			}
-		}
-
-	} catch (error: any) {
-		send(`❌ ALB configuration failed: ${error.message}`, 'deploy');
-		
-		// Terminate the failed new instance
-		try {
-			send(`Cleaning up failed instance ${instanceId}...`, "deploy");
-			await terminateInstance(instanceId, region, ws);
-			send(`Failed instance ${instanceId} terminated.`, "deploy");
-		} catch (cleanupError: any) {
-			send(`⚠️ Failed to terminate failed instance: ${cleanupError.message}. Please manually clean up instance ${instanceId}.`, "deploy");
-		}
-		
-		if (existingInstanceId) {
-			send(`⚠️ Falling back to existing instance ${existingInstanceId}...`, 'deploy');
-			return {
-				success: false,
-				baseUrl: deployConfig.deployUrl || "",
-				serviceUrls: new Map(),
-				instanceId: existingInstanceId,
-				publicIp: "",
-				vpcId,
-				subnetId: subnetIds[0],
-				securityGroupId,
-				amiId,
-			};
-		}
-		throw error;
 	}
 
-	send(`\nDeployment complete!`, 'done');
-	send(`Application URL: ${baseUrl}`, 'done');
-	send(`Instance ID: ${instanceId}`, 'done');
-	send(`SSH: ssh -i ${keyName}.pem ec2-user@${publicIp}`, 'done');
+	send("✅ Instance is responding and configured!", "deploy");
+	send(`Application URL: ${baseUrl}`, "done");
+	send(`Instance ID: ${instanceId}`, "done");
 
-	return {
-		success: true,
-		baseUrl,
-		serviceUrls,
-		instanceId,
-		publicIp,
-		vpcId,
-		subnetId: subnetIds[0],
-		securityGroupId,
-		amiId,
-		sharedAlbDns,
-	};
+	return { success: true, baseUrl, serviceUrls, instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId, sharedAlbDns };
 }

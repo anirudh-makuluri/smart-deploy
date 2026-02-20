@@ -29,15 +29,24 @@ export async function POST(req: NextRequest) {
 
 		const { deploymentId, serviceName } = await req.json();
 
-		if (!deploymentId || !serviceName) {
+		// Validate payload shape before using it in Firestore paths
+		const validDeploymentId =
+			typeof deploymentId === "string" ? deploymentId.trim() : "";
+		const validServiceName =
+			typeof serviceName === "string" ? serviceName.trim() : "";
+
+		if (!validDeploymentId || !validServiceName) {
 			return NextResponse.json(
-				{ error: "Missing deploymentId or serviceName" },
+				{
+					error:
+						"Missing or invalid deploymentId or serviceName. Both must be non-empty strings.",
+				},
 				{ status: 400 }
 			);
 		}
 
 		// Verify ownership and get deployment config
-		const deploymentRef = db.collection("deployments").doc(deploymentId);
+		const deploymentRef = db.collection("deployments").doc(validDeploymentId);
 		const deploymentDoc = await deploymentRef.get();
 
 		if (!deploymentDoc.exists) {

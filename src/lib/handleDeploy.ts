@@ -66,6 +66,7 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
 		const branch = deployConfig.branch?.trim() || "main";
 		const commitSha = deployConfig.commitSha?.trim();
+		deployConfig.deploymentTarget = "ec2";
 		
 		if (commitSha) {
 			send(`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
@@ -362,15 +363,15 @@ async function handleAWSDeploy(
 	await setupAWSCredentials(ws);
 	send("✅ AWS credentials authenticated", 'auth');
 
-	// Use saved target from Smart Project Scan
+	// Always use EC2 for AWS deployments (other targets remain in codebase for reference)
 	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
 	const savedTarget = deployConfig.deploymentTarget;
 	
 	if (!savedTarget || !awsTargets.includes(savedTarget)) {
 		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
 	}
+	const target: AWSDeploymentTarget = savedTarget;
 
-	const target = savedTarget;
 
 	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
 

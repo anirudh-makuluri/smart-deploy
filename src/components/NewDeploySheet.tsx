@@ -10,7 +10,6 @@ import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { parseEnvVarsToStore } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
-import { selectDeploymentTargetFromMetadata } from "@/lib/deploymentTargetFromMetadata";
 import { toast } from "sonner";
 
 type NewDeploySheetProps = {
@@ -69,28 +68,10 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 		let deploymentTarget = values.deploymentTarget;
 		let deployment_target_reason = values.deployment_target_reason;
 
-		if (
-			!deploymentTarget &&
-			values.core_deployment_info &&
-			values.features_infrastructure &&
-			values.final_notes
-		) {
-			const analysis = selectDeploymentTargetFromMetadata({
-				core_deployment_info: values.core_deployment_info,
-				features_infrastructure: values.features_infrastructure,
-				final_notes: values.final_notes,
-				deployment_hints: values.deployment_hints,
-				service_compatibility: values.service_compatibility,
-			});
-			if (analysis) {
-				deploymentTarget = analysis.target;
-				deployment_target_reason = analysis.reason;
-			}
-		}
-
+		// Always use EC2 for AWS deployments
 		if (!deploymentTarget) {
-			toast.error("Deployment target not set. Run Smart Project Scan or select a target.");
-			return;
+			deploymentTarget = "ec2";
+			deployment_target_reason = "Using EC2.";
 		}
 
 		const coreInfo = values.core_deployment_info;

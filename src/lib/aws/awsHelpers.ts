@@ -79,38 +79,75 @@ export async function runAWSCommandToFile(
 	const { spawn } = await import("child_process");
 	const os = await import("os");
 	const outPath = path.join(os.tmpdir(), `aws-console-${Date.now()}.txt`);
-	const fd = fs.openSync(outPath, "w");
 
 	return new Promise((resolve, reject) => {
+		let stdout = "";
+		let stderr = "";
+		const chunks: Buffer[] = [];
+
 		const child = spawn("aws", args, {
-			stdio: ["ignore", fd, fd],
+			stdio: ["ignore", "pipe", "pipe"],
 			env: {
 				...process.env,
-				PYTHONIOENCODING: "utf-8", // Force Python (AWS CLI) to use UTF-8 encoding
+				PYTHONIOENCODING: "utf-8",
+				PYTHONLEGACYWINDOWSSTDIO: "1", // Force Python to use UTF-8 on Windows
+				LC_ALL: "en_US.UTF-8",
+				LANG: "en_US.UTF-8",
 			},
 			windowsHide: true,
 		});
-		child.on("close", (code) => {
-			fs.closeSync(fd);
+
+		// Collect stdout as buffers to preserve binary data
+		child.stdout?.on("data", (data: Buffer) => {
+			chunks.push(data);
+		});
+
+		// Collect stderr separately
+		child.stderr?.on("data", (data: Buffer) => {
 			try {
-				const content = fs.readFileSync(outPath, "utf8");
+				// Buffer.toString("utf8") automatically replaces invalid UTF-8 sequences
+				stderr += data.toString("utf8");
+			} catch {
+				// If decode fails for any reason, use latin1 as fallback (preserves all bytes)
+				stderr += data.toString("latin1");
+			}
+		});
+
+		child.on("close", (code) => {
+			try {
+				// Combine all stdout chunks and decode as UTF-8
+				const stdoutBuffer = Buffer.concat(chunks);
+				stdout = stdoutBuffer.toString("utf8");
+
+				// Write to file for consistency (though we already have the content)
+				fs.writeFileSync(outPath, stdout + (stderr ? "\n" + stderr : ""), "utf8");
+
 				try {
 					fs.unlinkSync(outPath);
 				} catch {
-					// ignore
+					// ignore cleanup errors
 				}
+
 				if (code === 0) {
-					resolve(content);
+					resolve(stdout);
 				} else {
-					reject(new Error(`aws ${args.join(" ")} exited with code ${code}${content ? "\n" + content.slice(-500) : ""}`));
+					// Sanitize error message to remove problematic Unicode
+					const errorMsg = `aws ${args.join(" ")} exited with code ${code}`;
+					const errorDetails = (stdout + "\n" + stderr).slice(-500);
+					const sanitized = errorDetails.replace(/[\u2190-\u21FF]/g, ""); // Remove arrow Unicode chars
+					reject(new Error(`${errorMsg}${sanitized ? "\n" + sanitized : ""}`));
 				}
-			} catch (e) {
-				reject(e);
+			} catch (e: any) {
+				// If file operations fail, still try to return what we have
+				if (code === 0 && stdout) {
+					resolve(stdout);
+				} else {
+					reject(e instanceof Error ? e : new Error(String(e)));
+				}
 			}
 		});
+
 		child.on("error", (err) => {
-			fs.closeSync(fd);
-			try { fs.unlinkSync(outPath); } catch { /* ignore */ }
 			reject(err);
 		});
 	});

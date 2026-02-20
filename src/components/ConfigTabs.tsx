@@ -36,7 +36,6 @@ import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, repoType } fro
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { formatDeploymentTargetName } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
 
@@ -91,24 +90,12 @@ export default function ConfigTabs(
 
 	const isDeploymentTarget = (t: string): t is AWSDeploymentTarget =>
 		["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"].includes(t);
-	const [deploymentAnalysis, setDeploymentAnalysis] = useState<DeploymentAnalysisFromMetadata | null>(() => {
-		const t = deployment?.deploymentTarget;
-		const r = deployment?.deployment_target_reason;
-		if (t && r && isDeploymentTarget(t)) return { target: t, reason: r, warnings: [] };
-		return null;
-	});
-
-	const deploymentTargets: AWSDeploymentTarget[] = ["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"];
-
-	const handleDeploymentTargetChange = (target: string) => {
-		if (isDeploymentTarget(target)) {
-			setDeploymentAnalysis({
-				target,
-				reason: `Manually selected ${formatDeploymentTargetName(target)}.`,
-				warnings: [],
-			});
-		}
-	};
+	// Always use EC2 for AWS deployments; deployment target selector has been removed
+	const [deploymentAnalysis, setDeploymentAnalysis] = useState<DeploymentAnalysisFromMetadata>(() => ({
+		target: "ec2",
+		reason: "Using EC2.",
+		warnings: [],
+	}));
 
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
@@ -158,14 +145,7 @@ export default function ConfigTabs(
 				final_notes: deployment.final_notes,
 			});
 		}
-		if (deployment.deploymentTarget && deployment.deployment_target_reason && isDeploymentTarget(deployment.deploymentTarget)) {
-			setDeploymentAnalysis({
-				target: deployment.deploymentTarget,
-				reason: deployment.deployment_target_reason,
-				warnings: [],
-			});
-		}
-
+		// deploymentAnalysis is always EC2; not synced from deployment
 
 		const initialPartial: Partial<DeployConfig> = {
 			id: deployment.id,
@@ -175,10 +155,8 @@ export default function ConfigTabs(
 			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
 			env_vars: deployment.env_vars ?? "",
 			...(deployment.custom_url && { custom_url: deployment.custom_url }),
-			...(deployment.deploymentTarget && isDeploymentTarget(deployment.deploymentTarget) && {
-				deploymentTarget: deployment.deploymentTarget,
-				deployment_target_reason: deployment.deployment_target_reason,
-			}),
+			deploymentTarget: "ec2",
+			deployment_target_reason: "Using EC2.",
 			...(deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes && {
 				core_deployment_info: deployment.core_deployment_info,
 				features_infrastructure: deployment.features_infrastructure,
@@ -256,17 +234,18 @@ export default function ConfigTabs(
 					form.setValue('workdir', core_deployment_info.workdir ?? '');
 				}
 				const analysis = parsed_response ? selectDeploymentTargetFromMetadata(parsed_response) : null;
-				if (analysis) {
-					setDeploymentAnalysis(analysis);
-				} else {
-					// If no analysis, reset to null (user can manually select)
-					setDeploymentAnalysis(null);
-				}
+				// Always use EC2; keep reason from scan if available
+				setDeploymentAnalysis(
+					analysis
+						? { target: "ec2", reason: analysis.reason, warnings: analysis.warnings }
+						: { target: "ec2", reason: "Using EC2.", warnings: [] }
+				);
 				if (parsed_response) {
 					const payload = {
 						...form.getValues(),
 						...parsed_response,
-						...(analysis && { deploymentTarget: analysis.target, deployment_target_reason: analysis.reason }),
+						deploymentTarget: "ec2",
+					deployment_target_reason: analysis?.reason ?? "Using EC2.",
 					};
 					onScanComplete(payload);
 				}
@@ -295,52 +274,6 @@ export default function ConfigTabs(
 
 	return (
 		<>
-			{!(featuresInfra?.uses_mobile ||
-						featuresInfra?.is_library ||
-						isDeployDisabled) && (
-				<Card className="mb-4 border-border/60 bg-card/60">
-					<CardHeader className="pb-2">
-						<CardTitle className="text-base font-medium flex items-center gap-2 text-foreground">
-							Deployment Target
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						{editMode ? (
-							<Select
-								value={deploymentAnalysis?.target || ""}
-								onValueChange={handleDeploymentTargetChange}
-							>
-								<SelectTrigger className="border-border bg-background/60 text-foreground focus:ring-primary">
-									<SelectValue placeholder="Select deployment target" />
-								</SelectTrigger>
-								<SelectContent>
-									{deploymentTargets.map((target) => (
-										<SelectItem key={target} value={target}>
-											{formatDeploymentTargetName(target)}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						) : (
-							<p className="font-semibold text-foreground">
-								{deploymentAnalysis ? formatDeploymentTargetName(deploymentAnalysis.target) : "Not selected"}
-							</p>
-						)}
-						{deploymentAnalysis && (
-							<>
-								<p className="text-sm text-muted-foreground">{deploymentAnalysis.reason}</p>
-								{deploymentAnalysis.warnings.length > 0 && (
-									<ul className="text-xs text-amber-400 list-disc list-inside mt-1">
-										{deploymentAnalysis.warnings.map((w, i) => (
-											<li key={i}>{w}</li>
-										))}
-									</ul>
-								)}
-							</>
-						)}
-					</CardContent>
-				</Card>
-			)}
 			{projectMetadata && (
 				<>
 					{(featuresInfra?.uses_mobile ||
