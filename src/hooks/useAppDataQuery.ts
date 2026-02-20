@@ -2,9 +2,54 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAppData } from "@/store/useAppData";
 import type { DeployConfig, repoType } from "@/app/types";
+
+const CACHE_KEY = "smart-deploy-app-data";
+const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+type CachedAppData = {
+	userID: string;
+	repoList: repoType[];
+	deployments: DeployConfig[];
+	timestamp: number;
+};
+
+function readCache(userID: string): { repoList: repoType[]; deployments: DeployConfig[] } | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const raw = localStorage.getItem(CACHE_KEY);
+		if (!raw) return null;
+		const data: CachedAppData = JSON.parse(raw);
+		if (data.userID !== userID) return null;
+		if (Date.now() - data.timestamp > CACHE_MAX_AGE_MS) return null;
+		return { repoList: data.repoList ?? [], deployments: data.deployments ?? [] };
+	} catch {
+		return null;
+	}
+}
+
+function writeCache(userID: string, repoList: repoType[], deployments: DeployConfig[]) {
+	if (typeof window === "undefined") return;
+	try {
+		localStorage.setItem(
+			CACHE_KEY,
+			JSON.stringify({ userID, repoList, deployments, timestamp: Date.now() } satisfies CachedAppData)
+		);
+	} catch {
+		// ignore quota / private mode
+	}
+}
+
+function clearCache() {
+	if (typeof window === "undefined") return;
+	try {
+		localStorage.removeItem(CACHE_KEY);
+	} catch {
+		// ignore
+	}
+}
 
 async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: DeployConfig[] }> {
 	const [sessionRes, deploymentsRes] = await Promise.all([
@@ -18,31 +63,44 @@ async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: Depl
 
 /**
  * Fetches app data in the background and syncs it to the Zustand store.
- * Enable this when authenticated so the dashboard can render immediately
- * and show data when the query resolves (no full-screen loader).
+ * On refresh, rehydrates from localStorage first (same user, cache under 7 days) so you don't see a loading state.
  */
 export function useAppDataQuery() {
-	const { status } = useSession();
+	const { status, data: session } = useSession();
+	const userID = (session as { userID?: string } | null)?.userID;
 	const { setAppData, unAuthenticated } = useAppData();
+	const hasRehydrated = useRef(false);
+
+	// Rehydrate from cache as soon as we have an authenticated user (before query runs)
+	useEffect(() => {
+		if (status !== "authenticated" || !userID || hasRehydrated.current) return;
+		hasRehydrated.current = true;
+		const cached = readCache(userID);
+		if (cached) {
+			setAppData(cached.repoList, cached.deployments, false);
+		}
+	}, [status, userID, setAppData]);
 
 	const query = useQuery({
-		queryKey: ["app-data"],
+		queryKey: ["app-data", userID],
 		queryFn: fetchAppData,
 		enabled: status === "authenticated",
 		staleTime: 60 * 1000,
 	});
 
-	// Sync query result to Zustand so all useAppData() consumers get the data
+	// Sync query result to Zustand and persist to localStorage
 	useEffect(() => {
-		if (query.data) {
-			setAppData(query.data.repoList, query.data.deployments, false);
-		}
-	}, [query.data, setAppData]);
+		if (!query.data || !userID) return;
+		setAppData(query.data.repoList, query.data.deployments, false);
+		writeCache(userID, query.data.repoList, query.data.deployments);
+	}, [query.data, userID, setAppData]);
 
-	// Clear store when user logs out
+	// Clear store and cache when user logs out
 	useEffect(() => {
 		if (status === "unauthenticated") {
+			hasRehydrated.current = false;
 			unAuthenticated();
+			clearCache();
 		}
 	}, [status, unAuthenticated]);
 
