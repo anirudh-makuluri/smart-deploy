@@ -18,7 +18,7 @@ type DashboardSideBarProps = {
 
 export default function DashboardSideBar({ onOpenDeploySheet, activeView, onViewChange }: DashboardSideBarProps) {
 	const { data: session } = useSession();
-	const { repoList, deployments, refreshRepoList } = useAppData();
+	const { repoList, deployments, refreshRepoList, isLoading } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showAddRepo, setShowAddRepo] = useState(false);
 	const [repoUrl, setRepoUrl] = useState("");
@@ -286,7 +286,9 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 				<ul className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
 					{availableRepos.length === 0 ? (
 						<li className="text-muted-foreground text-sm py-4 px-3 rounded-lg border border-dashed border-border">
-							{repoList.length === 0 
+							{isLoading && repoList.length === 0
+								? "Loading…"
+								: repoList.length === 0
 								? "No repositories yet. Connect a repo from a service to see it here."
 								: "All repositories have been deployed. Add a new repository to deploy."}
 						</li>

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import SessionWrapper from "@/components/SessionWrapper";
-import { AppDataLoader } from "@/components/AppDataLoader";
+import Providers from "@/components/Providers";
 import { Toaster } from "@/components/ui/sonner"
 
 
@@ -31,10 +30,10 @@ export default function RootLayout({
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} landing-bg text-foreground antialiased`}
 			>
-				<SessionWrapper>
+				<Providers>
 					{children}
 					<Toaster />
-				</SessionWrapper>
+				</Providers>
 
 			</body>
 		</html>

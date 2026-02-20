@@ -15,7 +15,7 @@ type DashboardMainProps = {
 
 export default function DashboardMain({ onNewDeploy, activeView }: DashboardMainProps) {
 	const { data: session } = useSession();
-	const { deployments, repoList } = useAppData();
+	const { deployments, repoList, isLoading } = useAppData();
 
 	function getRepo(dep: DeployConfig) {
 		return repoList.find((repo) => repo.html_url === dep.url);
@@ -58,9 +58,13 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 						{activeDeployments.length === 0 ? (
 							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
 								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
-								<p className="text-foreground font-medium">No services yet</p>
+								<p className="text-foreground font-medium">
+									{isLoading ? "Loading…" : "No services yet"}
+								</p>
 								<p className="text-sm text-muted-foreground mt-1 max-w-sm">
-									Add a repository and deploy to see your services here.
+									{isLoading
+										? "Fetching your deployments."
+										: "Add a repository and deploy to see your services here."}
 								</p>
 							</div>
 						) : (

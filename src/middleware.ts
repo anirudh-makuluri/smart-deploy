@@ -17,7 +17,7 @@ export async function middleware(req : NextRequest) {
 	}
 
 	if(token && isAuthPage) {
-		return NextResponse.redirect(new URL("/", req.url))
+		return NextResponse.redirect(new URL("/home", req.url))
 	}
 
 	// Only block non-auth API routes
