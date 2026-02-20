@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
+import { AccentSync } from "@/components/AccentSync";
 import { Toaster } from "@/components/ui/sonner"
 
 
@@ -31,6 +32,7 @@ export default function RootLayout({
 				className={`${geistSans.variable} ${geistMono.variable} landing-bg text-foreground antialiased`}
 			>
 				<Providers>
+					<AccentSync />
 					{children}
 					<Toaster />
 				</Providers>

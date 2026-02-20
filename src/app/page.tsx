@@ -14,7 +14,7 @@ export default function Home() {
 		"[INFO] Scanning entry points... found /pages, /api",
 		"[INFO] Target: Next.js SSR build (Node 18+)",
 		"[INFO] Installing NPM packages → 187 packages",
-		'{ service: "elastic-beanstalk", region: "us-west-2" }',
+		'{ service: "ec2", region: "us-west-2" }',
 		"Deploying services online",
 		"→ https://my-app.smartdeploy.io",
 	];
@@ -61,7 +61,7 @@ export default function Home() {
 		}
 
 		const currentLine = terminalLines[currentLineIndex];
-		
+
 		if (currentCharIndex < currentLine.length) {
 			const timer = setTimeout(() => {
 				setDisplayedText(prev => {
@@ -110,18 +110,18 @@ export default function Home() {
 			<header className="sticky top-0 z-50 shrink-0 flex items-center justify-between px-6 lg:px-12 py-4 border-b border-border/50 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
 				<SmartDeployLogo href="/" />
 				<nav className="hidden md:flex items-center gap-8 text-sm">
-					<Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
-						Features
-					</Link>
 					<Link href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">
 						How It Works
 					</Link>
-					<Link href="#docs" className="text-muted-foreground hover:text-foreground transition-colors">
+					<Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+						Features
+					</Link>
+					{/* <Link href="#docs" className="text-muted-foreground hover:text-foreground transition-colors">
 						Docs
 					</Link>
 					<Link href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
 						Pricing
-					</Link>
+					</Link> */}
 				</nav>
 				<div className="flex items-center gap-3">
 					<Link
@@ -138,9 +138,6 @@ export default function Home() {
 				<div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 items-center">
 					{/* Left Side */}
 					<div className="flex flex-col gap-6">
-						<p className="text-primary font-mono text-xs uppercase tracking-wider">
-							TRYING REACT // AP.JS
-						</p>
 						<h1 className="text-5xl lg:text-7xl font-bold leading-tight">
 							Code to <span className="text-primary">Cloud.</span>
 						</h1>
@@ -165,12 +162,6 @@ export default function Home() {
 							>
 								TEST_DEPLOYMENTS --force
 							</Link>
-							<Link
-								href="#docs"
-								className="bg-muted hover:bg-muted/80 text-foreground font-mono font-medium px-6 py-3 rounded-md transition-all text-sm inline-flex items-center gap-2"
-							>
-								VIEW_DOCS 📄
-							</Link>
 						</div>
 					</div>
 
@@ -182,11 +173,10 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={() => handleAccentChange("green")}
-										className={`size-4 rounded-full border transition-all ${
-											accentColor === "green"
+										className={`size-4 rounded-full border transition-all ${accentColor === "green"
 												? "border-primary/70 ring-2 ring-primary/40"
 												: "border-border/70 hover:border-primary/40"
-										}`}
+											}`}
 										aria-label="Set accent color to green"
 										aria-pressed={accentColor === "green"}
 									>
@@ -195,11 +185,10 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={() => handleAccentChange("blue")}
-										className={`size-4 rounded-full border transition-all ${
-											accentColor === "blue"
+										className={`size-4 rounded-full border transition-all ${accentColor === "blue"
 												? "border-primary/70 ring-2 ring-primary/40"
 												: "border-border/70 hover:border-primary/40"
-										}`}
+											}`}
 										aria-label="Set accent color to blue"
 										aria-pressed={accentColor === "blue"}
 									>
@@ -208,11 +197,10 @@ export default function Home() {
 									<button
 										type="button"
 										onClick={() => handleAccentChange("red")}
-										className={`size-4 rounded-full border transition-all ${
-											accentColor === "red"
+										className={`size-4 rounded-full border transition-all ${accentColor === "red"
 												? "border-primary/70 ring-2 ring-primary/40"
 												: "border-border/70 hover:border-primary/40"
-										}`}
+											}`}
 										aria-label="Set accent color to red"
 										aria-pressed={accentColor === "red"}
 									>
@@ -225,9 +213,8 @@ export default function Home() {
 								{displayedText.map((line, index) => (
 									<p
 										key={index}
-										className={`${getLineColor(index, line)} ${
-											line.includes("service:") ? "opacity-60" : ""
-										}`}
+										className={`${getLineColor(index, line)} ${line.includes("service:") ? "opacity-60" : ""
+											}`}
 									>
 										{line}
 										{index === currentLineIndex && (
@@ -245,12 +232,15 @@ export default function Home() {
 				{/* Partner Logos */}
 				<div className="max-w-7xl mx-auto mt-20 pt-12 border-t border-border/50">
 					<p className="text-center text-muted-foreground text-xs uppercase tracking-wider mb-8">
-						POWERED BY ELITE INFRASTRUCTURE TEAMS
+						POWERED BY ELITE TEAMS
 					</p>
 					<div className="flex flex-wrap items-center justify-center gap-12 opacity-50">
 						<div className="font-bold text-xl">AWS</div>
 						<div className="font-bold text-xl">GCP</div>
-						<div className="font-bold text-xl">VERCEL</div>
+						<div className="font-bold text-xl">Vercel</div>
+						<div className="font-bold text-xl">Supabase</div>
+						<div className="font-bold text-xl">Zustand</div>
+						<div className="font-bold text-xl">TanStack Query</div>
 					</div>
 				</div>
 			</section>
@@ -297,7 +287,7 @@ export default function Home() {
 							</div>
 							<h3 className="text-xl font-bold">03. Automated Build</h3>
 							<p className="text-sm text-muted-foreground">
-								Selects optimal provisioning across AWS, GCP, and Azure for instant cloud delivery.
+								Selects optimal provisioning across AWS, and GCP for instant cloud delivery.
 							</p>
 						</div>
 
@@ -328,7 +318,7 @@ export default function Home() {
 								Production-grade at the YAML level.<br />
 								Pure engineering, zero friction.
 							</p>
-							<div className="space-y-2 font-mono text-sm">
+							<div className="space-y-2 font-mono hidden text-sm">
 								<p className="text-primary">HTML/SLA: <span className="text-foreground">99.99%</span></p>
 								<p className="text-primary">AVAILABILITY: <span className="text-foreground">&lt;10ms</span></p>
 							</div>
@@ -345,7 +335,7 @@ export default function Home() {
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">01_AUTO_SCAN</h3>
 										<p className="text-sm text-muted-foreground">
-											AI analysis of IOT to determine infrastructure requirements and metadata.
+											AI analysis to determine infrastructure requirements and metadata.
 										</p>
 									</div>
 								</div>
@@ -360,7 +350,7 @@ export default function Home() {
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">02_MULTI_REGION</h3>
 										<p className="text-sm text-muted-foreground">
-											Replicate fault-cloud provisioning AWS, GCP, and Azure as a single target.
+											Replicate cloud infrastructure provisioning across AWS, and GCP as a single target.
 										</p>
 									</div>
 								</div>
@@ -375,7 +365,7 @@ export default function Home() {
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">03_DB_MESH</h3>
 										<p className="text-sm text-muted-foreground">
-											Database provisioning with advanced point-in-time recovery.
+											Database provisioning when needed.
 										</p>
 									</div>
 								</div>
@@ -400,7 +390,7 @@ export default function Home() {
 				</div>
 			</section>
 			{/* CTA Section */}
-			<section className="px-6 lg:px-12 py-20 bg-muted/20">
+			<section className="px-6 hidden lg:px-12 py-20 bg-muted/20">
 				<div className="max-w-4xl mx-auto">
 					<div className="bg-linear-to-br from-primary/20 to-primary/10 border-4 border-primary/50 rounded-2xl p-12">
 						<div className="bg-black rounded-xl p-8 lg:p-12">
@@ -430,17 +420,17 @@ export default function Home() {
 					</div>
 				</div>
 			</section>
-{/* Footer */}
+			{/* Footer */}
 			<footer className="border-t border-border/50 py-16 px-6 lg:px-12">
 				<div className="max-w-7xl mx-auto">
-					<div className="grid md:grid-cols-2 lg:grid-cols-5 gap-12 mb-12">
+					<div className="grid hidden md:grid-cols-2 lg:grid-cols-5 gap-12 mb-12">
 						{/* Branding */}
 						<div className="lg:col-span-2">
 							<SmartDeployLogo href="/" className="mb-4" />
 							<p className="text-muted-foreground text-sm mb-6 max-w-sm">
 								The ultimate standard for cloud automation. Infra-as-code, scale at will.
 							</p>
-							<div className="flex items-center gap-4">
+							<div className="flex hidden items-center gap-4">
 								<a href="#" className="text-muted-foreground hover:text-foreground transition-colors">
 									<Github className="size-5" />
 								</a>
@@ -488,7 +478,7 @@ export default function Home() {
 					</div>
 
 					{/* Bottom Bar */}
-					<div className="pt-8 border-t border-border/50 flex flex-col md:flex-row items-center justify-between gap-4">
+					<div className="pt-8  flex flex-col md:flex-row items-center justify-between gap-4">
 						<p className="text-sm text-muted-foreground">
 							© 2026 SmartDeploy Inc. All rights reserved.
 						</p>

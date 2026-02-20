@@ -113,6 +113,23 @@
   --sidebar-ring: #25f46a;
 }
 
+/* Explicit green accent so it always wins over defaults and removes any stale blue/red */
+.dark[data-accent="green"] {
+  --primary: #25f46a;
+  --primary-foreground: #07120b;
+  --accent: #10b981;
+  --accent-foreground: #07120b;
+  --ring: #25f46a;
+  --chart-1: #25f46a;
+  --chart-2: #16a34a;
+  --chart-3: #0ea5e9;
+  --chart-4: #22c55e;
+  --chart-5: #84cc16;
+  --sidebar-primary: #25f46a;
+  --sidebar-primary-foreground: #07120b;
+  --sidebar-ring: #25f46a;
+}
+
 :root[data-accent="blue"] {
   --primary: #3b82f6;
   --primary-foreground: #0b1220;
@@ -129,7 +146,17 @@
   --sidebar-ring: #3b82f6;
 }
 
+/* Blue accent: neutral background so no green tint */
 .dark[data-accent="blue"] {
+  --background: #0a0a0a;
+  --card: #111111;
+  --popover: #111111;
+  --secondary: #171717;
+  --muted: #1a1a1a;
+  --border: #262626;
+  --input: #262626;
+  --sidebar: #111111;
+  --sidebar-border: #262626;
   --primary: #3b82f6;
   --primary-foreground: #0b1220;
   --accent: #60a5fa;
@@ -161,7 +188,17 @@
   --sidebar-ring: #ef4444;
 }
 
+/* Red accent: neutral background so no green tint */
 .dark[data-accent="red"] {
+  --background: #0a0a0a;
+  --card: #111111;
+  --popover: #111111;
+  --secondary: #171717;
+  --muted: #1a1a1a;
+  --border: #262626;
+  --input: #262626;
+  --sidebar: #111111;
+  --sidebar-border: #262626;
   --primary: #ef4444;
   --primary-foreground: #160a0a;
   --accent: #f87171;
