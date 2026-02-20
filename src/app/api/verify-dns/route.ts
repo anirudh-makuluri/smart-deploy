@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dbHelper } from "@/db-helper";
 
 const VERCEL_API_BASE = "https://api.vercel.com";
 
@@ -81,19 +82,14 @@ export async function POST(req: NextRequest) {
 
 		// Get current deployment to check if this subdomain is already theirs
 		if (currentDeploymentId) {
-			const { db } = await import("@/lib/firebaseAdmin");
-			const deploymentRef = db.collection("deployments").doc(currentDeploymentId);
-			const deploymentDoc = await deploymentRef.get();
-			
-			if (deploymentDoc.exists) {
-				const deploymentData = deploymentDoc.data();
-				const currentCustomUrl = deploymentData?.custom_url || "";
+			const { deployment } = await dbHelper.getDeployment(currentDeploymentId);
+			if (deployment) {
+				const currentCustomUrl = deployment.custom_url || "";
 				const currentSubdomain = currentCustomUrl
 					.replace(/^https?:\/\//, "")
 					.replace(/\..*$/, "");
 
 				if (currentSubdomain === sanitized) {
-					// This subdomain already belongs to them
 					return NextResponse.json({
 						available: true,
 						isOwned: true,

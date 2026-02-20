@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebaseAdmin";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/authOptions";
 import { dbHelper } from "@/db-helper";

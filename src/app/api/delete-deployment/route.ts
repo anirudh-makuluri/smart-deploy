@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { runCommandLiveWithOutput } from "@/server-helper";
 import config from "@/config";
-import { db } from "@/lib/firebaseAdmin";
 import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
@@ -46,25 +45,23 @@ export async function POST(req: NextRequest) {
 		}
 
 		// Verify ownership and get deployment config
-		const deploymentRef = db.collection("deployments").doc(validDeploymentId);
-		const deploymentDoc = await deploymentRef.get();
+		const { deployment, error: fetchError } = await dbHelper.getDeployment(validDeploymentId);
 
-		if (!deploymentDoc.exists) {
+		if (fetchError || !deployment) {
 			return NextResponse.json(
 				{ error: "Deployment not found" },
 				{ status: 404 }
 			);
 		}
 
-		const data = deploymentDoc.data();
-		if (data && data.ownerID !== userID) {
+		if (deployment.ownerID !== userID) {
 			return NextResponse.json(
 				{ error: "Forbidden: deployment does not belong to user" },
 				{ status: 403 }
 			);
 		}
 
-		const deployConfig = data as DeployConfig;
+		const deployConfig = deployment as DeployConfig;
 		const cloudProvider = deployConfig.cloudProvider || "aws";
 		
 		const deploymentTarget = deployConfig.deploymentTarget;
@@ -125,7 +122,7 @@ export async function POST(req: NextRequest) {
 		}
 
 		// 3. Delete from DB (deployment doc + user's deploymentIds)
-		const result = await dbHelper.deleteDeployment(deploymentId, userID);
+		const result = await dbHelper.deleteDeployment(validDeploymentId, userID);
 
 		if (result.error) {
 			return NextResponse.json(

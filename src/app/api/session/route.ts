@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebaseAdmin";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
@@ -23,28 +22,30 @@ export async function GET(req: NextRequest) {
 			return NextResponse.json({ message: "Sufficient data not given" }, { status: 400 });
 		}
 
-		const userRef = db.collection("users").doc(userID);
-		const doc = await userRef.get();
-
-		if (!doc.exists) {
-			await userRef.set({ name, image, createdAt: new Date().toISOString() });
+		const createResult = await dbHelper.getOrCreateUser(userID, {
+			name,
+			image,
+			createdAt: new Date().toISOString(),
+		});
+		if (createResult.error) {
+			return NextResponse.json({ message: createResult.error }, { status: 500 });
 		}
 
-		const reposSnapshot = await userRef.collection("repos").get();
+		const { repos: existingRepos } = await dbHelper.getUserRepos(userID);
+		let repoList: repoType[] = [];
 
-		let repoList : repoType[] = []
-		if (reposSnapshot.empty) {
+		if (!existingRepos || existingRepos.length === 0) {
 			const response = await getGithubRepos(token);
-			if(response.data) {
-				repoList = response.data
+			if (response.data) {
+				repoList = response.data;
 				await dbHelper.syncUserRepos(userID, repoList);
 				console.log("Repos added for user");
 			} else {
-				console.log("Error occured while trying to add repos to user")
-			}			
+				console.log("Error occured while trying to add repos to user");
+			}
 		} else {
 			console.log("Repos already exist for user");
-  			reposSnapshot.forEach((doc) => repoList.push(doc.data() as repoType));
+			repoList = existingRepos;
 		}
 
 		return NextResponse.json({ 

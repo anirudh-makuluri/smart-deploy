@@ -25,7 +25,7 @@ It uses **AI to auto-analyze your codebase**, generate build/run commands, detec
 ## 🧪 Tech Stack
 
 - **Frontend / API**: Next.js (App Router), TailwindCSS, shadcn/ui
-- **Backend Data**: Firebase Firestore
+- **Backend Data**: Supabase (PostgreSQL)
 - **Cloud**: AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2), Google Cloud Run, Docker
 - **Auth**: NextAuth with GitHub & Google OAuth
 - **AI**: Google Gemini API (AI Studio)
@@ -47,7 +47,9 @@ npm install
 ```
 
 ### 3. Set Up Environment Variables
-Create a **.env** with the help of **.env.example** in the root directory
+Create a **.env** with the help of **.env.example** in the root directory.
+
+**Database (Supabase):** Create a project at [supabase.com](https://supabase.com), then run the SQL in `supabase/schema.sql` in the SQL Editor. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API) to `.env`.
 
 ### 4. Run the Development Server
 ```bash

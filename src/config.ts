@@ -33,7 +33,11 @@ const config = {
 	// AI
 	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
 	
-	// Firebase Configuration
+	// Supabase (primary database)
+	SUPABASE_URL: process.env.SUPABASE_URL || "",
+	SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+
+	// Firebase Configuration (deprecated – migration to Supabase)
 	FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || "",
 	FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN || "",
 	FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",

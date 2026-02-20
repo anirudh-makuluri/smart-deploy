@@ -1,145 +1,165 @@
-import { db } from "./lib/firebaseAdmin";
+import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType } from "./app/types";
 
+type RowDeployment = {
+	id: string;
+	owner_id: string;
+	status: string | null;
+	first_deployment: string | null;
+	last_deployment: string | null;
+	revision: number | null;
+	data: Record<string, unknown>;
+};
+
+function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
+	const { id, owner_id, status, first_deployment, last_deployment, revision, data } = row;
+	return {
+		id,
+		ownerID: owner_id,
+		status: (status as DeployConfig["status"]) ?? "running",
+		first_deployment: first_deployment ?? undefined,
+		last_deployment: last_deployment ?? undefined,
+		revision: revision ?? 1,
+		...data,
+	} as DeployConfig & { ownerID: string };
+}
 
 export const dbHelper = {
 	updateUser: async function (userID: string, data: object) {
 		try {
-			if (!userID) {
-				return { error: "userID not found" }
-			}
+			if (!userID) return { error: "userID not found" };
+			if (typeof data !== "object" || data === null) return { message: "Invalid request" };
 
-			if (typeof data !== "object" || data === null) {
-				return { message: "Invalid request" };
-			}
+			const supabase = getSupabaseServer();
+			const { data: user, error: fetchError } = await supabase
+				.from("users")
+				.select("id")
+				.eq("id", userID)
+				.single();
 
-			const userRef = db.collection("users").doc(userID);
-			const doc = await userRef.get();
+			if (fetchError || !user) return { error: "User doesnt exist" };
 
-			if (!doc.exists) {
-				return { error: "User doesnt exist" }
-			}
+			const { error: updateError } = await supabase
+				.from("users")
+				.update(data as Record<string, unknown>)
+				.eq("id", userID);
 
-			await userRef.set(data, { merge: true });
-
-			console.log("User data updated successfully")
-
-			return { success: "User data updated successfully" }
+			if (updateError) return { error: updateError };
+			console.log("User data updated successfully");
+			return { success: "User data updated successfully" };
 		} catch (error) {
-			return { error }
+			return { error };
 		}
-
 	},
 
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
 			const deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
 			if (!deploymentId) return { error: "Deployment ID is required" };
-			// Firestore document IDs cannot contain '/' or be only whitespace
 			if (deploymentId.includes("/")) return { error: "Deployment ID cannot contain '/'." };
 
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
+			const supabase = getSupabaseServer();
 
-			if (!userDoc.exists) {
-				return { error: "User doesn't exist" };
-			}
+			const { data: userRow, error: userError } = await supabase
+				.from("users")
+				.select("id, deployment_ids")
+				.eq("id", userID)
+				.single();
 
-			const deploymentRef = db.collection("deployments").doc(deploymentId);
-			const deploymentDoc = await deploymentRef.get();
+			if (userError || !userRow) return { error: "User doesn't exist" };
 
-			if (deployConfig.status === 'stopped') {
-				// Do not delete deployment history — it is stored under the user and preserved
-				await deploymentRef.delete();
+			const deploymentIds: string[] = (userRow.deployment_ids as string[]) || [];
 
-				// Remove deployment ID from user's deploymentIds
-				const userData = userDoc.data();
-				if (userData && Array.isArray(userData.deploymentIds)) {
-					const updatedIds = userData.deploymentIds.filter((id: string) => id !== deploymentId);
-					await userRef.update({ deploymentIds: updatedIds });
-				}
-
+			if (deployConfig.status === "stopped") {
+				await supabase.from("deployments").delete().eq("id", deploymentId);
+				const updatedIds = deploymentIds.filter((id) => id !== deploymentId);
+				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
 				return { success: "Deployment stopped and deleted" };
 			}
 
-			if (!deploymentDoc.exists) {
-				await deploymentRef.set({
-					ownerID: userID,
-					status: deployConfig.status ?? 'running',
+			// Columns we store at top level; rest goes into data jsonb
+			const {
+				id: _id,
+				status,
+				first_deployment,
+				last_deployment,
+				revision,
+				...rest
+			} = deployConfig as DeployConfig & { ownerID?: string };
+			const dataJson = { ...rest } as Record<string, unknown>;
+
+			const { data: existing } = await supabase
+				.from("deployments")
+				.select("id, revision, data")
+				.eq("id", deploymentId)
+				.single();
+
+			if (!existing) {
+				await supabase.from("deployments").insert({
+					id: deploymentId,
+					owner_id: userID,
+					status: deployConfig.status ?? "running",
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
-					...deployConfig
+					data: dataJson,
 				});
-
-				const userData = userDoc.data();
-				const existingIds: string[] = userData?.deploymentIds || [];
-				const updatedIds = existingIds.includes(deploymentId) ? existingIds : [...existingIds, deploymentId];
-				await userRef.set(
-					{ deploymentIds: updatedIds },
-					{ merge: true }
-				);
+				const updatedIds = deploymentIds.includes(deploymentId) ? deploymentIds : [...deploymentIds, deploymentId];
+				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
 				return { success: "New deployment created and added to user" };
-			} else {
-				const data = deploymentDoc.data();
-				if (data) {
-					const revision = data['revision'] ? data['revision'] + 1 : 1;
-					const last_deployment = new Date().toISOString()
-					await deploymentRef.set({ revision, last_deployment, ...deployConfig }, { merge: true });
-				} else {
-					await deploymentRef.set(deployConfig, { merge: true });
-				}
-
-				return { success: "Deployment data updated successfully" };
 			}
+
+			const nextRevision = (existing.revision ?? 0) + 1;
+			const lastDeployment = new Date().toISOString();
+			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
+			await supabase
+				.from("deployments")
+				.update({
+					status: deployConfig.status ?? "running",
+					last_deployment: lastDeployment,
+					revision: nextRevision,
+					data: mergedData,
+				})
+				.eq("id", deploymentId);
+
+			return { success: "Deployment data updated successfully" };
 		} catch (error) {
 			console.error("updateDeployments error:", error);
 			return { error };
 		}
 	},
 
-	/** Delete all documents in deployment's history subcollection (Firestore does not delete subcollections automatically). */
 	deleteDeploymentHistory: async function (deploymentId: string) {
-		const historyRef = db.collection("deployments").doc(deploymentId).collection("history");
-		const batchSize = 500;
-		let snapshot = await historyRef.limit(batchSize).get();
-		while (!snapshot.empty) {
-			const batch = db.batch();
-			snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-			await batch.commit();
-			snapshot = await historyRef.limit(batchSize).get();
-		}
+		const supabase = getSupabaseServer();
+		await supabase.from("deployment_history").delete().eq("deployment_id", deploymentId);
 	},
 
 	deleteDeployment: async function (deploymentId: string, userID: string) {
 		try {
-			if (!deploymentId || !userID) {
-				return { error: "Deployment ID and user ID are required" };
-			}
+			if (!deploymentId || !userID) return { error: "Deployment ID and user ID are required" };
 
-			const deploymentRef = db.collection("deployments").doc(deploymentId);
-			const deploymentDoc = await deploymentRef.get();
+			const supabase = getSupabaseServer();
 
-			if (!deploymentDoc.exists) {
-				return { success: "Deployment already deleted or not found" };
-			}
+			const { data: deployment, error: fetchError } = await supabase
+				.from("deployments")
+				.select("id, owner_id")
+				.eq("id", deploymentId)
+				.single();
 
-			const data = deploymentDoc.data();
-			if (data && data.ownerID !== userID) {
-				return { error: "Unauthorized: deployment does not belong to user" };
-			}
+			if (fetchError || !deployment) return { success: "Deployment already deleted or not found" };
+			if (deployment.owner_id !== userID) return { error: "Unauthorized: deployment does not belong to user" };
 
-			// Do not delete deployment history — it is stored under the user and preserved
-			await deploymentRef.delete();
+			await supabase.from("deployments").delete().eq("id", deploymentId);
 
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
-			if (userDoc.exists) {
-				const userData = userDoc.data();
-				if (userData && Array.isArray(userData.deploymentIds)) {
-					const updatedIds = userData.deploymentIds.filter((id: string) => id !== deploymentId);
-					await userRef.update({ deploymentIds: updatedIds });
-				}
+			const { data: userRow } = await supabase
+				.from("users")
+				.select("deployment_ids")
+				.eq("id", userID)
+				.single();
+
+			if (userRow && Array.isArray(userRow.deployment_ids)) {
+				const updatedIds = (userRow.deployment_ids as string[]).filter((id: string) => id !== deploymentId);
+				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
 			}
 
 			return { success: "Deployment deleted" };
@@ -151,52 +171,97 @@ export const dbHelper = {
 
 	getUserDeployments: async function (userID: string) {
 		try {
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
+			const supabase = getSupabaseServer();
 
-			if (!userDoc.exists) {
-				return { error: "User doesn't exist" };
-			}
+			const { data: userRow, error: userError } = await supabase
+				.from("users")
+				.select("deployment_ids")
+				.eq("id", userID)
+				.single();
 
-			const userData = userDoc.data();
-			const deploymentIds: string[] = userData?.deploymentIds || [];
+			if (userError || !userRow) return { error: "User doesn't exist" };
 
-			if (deploymentIds.length === 0) {
-				return { deployments: [] };
-			}
+			const deploymentIds: string[] = (userRow.deployment_ids as string[]) || [];
+			if (deploymentIds.length === 0) return { deployments: [] };
 
-			const deploymentPromises = deploymentIds.map(id =>
-				db.collection("deployments").doc(id).get()
-			);
+			const { data: rows } = await supabase
+				.from("deployments")
+				.select("*")
+				.in("id", deploymentIds);
 
-			const deploymentDocs = await Promise.all(deploymentPromises);
-
-			const deployments = deploymentDocs
-				.filter(doc => doc.exists)
-				.map(doc => ({ id: doc.id, ...doc.data() }));
-
+			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
 			return { deployments };
 		} catch (error) {
 			console.error("getUserDeployments error:", error);
 			return { error };
 		}
 	},
+
+	getDeployment: async function (deploymentId: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: row, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("id", deploymentId)
+				.single();
+
+			if (error || !row) return { error: "Deployment not found" };
+			return { deployment: rowToDeployConfig(row as RowDeployment) };
+		} catch (error) {
+			console.error("getDeployment error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
-		const userRef = db.collection("users").doc(userID);
-		const reposRef = userRef.collection("repos");
-
-		// Create a batch
-		const batch = db.batch();
-
-		repoList.forEach((repo) => {
-			const docRef = reposRef.doc(repo.name);
-			// Use merge to update if exists or create if not
-			batch.set(docRef, repo, { merge: true });
-		});
-
-		await batch.commit();
-
+		const supabase = getSupabaseServer();
+		for (const repo of repoList) {
+			await supabase.from("user_repos").upsert(
+				{ user_id: userID, repo_name: repo.name, data: repo as unknown as Record<string, unknown> },
+				{ onConflict: "user_id,repo_name" }
+			);
+		}
 		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
+	},
+
+	getUserRepos: async function (userID: string): Promise<{ error?: string; repos?: repoType[] }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: rows, error } = await supabase
+				.from("user_repos")
+				.select("data")
+				.eq("user_id", userID);
+
+			if (error) return { error: error.message };
+			const repos = (rows || []).map((r) => r.data as repoType);
+			return { repos };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getOrCreateUser: async function (
+		userID: string,
+		defaults: { name: string; image: string; createdAt?: string }
+	): Promise<{ error?: string; created?: boolean }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: existing } = await supabase.from("users").select("id").eq("id", userID).single();
+
+			if (existing) return { created: false };
+
+			await supabase.from("users").insert({
+				id: userID,
+				name: defaults.name,
+				image: defaults.image,
+				created_at: defaults.createdAt ?? new Date().toISOString(),
+				deployment_ids: [],
+			});
+			return { created: true };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
 	},
 
 	addDeploymentHistory: async function (
@@ -208,19 +273,31 @@ export const dbHelper = {
 			const id = deploymentId != null ? String(deploymentId).trim() : "";
 			if (!id || id.includes("/")) return { error: "Deployment ID is required and cannot contain '/'." };
 
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
-			if (!userDoc.exists) return { error: "User not found" };
+			const supabase = getSupabaseServer();
+			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
+			if (!user) return { error: "User not found" };
 
-			// Store history under user so it survives when the deployment (service) is deleted
-			const historyRef = userRef.collection("deploymentHistory").doc();
-			const fullEntry: DeploymentHistoryEntry = {
-				id: historyRef.id,
-				deploymentId: id,
-				...entry,
-			};
-			await historyRef.set(fullEntry);
-			return { success: true, id: historyRef.id };
+			const { data: inserted, error } = await supabase
+				.from("deployment_history")
+				.insert({
+					deployment_id: id,
+					user_id: userID,
+					timestamp: entry.timestamp ?? new Date().toISOString(),
+					success: entry.success,
+					steps: entry.steps ?? [],
+					config_snapshot: entry.configSnapshot ?? {},
+					commit_sha: entry.commitSha ?? null,
+					commit_message: entry.commitMessage ?? null,
+					branch: entry.branch ?? null,
+					duration_ms: entry.durationMs ?? null,
+					service_name: entry.serviceName ?? null,
+					repo_url: entry.repoUrl ?? null,
+				})
+				.select("id")
+				.single();
+
+			if (error) return { error };
+			return { success: true, id: inserted?.id };
 		} catch (error) {
 			console.error("addDeploymentHistory error:", error);
 			return { error };
@@ -229,23 +306,33 @@ export const dbHelper = {
 
 	getDeploymentHistory: async function (deploymentId: string, userID: string) {
 		try {
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
-			if (!userDoc.exists) return { error: "User not found" };
+			const supabase = getSupabaseServer();
+			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
+			if (!user) return { error: "User not found" };
 
-			// History is stored under user; filter by deploymentId (works for active and deleted deployments)
-			// Requires composite index: deploymentHistory (deploymentId Ascending, timestamp Descending)
-			const snapshot = await userRef
-				.collection("deploymentHistory")
-				.where("deploymentId", "==", deploymentId)
-				.orderBy("timestamp", "desc")
-				.get();
+			const { data: rows, error } = await supabase
+				.from("deployment_history")
+				.select("*")
+				.eq("user_id", userID)
+				.eq("deployment_id", deploymentId)
+				.order("timestamp", { ascending: false });
 
-			const history: DeploymentHistoryEntry[] = snapshot.docs.map((doc) => ({
-				id: doc.id,
-				deploymentId,
-				...doc.data(),
-			})) as DeploymentHistoryEntry[];
+			if (error) return { error };
+
+			const history: DeploymentHistoryEntry[] = (rows || []).map((row: Record<string, unknown>) => ({
+				id: row.id as string,
+				deploymentId: row.deployment_id as string,
+				timestamp: row.timestamp as string,
+				success: row.success as boolean,
+				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
+				configSnapshot: (row.config_snapshot as Record<string, unknown>) ?? {},
+				commitSha: row.commit_sha as string | undefined,
+				commitMessage: row.commit_message as string | undefined,
+				branch: row.branch as string | undefined,
+				durationMs: row.duration_ms as number | undefined,
+				serviceName: row.service_name as string | undefined,
+				repoUrl: row.repo_url as string | undefined,
+			}));
 
 			return { history };
 		} catch (error) {
@@ -256,22 +343,32 @@ export const dbHelper = {
 
 	getAllDeploymentHistory: async function (userID: string) {
 		try {
-			const userRef = db.collection("users").doc(userID);
-			const userDoc = await userRef.get();
-			if (!userDoc.exists) return { error: "User doesn't exist" };
+			const supabase = getSupabaseServer();
+			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
+			if (!user) return { error: "User doesn't exist" };
 
-			const snapshot = await userRef
-				.collection("deploymentHistory")
-				.orderBy("timestamp", "desc")
-				.get();
+			const { data: rows, error } = await supabase
+				.from("deployment_history")
+				.select("*")
+				.eq("user_id", userID)
+				.order("timestamp", { ascending: false });
 
-			const history: (DeploymentHistoryEntry & { serviceName?: string; repoUrl?: string })[] = snapshot.docs.map(
-				(doc) => ({
-					id: doc.id,
-					deploymentId: (doc.data() as DeploymentHistoryEntry).deploymentId,
-					...doc.data(),
-				})
-			) as (DeploymentHistoryEntry & { serviceName?: string; repoUrl?: string })[];
+			if (error) return { error };
+
+			const history = (rows || []).map((row: Record<string, unknown>) => ({
+				id: row.id as string,
+				deploymentId: row.deployment_id as string,
+				timestamp: row.timestamp as string,
+				success: row.success as boolean,
+				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
+				configSnapshot: (row.config_snapshot as Record<string, unknown>) ?? {},
+				commitSha: row.commit_sha as string | undefined,
+				commitMessage: row.commit_message as string | undefined,
+				branch: row.branch as string | undefined,
+				durationMs: row.duration_ms as number | undefined,
+				serviceName: row.service_name as string | undefined,
+				repoUrl: row.repo_url as string | undefined,
+			}));
 
 			return { history };
 		} catch (error) {
@@ -279,4 +376,4 @@ export const dbHelper = {
 			return { error };
 		}
 	},
-}
+};

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebaseAdmin";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
 // Force dynamic rendering - prevents Next.js from analyzing this route during build
 export const dynamic = 'force-dynamic';
@@ -8,14 +8,13 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
 	try {
 		const timestamp = new Date().toISOString();
-		
-		// Optional: Check database connectivity
+
 		let dbStatus = 'unknown';
 		try {
-			// Simple database connectivity check
-			await db.collection('_health').limit(1).get();
+			const supabase = getSupabaseServer();
+			await supabase.from("_health").select("id").limit(1).maybeSingle();
 			dbStatus = 'connected';
-		} catch (error) {
+		} catch {
 			dbStatus = 'disconnected';
 		}
 
