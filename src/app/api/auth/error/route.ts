@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import config from '@/config';
+import config from '../../../../config';
 
 export async function GET(req: NextRequest) {
 	// Redirect to waiting list page when access is denied

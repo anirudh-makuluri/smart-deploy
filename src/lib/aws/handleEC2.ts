@@ -790,6 +790,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 		send(`Fetching instance system logs (${i}/24)...`, "deploy");
 		try {
 			const raw = await runAWSCommandToFile(["ec2", "get-console-output", "--instance-id", instanceId, "--latest", "--output", "text", "--region", region], ws, "deploy");
+			console.log(raw);
 			consecutiveErrors = 0; // Reset error counter on success
 			if (raw?.trim()) {
 				const clean = sanitizeConsoleOutput(raw);

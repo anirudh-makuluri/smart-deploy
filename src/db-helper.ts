@@ -376,4 +376,23 @@ export const dbHelper = {
 			return { error };
 		}
 	},
+
+	/** Add an email to the waiting list (e.g. when sign-in is denied). Idempotent: same email is upserted. */
+	addToWaitingList: async function (email: string, name?: string | null): Promise<{ error?: string }> {
+		try {
+			const trimmed = (email || "").trim().toLowerCase();
+			if (!trimmed) return { error: "Email is required" };
+
+			const supabase = getSupabaseServer();
+			const { error } = await supabase.from("waiting_list").upsert(
+				{ email: trimmed, name: (name || "").trim() || null },
+				{ onConflict: "email" }
+			);
+			if (error) return { error: error.message };
+			return {};
+		} catch (error) {
+			console.error("addToWaitingList error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
 };

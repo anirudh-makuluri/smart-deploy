@@ -1,7 +1,8 @@
-import config from "@/config";
+import config from "../../../config";
 import { AuthOptions } from "next-auth"
 import GitHubProvider from 'next-auth/providers/github'
 import GoogleProvider from 'next-auth/providers/google'
+import { dbHelper } from "@/db-helper"
 
 export const authOptions : AuthOptions = {
 	providers: [
@@ -13,21 +14,20 @@ export const authOptions : AuthOptions = {
 			clientId: config.GITHUB_ID,
 			clientSecret: config.GITHUB_SECRET,
 			authorization: {
-				params : {
-					scope: "read:user repo"
-				}
-			}
-		})
+				params: {
+					scope: "read:user user:email repo",
+				},
+			},
+		}),
 	],
 	callbacks: {
 		async signIn({ user, account, profile }) {
-			// In production, only allow emails containing "anirudh"
-			if (process.env.ENVIRONMENT === 'production') {
-				const email = user.email || profile?.email || '';
-				if (!email.toLowerCase().includes('anirudh')) {
-					// Deny sign in - will redirect to error page
-					return false;
-				}
+			const email = user.email || (profile as { email?: string })?.email || "";
+			const name = user.name || (profile as { name?: string })?.name || "";
+			if (!email.toLowerCase().includes("anirudh")) {
+				// Store in waiting list and deny sign-in (redirects to waiting-list page)
+				await dbHelper.addToWaitingList(email, name || undefined);
+				return false;
 			}
 			return true;
 		},

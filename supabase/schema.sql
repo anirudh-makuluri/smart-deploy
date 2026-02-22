@@ -53,6 +53,16 @@ create table if not exists public.user_repos (
   primary key (user_id, repo_name)
 );
 
+-- Waiting list: emails (and optional name) of users who attempted sign-in but were not granted access
+create table if not exists public.waiting_list (
+  id uuid primary key default gen_random_uuid(),
+  email text not null,
+  name text,
+  created_at timestamptz default now(),
+  unique(email)
+);
+create index if not exists idx_waiting_list_email on public.waiting_list(email);
+
 -- Optional: minimal table for health checks (or use: select 1 from users limit 1)
 create table if not exists public._health (
   id int primary key default 1,
@@ -65,6 +75,7 @@ alter table public.users enable row level security;
 alter table public.deployments enable row level security;
 alter table public.deployment_history enable row level security;
 alter table public.user_repos enable row level security;
+alter table public.waiting_list enable row level security;
 
 -- Allow service role full access (service role key bypasses RLS by default)
 -- If using anon key from client, add policies here.
