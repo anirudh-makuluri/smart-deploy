@@ -24,6 +24,7 @@ import {
 	getInstanceState,
 	buildRedeployScript,
 	runRedeployViaSsm,
+	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
 
@@ -314,6 +315,10 @@ echo "=========================="
 # Install essential packages first (skip full update to save space)
 yum install -y docker git
 
+# Install and enable SSM agent so instance registers with Systems Manager (for redeploy via SSM)
+dnf install -y amazon-ssm-agent 2>/dev/null || yum install -y amazon-ssm-agent 2>/dev/null || true
+systemctl enable --now amazon-ssm-agent 2>/dev/null || true
+
 # Clean up yum cache immediately to free space
 yum clean all
 rm -rf /var/cache/yum/*
@@ -564,10 +569,11 @@ async function ensureNetworking(
 	if (multiServiceConfig.isMultiService) {
 		for (const svc of multiServiceConfig.services) if (typeof svc.port === "number") ports.add(svc.port);
 	}
+	// Only add ingress rules that don't already exist to avoid InvalidPermission.Duplicate and noisy "Failed" logs
+	const existingPorts = await getExistingIngressPorts(securityGroupId, region, ws);
 	for (const port of ports) {
-		try {
-			await runAWSCommand(["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region], ws, "setup");
-		} catch { /* rule may already exist */ }
+		if (existingPorts.has(port)) continue;
+		await runAWSCommand(["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region], ws, "setup");
 	}
 
 	return { vpcId, subnetIds, securityGroupId };
@@ -593,6 +599,7 @@ async function redeployInstance(params: {
 	const { deployConfig, existingInstanceId, region, services, repoName, token, composeYml, envBase64, net, amiId, certificateArn, sharedAlbEnabled, ws, send } = params;
 
 	send("Reusing existing instance (SSM redeploy)...", "deploy");
+	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
 	const script = buildRedeployScript({
 		repoUrl: deployConfig.url,
 		branch: deployConfig.branch || "main",
@@ -603,7 +610,23 @@ async function redeployInstance(params: {
 		deployConfig,
 		services: services.map(s => ({ dir: s.dir, port: s.port })),
 	});
-	const { success } = await runRedeployViaSsm({ instanceId: existingInstanceId, region, script, send });
+	let ssmResult: { success: boolean };
+	try {
+		ssmResult = await runRedeployViaSsm({ instanceId: existingInstanceId, region, script, send });
+	} catch (err: any) {
+		const msg = err?.message ?? String(err);
+		const isInvalidInstance =
+			err?.name === "InvalidInstanceId" ||
+			msg.includes("InvalidInstanceId") ||
+			msg.includes("Instances not in a valid state");
+		if (isInvalidInstance) {
+			throw new Error(
+				"SSM cannot run on this instance. Common causes: (1) Instance is in a different AWS account or region than your credentials. (2) Instance was not launched with SSM (e.g. older instance without the SSM instance profile). (3) SSM agent is not ready yet. Fix: Use the same account/region as the instance; or remove the saved instance ID and deploy again to launch a new instance with SSM support."
+			);
+		}
+		throw err;
+	}
+	const { success } = ssmResult;
 
 	if (!success) {
 		send("Redeploy command failed. Check logs above.", "deploy");
@@ -753,6 +776,28 @@ async function configureAlb(params: {
 
 // ─── Small helpers used by the main functions ───────────────────────────────
 
+/** Returns TCP ports that already have 0.0.0.0/0 ingress on the security group. */
+async function getExistingIngressPorts(groupId: string, region: string, ws: any): Promise<Set<number>> {
+	const out = new Set<number>();
+	try {
+		const raw = await runAWSCommand(
+			["ec2", "describe-security-groups", "--group-ids", groupId, "--query", "SecurityGroups[0].IpPermissions", "--output", "json", "--region", region],
+			ws,
+			"setup"
+		);
+		const perms = JSON.parse(raw.trim()) as Array<{ FromPort?: number; ToPort?: number; IpRanges?: Array<{ CidrIp?: string }> }>;
+		if (!Array.isArray(perms)) return out;
+		for (const p of perms) {
+			const hasPublic = p.IpRanges?.some((r) => r.CidrIp === "0.0.0.0/0");
+			if (!hasPublic || p.FromPort == null || p.ToPort == null) continue;
+			for (let port = p.FromPort; port <= p.ToPort; port++) out.add(port);
+		}
+	} catch {
+		// If describe fails, return empty set so we try adding all ports (old behavior)
+	}
+	return out;
+}
+
 async function ensureKeyPair(keyName: string, region: string, ws: any): Promise<void> {
 	const send = createWebSocketLogger(ws);
 	try {
@@ -893,13 +938,16 @@ function buildServiceUrls(
 	sharedAlbEnabled: boolean,
 ): { baseUrl: string; serviceUrls: Map<string, string> } {
 	const serviceUrls = new Map<string, string>();
+	const customHost = normalizeDomain(deployConfig.custom_url);
+	const scheme = certificateArn ? "https" : "http";
+	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl: string;
 	if (sharedAlbEnabled && deployConfig.service_name) {
-		const host = buildServiceHostname(deployConfig.service_name, deployConfig.service_name);
-		baseUrl = host ? `${certificateArn ? "https" : "http"}://${host}` : deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+		const host = customHost || buildServiceHostname(deployConfig.service_name, deployConfig.service_name);
+		baseUrl = host ? `${scheme}://${host}` : deployConfig.ec2?.baseUrl || `http://${publicIp}`;
 		serviceUrls.set(services[0]?.name || repoName, baseUrl);
 	} else {
-		baseUrl = deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+		baseUrl = customBaseUrl || deployConfig.ec2?.baseUrl || `http://${publicIp}`;
 		for (const svc of services) serviceUrls.set(svc.name, baseUrl);
 	}
 	return { baseUrl, serviceUrls };
@@ -954,7 +1002,10 @@ export async function handleEC2(
 		net, amiId, sharedAlbEnabled, ws, send,
 	});
 
-	let baseUrl = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
+	const customHost = normalizeDomain(deployConfig.custom_url);
+	const scheme = certificateArn ? "https" : "http";
+	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
+	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);
 	let serviceUrls = new Map<string, string>();
 	let sharedAlbDns: string | undefined;
 
@@ -966,8 +1017,9 @@ export async function handleEC2(
 		serviceUrls = alb.serviceUrls;
 		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
 	} else {
+		const fallbackBase = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
 		for (const svc of services) {
-			serviceUrls.set(svc.name, services.length === 1 ? baseUrl : `http://${publicIp}:${svc.port}`);
+			serviceUrls.set(svc.name, services.length === 1 ? (customBaseUrl || fallbackBase) : `http://${publicIp}:${svc.port}`);
 		}
 	}
 

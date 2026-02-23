@@ -498,7 +498,7 @@ async function handleAWSDeploy(
 
 	
 	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.service_name?.trim() && success) {
+	if (deployUrl && deployConfig.custom_url != deployUrl && deployConfig.service_name?.trim() && success) {
 		send("Adding Vercel DNS record...", 'done');
 		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
 			deploymentTarget: target,

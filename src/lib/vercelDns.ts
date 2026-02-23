@@ -197,12 +197,19 @@ export async function addVercelDnsRecord(
 		// Conflict path:
 		// - If this deployment already had a custom URL, treat as update:
 		//   delete existing record(s) for that subdomain and recreate with new target.
+		//   Unless the existing record already points to the same target (e.g. redeploy with same custom_url) → skip delete/recreate.
 		// - Otherwise, create a unique subdomain by appending -{random} and retry.
 		const records = await listRecords();
 
 		if (previousSubdomain) {
-			const toDelete = records.filter((r: any) => recordNameMatches(r, subdomain));
-			for (const r of toDelete) {
+			const existing = records.filter((r: any) => recordNameMatches(r, subdomain));
+			const alreadyPointsToTarget = existing.some(
+				(r: any) => (r?.value ?? "").toString().trim().toLowerCase() === targetHost.toLowerCase()
+			);
+			if (alreadyPointsToTarget) {
+				return { success: true, customUrl: `https://${subdomain}.${baseDomain}` };
+			}
+			for (const r of existing) {
 				const id = getRecordId(r);
 				if (id) {
 					await deleteRecordById(id);

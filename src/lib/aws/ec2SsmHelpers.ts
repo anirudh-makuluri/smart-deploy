@@ -336,6 +336,232 @@ echo "====================================== Redeploy complete! ================
 }
 
 /**
+ * Returns true if the instance is registered with SSM (agent reporting).
+ */
+export async function isInstanceSsmManaged(
+	instanceId: string,
+	region: string,
+	ws: any
+): Promise<boolean> {
+	try {
+		const out = await runAWSCommand(
+			[
+				"ssm",
+				"describe-instance-information",
+				"--filters",
+				`Key=InstanceIds,Values=${instanceId}`,
+				"--query",
+				"InstanceInformationList[0].InstanceId",
+				"--output",
+				"text",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		);
+		return (out || "").trim() === instanceId;
+	} catch {
+		return false;
+	}
+}
+
+const SSM_REGISTRATION_TIMEOUT_MS = 3 * 60 * 1000;
+const SSM_REGISTRATION_POLL_MS = 15 * 1000;
+
+/**
+ * Gathers network diagnostics for SSM registration failures (public IP, subnet, route to internet).
+ */
+async function getSsmRegistrationDiagnostics(
+	instanceId: string,
+	region: string,
+	ws: any
+): Promise<string> {
+	try {
+		const instRaw = await runAWSCommand(
+			[
+				"ec2",
+				"describe-instances",
+				"--instance-ids",
+				instanceId,
+				"--query",
+				"Reservations[0].Instances[0].{PublicIp:PublicIpAddress,SubnetId:SubnetId,VpcId:VpcId,State:State.Name}",
+				"--output",
+				"json",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		);
+		const inst = JSON.parse(instRaw.trim()) as { PublicIp: string | null; SubnetId: string | null; VpcId: string | null; State: string };
+		const publicIp = inst?.PublicIp ?? "none";
+		const subnetId = inst?.SubnetId ?? "";
+		const vpcId = inst?.VpcId ?? "";
+		if (!subnetId) return ` Instance: ${publicIp}; subnet unknown.`;
+
+		// Get route table for this subnet (explicit association or VPC main)
+		let routesRaw: string;
+		const rtBySubnet = await runAWSCommand(
+			[
+				"ec2",
+				"describe-route-tables",
+				"--filters",
+				`Name=association.subnet-id,Values=${subnetId}`,
+				"--query",
+				"RouteTables[*].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,NatGatewayId]",
+				"--output",
+				"json",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		);
+		routesRaw = rtBySubnet;
+		const parsed = JSON.parse(routesRaw.trim());
+		const routesArray = Array.isArray(parsed) ? parsed : [parsed];
+		let flat = routesArray.flat(2).filter(Boolean) as string[];
+		if (flat.length === 0 && vpcId) {
+			const rtMain = await runAWSCommand(
+				[
+					"ec2",
+					"describe-route-tables",
+					"--filters",
+					`Name=vpc-id,Values=${vpcId}`,
+					"Name=association.main,Values=true",
+					"--query",
+					"RouteTables[*].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,NatGatewayId]",
+					"--output",
+					"json",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			);
+			const mainParsed = JSON.parse(rtMain.trim());
+			flat = (Array.isArray(mainParsed) ? mainParsed : [mainParsed]).flat(2).filter(Boolean) as string[];
+		}
+		const hasIgw = flat.some((id) => id?.startsWith("igw-"));
+		const hasNat = flat.some((id) => id?.startsWith("nat-"));
+		const hasOutbound = hasIgw || hasNat;
+
+		if (publicIp === "none" && !hasOutbound) {
+			return ` Instance has no public IP and subnet has no 0.0.0.0/0 route to IGW/NAT — add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages) in this VPC.`;
+		}
+		if (publicIp === "none" && hasOutbound) {
+			return ` Instance has no public IP (private subnet). Subnet has default route (NAT/IGW). If using private subnet, create VPC endpoints for SSM (ssm, ec2messages, ssmmessages) so the instance can reach SSM without internet.`;
+		}
+		if (hasOutbound) {
+			return ` Instance has public IP ${publicIp} and subnet has internet route. SSM agent may not be running — reboot the instance in EC2 console (Instance state → Reboot), wait 2–3 min, then redeploy.`;
+		}
+		return ` Instance has public IP ${publicIp} but subnet has no 0.0.0.0/0 route — check subnet route table and add IGW or NAT.`;
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Ensures the instance is registered with SSM. If it is not (e.g. "Unidentified" in console),
+ * attaches the SmartDeploy SSM instance profile and waits for the agent to register.
+ */
+export async function ensureInstanceSsmReady(
+	instanceId: string,
+	region: string,
+	ws: any,
+	send: (msg: string, stepId: string) => void
+): Promise<void> {
+	if (await isInstanceSsmManaged(instanceId, region, ws)) {
+		send("Instance is registered with SSM.", "deploy");
+		return;
+	}
+	
+
+	// Get current IAM instance profile (ARN or "None")
+	const currentProfileOut = await runAWSCommand(
+		[
+			"ec2",
+			"describe-instances",
+			"--instance-ids",
+			instanceId,
+			"--query",
+			"Reservations[0].Instances[0].IamInstanceProfile.Arn",
+			"--output",
+			"text",
+			"--region",
+			region,
+		],
+		ws,
+		"deploy"
+	);
+	const currentArn = (currentProfileOut || "").trim();
+	const hasOurProfile = currentArn !== "None" && currentArn !== "" && currentArn.includes(SSM_PROFILE_NAME);
+
+	if (!hasOurProfile) {
+		send("Instance is not SSM-managed. Attaching SSM instance profile...", "deploy");
+		await runAWSCommand(
+			[
+				"ec2",
+				"modify-instance-attribute",
+				"--instance-id",
+				instanceId,
+				"--iam-instance-profile",
+				`Name=${SSM_PROFILE_NAME}`,
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		);
+		send("SSM profile attached. Waiting for agent to register (up to 3 min)...", "deploy");
+	} else {
+		send("Instance has SSM profile but not yet registered. Waiting for agent (up to 3 min)...", "deploy");
+	}
+
+	const deadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
+	while (Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
+		if (await isInstanceSsmManaged(instanceId, region, ws)) {
+			send("Instance is now registered with SSM.", "deploy");
+			return;
+		}
+		send("Still waiting for SSM agent to register...", "deploy");
+	}
+
+	// If instance has our profile but still not registered, try one reboot (helps when profile was attached after launch)
+	if (hasOurProfile) {
+		send("Trying one reboot to let SSM agent pick up the instance profile...", "deploy");
+		try {
+			await runAWSCommand(
+				["ec2", "reboot-instances", "--instance-ids", instanceId, "--region", region],
+				ws,
+				"deploy"
+			);
+			await new Promise((r) => setTimeout(r, 60_000)); // wait for reboot
+			const rebootDeadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
+			while (Date.now() < rebootDeadline) {
+				await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
+				if (await isInstanceSsmManaged(instanceId, region, ws)) {
+					send("Instance is now registered with SSM after reboot.", "deploy");
+					return;
+				}
+				send("Still waiting for SSM agent after reboot...", "deploy");
+			}
+		} catch {
+			// ignore reboot errors, fall through to final error
+		}
+	}
+
+	const diagnostics = await getSsmRegistrationDiagnostics(instanceId, region, ws);
+	if (diagnostics) send("SSM diagnostic:" + diagnostics, "deploy");
+	throw new Error(
+		"Instance did not register with SSM. Common causes: (1) Instance has no outbound internet (e.g. private subnet without NAT). Add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages). (2) SSM agent not running — in EC2 console, reboot the instance and redeploy. (3) Wrong account/region. Fix network or reboot the instance in EC2 console, then redeploy." +
+			(diagnostics ? diagnostics : "")
+	);
+}
+
+/**
  * Runs the redeploy script on an existing instance via SSM and streams output to send().
  */
 export async function runRedeployViaSsm(params: {

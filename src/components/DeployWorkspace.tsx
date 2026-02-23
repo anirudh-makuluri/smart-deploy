@@ -23,7 +23,7 @@ type DeployWorkspaceProps = {
 };
 
 export default function DeployWorkspace({ serviceName, deploymentId }: DeployWorkspaceProps) {
-	const { deployments, updateDeploymentById, repoList } = useAppData();
+	const { deployments, updateDeploymentById, repoList, isLoading } = useAppData();
 	const { data: session } = useSession();
 	const deploymentFromId = deploymentId
 		? deployments.find((dep) => dep.id === deploymentId)
@@ -108,15 +108,6 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 			setDeployingCommitInfo(null);
 		}
 	}, [deployStatus, deployment?.id]);
-
-	if (!repo && !deployment) {
-		return (
-			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
-				{<Header />}
-				<p className="text-muted-foreground">Service not found</p>
-			</div>
-		);
-	}
 
 	const resolvedRepo: repoType = repo ?? (() => {
 		const fallbackName = deployment?.service_name ?? serviceName ?? "service";
@@ -450,6 +441,15 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 				);
 
 		}
+	}
+
+	if (!repo && !deployment && !isLoading) {
+		return (
+			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
+				{<Header />}
+				<p className="text-muted-foreground">Service not found</p>
+			</div>
+		);
 	}
 
 	return (
