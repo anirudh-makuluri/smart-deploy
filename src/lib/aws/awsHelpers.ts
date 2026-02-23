@@ -129,7 +129,9 @@ export async function runAWSCommandToFile(
 				}
 
 				if (code === 0) {
-					resolve(stdout);
+					// Include stderr so we capture output when CLI writes to stderr (e.g. get-console-output when stdout is not a TTY)
+					const combined = stdout + (stderr ? "\n" + stderr : "");
+					resolve(combined.trim() || stdout);
 				} else {
 					// Sanitize error message to remove problematic Unicode
 					const errorMsg = `aws ${args.join(" ")} exited with code ${code}`;

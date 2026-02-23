@@ -7,7 +7,6 @@ import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import {
 	runAWSCommand,
-	runAWSCommandToFile,
 	getDefaultVpcId,
 	getSubnetIds,
 	ensureSecurityGroup,
@@ -27,6 +26,8 @@ import {
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
+
+import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -824,22 +825,49 @@ async function terminateInstance(instanceId: string, region: string, ws: any): P
 	}
 }
 
+/**
+ * Fetches EC2 console output via AWS SDK. No CLI/spawn, so no TTY or encoding issues.
+ * Returns decoded console text (UTF-8).
+ */
+async function getConsoleOutput(instanceId: string, region: string): Promise<string> {
+	const clientConfig: { region: string; credentials?: { accessKeyId: string; secretAccessKey: string } } = { region };
+	if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
+		clientConfig.credentials = {
+			accessKeyId: config.AWS_ACCESS_KEY_ID,
+			secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
+		};
+	}
+	const client = new EC2Client(clientConfig);
+	// Latest: true retrieves the most recent console output (same as EC2 console "System logs" and CLI --latest)
+	const response = await client.send(new GetConsoleOutputCommand({ InstanceId: instanceId, Latest: true }));
+	const base64 = response.Output;
+	if (!base64) return "";
+	// Node's Buffer.toString("utf8") replaces invalid UTF-8 sequences with replacement char
+	return Buffer.from(base64, "base64").toString("utf8");
+}
+
 async function waitForUserData(instanceId: string, region: string, ws: any, send: SendFn): Promise<void> {
-	send("Waiting for user-data to finish (this may take 5+ minutes)...", "deploy");
-	await new Promise(r => setTimeout(r, 90_000));
-	let lastLen = 0;
+	send("Waiting for user-data to finish...", "deploy");
+	let lastSentLineCount = 0;
 	let consecutiveErrors = 0;
 	let encodingErrorShown = false;
 	let cloudInitFailureDetected = false;
 	for (let i = 1; i <= 24; i++) {
-		send(`Fetching instance system logs (${i}/24)...`, "deploy");
 		try {
-			const raw = await runAWSCommandToFile(["ec2", "get-console-output", "--instance-id", instanceId, "--latest", "--output", "text", "--region", region], ws, "deploy");
-			console.log(raw);
+			const raw = await getConsoleOutput(instanceId, region);
 			consecutiveErrors = 0; // Reset error counter on success
 			if (raw?.trim()) {
 				const clean = sanitizeConsoleOutput(raw);
-				
+				const lines = clean.split(/\n/).map(l => l.trim()).filter(Boolean);
+
+				// Append only new lines (by line count) so we never show the same log twice
+				if (lines.length < lastSentLineCount) lastSentLineCount = lines.length; // API returned fewer lines (e.g. truncated)
+				if (lines.length > lastSentLineCount) {
+					const newLines = lines.slice(lastSentLineCount);
+					if (newLines.length) send(newLines.join("\n"), "deploy");
+					lastSentLineCount = lines.length;
+				}
+
 				// Check for cloud-init failures
 				if (!cloudInitFailureDetected) {
 					const failurePatterns = [
@@ -856,13 +884,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 						}
 					}
 				}
-				
-				if (clean.length > lastLen) {
-					const lines = clean.substring(lastLen).trim().split(/\n/).filter(l => l.trim());
-					if (lines.length) send((lines.length > 30 ? lines.slice(-30) : lines).join("\n"), "deploy");
-					lastLen = clean.length;
-				}
-				
+
 				// Check for success signal
 				if (clean.includes("Deployment complete!")) {
 					if (cloudInitFailureDetected) {
@@ -872,11 +894,10 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 					}
 					return;
 				}
-				
+
 				// If cloud-init finished but we haven't seen "Deployment complete!", wait a bit more
 				if (clean.includes("Cloud-init v.") && clean.includes("finished") && i >= 12) {
 					send("Cloud-init finished. Checking if deployment completed...", "deploy");
-					// Give it a few more attempts to see if deployment completed
 					if (i >= 18) {
 						send("Cloud-init finished but no deployment completion signal found. Proceeding to check application status...", "deploy");
 						return;
