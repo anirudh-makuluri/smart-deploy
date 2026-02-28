@@ -27,7 +27,7 @@ function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string) {
+export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
@@ -245,14 +245,15 @@ export function useDeployLogs(serviceName?: string) {
 	};
 
 	const initiateServiceLogs = () => {
-		if(!serviceName) return;
+		if(!serviceName && !deploymentId) return;
 
 		const socket = wsRef.current;
 		if (socket?.readyState === WebSocket.OPEN) {
 			const object = {
 				type: 'service_logs',
 				payload : {
-					serviceName
+					serviceName,
+					deploymentId,
 				}
 			}
 			socket.send(JSON.stringify(object))

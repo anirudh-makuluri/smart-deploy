@@ -46,7 +46,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	const [elapsedTime, setElapsedTime] = React.useState(0);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs);
+	const deploymentIdForLogs = deployment?.id ?? deploymentId;
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs, deploymentIdForLogs);
 	const deployLogEntries = React.useMemo(() => {
 		const entries: { timestamp?: string; message?: string }[] = [];
 		steps.forEach((step) => {

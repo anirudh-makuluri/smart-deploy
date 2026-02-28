@@ -3,6 +3,8 @@ import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
 import { handleDeploy } from "./lib/handleDeploy";
+import { dbHelper } from "./db-helper";
+import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
 
 
 export async function deploy(payload: { deployConfig: DeployConfig, token: string, userID?: string }, ws: any) {
@@ -24,20 +26,70 @@ export async function deploy(payload: { deployConfig: DeployConfig, token: strin
 	await handleDeploy(deployConfig, token, ws, userID);
 }
 
-export async function serviceLogs(payload: { serviceName: string }, ws: any) {
-	console.log('in service logs')
+export async function serviceLogs(payload: { serviceName?: string; deploymentId?: string }, ws: any) {
+	const serviceName = payload?.serviceName?.trim();
+	const deploymentId = payload?.deploymentId?.trim();
 
-	const projectId = config.GCP_PROJECT_ID;
+	if (!serviceName && !deploymentId) {
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
+		}
+		return;
+	}
 
-	const logs = await getInitialLogs(payload.serviceName);
-	const object = {
-		type: 'initial_logs',
-		payload : {
-			logs
+	let deployConfig: DeployConfig | undefined;
+	if (deploymentId) {
+		const deployment = await dbHelper.getDeployment(deploymentId);
+		if (deployment.deployment) {
+			deployConfig = deployment.deployment;
 		}
 	}
 
-	ws.send(JSON.stringify(object))
-	
-	streamLogs(payload.serviceName, ws);
+	if (deployConfig?.ec2?.instanceId) {
+		const region = deployConfig.awsRegion || config.AWS_REGION;
+		const logs = await getInitialEc2ServiceLogs({
+			instanceId: deployConfig.ec2.instanceId,
+			region,
+			serviceName,
+			limit: 200,
+		});
+
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(
+				JSON.stringify({
+					type: "initial_logs",
+					payload: { logs },
+				})
+			);
+		}
+
+		streamEc2ServiceLogs({
+			instanceId: deployConfig.ec2.instanceId,
+			region,
+			serviceName,
+			ws,
+		});
+		return;
+	}
+
+	if (!serviceName) {
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
+		}
+		return;
+	}
+
+	const logs = await getInitialLogs(serviceName);
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "initial_logs",
+				payload: {
+					logs,
+				},
+			})
+		);
+	}
+
+	streamLogs(serviceName, ws);
 }
