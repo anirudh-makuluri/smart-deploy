@@ -11,6 +11,7 @@ import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
 import NewDeploySheet from "@/components/NewDeploySheet";
 import { getActiveDeployment } from "@/custom-hooks/useDeployLogs";
 import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
+import { toast } from "sonner";
 
 type DetectedService = DetectedServiceInfo;
 
@@ -87,7 +88,8 @@ function normalizeRepoUrlForMatch(url: string): string {
 
 export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const router = useRouter();
-	const { deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache } = useAppData();
+	const { deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments } = useAppData();
+	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [services, setServices] = React.useState<DetectedService[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
@@ -211,8 +213,50 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		refetchAll();
 	}
 
-	return (
+	async function handleDeleteAllDeployments() {
+		if (repoDeployments.length === 0) return;
+		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
+		setIsDeleting(true);
+		const deletedIds: string[] = [];
+		try {
+			for (const dep of repoDeployments) {
+				try {
+					const res = await fetch("/api/delete-deployment", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							deploymentId: dep.id,
+							serviceName: dep.service_name,
+						}),
+					});
+					const data = await res.json();
+					if (data.status === "success") {
+						deletedIds.push(dep.id);
+					} else {
+						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
+					}
+				} catch (err: any) {
+					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
+				}
+			}
+			if (deletedIds.length) {
+				removeDeployments(deletedIds);
+				await refetchDeployments();
+			}
+			toast.success("Finished deleting deployments for this repo.");
+		} finally {
+			setIsDeleting(false);
+		}
+	}
+
+		return (
 		<div className="dot-grid-bg min-h-svh flex flex-col text-foreground">
+			{isDeleting && (
+				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
+					<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+					<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
+				</div>
+			)}
 			<header className="shrink-0 border-b border-border bg-background/90">
 				<div className="px-6 py-3 flex flex-row justify-between items-center">
 					<SmartDeployLogo href="/home" showText size="md" />
@@ -248,9 +292,20 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 							</p>
 						</div>
 						{!loading && !error && services.length > 0 && (
-							<Button onClick={openSheetForAll} className="shrink-0">
-								Deploy all on one instance
-							</Button>
+							<div className="flex items-center gap-2">
+								<Button onClick={openSheetForAll} className="shrink-0">
+									Deploy all on one instance
+								</Button>
+								{repoDeployments.length > 0 && (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={handleDeleteAllDeployments}
+									>
+										Delete all deployments
+									</Button>
+								)}
+							</div>
 						)}
 					</div>
 

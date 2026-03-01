@@ -63,16 +63,17 @@ export async function POST(req: NextRequest) {
 
 		const deployConfig = deployment as DeployConfig;
 		const cloudProvider = deployConfig.cloudProvider || "aws";
-		
-		const deploymentTarget = deployConfig.deploymentTarget;
+		// Ensure EC2 is terminated when we have an instanceId (e.g. if deploymentTarget was not stored)
+		const deploymentTarget =
+			deployConfig.deploymentTarget ||
+			(deployConfig.ec2?.instanceId ? "ec2" : undefined);
 
-		// 1. Delete cloud service based on provider and target
+		// 1. Delete cloud service based on provider and target (must complete before removing DNS or DB)
 		try {
 			if (cloudProvider === "aws" && deploymentTarget) {
-				// Delete AWS deployment
 				await deleteAWSDeployment(deployConfig, deploymentTarget as string);
 			} else {
-				// Default: GCP Cloud Run
+				// GCP Cloud Run
 				const projectId = config.GCP_PROJECT_ID;
 				const deleteArgs = [
 					"run",

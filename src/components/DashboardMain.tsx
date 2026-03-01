@@ -1,11 +1,14 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import DeploymentHistoryTable from "./DeploymentHistoryTable";
 import { useAppData } from "@/store/useAppData";
-import { Boxes, Github, ChevronRight } from "lucide-react";
+import { Boxes, Github, ChevronRight, EllipsisVertical, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 function normalizeUrl(url: string): string {
 	return url.replace(/\.git$/, "").toLowerCase().trim();
@@ -18,7 +21,8 @@ type DashboardMainProps = {
 
 export default function DashboardMain({ onNewDeploy, activeView }: DashboardMainProps) {
 	const { data: session } = useSession();
-	const { deployments, repoList, repoServices, isLoading } = useAppData();
+	const { deployments, repoList, repoServices, isLoading, updateDeploymentById, removeDeployment, removeDeployments, refetchDeployments } = useAppData();
+	const [bulkOperation, setBulkOperation] = React.useState<{ label: string } | null>(null);
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
@@ -29,24 +33,101 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 		const isCrashed = repoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
 
 		const subtitle = isCrashed ? "Crashed" : isDeployed ? "Deployed" : "Not deployed";
-		if (totalServices > 0) {
-			return {
-				owner: record.repo_owner,
-				name: record.repo_name,
-				subtitle: `${subtitle} · ${totalServices} service${totalServices !== 1 ? "s" : ""}`,
-				hasCrashed: isCrashed,
-			};
-		}
-		return {
+		const base = {
 			owner: record.repo_owner,
 			name: record.repo_name,
 			subtitle,
 			hasCrashed: isCrashed,
+			deployments: repoDeployments,
 		};
+		if (totalServices > 0) {
+			return {
+				...base,
+				subtitle: `${subtitle} · ${totalServices} service${totalServices !== 1 ? "s" : ""}`,
+			};
+		}
+		return base;
 	});
+
+	async function bulkDelete(deploys: typeof deployments) {
+		if (!deploys.length) return;
+		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
+
+		setBulkOperation({ label: "Deleting deployments…" });
+		const deletedIds: string[] = [];
+		try {
+			for (const dep of deploys) {
+				try {
+					const res = await fetch("/api/delete-deployment", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							deploymentId: dep.id,
+							serviceName: dep.service_name,
+						}),
+					});
+					const data = await res.json();
+					if (data.status === "success") {
+						deletedIds.push(dep.id);
+					} else {
+						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
+					}
+				} catch (err: any) {
+					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
+				}
+			}
+			if (deletedIds.length) {
+				removeDeployments(deletedIds);
+				await refetchDeployments();
+			}
+			toast.success("Finished deleting deployments for this repo.");
+		} finally {
+			setBulkOperation(null);
+		}
+	}
+
+	async function bulkPauseResume(deploys: typeof deployments, action: "pause" | "resume") {
+		const target = action === "pause" ? deploys.filter((d) => d.status === "running") : deploys.filter((d) => d.status === "paused");
+		if (!target.length) return;
+
+		const loadingId = toast.loading(action === "pause" ? "Pausing deployments…" : "Resuming deployments…");
+		try {
+			for (const dep of target) {
+				try {
+					const res = await fetch("/api/deployment-control", {
+						method: "PUT",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							deploymentId: dep.id,
+							serviceName: dep.service_name,
+							action,
+						}),
+					});
+					const data = await res.json();
+					if (data.status === "success") {
+						const nextStatus = action === "pause" ? "paused" : "running";
+						void updateDeploymentById({ ...dep, status: nextStatus });
+					} else {
+						toast.error(data.error || data.message || `Failed to ${action} ${dep.service_name}`);
+					}
+				} catch (err: any) {
+					toast.error(err?.message || `Failed to ${action} ${dep.service_name}`);
+				}
+			}
+			toast.success(action === "pause" ? "Deployments paused." : "Deployments resumed.");
+		} finally {
+			setBulkOperation(null);
+		}
+	}
 
 	return (
 		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+			{bulkOperation && (
+				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
+					<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+					<span className="text-sm font-medium text-foreground">{bulkOperation.label}</span>
+				</div>
+			)}
 			<div className="p-6 border-b border-border/60">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div>
@@ -87,16 +168,18 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 							</div>
 						) : (
 							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoCards.map(({ owner, name, subtitle, hasCrashed }) => (
-									<Link
+								{repoCards.map(({ owner, name, subtitle, hasCrashed, deployments: repoDeployments }) => (
+									<div
 										key={`${owner}/${name}`}
-										href={`/${owner}/${name}`}
-										className={`block rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${
+										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${
 											hasCrashed ? "border-destructive/50" : "border-border"
 										}`}
 									>
-										<div className="flex items-center justify-between gap-3">
-											<div className="flex items-center gap-3 min-w-0">
+										<div className="flex items-start justify-between gap-3">
+											<Link
+												href={`/${owner}/${name}`}
+												className="flex items-center gap-3 min-w-0"
+											>
 												<Github className="size-6 shrink-0 text-muted-foreground" />
 												<div className="min-w-0">
 													<p className="font-semibold text-foreground truncate">
@@ -106,10 +189,43 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 														{subtitle}
 													</p>
 												</div>
-											</div>
-											<ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+											</Link>
+											{repoDeployments.length > 0 && (
+												<DropdownMenu>
+													<DropdownMenuTrigger className="p-1.5 rounded-lg border border-transparent hover:bg-secondary hover:border-border text-muted-foreground hover:text-foreground transition-colors">
+														<EllipsisVertical className="size-4" />
+													</DropdownMenuTrigger>
+													<DropdownMenuContent align="end" className="border-border bg-card">
+														<DropdownMenuItem
+															onClick={() => bulkPauseResume(repoDeployments, "pause")}
+															className="text-foreground focus:bg-secondary focus:text-foreground"
+														>
+															<PauseCircle className="size-4" />
+															Pause all
+														</DropdownMenuItem>
+														<DropdownMenuItem
+															onClick={() => bulkPauseResume(repoDeployments, "resume")}
+															className="text-foreground focus:bg-secondary focus:text-foreground"
+														>
+															<PlayCircle className="size-4" />
+															Resume all
+														</DropdownMenuItem>
+														<DropdownMenuItem
+															onClick={() => bulkDelete(repoDeployments)}
+															variant="destructive"
+														>
+															<Trash2 className="size-4" />
+															Delete all deployments
+														</DropdownMenuItem>
+													</DropdownMenuContent>
+												</DropdownMenu>
+											)}
 										</div>
-									</Link>
+										<div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+											<span>Click to open repo</span>
+											<ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+										</div>
+									</div>
 								))}
 							</div>
 						)}

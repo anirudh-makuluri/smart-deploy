@@ -39,6 +39,8 @@ type AppState = {
 	fetchAll: () => Promise<void>;
 	/** Force refetch from server (e.g. after long time or explicit "Refresh" action). */
 	refetchAll: () => Promise<void>;
+	/** Refetch deployments only (no loading state). Use after delete so UI stays in sync. */
+	refetchDeployments: () => Promise<void>;
 	/** Refetch repo services only (e.g. after visiting a repo page that ran detect-services). */
 	refetchRepoServices: () => Promise<void>;
 	/** Get cached detect-services result for a repo (normalized URL). */
@@ -47,6 +49,8 @@ type AppState = {
 	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
 	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
 	removeDeployment: (deploymentId: string) => void;
+	/** Remove multiple deployments in one update (e.g. after bulk delete). */
+	removeDeployments: (deploymentIds: string[]) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error'; message: string }>;
 };
 
@@ -122,6 +126,16 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 	},
 
+	refetchDeployments: async () => {
+		try {
+			const res = await fetch('/api/get-deployments').then((r) => r.json());
+			const list = res.deployments ?? [];
+			set({ deployments: sortDeployments(list) });
+		} catch (err) {
+			console.error('Refetch deployments failed', err);
+		}
+	},
+
 	refetchRepoServices: async () => {
 		try {
 			const res = await fetch('/api/repos/services').then((r) => r.json());
@@ -172,6 +186,16 @@ export const useAppData = create<AppState>((set, get) => ({
 		set((state) => ({
 			deployments: sortDeployments(
 				state.deployments.filter((dep) => dep.id !== deploymentId)
+			),
+		}));
+	},
+
+	removeDeployments: (deploymentIds: string[]) => {
+		if (deploymentIds.length === 0) return;
+		const setIds = new Set(deploymentIds);
+		set((state) => ({
+			deployments: sortDeployments(
+				state.deployments.filter((dep) => !setIds.has(dep.id))
 			),
 		}));
 	},
