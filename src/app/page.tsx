@@ -24,27 +24,11 @@ export default function Home() {
 	const [currentCharIndex, setCurrentCharIndex] = useState(0);
 	const [cursorVisible, setCursorVisible] = useState(true);
 	const [blinkCount, setBlinkCount] = useState(0);
-	const [accentColor, setAccentColor] = useState<"green" | "blue" | "red">("green");
-
+	// Accent is fixed to blue for now; picker hidden.
 	useEffect(() => {
-		const stored = typeof window !== "undefined"
-			? localStorage.getItem("smartdeploy-accent")
-			: null;
-		if (stored === "green" || stored === "blue" || stored === "red") {
-			setAccentColor(stored);
-			document.documentElement.setAttribute("data-accent", stored);
-			return;
-		}
-		document.documentElement.setAttribute("data-accent", "green");
+		if (typeof window === "undefined") return;
+		document.documentElement.setAttribute("data-accent", "blue");
 	}, []);
-
-	function handleAccentChange(color: "green" | "blue" | "red") {
-		setAccentColor(color);
-		if (typeof window !== "undefined") {
-			localStorage.setItem("smartdeploy-accent", color);
-		}
-		document.documentElement.setAttribute("data-accent", color);
-	}
 
 	useEffect(() => {
 		if (currentLineIndex >= terminalLines.length) {
@@ -169,44 +153,6 @@ export default function Home() {
 					<div className="relative">
 						<div className="bg-black/90 border border-primary/30 rounded-lg p-6 font-mono text-sm shadow-2xl shadow-primary/20">
 							<div className="flex items-center gap-2 mb-4 pb-3 border-b border-primary/30">
-								<div className="flex items-center gap-2 ml-2">
-									<button
-										type="button"
-										onClick={() => handleAccentChange("green")}
-										className={`size-4 rounded-full border transition-all ${accentColor === "green"
-												? "border-primary/70 ring-2 ring-primary/40"
-												: "border-border/70 hover:border-primary/40"
-											}`}
-										aria-label="Set accent color to green"
-										aria-pressed={accentColor === "green"}
-									>
-										<span className="block size-full rounded-full bg-[#25f46a]" />
-									</button>
-									<button
-										type="button"
-										onClick={() => handleAccentChange("blue")}
-										className={`size-4 rounded-full border transition-all ${accentColor === "blue"
-												? "border-primary/70 ring-2 ring-primary/40"
-												: "border-border/70 hover:border-primary/40"
-											}`}
-										aria-label="Set accent color to blue"
-										aria-pressed={accentColor === "blue"}
-									>
-										<span className="block size-full rounded-full bg-[#3b82f6]" />
-									</button>
-									<button
-										type="button"
-										onClick={() => handleAccentChange("red")}
-										className={`size-4 rounded-full border transition-all ${accentColor === "red"
-												? "border-primary/70 ring-2 ring-primary/40"
-												: "border-border/70 hover:border-primary/40"
-											}`}
-										aria-label="Set accent color to red"
-										aria-pressed={accentColor === "red"}
-									>
-										<span className="block size-full rounded-full bg-[#ef4444]" />
-									</button>
-								</div>
 								<span className="ml-2 text-primary text-xs">$ ANALYSIS OUTPUT</span>
 							</div>
 							<div className="space-y-1 text-xs min-h-30">

@@ -10,7 +10,7 @@ export function createWebSocketLogger(ws: any) {
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
 				type: 'deploy_logs',
-				payload: { id, msg }
+				payload: { id, msg, time: new Date().toISOString() }
 			};
 			ws.send(JSON.stringify(object));
 		}
@@ -18,12 +18,18 @@ export function createWebSocketLogger(ws: any) {
 }
 
 /**
- * Creates a WebSocket logger function that also tracks deployment steps
- * @param ws - WebSocket connection
- * @param deploySteps - Array of deployment steps to track
- * @returns A send function that logs messages and tracks step status
+ * Creates a WebSocket logger function that also tracks deployment steps.
+ * Optionally syncs steps to a store and broadcasts to other subscribed clients (for reconnect-after-refresh).
  */
-export function createDeployStepsLogger(ws: any, deploySteps: DeployStep[]) {
+export function createDeployStepsLogger(
+	ws: any,
+	deploySteps: DeployStep[],
+	options?: {
+		onStepsChange?: (steps: DeployStep[]) => void;
+		broadcast?: (id: string, msg: string) => void;
+	}
+) {
+	const { onStepsChange, broadcast } = options ?? {};
 	return (msg: string, id: string) => {
 		const now = new Date().toISOString();
 		let stepIndex = deploySteps.findIndex(s => s.id === id);
@@ -40,11 +46,14 @@ export function createDeployStepsLogger(ws: any, deploySteps: DeployStep[]) {
 				deploySteps[stepIndex].endedAt = now;
 			}
 		}
-		
+
+		onStepsChange?.(deploySteps);
+		broadcast?.(id, msg);
+
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
 				type: 'deploy_logs',
-				payload: { id, msg }
+				payload: { id, msg, time: now }
 			};
 			ws.send(JSON.stringify(object));
 		}

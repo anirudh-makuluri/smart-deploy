@@ -30,6 +30,7 @@ type DeploymentHistoryRow = {
 	timestamp: string;
 	success: boolean;
 	commitSha?: string;
+	commitMessage?: string;
 	branch?: string;
 	durationMs?: number;
 	serviceName: string;
@@ -61,13 +62,13 @@ function deriveEnvironment(branch?: string): string {
 }
 
 function downloadCsv(rows: DeploymentHistoryRow[]) {
-	const headers = ["Status", "Service", "Environment", "Commit", "Branch", "Age", "Timestamp"];
+	const headers = ["Status", "Service", "Environment", "Commit", "Message", "Branch", "Age", "Timestamp"];
 	const lines = rows.map((row) => {
 		const status = row.success ? "SUCCESS" : "FAILED";
 		const env = deriveEnvironment(row.branch);
 		const commit = row.commitSha ? row.commitSha.substring(0, 7) : "";
 		const age = toRelativeTime(row.timestamp);
-		return [status, row.serviceName, env, commit, row.branch ?? "", age, row.timestamp]
+		return [status, row.serviceName, env, commit, row.commitMessage ?? "", row.branch ?? "", age, row.timestamp]
 			.map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
 			.join(",");
 	});
@@ -103,7 +104,7 @@ export default function DeploymentHistoryTable() {
 	const filtered = React.useMemo(() => {
 		return history.filter((row) => {
 			const matchQuery = query
-				? `${row.serviceName} ${row.repoUrl ?? ""} ${row.branch ?? ""} ${row.commitSha ?? ""}`
+				? `${row.serviceName} ${row.repoUrl ?? ""} ${row.branch ?? ""} ${row.commitSha ?? ""} ${row.commitMessage ?? ""}`
 					.toLowerCase()
 					.includes(query.toLowerCase())
 				: true;
@@ -213,6 +214,11 @@ export default function DeploymentHistoryTable() {
 										<div className="text-sm text-foreground">
 											{row.commitSha ? row.commitSha.substring(0, 7) : "--"}
 										</div>
+										{row.commitMessage && (
+											<div className="text-xs text-muted-foreground truncate max-w-48" title={row.commitMessage}>
+												{row.commitMessage}
+											</div>
+										)}
 										{row.branch && (
 											<div className="text-xs text-muted-foreground">{row.branch}</div>
 										)}

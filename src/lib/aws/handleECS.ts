@@ -9,6 +9,7 @@ import config from "../../config";
 import { DeployConfig, ECSDeployDetails } from "../../app/types";
 import { MultiServiceConfig, ServiceDefinition } from "../multiServiceDetector";
 import { createWebSocketLogger } from "../websocketLogger";
+import { generateMonorepoDockerfile, writeMonorepoDockerfiles } from "../monorepoDockerfileGenerator";
 import { 
 	setupAWSCredentials, 
 	runAWSCommand, 
@@ -441,7 +442,9 @@ phases:
     commands:
       - echo Build started on $(date)
       - echo Building the Docker image...
-      - docker build -t $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG .
+      - DOCKERFILE=${"$"}{DOCKERFILE_PATH:-Dockerfile}
+      - echo Using Dockerfile $DOCKERFILE
+      - docker build -f $DOCKERFILE -t $ECR_REGISTRY/$IMAGE_REPO_NAME:$IMAGE_TAG .
   post_build:
     commands:
       - echo Build completed on $(date)
@@ -514,7 +517,8 @@ async function buildAndPushToECR(
 	ecrUri: string,
 	imageTag: string,
 	region: string,
-	ws: any
+	ws: any,
+	dockerfileName?: string
 ): Promise<string> {
 	const send = createWebSocketLogger(ws);
 
@@ -569,7 +573,8 @@ async function buildAndPushToECR(
 			{ name: "ECR_REGISTRY", value: `${accountId}.dkr.ecr.${region}.amazonaws.com` },
 			{ name: "IMAGE_REPO_NAME", value: ecrRepoName },
 			{ name: "IMAGE_TAG", value: imageTag },
-			{ name: "AWS_DEFAULT_REGION", value: region }
+			{ name: "AWS_DEFAULT_REGION", value: region },
+			{ name: "DOCKERFILE_PATH", value: dockerfileName || "Dockerfile" }
 		]
 	}));
 	console.log('CodeBuild build started');
@@ -1194,15 +1199,20 @@ export async function handleECS(
 	const ecsServiceNamesList: string[] = [];
 
 	// Determine services to deploy
-	const services: { name: string; dir: string; language: string; port: number }[] = [];
+	const services: { name: string; dir: string; language: string; port: number; isMonorepo?: boolean; relativePath?: string; framework?: string; buildContext?: string }[] = [];
 
 	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 0) {
 		for (const svc of multiServiceConfig.services) {
+			const svcDir = path.isAbsolute(svc.workdir) ? svc.workdir : path.join(appDir, svc.workdir);
 			services.push({
 				name: svc.name,
-				dir: path.isAbsolute(svc.workdir) ? svc.workdir : path.join(appDir, svc.workdir),
+				dir: svcDir,
 				language: svc.language || 'node',
-				port: svc.port || 8080
+				port: svc.port || 8080,
+				isMonorepo: multiServiceConfig.isMonorepo || false,
+				relativePath: svc.relativePath,
+				framework: svc.framework,
+				buildContext: multiServiceConfig.isMonorepo ? appDir : svcDir,
 			});
 		}
 	} else {
@@ -1248,12 +1258,20 @@ export async function handleECS(
 		send('\nNo shared ALB (requires ECS_ACM_CERTIFICATE_ARN and NEXT_PUBLIC_DEPLOYMENT_DOMAIN)', 'deploy');
 	}
 
+	// For monorepo services, generate monorepo-aware Dockerfiles at repo root
+	if (multiServiceConfig.isMonorepo) {
+		send('Generating monorepo-aware Dockerfiles...', 'docker');
+		writeMonorepoDockerfiles(multiServiceConfig.services, multiServiceConfig, appDir);
+	}
+
 	// Deploy each service
 	for (const service of services) {
 		send(`\nDeploying service: ${service.name}...`, 'deploy');
 
-		// Generate Dockerfile if needed
-		generateDockerfile(service.dir, service.language, service.port);
+		// Generate Dockerfile if needed (for non-monorepo services)
+		if (!service.isMonorepo) {
+			generateDockerfile(service.dir, service.language, service.port);
+		}
 
 		// ECR repo name: single service reuses repoName to avoid "repo-repo"; multi-service uses repo-service
 		const isSingleService = services.length === 1 && service.name === repoName;
@@ -1261,7 +1279,10 @@ export async function handleECS(
 		const ecrUri = await ensureECRRepository(ecrRepoName, region, ws);
 
 		// Build and push image
-		const imageUri = await buildAndPushToECR(service.dir, ecrUri, imageTag, region, ws);
+		// For monorepo: use monorepo root as build context with service-specific Dockerfile
+		const buildContext = service.buildContext || service.dir;
+		const dockerfileName = service.isMonorepo ? `Dockerfile.${service.name}` : undefined;
+		const imageUri = await buildAndPushToECR(buildContext, ecrUri, imageTag, region, ws, dockerfileName);
 		console.log('Image URI: ', imageUri);
 		// Prepare environment variables
 		const envVars: Record<string, string> = {

@@ -29,10 +29,10 @@ import {
 	TableRow,
 } from "@/components/ui/table"
 import DeployOptions from "@/components/DeployOptions";
-import { RotateCw, Upload, Trash2, Plus } from "lucide-react";
+import { RotateCw, Upload, Trash2, Plus, Layers, Check, X } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, repoType } from "@/app/types";
+import { AIGenProjectMetadata, AWSDeploymentTarget, CoreDeploymentInfo, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -59,13 +59,17 @@ export const formSchema = z.object({
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo, initialWorkdir, initialCoreInfo }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
 			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
 			onConfigChange?: (partial: Partial<DeployConfig>) => void,
 			editMode: boolean, isDeploying: boolean,
-			repo: repoType, deployment?: DeployConfig
+			repo: repoType, deployment?: DeployConfig,
+			/** When no deployment: prefill workdir from detected service path. */
+			initialWorkdir?: string,
+			/** When no deployment: rule-based detected config (install/build/run/workdir/port). */
+			initialCoreInfo?: CoreDeploymentInfo
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -78,14 +82,26 @@ export default function ConfigTabs(
 	const [isAiFetching, setAiFetching] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
-	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
-		deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes
-			? {
+	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(() => {
+		if (deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes) {
+			return {
 				core_deployment_info: deployment.core_deployment_info,
 				features_infrastructure: deployment.features_infrastructure,
 				final_notes: deployment.final_notes,
-			}
-			: null
+				...(deployment.monorepo_services && { monorepo_services: deployment.monorepo_services }),
+			};
+		}
+		if (initialCoreInfo) {
+			return {
+				core_deployment_info: initialCoreInfo,
+				features_infrastructure: { uses_websockets: false, uses_cron: false, uses_mobile: false, cloud_run_compatible: true, is_library: false, requires_build_but_missing_cmd: false },
+				final_notes: { comment: "Rule-based detection" },
+			};
+		}
+		return null;
+	});
+	const [monorepoServices, setMonorepoServices] = useState<MonorepoServiceInfo[]>(
+		deployment?.monorepo_services ?? []
 	);
 
 	const isDeploymentTarget = (t: string): t is AWSDeploymentTarget =>
@@ -99,17 +115,18 @@ export default function ConfigTabs(
 
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
+	const core = deployment?.core_deployment_info ?? initialCoreInfo;
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			url: repo?.html_url,
 			service_name: service_name || repo?.name,
 			branch: deployment?.branch || "main",
-			install_cmd: deployment?.core_deployment_info?.install_cmd || "",
-			build_cmd: deployment?.core_deployment_info?.build_cmd || "",
-			run_cmd: deployment?.core_deployment_info?.run_cmd || "",
+			install_cmd: core?.install_cmd ?? "",
+			build_cmd: core?.build_cmd ?? "",
+			run_cmd: core?.run_cmd ?? "",
 			env_vars: deployment?.env_vars || "",
-			workdir: deployment?.core_deployment_info?.workdir || "",
+			workdir: core?.workdir ?? initialWorkdir ?? "",
 			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
 			custom_url: deployment?.custom_url || "",
 		},
@@ -143,8 +160,10 @@ export default function ConfigTabs(
 				core_deployment_info: deployment.core_deployment_info,
 				features_infrastructure: deployment.features_infrastructure,
 				final_notes: deployment.final_notes,
+				...(deployment.monorepo_services && { monorepo_services: deployment.monorepo_services }),
 			});
 		}
+		setMonorepoServices(deployment.monorepo_services ?? []);
 		// deploymentAnalysis is always EC2; not synced from deployment
 
 		const initialPartial: Partial<DeployConfig> = {
@@ -200,7 +219,9 @@ export default function ConfigTabs(
 				...(projectMetadata && {
 					features_infrastructure: projectMetadata.features_infrastructure,
 					final_notes: projectMetadata.final_notes,
+					...(projectMetadata.deployment_hints && { deployment_hints: projectMetadata.deployment_hints }),
 				}),
+				...(monorepoServices.length > 0 && { monorepo_services: monorepoServices }),
 			};
 			const snapshot = JSON.stringify(partial);
 			if (lastSavedSnapshotRef.current === snapshot) return;
@@ -208,7 +229,7 @@ export default function ConfigTabs(
 			onConfigChangeRef.current?.(partial);
 		}, AUTO_SAVE_DEBOUNCE_MS);
 		return () => clearTimeout(timer);
-	}, [watchedForm, envEntries, deploymentAnalysis, projectMetadata, deployment?.id]);
+	}, [watchedForm, envEntries, deploymentAnalysis, projectMetadata, monorepoServices, deployment?.id]);
 
 	function handleAIBtn() {
 		setAiFetching(true);
@@ -226,6 +247,12 @@ export default function ConfigTabs(
 				setAiFetching(false);
 				const parsed_response = sanitizeAndParseAIResponse(response);
 				setProjectMetadata(parsed_response ?? null);
+				// Populate monorepo services if detected
+				if (parsed_response?.monorepo_services?.length) {
+					setMonorepoServices(parsed_response.monorepo_services);
+				} else {
+					setMonorepoServices([]);
+				}
 				const core_deployment_info = parsed_response?.core_deployment_info;
 				if (core_deployment_info) {
 					form.setValue('install_cmd', core_deployment_info.install_cmd);
@@ -244,6 +271,7 @@ export default function ConfigTabs(
 					const payload = {
 						...form.getValues(),
 						...parsed_response,
+						monorepo_services: parsed_response.monorepo_services ?? [],
 						deploymentTarget: "ec2",
 					deployment_target_reason: analysis?.reason ?? "Using EC2.",
 					};
@@ -333,6 +361,84 @@ export default function ConfigTabs(
 						</AlertDescription>
 					</Alert>
 				</>
+			)}
+
+			{/* Monorepo Services Section */}
+			{monorepoServices.length > 0 && (
+				<Card className="my-4 border-border/60 bg-card/60">
+					<CardHeader className="pb-3">
+						<CardTitle className="text-foreground flex items-center gap-2">
+							<Layers className="h-5 w-5" />
+							Monorepo Services
+							<Badge variant="outline" className="ml-2 border-border text-muted-foreground">
+								{monorepoServices.filter(s => s.is_deployable).length} deployable
+							</Badge>
+						</CardTitle>
+					</CardHeader>
+					<CardContent className="space-y-2">
+						<p className="text-sm text-muted-foreground mb-3">
+							The following services were detected in this monorepo. Each deployable service will be containerized and deployed separately.
+						</p>
+						<div className="grid gap-2">
+							{monorepoServices.map((svc, idx) => (
+								<div
+									key={idx}
+									className={`flex items-center justify-between p-3 rounded-lg border ${
+										svc.is_deployable
+											? 'border-border/60 bg-background/60'
+											: 'border-border/30 bg-muted/20 opacity-60'
+									}`}
+								>
+									<div className="flex items-center gap-3 flex-wrap">
+										<div className="flex items-center gap-2">
+											{svc.is_deployable ? (
+												<Check className="h-4 w-4 text-emerald-500 shrink-0" />
+											) : (
+												<X className="h-4 w-4 text-muted-foreground shrink-0" />
+											)}
+											<span className="font-medium text-foreground">{svc.name}</span>
+										</div>
+										<span className="text-xs text-muted-foreground font-mono">{svc.path}</span>
+										<div className="flex gap-1.5">
+											{svc.language && (
+												<Badge variant="outline" className="text-xs border-border text-muted-foreground">
+													{svc.language}
+												</Badge>
+											)}
+											{svc.framework && (
+												<Badge variant="outline" className="text-xs border-border text-muted-foreground">
+													{svc.framework}
+												</Badge>
+											)}
+										</div>
+									</div>
+									<div className="flex items-center gap-2 shrink-0">
+										{svc.port && (
+											<span className="text-xs text-muted-foreground">
+												Port {svc.port}
+											</span>
+										)}
+										<Badge
+											variant={svc.is_deployable ? "default" : "secondary"}
+											className={`text-xs ${
+												svc.is_deployable
+													? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/15'
+													: 'bg-muted text-muted-foreground'
+											}`}
+										>
+											{svc.is_deployable ? 'Deploy' : 'Skip'}
+										</Badge>
+									</div>
+								</div>
+							))}
+						</div>
+						{monorepoServices.some(s => !s.is_deployable) && (
+							<p className="text-xs text-muted-foreground mt-2">
+								Non-deployable packages (mobile apps, shared libraries, config) are automatically skipped during deployment.
+							</p>
+						)}
+					</CardContent>
+				</Card>
 			)}
 			<Form {...form}>
 				<form onSubmit={form.handleSubmit((data) => {

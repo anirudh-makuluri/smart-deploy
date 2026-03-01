@@ -222,6 +222,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 			final_notes: data.final_notes ?? resolvedDeployment?.final_notes,
 			deploymentTarget: (data as DeployConfig).deploymentTarget ?? resolvedDeployment?.deploymentTarget,
 			deployment_target_reason: (data as DeployConfig).deployment_target_reason ?? resolvedDeployment?.deployment_target_reason,
+			...((data as any).monorepo_services?.length && { monorepo_services: (data as any).monorepo_services }),
+			...((data as any).deployment_hints && { deployment_hints: (data as any).deployment_hints }),
 		};
 
 		await updateDeploymentById(scanConfig);

@@ -8,6 +8,7 @@ import { detectMultiService, ServiceDefinition } from "./multiServiceDetector";
 import { detectDatabase } from "./databaseDetector";
 import { createCloudSQLInstance, connectCloudRunToCloudSQL, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { createWebSocketLogger } from "./websocketLogger";
+import { generateMonorepoDockerfile, writeMonorepoDockerfiles } from "./monorepoDockerfileGenerator";
 
 /**
  * Generates Dockerfile content for a service
@@ -129,14 +130,36 @@ async function deployService(
 
 	send(`🐳 Building Docker image for service "${service.name}"...`, `docker-${serviceIndex}`);
 	
-	// Build context is the service's workdir
+	// Build context is the service's workdir (or monorepo root for monorepo services)
 	const buildContext = service.build_context || service.workdir;
 	
-	await runCommandLiveWithWebSocket("gcloud", [
-		"builds", "submit",
-		"--tag", gcpImage,
-		buildContext
-	], ws, `docker-${serviceIndex}`);
+	if (service.dockerfile && service.dockerfile !== "Dockerfile") {
+		// For custom Dockerfile names (e.g. monorepo Dockerfile.<name>), create a cloudbuild.yaml
+		const cloudbuildConfig = {
+			steps: [{
+				name: "gcr.io/cloud-builders/docker",
+				args: ["build", "-f", service.dockerfile, "-t", gcpImage, "."]
+			}],
+			images: [gcpImage]
+		};
+		const cloudbuildPath = path.join(buildContext, `cloudbuild-${service.name}.yaml`);
+		fs.writeFileSync(cloudbuildPath, JSON.stringify(cloudbuildConfig));
+
+		await runCommandLiveWithWebSocket("gcloud", [
+			"builds", "submit",
+			"--config", cloudbuildPath,
+			buildContext
+		], ws, `docker-${serviceIndex}`);
+
+		// Cleanup temp cloudbuild file
+		try { fs.unlinkSync(cloudbuildPath); } catch {}
+	} else {
+		await runCommandLiveWithWebSocket("gcloud", [
+			"builds", "submit",
+			"--tag", gcpImage,
+			buildContext
+		], ws, `docker-${serviceIndex}`);
+	}
 
 	send(`🚀 Deploying service "${service.name}" to Cloud Run...`, `deploy-${serviceIndex}`);
 
@@ -245,6 +268,8 @@ export async function handleMultiServiceDeploy(
 	send(`📦 Detected ${multiServiceConfig.services.length} service(s)`, 'detect');
 	if (multiServiceConfig.hasDockerCompose) {
 		send("📄 Using docker-compose.yml configuration", 'detect');
+	} else if (multiServiceConfig.isMonorepo) {
+		send(`📦 Detected monorepo structure (${multiServiceConfig.packageManager || 'npm'} workspaces)`, 'detect');
 	} else {
 		send("🤖 Using algorithmic service detection", 'detect');
 	}
@@ -298,6 +323,12 @@ export async function handleMultiServiceDeploy(
 	const serviceUrls = new Map<string, string>();
 	const deployedServices: string[] = [];
 
+	// For monorepo services, generate monorepo-aware Dockerfiles at the repo root
+	if (multiServiceConfig.isMonorepo) {
+		send("✍️ Generating monorepo-aware Dockerfiles...", 'detect');
+		writeMonorepoDockerfiles(multiServiceConfig.services, multiServiceConfig, cloneDir);
+	}
+
 	for (let i = 0; i < multiServiceConfig.services.length; i++) {
 		const service = multiServiceConfig.services[i];
 		send(`\n📦 Processing service: ${service.name}`, `service-${i}`);
@@ -307,23 +338,39 @@ export async function handleMultiServiceDeploy(
 			? service.workdir 
 			: path.join(appDir, service.workdir);
 
-		// Check if service has a Dockerfile
-		const dockerfilePath = service.dockerfile 
-			? path.join(serviceWorkdir, service.dockerfile)
-			: path.join(serviceWorkdir, "Dockerfile");
-
-		if (!fs.existsSync(dockerfilePath)) {
-			send(`✍️ Generating Dockerfile for ${service.name}...`, `service-${i}`);
-			const dockerfileContent = generateDockerfileForService(service, deployConfig, i);
-			fs.writeFileSync(dockerfilePath, dockerfileContent);
+		if (multiServiceConfig.isMonorepo) {
+			// For monorepo: Dockerfile is at repo root as Dockerfile.<name>
+			const monoDockerfilePath = path.join(cloneDir, `Dockerfile.${service.name}`);
+			if (!fs.existsSync(monoDockerfilePath)) {
+				send(`✍️ Generating monorepo Dockerfile for ${service.name}...`, `service-${i}`);
+				const content = generateMonorepoDockerfile(service, multiServiceConfig, cloneDir);
+				fs.writeFileSync(monoDockerfilePath, content);
+			} else {
+				send(`✅ Found existing Dockerfile for ${service.name}`, `service-${i}`);
+			}
+			// For monorepo, build context is the repo root
+			service.workdir = serviceWorkdir;
+			service.build_context = cloneDir;
+			service.dockerfile = `Dockerfile.${service.name}`;
 		} else {
-			send(`✅ Found existing Dockerfile for ${service.name}`, `service-${i}`);
-		}
+			// Check if service has a Dockerfile
+			const dockerfilePath = service.dockerfile 
+				? path.join(serviceWorkdir, service.dockerfile)
+				: path.join(serviceWorkdir, "Dockerfile");
 
-		// Update service workdir to absolute path
-		service.workdir = serviceWorkdir;
-		if (!service.build_context) {
-			service.build_context = serviceWorkdir;
+			if (!fs.existsSync(dockerfilePath)) {
+				send(`✍️ Generating Dockerfile for ${service.name}...`, `service-${i}`);
+				const dockerfileContent = generateDockerfileForService(service, deployConfig, i);
+				fs.writeFileSync(dockerfilePath, dockerfileContent);
+			} else {
+				send(`✅ Found existing Dockerfile for ${service.name}`, `service-${i}`);
+			}
+
+			// Update service workdir to absolute path
+			service.workdir = serviceWorkdir;
+			if (!service.build_context) {
+				service.build_context = serviceWorkdir;
+			}
 		}
 
 		// Deploy the service

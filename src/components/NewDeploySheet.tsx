@@ -16,13 +16,26 @@ type NewDeploySheetProps = {
 	open: boolean;
 	onClose: () => void;
 	repo: repoType;
+	/** When set, deploy only this service (sheet opened from service card). When undefined, deploy all services (deploy-all mode). */
+	selectedServiceName?: string | null;
+	/** Relative path for the service (e.g. "apps/web") for workdir prefill. */
+	selectedServicePath?: string | null;
+	/** Rule-based detected config for this service when no deployment exists. */
+	selectedServiceCoreInfo?: import("@/app/types").CoreDeploymentInfo | null;
 };
 
-export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetProps) {
+function normalizeRepoUrl(url: string): string {
+	return url.replace(/\.git$/, "").toLowerCase().trim();
+}
+
+export default function NewDeploySheet({ open, onClose, repo, selectedServiceName, selectedServicePath, selectedServiceCoreInfo }: NewDeploySheetProps) {
 	const { data: session } = useSession();
-	const { updateDeploymentById } = useAppData();
+	const { updateDeploymentById, deployments } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(repo.name);
+	const deployKey = selectedServiceName ? `${repo.name}-${selectedServiceName}` : repo.name;
+	const deploymentSlug = repo.full_name.replace(/\//g, "-");
+	const deploymentId = selectedServiceName ? `${deploymentSlug}-${selectedServiceName}` : deploymentSlug;
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(deployKey, deploymentId);
 
 	const deployLogEntries = React.useMemo(() => {
 		const entries: { timestamp?: string; message?: string }[] = [];
@@ -76,12 +89,22 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 
 		const coreInfo = values.core_deployment_info;
 
+		const serviceNameForDeploy = selectedServiceName
+			? `${repo.name}-${selectedServiceName}`
+			: (values.service_name || repo.name);
+		// Deployment ID must not contain '/' (DB constraint); use slug from full_name (e.g. owner-repo)
+		const deploymentSlug = repo.full_name.replace(/\//g, "-");
+		const deploymentId = selectedServiceName
+			? `${deploymentSlug}-${selectedServiceName}`
+			: deploymentSlug;
+
 		const payload: DeployConfig = {
-			id: repo.id,
+			id: deploymentId,
 			deploymentTarget,
 			...(deployment_target_reason && { deployment_target_reason }),
 			url: values.url,
-			service_name: values.service_name,
+			service_name: serviceNameForDeploy,
+			...(selectedServiceName && { monorepo_service_name: selectedServiceName }),
 			branch: values.branch,
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars ? parseEnvVarsToStore(values.env_vars) : "",
@@ -90,6 +113,8 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 			...(values.custom_url && { custom_url: values.custom_url }),
 			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
 			...(values.final_notes && { final_notes: values.final_notes }),
+			...((values as any).monorepo_services?.length && { monorepo_services: (values as any).monorepo_services }),
+			...((values as any).deployment_hints && { deployment_hints: (values as any).deployment_hints }),
 			core_deployment_info: {
 				language: coreInfo?.language ?? "",
 				framework: coreInfo?.framework ?? "",
@@ -100,6 +125,15 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 				...(coreInfo?.port != null && { port: coreInfo.port }),
 			},
 		};
+
+		// Same repo → reuse existing EC2 instance so all services end up on one instance
+		const repoUrlNorm = normalizeRepoUrl(values.url || repo.id);
+		const existingRepoDeployment = deployments.find(
+			(d) => normalizeRepoUrl(d.url ?? "") === repoUrlNorm && d.ec2?.instanceId
+		);
+		if (existingRepoDeployment?.ec2) {
+			payload.ec2 = { ...existingRepoDeployment.ec2, ...payload.ec2 };
+		}
 
 		setIsDeploying(true);
 		sendDeployConfig(payload, session.accessToken, session.userID);
@@ -121,18 +155,26 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 					</div>
 
 					<div className="mt-6 rounded-xl border border-border bg-card p-4">
-						<span>Repository Name: </span>
-						<span className="font-semibold">{repo.name}</span>
+						<span>Repository: </span>
+						<span className="font-semibold">{repo.full_name}</span>
+						{selectedServiceName && (
+							<>
+								<span className="text-muted-foreground mx-2">/</span>
+								<span className="font-semibold text-primary">@{repo.name}/{selectedServiceName}</span>
+							</>
+						)}
 					</div>
 
 					<div className="mt-6 rounded-xl border border-border bg-card p-4">
 						<ConfigTabs
-							service_name={repo.name}
+							service_name={deployKey}
 							onSubmit={handleSubmit}
 							onScanComplete={() => undefined}
 							repo={repo}
 							editMode={true}
 							isDeploying={isDeploying}
+							initialWorkdir={selectedServicePath ?? undefined}
+							initialCoreInfo={selectedServiceCoreInfo ?? undefined}
 						/>
 					</div>
 

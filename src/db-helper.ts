@@ -1,5 +1,5 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
-import { DeployConfig, DeploymentHistoryEntry, repoType } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
 
 type RowDeployment = {
 	id: string;
@@ -374,6 +374,65 @@ export const dbHelper = {
 		} catch (error) {
 			console.error("getAllDeploymentHistory error:", error);
 			return { error };
+		}
+	},
+
+	/** Upsert detected services for a repo (after running detect-services). */
+	upsertRepoServices: async function (
+		userID: string,
+		repoUrl: string,
+		payload: { branch: string; repo_owner: string; repo_name: string; services: DetectedServiceInfo[]; is_monorepo: boolean }
+	): Promise<{ error?: string }> {
+		try {
+			const normalizedUrl = repoUrl.replace(/\.git$/, "").trim();
+			if (!userID || !normalizedUrl) return { error: "userID and repo_url are required" };
+
+			const supabase = getSupabaseServer();
+			const { error } = await supabase.from("repo_services").upsert(
+				{
+					user_id: userID,
+					repo_url: normalizedUrl,
+					branch: payload.branch,
+					repo_owner: payload.repo_owner,
+					repo_name: payload.repo_name,
+					services: payload.services,
+					is_monorepo: payload.is_monorepo,
+					updated_at: new Date().toISOString(),
+				},
+				{ onConflict: "user_id,repo_url" }
+			);
+			if (error) return { error: error.message };
+			return {};
+		} catch (err) {
+			console.error("upsertRepoServices error:", err);
+			return { error: err instanceof Error ? err.message : String(err) };
+		}
+	},
+
+	/** Get all stored repo services for a user. */
+	getUserRepoServices: async function (userID: string): Promise<{ error?: string; records?: RepoServicesRecord[] }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: rows, error } = await supabase
+				.from("repo_services")
+				.select("repo_url, branch, repo_owner, repo_name, services, is_monorepo, updated_at")
+				.eq("user_id", userID)
+				.order("updated_at", { ascending: false });
+
+			if (error) return { error: error.message };
+			const records: RepoServicesRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
+				repo_url: r.repo_url as string,
+				branch: r.branch as string,
+				repo_owner: r.repo_owner as string,
+				repo_name: r.repo_name as string,
+				services: (r.services as DetectedServiceInfo[]) ?? [],
+				is_monorepo: (r.is_monorepo as boolean) ?? false,
+				updated_at: r.updated_at as string,
+			}));
+			return { records };
+		} catch (err) {
+			console.error("getUserRepoServices error:", err);
+			return { error: err instanceof Error ? err.message : String(err) };
 		}
 	},
 

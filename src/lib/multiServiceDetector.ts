@@ -11,12 +11,22 @@ export interface ServiceDefinition {
 	env_vars?: Record<string, string>;
 	depends_on?: string[];
 	build_context?: string;
+	/** For monorepo services: the relative path from the repo root to the service (e.g. "apps/web") */
+	relativePath?: string;
+	/** The framework detected for this service (e.g. "nextjs", "express") */
+	framework?: string;
 }
 
 export interface MultiServiceConfig {
 	isMultiService: boolean;
 	services: ServiceDefinition[];
 	hasDockerCompose: boolean;
+	/** True when the repo uses workspace tooling (pnpm workspaces, turborepo, lerna, nx, etc.) */
+	isMonorepo: boolean;
+	/** The package manager used by the monorepo (pnpm, npm, yarn) */
+	packageManager?: string;
+	/** The monorepo root directory (usually the repo root) */
+	monorepoRoot?: string;
 }
 
 /**
@@ -77,7 +87,8 @@ export function detectDockerCompose(appDir: string): MultiServiceConfig | null {
 						return {
 							isMultiService: true,
 							services,
-							hasDockerCompose: true
+							hasDockerCompose: true,
+							isMonorepo: false,
 						};
 					}
 				}
@@ -85,6 +96,198 @@ export function detectDockerCompose(appDir: string): MultiServiceConfig | null {
 				console.error(`Error parsing docker-compose file: ${error}`);
 			}
 		}
+	}
+
+	return null;
+}
+
+/** Directories that commonly hold deployable apps inside a monorepo */
+const MONOREPO_APP_ROOTS = ["apps", "services", "packages", "modules"];
+
+/** Service directory names to skip (mobile-only, not deployable to cloud) */
+const MOBILE_ONLY_DIRS = ["mobile", "ios", "android", "react-native", "flutter", "expo"];
+
+/**
+ * Detects monorepo workspace tooling at a given directory.
+ * Returns the package manager and monorepo kind if found.
+ */
+export function detectMonorepoTooling(appDir: string): { isMonorepo: boolean; packageManager?: string; workspaceGlobs?: string[] } {
+	// pnpm workspaces
+	const pnpmWorkspacePath = path.join(appDir, "pnpm-workspace.yaml");
+	if (fs.existsSync(pnpmWorkspacePath)) {
+		try {
+			const content = fs.readFileSync(pnpmWorkspacePath, "utf-8");
+			const parsed = yaml.load(content) as any;
+			const globs: string[] = parsed?.packages || [];
+			return { isMonorepo: true, packageManager: "pnpm", workspaceGlobs: globs };
+		} catch { /* ignore parse errors */ }
+	}
+
+	// npm/yarn workspaces (in package.json)
+	const rootPkgPath = path.join(appDir, "package.json");
+	if (fs.existsSync(rootPkgPath)) {
+		try {
+			const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
+			if (pkg.workspaces) {
+				const globs = Array.isArray(pkg.workspaces) ? pkg.workspaces : pkg.workspaces.packages || [];
+				const pm = pkg.packageManager?.startsWith("yarn") ? "yarn" : "npm";
+				return { isMonorepo: true, packageManager: pm, workspaceGlobs: globs };
+			}
+		} catch { /* ignore */ }
+	}
+
+	// Turborepo / Nx / Lerna
+	const monorepoMarkers = ["turbo.json", "nx.json", "lerna.json"];
+	for (const marker of monorepoMarkers) {
+		if (fs.existsSync(path.join(appDir, marker))) {
+			// Try to determine package manager from root package.json
+			let pm = "npm";
+			if (fs.existsSync(rootPkgPath)) {
+				try {
+					const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
+					if (pkg.packageManager?.startsWith("pnpm")) pm = "pnpm";
+					else if (pkg.packageManager?.startsWith("yarn")) pm = "yarn";
+				} catch { /* ignore */ }
+			}
+			if (fs.existsSync(pnpmWorkspacePath)) pm = "pnpm";
+			return { isMonorepo: true, packageManager: pm };
+		}
+	}
+
+	return { isMonorepo: false };
+}
+
+/**
+ * Checks if a directory is a mobile-only project (not deployable to cloud).
+ */
+function isMobileOnlyDir(dirName: string, dirPath: string): boolean {
+	if (MOBILE_ONLY_DIRS.includes(dirName.toLowerCase())) return true;
+
+	// Check for React Native / Expo / Flutter markers
+	const pkgPath = path.join(dirPath, "package.json");
+	if (fs.existsSync(pkgPath)) {
+		try {
+			const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+			const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+			// React Native or Expo project
+			if (deps["react-native"] || deps["expo"] || deps["@expo/cli"]) return true;
+		} catch { /* ignore */ }
+	}
+	if (fs.existsSync(path.join(dirPath, "pubspec.yaml"))) return true; // Flutter
+	if (fs.existsSync(path.join(dirPath, "android")) && fs.existsSync(path.join(dirPath, "ios"))) return true;
+
+	return false;
+}
+
+/**
+ * Detects the framework used in a directory.
+ */
+function detectFramework(dir: string): string | undefined {
+	const pkgPath = path.join(dir, "package.json");
+	if (fs.existsSync(pkgPath)) {
+		try {
+			const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+			const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+			if (deps["next"]) return "nextjs";
+			if (deps["express"]) return "express";
+			if (deps["fastify"]) return "fastify";
+			if (deps["@nestjs/core"]) return "nestjs";
+			if (deps["nuxt"]) return "nuxt";
+			if (deps["react"]) return "react";
+			if (deps["vue"]) return "vue";
+			if (deps["@angular/core"]) return "angular";
+			if (deps["svelte"]) return "svelte";
+		} catch { /* ignore */ }
+	}
+	if (fs.existsSync(path.join(dir, "requirements.txt"))) {
+		try {
+			const reqs = fs.readFileSync(path.join(dir, "requirements.txt"), "utf-8");
+			if (reqs.includes("django")) return "django";
+			if (reqs.includes("flask")) return "flask";
+			if (reqs.includes("fastapi")) return "fastapi";
+		} catch { /* ignore */ }
+	}
+	return undefined;
+}
+
+/**
+ * Detects monorepo services by scanning workspace directories (apps/*, services/*, etc.).
+ * This handles repos like turborepo/pnpm workspaces with apps/web, apps/backend, apps/mobile.
+ */
+export function detectMonorepoServices(appDir: string): MultiServiceConfig | null {
+	console.log("detectMonorepoServices", appDir);
+
+	const tooling = detectMonorepoTooling(appDir);
+	if (!tooling.isMonorepo) return null;
+
+	console.log("Monorepo detected:", tooling);
+
+	const services: ServiceDefinition[] = [];
+
+	// Scan known monorepo app roots (apps/, services/, etc.)
+	for (const rootDir of MONOREPO_APP_ROOTS) {
+		const rootPath = path.join(appDir, rootDir);
+		if (!fs.existsSync(rootPath) || !fs.statSync(rootPath).isDirectory()) continue;
+
+		try {
+			const entries = fs.readdirSync(rootPath, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+
+				const servicePath = path.join(rootPath, entry.name);
+				const relativePath = path.join(rootDir, entry.name).replace(/\\/g, "/");
+
+				// Skip mobile-only directories
+				if (isMobileOnlyDir(entry.name, servicePath)) {
+					console.log(`Skipping mobile-only directory: ${relativePath}`);
+					continue;
+				}
+
+				const language = detectLanguage(servicePath);
+				if (!language) continue;
+
+				// Skip shared packages that are libraries (no start/run script)
+				if (rootDir === "packages") {
+					const pkgPath = path.join(servicePath, "package.json");
+					if (fs.existsSync(pkgPath)) {
+						try {
+							const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+							if (!pkg.scripts?.start && !pkg.scripts?.serve && !pkg.scripts?.dev) {
+								console.log(`Skipping library package: ${relativePath}`);
+								continue;
+							}
+						} catch { /* include it */ }
+					}
+				}
+
+				const framework = detectFramework(servicePath);
+				const port = framework === "nextjs" ? 3000 : getDefaultPort(language);
+
+				services.push({
+					name: entry.name,
+					workdir: servicePath,
+					language,
+					port,
+					relativePath,
+					framework,
+					build_context: appDir, // monorepo root is the build context
+				});
+			}
+		} catch (error) {
+			console.error(`Error scanning ${rootPath}:`, error);
+		}
+	}
+
+	if (services.length > 0) {
+		console.log(`Detected ${services.length} monorepo service(s):`, services.map(s => s.name));
+		return {
+			isMultiService: services.length > 1,
+			services,
+			hasDockerCompose: false,
+			isMonorepo: true,
+			packageManager: tooling.packageManager,
+			monorepoRoot: appDir,
+		};
 	}
 
 	return null;
@@ -106,6 +309,8 @@ export function detectMultiServicePatterns(appDir: string): MultiServiceConfig |
 	for (const dir of commonServiceDirs) {
 		const dirPath = path.join(appDir, dir);
 		if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
+			// Skip mobile-only dirs
+			if (isMobileOnlyDir(dir, dirPath)) continue;
 			foundDirs.push(dir);
 		}
 	}
@@ -117,11 +322,13 @@ export function detectMultiServicePatterns(appDir: string): MultiServiceConfig |
 			const language = detectLanguage(serviceDir);
 			
 			if (language) {
+				const framework = detectFramework(serviceDir);
 				services.push({
 					name: dir,
 					workdir: serviceDir,
 					language,
-					port: getDefaultPort(language)
+					port: framework === "nextjs" ? 3000 : getDefaultPort(language),
+					framework,
 				});
 			}
 		}
@@ -130,7 +337,8 @@ export function detectMultiServicePatterns(appDir: string): MultiServiceConfig |
 			return {
 				isMultiService: true,
 				services,
-				hasDockerCompose: false
+				hasDockerCompose: false,
+				isMonorepo: false,
 			};
 		}
 	}
@@ -158,7 +366,8 @@ export function detectMultiServicePatterns(appDir: string): MultiServiceConfig |
 			return {
 				isMultiService: true,
 				services,
-				hasDockerCompose: false
+				hasDockerCompose: false,
+				isMonorepo: false,
 			};
 		}
 	}
@@ -290,6 +499,12 @@ export function detectMultiService(appDir: string): MultiServiceConfig {
 		return composeConfig;
 	}
 
+	// Then, try monorepo detection (pnpm workspaces, turborepo, nx, lerna)
+	const monorepoConfig = detectMonorepoServices(appDir);
+	if (monorepoConfig) {
+		return monorepoConfig;
+	}
+
 	// Then, try algorithmic detection
 	const patternConfig = detectMultiServicePatterns(appDir);
 	if (patternConfig) {
@@ -300,6 +515,7 @@ export function detectMultiService(appDir: string): MultiServiceConfig {
 	return {
 		isMultiService: false,
 		services: [],
-		hasDockerCompose: false
+		hasDockerCompose: false,
+		isMonorepo: false,
 	};
 }

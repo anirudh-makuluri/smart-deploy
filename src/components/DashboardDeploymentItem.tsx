@@ -27,45 +27,63 @@ export default function DashboardDeploymentItem({
 	deployConfig: DeployConfig;
 	repo: repoType | undefined;
 }) {
-	const { removeDeployment } = useAppData();
+	const { removeDeployment, updateDeploymentById } = useAppData();
 	const [isDeleting, setIsDeleting] = useState(false);
 
-	function changeStatus(action: string) {
+	async function changeStatus(action: string) {
 		// Delete = full remove: Cloud Run + DB, no traces left
 		if (action === "stop") {
 			setIsDeleting(true);
 			const loadingId = toast.loading("Deleting deployment…");
-			fetch("/api/delete-deployment", {
-				method: "POST",
+			try {
+				const res = await fetch("/api/delete-deployment", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						deploymentId: deployConfig.id,
+						serviceName: deployConfig.service_name,
+					}),
+				});
+				const response = await res.json();
+				toast.dismiss(loadingId);
+				if (response.status === "success") {
+					removeDeployment(deployConfig.id);
+					toast.success("Deployment deleted.");
+				} else {
+					toast.error(response.error || response.details || "Failed to delete deployment.");
+				}
+			} catch (err: any) {
+				toast.dismiss(loadingId);
+				toast.error(err?.message || "Failed to delete deployment.");
+			} finally {
+				setIsDeleting(false);
+			}
+			return;
+		}
+
+		try {
+			const res = await fetch("/api/deployment-control", {
+				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					deploymentId: deployConfig.id,
 					serviceName: deployConfig.service_name,
+					action,
 				}),
-			})
-				.then((res) => res.json())
-				.then((response) => {
-					toast.dismiss(loadingId);
-					if (response.status === "success") {
-						removeDeployment(deployConfig.id);
-						toast.success("Deployment deleted.");
-					} else {
-						toast.error(response.error || response.details || "Failed to delete deployment.");
-					}
-				})
-				.catch((err) => {
-					toast.dismiss(loadingId);
-					toast.error(err?.message || "Failed to delete deployment.");
-				})
-				.finally(() => setIsDeleting(false));
-			return;
+			});
+			const data = await res.json();
+			if (data.status === "success") {
+				const nextStatus = action === "pause" ? "paused" : "running";
+				void updateDeploymentById({ ...deployConfig, status: nextStatus });
+				toast.success(
+					nextStatus === "paused" ? "Deployment paused (instance stopping)." : "Deployment resumed (instance starting)."
+				);
+			} else {
+				toast.error(data.error || data.message || "Failed to update deployment.");
+			}
+		} catch (err: any) {
+			toast.error(err?.message || "Failed to update deployment.");
 		}
-
-		fetch("/api/deployment-control", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ serviceName: deployConfig.service_name, action }),
-		});
 	}
 
 	const statusStyle = statusStyles[deployConfig.status ?? "stopped"] ?? statusStyles.stopped;
