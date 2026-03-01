@@ -4,96 +4,56 @@ import path from "path";
 import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeployConfig, EC2DeployDetails, DeployStep } from "../app/types";
+import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails, DeployStep } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
+import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
 import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
-import { createDeployStepsLogger } from "./websocketLogger";
+import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 
-// AWS-specific imports
-import { setupAWSCredentials } from "./aws";
+// AWS imports
+import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
+import { handleAmplify } from "./aws/handleAmplify";
+import { handleElasticBeanstalk } from "./aws/handleElasticBeanstalk";
+import { handleECS } from "./aws/handleECS";
 import { handleEC2 } from "./aws/handleEC2";
 import { createRDSInstance } from "./aws/handleRDS";
+
+// GCP imports (for Cloud SQL)
+import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 
-export type HandleDeployOptions = {
-	onStepsChange?: (steps: DeployStep[]) => void;
-	broadcast?: (id: string, msg: string) => void;
-};
-
-/** Fetch commit message from GitHub API using commit SHA or branch. Returns first line of message. */
-async function getCommitMessageFromGitHub(
-	token: string,
-	repoUrl: string,
-	commitSha?: string,
-	branch?: string
-): Promise<string | undefined> {
-	const match = repoUrl.replace(/\.git$/, "").match(/github\.com[/]([^/]+)[/]([^/]+)/);
-	if (!match) return undefined;
-	const [, owner, repo] = match;
-	const ref = (commitSha || branch || "main").trim();
-	if (!ref) return undefined;
-	try {
-		const res = await fetch(
-			`https://api.github.com/repos/${owner}/${repo}/commits/${ref}`,
-			{
-				headers: {
-					Authorization: `token ${token}`,
-					Accept: "application/vnd.github+json",
-				},
-			}
-		);
-		if (!res.ok) return undefined;
-		const data = await res.json();
-		const fullMessage = data.commit?.message;
-		if (typeof fullMessage !== "string") return undefined;
-		// First line only (subject)
-		return fullMessage.split("\n")[0].trim() || undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 /**
- * Main deployment handler - clones the repo, analyzes services,
- * then runs the AWS EC2 deployment flow.
+ * Main deployment handler - routes to AWS (default) or GCP
  */
-export async function handleDeploy(
-	deployConfig: DeployConfig,
-	token: string,
-	ws: any,
-	userID?: string,
-	options?: HandleDeployOptions
-): Promise<string> {
+export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any, userID?: string): Promise<string> {
 	const deployStartTime = Date.now();
-
+	
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps, {
-		onStepsChange: options?.onStepsChange,
-		broadcast: options?.broadcast,
-	});
+	const send = createDeployStepsLogger(ws, deploySteps);
 
-	// We only support EC2 deployments now. If an older config has a different
-	// target saved, keep the config but always run the EC2 flow.
-	const originalTarget = deployConfig.deploymentTarget;
-	if (originalTarget && originalTarget !== "ec2") {
-		send(
-			`Deployment target ${originalTarget} is no longer supported. Falling back to EC2.`,
-			"clone"
-		);
+	console.log("in handle deploy");
+
+	const target = deployConfig.deploymentTarget;
+	if (!target) {
+		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
 	}
-	deployConfig.deploymentTarget = "ec2";
-
-	// Let the client know which high-level steps to expect.
-	sendDeploySteps(ws, EC2_DEPLOY_STEPS);
+	if (!AWS_DEPLOY_STEPS[target]) {
+		throw new Error(`Unknown deployment target: ${target}`);
+	}
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
 	const commitSha = deployConfig.commitSha?.trim();
 	if (commitSha) {
-		send(`Deploying commit ${commitSha.substring(0, 7)} to EC2`, "clone");
+		send(`Deploying commit ${commitSha.substring(0, 7)} to: ${target.toUpperCase()}`, 'clone');
 	} else {
-		send("Deploying to EC2", "clone");
+		send(`Deploying to: ${target.toUpperCase()}`, 'clone');
 	}
+
+	// Determine cloud provider (default to AWS)
+	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
+	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'clone');
 
 	const repoUrl = deployConfig.url;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
@@ -106,28 +66,14 @@ export async function handleDeploy(
 		const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
 		const branch = deployConfig.branch?.trim() || "main";
 		const commitSha = deployConfig.commitSha?.trim();
-
+		deployConfig.deploymentTarget = "ec2";
+		
 		if (commitSha) {
-			send(
-				`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(
-					0,
-					7
-				)}...`,
-				"clone"
-			);
+			send(`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
 		} else {
-			send(`Cloning repo from branch "${branch}"...`, "clone");
+			send(`Cloning repo from branch "${branch}"...`, 'clone');
 		}
-
-		// Get commit message from GitHub API (from commitSha or branch HEAD) for deployment history
-		const commitMessage = await getCommitMessageFromGitHub(
-			token,
-			repoUrl,
-			commitSha || undefined,
-			branch || undefined
-		);
-		if (commitMessage) deployConfig.commitMessage = commitMessage;
-
+		
 		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone', { send });
 
 		// Checkout specific commit if provided
@@ -156,26 +102,7 @@ export async function handleDeploy(
 		// Analyze application structure from the repo root (so docker-compose at root is detected
 		// even when workdir points to a subdirectory)
 		send("Analyzing application structure...", 'detect');
-		let multiServiceConfig = detectMultiService(cloneDir);
-
-		// Reusing same repo instance: deploy all services to it (do not filter to one service).
-		const reusingInstance = !!deployConfig.ec2?.instanceId?.trim();
-		if (reusingInstance) {
-			send(`Reusing existing instance for this repo; deploying all ${multiServiceConfig.services.length} service(s) to it`, 'detect');
-		} else {
-			// Single-service deploy from sheet: filter to that service only (creates new instance with that service).
-			// Page "Deploy all" does not set monorepo_service_name → all services on one instance.
-			const requestedService = deployConfig.monorepo_service_name?.trim();
-			if (requestedService) {
-				const one = multiServiceConfig.services.find((s) => s.name === requestedService);
-				if (!one) {
-					const available = multiServiceConfig.services.map((s) => s.name).join(", ") || "none";
-					throw new Error(`Service '${requestedService}' not found. Available: ${available}`);
-				}
-				multiServiceConfig = { ...multiServiceConfig, services: [one], isMultiService: true };
-				send(`Deploying single service: ${requestedService}`, 'detect');
-			}
-		}
+		const multiServiceConfig = detectMultiService(cloneDir);
 
 		if (multiServiceConfig.isMonorepo) {
 			send(`📦 Detected monorepo (${multiServiceConfig.packageManager || 'npm'} workspaces) with ${multiServiceConfig.services.length} deployable service(s)`, 'detect');
@@ -192,21 +119,12 @@ export async function handleDeploy(
 			send(`✅ Detected ${dbConfig.type.toUpperCase()} database requirement`, 'detect');
 		}
 
-		// Route to AWS EC2 deployment (the only supported target today)
-		return await handleAWSDeploy(
-			deployConfig,
-			appDir,
-			cloneDir,
-			tmpDir,
-			multiServiceConfig,
-			dbConfig,
-			token,
-			ws,
-			userID,
-			deployStartTime,
-			send,
-			deploySteps
-		);
+		// Route to appropriate cloud provider
+		if (cloudProvider === 'aws') {
+			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
+		} else {
+			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
+		}
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
 		const doneStep = deploySteps.find((step) => step.id === "done");
@@ -229,19 +147,58 @@ export async function handleDeploy(
 	}
 }
 
-/** Step definitions for the EC2 flow so the client shows accurate labels */
-const EC2_DEPLOY_STEPS: { id: string; label: string }[] = [
-	{ id: "clone", label: "📦 Cloning repository" },
-	{ id: "auth", label: "🔐 Authentication" },
-	{ id: "database", label: "🗄️ Database (RDS)" },
-	{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
-	{ id: "deploy", label: "🚀 Deploy to EC2" },
-	{ id: "done", label: "✅ Done" },
-];
+/** Step definitions per AWS target so the client shows accurate labels */
+const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string }[]> = {
+	"amplify": [
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },		
+		{ id: "build", label: "🔨 Build" },
+		{ id: "amplify", label: "🚀 Deploy to Amplify" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"elastic-beanstalk": [
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "setup", label: "⚙️ Setup (S3, app)" },
+		{ id: "bundle", label: "📦 Create bundle" },
+		{ id: "upload", label: "📤 Upload to S3" },
+		{ id: "deploy", label: "🚀 Deploy to Elastic Beanstalk" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ecs": [
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, ECR, S3, CodeBuild)" },
+		{ id: "docker", label: "🐳 Build image (CodeBuild)" },
+		{ id: "deploy", label: "🚀 Deploy to ECS + ALB" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"ec2": [
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "database", label: "🗄️ Database (RDS)" },
+		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
+		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"cloud-run": [
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	],
+};
 
 function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps, time: new Date().toISOString() } }));
+		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps } }));
 	}
 }
 
@@ -279,6 +236,9 @@ async function saveDeploymentToDB(
 			...(deployUrl && { deployUrl }),
 			...(customUrl && { custom_url: customUrl }),
 			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
+			...(serviceDetails?.ecs && { ecs: serviceDetails.ecs }),
+			...(serviceDetails?.amplify && { amplify: serviceDetails.amplify }),
+			...(serviceDetails?.elasticBeanstalk && { elasticBeanstalk: serviceDetails.elasticBeanstalk }),
 		};
 
 		// Update deployment document (creates if doesn't exist)
@@ -296,7 +256,6 @@ async function saveDeploymentToDB(
 			steps,
 			configSnapshot: configSnapshotFromDeployConfig(deployConfig),
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
-			...(deployConfig.commitMessage?.trim() && { commitMessage: deployConfig.commitMessage.trim() }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
 			...(deployConfig.service_name?.trim() && { serviceName: deployConfig.service_name.trim() }),
@@ -319,9 +278,12 @@ async function saveDeploymentToDB(
 	}
 }
 
-/** Per-service details to persist after deploy (currently only EC2) */
+/** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
 	ec2?: EC2DeployDetails;
+	ecs?: ECSDeployDetails;
+	amplify?: AmplifyDeployDetails;
+	elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 };
 
 function sendDeployComplete(
@@ -356,17 +318,22 @@ function sendDeployComplete(
 			deployUrl: string | null;
 			success: boolean;
 			deploymentTarget: string | null;
-			time?: string;
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
 			ec2?: EC2DeployDetails;
+			ecs?: ECSDeployDetails;
+			amplify?: AmplifyDeployDetails;
+			elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 		} = {
 			deployUrl: deployUrl ?? null,
 			success,
 			deploymentTarget: deploymentTarget ?? null,
 		};
 		if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
+		if (serviceDetails?.ecs) payload.ecs = serviceDetails.ecs;
+		if (serviceDetails?.amplify) payload.amplify = serviceDetails.amplify;
+		if (serviceDetails?.elasticBeanstalk) payload.elasticBeanstalk = serviceDetails.elasticBeanstalk;
 		if (vercelDns) {
 			payload.vercelDnsAdded = vercelDns.success;
 			if (vercelDns.success) {
@@ -375,13 +342,12 @@ function sendDeployComplete(
 				payload.vercelDnsError = vercelDns.error ?? null;
 			}
 		}
-		payload.time = new Date().toISOString();
 		ws.send(JSON.stringify({ type: "deploy_complete", payload }));
 	}
 }
 
 /**
- * Handles the AWS EC2 deployment flow once the repo has been cloned and analyzed.
+ * Handles AWS deployment with automatic service selection
  */
 async function handleAWSDeploy(
 	deployConfig: DeployConfig,
@@ -405,6 +371,18 @@ async function handleAWSDeploy(
 	send("Authenticating with AWS...", 'auth');
 	await setupAWSCredentials(ws);
 	send("✅ AWS credentials authenticated", 'auth');
+
+	// Always use EC2 for AWS deployments (other targets remain in codebase for reference)
+	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
+	const savedTarget = deployConfig.deploymentTarget;
+	
+	if (!savedTarget || !awsTargets.includes(savedTarget)) {
+		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
+	}
+	const target: AWSDeploymentTarget = savedTarget;
+
+
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
 
 	// Handle database provisioning if needed
 	let dbConnectionString: string | undefined;
@@ -431,63 +409,116 @@ async function handleAWSDeploy(
 	const serviceDetails: ServiceDeployDetails = {};
 	let success = false;
 
-	const ec2Result = await handleEC2(
-		deployConfig,
-		appDir,
-		multiServiceConfig,
-		token,
-		dbConnectionString,
-		ws,
-		send
-	);
-	success = ec2Result.success;
+	// Route to appropriate AWS service
+	switch (target) {
+		case 'amplify':
+			const amplifyResult = await handleAmplify(deployConfig, appDir, ws, send);
+			deployUrl = amplifyResult.url;
+			serviceDetails.amplify = amplifyResult.details;
+			success = amplifyResult.success;
+			result = "done";
+			break;
 
-	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
-	serviceDetails.ec2 = {
-		success: ec2Result.success,
-		baseUrl: ec2Result.baseUrl,
-		instanceId: ec2Result.instanceId,
-		publicIp: ec2Result.publicIp,
-		vpcId: ec2Result.vpcId,
-		subnetId: ec2Result.subnetId,
-		securityGroupId: ec2Result.securityGroupId,
-		amiId: ec2Result.amiId,
-	};
+		case 'elastic-beanstalk':
+			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws, send);
+			deployUrl = ebResult.url;
+			serviceDetails.elasticBeanstalk = ebResult.details;
+			success = ebResult.success;
+			result = "done";
+			break;
 
-	if (ec2Result.baseUrl === "") {
-		send(
-			"❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.",
-			"deploy"
-		);
-		result = "error";
-	} else {
-		// Build summary
-		let ec2Summary = `\nDeployment completed!\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += `\nService URLs:\n`;
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
-		}
-		send(ec2Summary, "done");
-		deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
-		result = "done";
+		case 'ecs':
+			const ecsResult = await handleECS(
+				deployConfig,
+				appDir,
+				multiServiceConfig,
+				dbConnectionString,
+				ws,
+				send
+			);
+			// Build summary
+			let summary = `\nDeployment completed!\n\nDeployed services:\n`;
+			for (const [name, url] of ecsResult.serviceUrls.entries()) {
+				summary += `  - ${name}: ${url}\n`;
+			}
+			send(summary, 'done');
+			// Primary URL for client (first service); use shared ALB DNS for Vercel DNS if available
+			const firstUrl = ecsResult.serviceUrls.entries().next().value;
+			deployUrl = ecsResult.sharedAlbDns || (firstUrl ? firstUrl[1] : undefined);
+		serviceDetails.ecs = {
+			success: ecsResult.success,
+			clusterName: ecsResult.details.clusterName,
+			clusterArn: ecsResult.details.clusterArn,
+			serviceNames: ecsResult.details.serviceNames,
+			vpcId: ecsResult.details.vpcId,
+			subnetIds: ecsResult.details.subnetIds,
+			securityGroupId: ecsResult.details.securityGroupId,
+		};
+			success = ecsResult.success;
+			result = "done";
+			break;
+
+		case 'ec2':
+			const ec2Result = await handleEC2(
+				deployConfig,
+				appDir,
+				multiServiceConfig,
+				token,
+				dbConnectionString,
+				ws,
+				send
+			);
+			success = ec2Result.success;
+
+			// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
+			serviceDetails.ec2 = {
+				success: ec2Result.success,
+				baseUrl: ec2Result.baseUrl,
+				instanceId: ec2Result.instanceId,
+				publicIp: ec2Result.publicIp,
+				vpcId: ec2Result.vpcId,
+				subnetId: ec2Result.subnetId,
+				securityGroupId: ec2Result.securityGroupId,
+				amiId: ec2Result.amiId,
+			};
+
+			if(ec2Result.baseUrl == "") {
+				send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
+				result = "error";
+				break;
+			}
+
+			// Build summary
+			let ec2Summary = `\nDeployment completed!\n`;
+			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
+			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
+			ec2Summary += `\nService URLs:\n`;
+			for (const [name, url] of ec2Result.serviceUrls.entries()) {
+				ec2Summary += `  - ${name}: ${url}\n`;
+			}
+			send(ec2Summary, 'done');
+			deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
+			result = "done";
+			break;
+
+		default:
+			throw new Error(`Unknown deployment target: ${target}`);
 	}
 
 	
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (deployUrl && deployConfig.custom_url != deployUrl && deployConfig.service_name?.trim() && success) {
-		send("Adding Vercel DNS record...", "done");
+		send("Adding Vercel DNS record...", 'done');
 		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
-			deploymentTarget: "ec2",
+			deploymentTarget: target,
 			previousCustomUrl: deployConfig.custom_url ?? null,
 		});
 	}
-
-	if (vercelResult && vercelResult.success) {
-		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, "done");
-	} else if (deployUrl && vercelResult && success) {
-		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, "done");
+	
+	if(vercelResult && vercelResult.success) {
+		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
+	} else if(deployUrl && vercelResult && success) {
+		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
 		success = false; // Mark overall deployment as failure if DNS addition failed (since custom URL is a key feature)
 	}
 
@@ -500,21 +531,272 @@ async function handleAWSDeploy(
 
 
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	sendDeployComplete(
-		ws,
-		deployUrl,
-		success,
-		deployConfig,
-		deploySteps,
-		userID,
-		"ec2",
-		vercelResult,
-		serviceDetails,
-		durationMs
-	);
+	sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
 	return result;
 }
 
+/**
+ * Handles GCP deployment (existing Cloud Run logic)
+ */
+async function handleGCPDeploy(
+	deployConfig: DeployConfig,
+	appDir: string,
+	cloneDir: string,
+	tmpDir: string,
+	multiServiceConfig: MultiServiceConfig,
+	dbConfig: DatabaseConfig | null,
+	token: string,
+	ws: any,
+	userID: string | undefined,
+	deployStartTime: number,
+	send: (msg: string, stepId: string) => void,
+	deploySteps: DeployStep[]
+): Promise<string> {
+
+	const projectId = config.GCP_PROJECT_ID;
+	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);
+	const keyPath = "/tmp/smartdeploy-key.json";
+	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
+
+	const gcpSteps = [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "clone", label: "📦 Cloning repository" },
+		{ id: "detect", label: "🔍 Analyzing app" },
+		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
+		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
+		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
+		{ id: "done", label: "✅ Done" },
+	];
+	sendDeploySteps(ws, gcpSteps);
+
+	send("Authenticating with Google Cloud...", 'auth');
+	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth', { send });
+	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth', { send });
+	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth', { send });
+
+	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
+	const serviceName = `${repoName}`;
+
+	// Handle multi-service deployment
+	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
+		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
+		send("Starting multi-service deployment...", 'detect');
+		
+		const { serviceUrls } = await handleMultiServiceDeploy(
+			deployConfig,
+			token,
+			ws,
+			cloneDir
+		);
+		
+		let summary = `\nMulti-service deployment completed!\n\nDeployed services:\n`;
+		for (const [name, url] of serviceUrls.entries()) {
+			summary += `  - ${name}: ${url}\n`;
+		}
+		send(summary, 'done');
+		const firstGcpUrl = serviceUrls.entries().next().value;
+		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
+		let vercelResult: AddVercelDnsResult | null = null;
+		if (gcpDeployUrl && deployConfig.service_name?.trim()) {
+			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
+				deploymentTarget: "cloud-run",
+				previousCustomUrl: deployConfig.custom_url ?? null,
+			});
+		}
+		const doneStep = deploySteps.find(s => s.id === 'done');
+		if (doneStep) doneStep.status = 'success';
+		const durationMs = Date.now() - deployStartTime;
+		const success = gcpDeployUrl ? true : false;
+		sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+		return "done";
+	}
+
+	// Handle database provisioning for GCP
+	let dbConnectionString: string | undefined;
+	if (dbConfig) {
+		send("Provisioning Cloud SQL database...", 'database');
+		try {
+			const instanceName = `${repoName}-db-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+			const { connectionName, ipAddress } = await createCloudSQLInstance(
+				dbConfig,
+				projectId,
+				instanceName,
+				ws
+			);
+			dbConnectionString = generateCloudSQLConnectionString(dbConfig, connectionName, ipAddress, dbConfig.database);
+			send(`Database provisioned successfully`, 'database');
+		} catch (error: any) {
+			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
+		}
+	}
+
+	// Single-service GCP deployment
+	const dockerfilePath = path.join(appDir, "Dockerfile");
+
+	if (deployConfig.use_custom_dockerfile && deployConfig.dockerfileContent) {
+		send("Writing custom Dockerfile...", 'clone');
+		fs.writeFileSync(dockerfilePath, deployConfig.dockerfileContent);
+	}
+
+	if (!deployConfig.use_custom_dockerfile && !fs.existsSync(dockerfilePath)) {
+		const language = detectAppLanguage(appDir, multiServiceConfig) ?? "node";
+		send(`Detected Language: ${language}`, 'clone');
+
+		let dockerfileContent = "";
+
+		const coreInfo = deployConfig.core_deployment_info;
+
+		switch (language) {
+			case "node":
+				dockerfileContent = `
+FROM node:18
+WORKDIR ${coreInfo?.workdir || "."}
+COPY . .
+RUN ${coreInfo?.install_cmd || "npm install"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["npm", "start"])}
+		`.trim();
+				break;
+
+			case "python":
+				dockerfileContent = `
+FROM python:3.11
+WORKDIR ${coreInfo?.workdir || "/app"}
+COPY . .
+RUN ${coreInfo?.install_cmd || "pip install -r requirements.txt"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["python", "main.py"])}
+		`.trim();
+				break;
+
+			case "go":
+				dockerfileContent = `
+FROM golang:1.20
+WORKDIR ${coreInfo?.workdir || "/app"}
+COPY . .
+RUN ${coreInfo?.install_cmd || "go mod tidy"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN go build -o app"}
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./app"])}
+		`.trim();
+				break;
+
+			case "java":
+				dockerfileContent = `
+FROM openjdk:17
+WORKDIR ${coreInfo?.workdir || "/app"}
+COPY . .
+RUN ${coreInfo?.install_cmd || "./mvnw install"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN ./mvnw package"}
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
+		`.trim();
+				break;
+
+			case "rust":
+				dockerfileContent = `
+FROM rust:1.70
+WORKDIR ${coreInfo?.workdir || "/app"}
+COPY . .
+RUN ${coreInfo?.install_cmd || "cargo fetch"}
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN cargo build --release"}
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./target/release/app"])}
+		`.trim();
+				break;
+
+			case "dotnet":
+				dockerfileContent = `
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR ${coreInfo?.workdir || "/app"}
+COPY . .
+RUN dotnet restore
+${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN dotnet build -c Release"}
+RUN dotnet publish -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080
+CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
+		`.trim();
+				break;
+
+			default:
+				throw new Error("Unsupported language or missing Dockerfile.");
+		}
+
+		fs.writeFileSync(dockerfilePath, dockerfileContent);
+	}
+
+	const imageName = `${repoName}-image`;
+	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
+
+	send("Building Docker image with Cloud Build...", 'docker');
+	await runCommandLiveWithWebSocket("gcloud", [
+		"builds", "submit",
+		"--tag", gcpImage,
+		appDir
+	], ws, 'docker', { send });
+
+	send("Deploying to Cloud Run...", 'deploy');
+	
+	// Build environment variables
+	const envVarsList: string[] = [];
+	if (deployConfig.env_vars) {
+		envVarsList.push(deployConfig.env_vars);
+	}
+	if (dbConnectionString) {
+		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
+		envVarsList.push(`ConnectionStrings__DefaultConnection=${dbConnectionString}`);
+	}
+	
+	const envArgs = envVarsList.length > 0 ? ["--set-env-vars", envVarsList.join(",")] : [];
+	
+	await runCommandLiveWithWebSocket("gcloud", [
+		"run", "deploy", serviceName,
+		"--image", gcpImage,
+		"--platform", "managed",
+		"--region", "us-central1",
+		"--allow-unauthenticated",
+		...envArgs
+	], ws, 'deploy', { send });
+
+	await runCommandLiveWithWebSocket("gcloud", [
+		"beta", "run", "services", "add-iam-policy-binding",
+		serviceName,
+		"--region=us-central1",
+		"--platform=managed",
+		"--member=allUsers",
+		"--role=roles/run.invoker",
+	], ws, 'deploy', { send });
+
+	send(`Deployment success`, 'done');
+
+	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
+	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
+	let vercelResult: AddVercelDnsResult | null = null;
+	if (gcpDeployUrl && deployConfig.service_name?.trim()) {
+		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
+			deploymentTarget: "cloud-run",
+			previousCustomUrl: deployConfig.custom_url ?? null,
+		});
+	}
+	const doneStep = deploySteps.find(s => s.id === 'done');
+	if (doneStep) doneStep.status = 'success';
+	const durationMs = Date.now() - deployStartTime;
+	const success = gcpDeployUrl ? true : false;
+
+	sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+
+	// Cleanup temp folder
+	fs.rmSync(tmpDir, { recursive: true, force: true });
+
+	return "done";
+}

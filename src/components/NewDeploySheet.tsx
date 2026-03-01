@@ -16,26 +16,13 @@ type NewDeploySheetProps = {
 	open: boolean;
 	onClose: () => void;
 	repo: repoType;
-	/** When set, deploy only this service (sheet opened from service card). When undefined, deploy all services (deploy-all mode). */
-	selectedServiceName?: string | null;
-	/** Relative path for the service (e.g. "apps/web") for workdir prefill. */
-	selectedServicePath?: string | null;
-	/** Rule-based detected config for this service when no deployment exists. */
-	selectedServiceCoreInfo?: import("@/app/types").CoreDeploymentInfo | null;
 };
 
-function normalizeRepoUrl(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase().trim();
-}
-
-export default function NewDeploySheet({ open, onClose, repo, selectedServiceName, selectedServicePath, selectedServiceCoreInfo }: NewDeploySheetProps) {
+export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetProps) {
 	const { data: session } = useSession();
-	const { updateDeploymentById, deployments } = useAppData();
+	const { updateDeploymentById } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
-	const deployKey = selectedServiceName ? `${repo.name}-${selectedServiceName}` : repo.name;
-	const deploymentSlug = repo.full_name.replace(/\//g, "-");
-	const deploymentId = selectedServiceName ? `${deploymentSlug}-${selectedServiceName}` : deploymentSlug;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(deployKey, deploymentId);
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(repo.name);
 
 	const deployLogEntries = React.useMemo(() => {
 		const entries: { timestamp?: string; message?: string }[] = [];
@@ -89,22 +76,12 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 
 		const coreInfo = values.core_deployment_info;
 
-		const serviceNameForDeploy = selectedServiceName
-			? `${repo.name}-${selectedServiceName}`
-			: (values.service_name || repo.name);
-		// Deployment ID must not contain '/' (DB constraint); use slug from full_name (e.g. owner-repo)
-		const deploymentSlug = repo.full_name.replace(/\//g, "-");
-		const deploymentId = selectedServiceName
-			? `${deploymentSlug}-${selectedServiceName}`
-			: deploymentSlug;
-
 		const payload: DeployConfig = {
-			id: deploymentId,
+			id: repo.id,
 			deploymentTarget,
 			...(deployment_target_reason && { deployment_target_reason }),
 			url: values.url,
-			service_name: serviceNameForDeploy,
-			...(selectedServiceName && { monorepo_service_name: selectedServiceName }),
+			service_name: values.service_name,
 			branch: values.branch,
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars ? parseEnvVarsToStore(values.env_vars) : "",
@@ -126,15 +103,6 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 			},
 		};
 
-		// Same repo → reuse existing EC2 instance so all services end up on one instance
-		const repoUrlNorm = normalizeRepoUrl(values.url || repo.id);
-		const existingRepoDeployment = deployments.find(
-			(d) => normalizeRepoUrl(d.url ?? "") === repoUrlNorm && d.ec2?.instanceId
-		);
-		if (existingRepoDeployment?.ec2) {
-			payload.ec2 = { ...existingRepoDeployment.ec2, ...payload.ec2 };
-		}
-
 		setIsDeploying(true);
 		sendDeployConfig(payload, session.accessToken, session.userID);
 	}
@@ -155,26 +123,18 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 					</div>
 
 					<div className="mt-6 rounded-xl border border-border bg-card p-4">
-						<span>Repository: </span>
-						<span className="font-semibold">{repo.full_name}</span>
-						{selectedServiceName && (
-							<>
-								<span className="text-muted-foreground mx-2">/</span>
-								<span className="font-semibold text-primary">@{repo.name}/{selectedServiceName}</span>
-							</>
-						)}
+						<span>Repository Name: </span>
+						<span className="font-semibold">{repo.name}</span>
 					</div>
 
 					<div className="mt-6 rounded-xl border border-border bg-card p-4">
 						<ConfigTabs
-							service_name={deployKey}
+							service_name={repo.name}
 							onSubmit={handleSubmit}
 							onScanComplete={() => undefined}
 							repo={repo}
 							editMode={true}
 							isDeploying={isDeploying}
-							initialWorkdir={selectedServicePath ?? undefined}
-							initialCoreInfo={selectedServiceCoreInfo ?? undefined}
 						/>
 					</div>
 

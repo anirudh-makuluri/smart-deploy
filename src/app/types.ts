@@ -95,8 +95,6 @@ export type DeployConfig = {
 	branch: string;
 	/** Optional commit SHA to deploy a specific commit instead of branch HEAD */
 	commitSha?: string;
-	/** Commit message (captured at deploy time for history; not sent from client) */
-	commitMessage?: string;
 	use_custom_dockerfile: boolean;
 	env_vars?: string;
 	deployUrl?: string;
@@ -120,8 +118,6 @@ export type DeployConfig = {
 	deployment_hints?: DeploymentHints;
 	/** Per-service info for monorepo projects (from LLM scan). */
 	monorepo_services?: MonorepoServiceInfo[];
-	/** When set, deploy only this service from a monorepo (e.g. "web", "backend"). */
-	monorepo_service_name?: string;
 
 	// Cloud provider configuration
 	cloudProvider?: CloudProvider;
@@ -190,28 +186,6 @@ export type MonorepoServiceInfo = {
 	framework?: string;
 	port?: number | null;
 	is_deployable: boolean;
-};
-
-/** One detected service (from detect-services API / repo_services table). */
-export type DetectedServiceInfo = {
-	name: string;
-	path: string;
-	language?: string;
-	framework?: string;
-	port?: number;
-	/** Rule-based detected deploy config when available. */
-	core_deployment_info?: CoreDeploymentInfo;
-};
-
-/** Stored repo services record (repo_services table). */
-export type RepoServicesRecord = {
-	repo_url: string;
-	branch: string;
-	repo_owner: string;
-	repo_name: string;
-	services: DetectedServiceInfo[];
-	is_monorepo: boolean;
-	updated_at: string;
 };
 
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */
