@@ -104,17 +104,23 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		send("Analyzing application structure...", 'detect');
 		let multiServiceConfig = detectMultiService(cloneDir);
 
-		// Single-service deploy from sheet: filter to that service only (one instance for that service).
-		// Page "Deploy all" does not set monorepo_service_name → all services on one instance.
-		const requestedService = deployConfig.monorepo_service_name?.trim();
-		if (requestedService) {
-			const one = multiServiceConfig.services.find((s) => s.name === requestedService);
-			if (!one) {
-				const available = multiServiceConfig.services.map((s) => s.name).join(", ") || "none";
-				throw new Error(`Service '${requestedService}' not found. Available: ${available}`);
+		// Reusing same repo instance: deploy all services to it (do not filter to one service).
+		const reusingInstance = !!deployConfig.ec2?.instanceId?.trim();
+		if (reusingInstance) {
+			send(`Reusing existing instance for this repo; deploying all ${multiServiceConfig.services.length} service(s) to it`, 'detect');
+		} else {
+			// Single-service deploy from sheet: filter to that service only (creates new instance with that service).
+			// Page "Deploy all" does not set monorepo_service_name → all services on one instance.
+			const requestedService = deployConfig.monorepo_service_name?.trim();
+			if (requestedService) {
+				const one = multiServiceConfig.services.find((s) => s.name === requestedService);
+				if (!one) {
+					const available = multiServiceConfig.services.map((s) => s.name).join(", ") || "none";
+					throw new Error(`Service '${requestedService}' not found. Available: ${available}`);
+				}
+				multiServiceConfig = { ...multiServiceConfig, services: [one], isMultiService: true };
+				send(`Deploying single service: ${requestedService}`, 'detect');
 			}
-			multiServiceConfig = { ...multiServiceConfig, services: [one], isMultiService: true };
-			send(`Deploying single service: ${requestedService}`, 'detect');
 		}
 
 		if (multiServiceConfig.isMonorepo) {

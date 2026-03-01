@@ -22,9 +22,13 @@ type NewDeploySheetProps = {
 	selectedServicePath?: string | null;
 };
 
+function normalizeRepoUrl(url: string): string {
+	return url.replace(/\.git$/, "").toLowerCase().trim();
+}
+
 export default function NewDeploySheet({ open, onClose, repo, selectedServiceName, selectedServicePath }: NewDeploySheetProps) {
 	const { data: session } = useSession();
-	const { updateDeploymentById } = useAppData();
+	const { updateDeploymentById, deployments } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const deployKey = selectedServiceName ? `${repo.name}-${selectedServiceName}` : repo.name;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(deployKey);
@@ -115,6 +119,15 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 				...(coreInfo?.port != null && { port: coreInfo.port }),
 			},
 		};
+
+		// Same repo → reuse existing EC2 instance so all services end up on one instance
+		const repoUrlNorm = normalizeRepoUrl(values.url || repo.id);
+		const existingRepoDeployment = deployments.find(
+			(d) => normalizeRepoUrl(d.url ?? "") === repoUrlNorm && d.ec2?.instanceId
+		);
+		if (existingRepoDeployment?.ec2) {
+			payload.ec2 = { ...existingRepoDeployment.ec2, ...payload.ec2 };
+		}
 
 		setIsDeploying(true);
 		sendDeployConfig(payload, session.accessToken, session.userID);
