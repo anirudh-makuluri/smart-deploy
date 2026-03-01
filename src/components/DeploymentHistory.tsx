@@ -137,13 +137,18 @@ export default function DeploymentHistory({ deploymentId, prefetchedData, isPref
 										</span>
 									)}
 								</div>
-								{(entry.commitSha || entry.branch) && (
+								{(entry.commitSha || entry.commitMessage || entry.branch) && (
 									<div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
 										{entry.commitSha && (
 											<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
 												<GitCommit className="size-3" />
 												<code className="font-mono">{entry.commitSha.substring(0, 7)}</code>
 											</div>
+										)}
+										{entry.commitMessage && (
+											<span className="max-w-64 truncate" title={entry.commitMessage}>
+												{entry.commitMessage}
+											</span>
 										)}
 										{entry.branch && (
 											<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">

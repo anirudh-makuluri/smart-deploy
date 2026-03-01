@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { repoType } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
-import { RefreshCcw, FolderGit2, Plus, ExternalLink, LayoutGrid, History, LineChart } from "lucide-react";
+import { RefreshCcw, FolderGit2, Plus, ExternalLink, LayoutGrid, History } from "lucide-react";
 import { toast } from "sonner";
 import { formatTimestamp } from "@/lib/utils";
 
@@ -25,26 +25,11 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 	const [showAddRepo, setShowAddRepo] = useState(false);
 	const [repoUrl, setRepoUrl] = useState("");
 	const [isLoadingRepo, setIsLoadingRepo] = useState(false);
-	const [accentColor, setAccentColor] = useState<"green" | "blue" | "red">("green");
-
+	// Accent is fixed to blue for now; picker hidden.
 	useEffect(() => {
 		if (typeof window === "undefined") return;
-		const stored = localStorage.getItem("smartdeploy-accent");
-		if (stored === "green" || stored === "blue" || stored === "red") {
-			setAccentColor(stored);
-			document.documentElement.setAttribute("data-accent", stored);
-			return;
-		}
-		document.documentElement.setAttribute("data-accent", "green");
+		document.documentElement.setAttribute("data-accent", "blue");
 	}, []);
-
-	function handleAccentChange(color: "green" | "blue" | "red") {
-		setAccentColor(color);
-		if (typeof window !== "undefined") {
-			localStorage.setItem("smartdeploy-accent", color);
-		}
-		document.documentElement.setAttribute("data-accent", color);
-	}
 
 	// Show all repos; clicking goes to repo page (where user can deploy per service)
 	const reposToShow = repoList;
@@ -166,54 +151,6 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 						>
 							<History className="size-4" />
 							Deployments
-						</button>
-						<div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background text-muted-foreground/60 cursor-not-allowed">
-							<LineChart className="size-4" />
-							Analytics
-						</div>
-					</div>
-				</div>
-				<div className="shrink-0 mb-6">
-					<p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Accent</p>
-					<div className="flex items-center gap-2">
-						<button
-							type="button"
-							onClick={() => handleAccentChange("green")}
-							className={`size-8 rounded-full border transition-all ${
-								accentColor === "green"
-									? "border-primary/70 ring-2 ring-primary/40"
-									: "border-border hover:border-primary/40"
-							}`}
-							aria-label="Set accent color to green"
-							aria-pressed={accentColor === "green"}
-						>
-							<span className="block size-full rounded-full bg-[#25f46a]" />
-						</button>
-						<button
-							type="button"
-							onClick={() => handleAccentChange("blue")}
-							className={`size-8 rounded-full border transition-all ${
-								accentColor === "blue"
-									? "border-primary/70 ring-2 ring-primary/40"
-									: "border-border hover:border-primary/40"
-							}`}
-							aria-label="Set accent color to blue"
-							aria-pressed={accentColor === "blue"}
-						>
-							<span className="block size-full rounded-full bg-[#3b82f6]" />
-						</button>
-						<button
-							type="button"
-							onClick={() => handleAccentChange("red")}
-							className={`size-8 rounded-full border transition-all ${
-								accentColor === "red"
-									? "border-primary/70 ring-2 ring-primary/40"
-									: "border-border hover:border-primary/40"
-							}`}
-							aria-label="Set accent color to red"
-							aria-pressed={accentColor === "red"}
-						>
-							<span className="block size-full rounded-full bg-[#ef4444]" />
 						</button>
 					</div>
 				</div>

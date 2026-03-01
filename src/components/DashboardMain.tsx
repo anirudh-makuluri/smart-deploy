@@ -221,10 +221,6 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 												</DropdownMenu>
 											)}
 										</div>
-										<div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-											<span>Click to open repo</span>
-											<ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-										</div>
 									</div>
 								))}
 							</div>

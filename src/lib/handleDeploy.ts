@@ -22,6 +22,39 @@ export type HandleDeployOptions = {
 	broadcast?: (id: string, msg: string) => void;
 };
 
+/** Fetch commit message from GitHub API using commit SHA or branch. Returns first line of message. */
+async function getCommitMessageFromGitHub(
+	token: string,
+	repoUrl: string,
+	commitSha?: string,
+	branch?: string
+): Promise<string | undefined> {
+	const match = repoUrl.replace(/\.git$/, "").match(/github\.com[/]([^/]+)[/]([^/]+)/);
+	if (!match) return undefined;
+	const [, owner, repo] = match;
+	const ref = (commitSha || branch || "main").trim();
+	if (!ref) return undefined;
+	try {
+		const res = await fetch(
+			`https://api.github.com/repos/${owner}/${repo}/commits/${ref}`,
+			{
+				headers: {
+					Authorization: `token ${token}`,
+					Accept: "application/vnd.github+json",
+				},
+			}
+		);
+		if (!res.ok) return undefined;
+		const data = await res.json();
+		const fullMessage = data.commit?.message;
+		if (typeof fullMessage !== "string") return undefined;
+		// First line only (subject)
+		return fullMessage.split("\n")[0].trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * Main deployment handler - clones the repo, analyzes services,
  * then runs the AWS EC2 deployment flow.
@@ -85,6 +118,15 @@ export async function handleDeploy(
 		} else {
 			send(`Cloning repo from branch "${branch}"...`, "clone");
 		}
+
+		// Get commit message from GitHub API (from commitSha or branch HEAD) for deployment history
+		const commitMessage = await getCommitMessageFromGitHub(
+			token,
+			repoUrl,
+			commitSha || undefined,
+			branch || undefined
+		);
+		if (commitMessage) deployConfig.commitMessage = commitMessage;
 
 		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone', { send });
 
@@ -254,6 +296,7 @@ async function saveDeploymentToDB(
 			steps,
 			configSnapshot: configSnapshotFromDeployConfig(deployConfig),
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
+			...(deployConfig.commitMessage?.trim() && { commitMessage: deployConfig.commitMessage.trim() }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
 			...(deployConfig.service_name?.trim() && { serviceName: deployConfig.service_name.trim() }),

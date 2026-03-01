@@ -12,7 +12,7 @@ export function AccentSync() {
 	useEffect(() => {
 		const stored = localStorage.getItem(ACCENT_KEY);
 		const value =
-			stored === "green" || stored === "blue" || stored === "red" ? stored : "green";
+			stored === "green" || stored === "blue" || stored === "red" ? stored : "blue";
 		document.documentElement.setAttribute("data-accent", value);
 	}, []);
 	return null;
