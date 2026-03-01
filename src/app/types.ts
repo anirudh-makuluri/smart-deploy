@@ -115,6 +115,11 @@ export type DeployConfig = {
 	core_deployment_info?: CoreDeploymentInfo;
 	features_infrastructure?: FeaturesInfrastructure;
 	final_notes?: FinalNotes;
+	deployment_hints?: DeploymentHints;
+	/** Per-service info for monorepo projects (from LLM scan). */
+	monorepo_services?: MonorepoServiceInfo[];
+	/** When set, deploy only this service from a monorepo (e.g. "web", "backend"). */
+	monorepo_service_name?: string;
 
 	// Cloud provider configuration
 	cloudProvider?: CloudProvider;
@@ -170,8 +175,39 @@ type FinalNotes = {
 export type DeploymentHints = {
 	has_dockerfile?: boolean;
 	is_multi_service?: boolean;
+	is_monorepo?: boolean;
 	has_database?: boolean;
 	nextjs_static_export?: boolean;
+};
+
+/** Monorepo service info returned by LLM analysis. */
+export type MonorepoServiceInfo = {
+	name: string;
+	path: string;
+	language: string;
+	framework?: string;
+	port?: number | null;
+	is_deployable: boolean;
+};
+
+/** One detected service (from detect-services API / repo_services table). */
+export type DetectedServiceInfo = {
+	name: string;
+	path: string;
+	language?: string;
+	framework?: string;
+	port?: number;
+};
+
+/** Stored detected services for one repo (repo_services table row). */
+export type RepoServicesRecord = {
+	repo_url: string;
+	branch: string;
+	repo_owner: string;
+	repo_name: string;
+	services: DetectedServiceInfo[];
+	is_monorepo: boolean;
+	updated_at: string;
 };
 
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */
@@ -189,6 +225,8 @@ export type AIGenProjectMetadata = {
 	deployment_hints?: DeploymentHints;
 	/** LLM-reported compatibility per platform; used to pick simplest compatible target. */
 	service_compatibility?: ServiceCompatibility;
+	/** Per-service info for monorepo projects (only present when is_monorepo=true). */
+	monorepo_services?: MonorepoServiceInfo[];
 	final_notes: FinalNotes;
 };
 

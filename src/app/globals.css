@@ -228,6 +228,17 @@
 .landing-bg {
   background-color: var(--background);
 }
+
+/** Dot grid background (e.g. for repo page). */
+.dot-grid-bg {
+  background-color: var(--background);
+  background-image: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--muted-foreground) 18%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
 .landing-bg-muted {
   background-color: var(--card);
 }

@@ -26,6 +26,7 @@ import {
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
+import { generateMonorepoDockerfile } from "../monorepoDockerfileGenerator";
 
 import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
@@ -33,7 +34,7 @@ import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
 type SendFn = (msg: string, stepId: string) => void;
 
-type ServiceDef = { name: string; dir: string; port: number };
+type ServiceDef = { name: string; dir: string; port: number; isMonorepo?: boolean; relativePath?: string; framework?: string; language?: string };
 
 type NetworkingResult = {
 	vpcId: string;
@@ -242,16 +243,37 @@ function buildComposeAndEnv(
 	customDomain?: string,
 ): { composeYml: string; envBase64: string } {
 	const composeServices: Record<string, unknown> = {};
+	const isMonorepo = services.some(s => s.isMonorepo);
+
 	for (const svc of services) {
 		const p = svc.port || 8080;
 		const env: string[] = [`PORT=${p}`, "NODE_ENV=production"];
 		if (dbConnectionString) env.push(`DATABASE_URL=${dbConnectionString}`);
-		composeServices[svc.name] = {
-			build: { context: svc.dir === "." ? "." : `./${svc.dir}`, dockerfile: "Dockerfile" },
-			ports: [`${p}:${p}`],
-			environment: env,
-			restart: "unless-stopped",
-		};
+
+		// Add inter-service URLs so services can communicate
+		for (const other of services) {
+			if (other.name !== svc.name) {
+				const envKey = `${other.name.toUpperCase().replace(/-/g, "_")}_URL`;
+				env.push(`${envKey}=http://${other.name}:${other.port || 8080}`);
+			}
+		}
+
+		if (isMonorepo) {
+			// For monorepo: build context is root, Dockerfile is per-service
+			composeServices[svc.name] = {
+				build: { context: ".", dockerfile: `Dockerfile.${svc.name}` },
+				ports: [`${p}:${p}`],
+				environment: env,
+				restart: "unless-stopped",
+			};
+		} else {
+			composeServices[svc.name] = {
+				build: { context: svc.dir === "." ? "." : `./${svc.dir}`, dockerfile: "Dockerfile" },
+				ports: [`${p}:${p}`],
+				environment: env,
+				restart: "unless-stopped",
+			};
+		}
 	}
 	const composeYml = JSON.stringify({ version: "3.8", services: composeServices }, null, 2);
 
@@ -286,8 +308,38 @@ function generateUserDataScript(
 	
 	// Generate Dockerfile content for each service
 	const dockerfileContents: Record<string, string> = {};
+	const isMonorepo = services.some(s => s.isMonorepo);
+	
 	for (const svc of services) {
-		dockerfileContents[svc.dir] = generateDockerfileContent(deployConfig, svc.dir);
+		if (isMonorepo && svc.relativePath) {
+			// For monorepo services, generate a monorepo-aware Dockerfile
+			// that builds from the repo root with access to shared packages
+			const multiConfig: import("../multiServiceDetector").MultiServiceConfig = {
+				isMultiService: true,
+				services: services.map(s => ({
+					name: s.name,
+					workdir: s.relativePath || s.dir,
+					language: s.language,
+					port: s.port,
+					framework: s.framework,
+					relativePath: s.relativePath,
+				})),
+				hasDockerCompose: false,
+				isMonorepo: true,
+				packageManager: "pnpm", // default, will be detected at runtime
+			};
+			const serviceDef: import("../multiServiceDetector").ServiceDefinition = {
+				name: svc.name,
+				workdir: svc.relativePath || svc.dir,
+				language: svc.language,
+				port: svc.port,
+				framework: svc.framework,
+				relativePath: svc.relativePath,
+			};
+			dockerfileContents[svc.dir] = generateMonorepoDockerfile(serviceDef, multiConfig, ".");
+		} else {
+			dockerfileContents[svc.dir] = generateDockerfileContent(deployConfig, svc.dir);
+		}
 	}
 	
 	for (const svc of services) {
@@ -397,7 +449,9 @@ else
     echo "Creating Dockerfiles..."
     ${services.map(svc => {
 		const dir = svc.dir === "." ? "." : svc.dir;
-		const dockerfilePath = dir === "." ? "Dockerfile" : `${dir}/Dockerfile`;
+		const isMonoSvc = isMonorepo && svc.relativePath;
+		// For monorepo: Dockerfile at root as Dockerfile.<name>; otherwise in svc dir
+		const dockerfilePath = isMonoSvc ? `Dockerfile.${svc.name}` : (dir === "." ? "Dockerfile" : `${dir}/Dockerfile`);
 		const dockerfileContent = dockerfileContents[svc.dir];
 		// Escape for bash heredoc - need to escape $ and backticks
 		const escapedContent = dockerfileContent
@@ -407,11 +461,11 @@ else
 		return `
 if [ ! -f ${dockerfilePath} ]; then
     echo "Creating Dockerfile at ${dockerfilePath}..."
-    mkdir -p ${dir === "." ? "." : dir}
+    ${!isMonoSvc && dir !== "." ? `mkdir -p ${dir}` : "# Dockerfile at repo root for monorepo service"}
     cat > ${dockerfilePath} << 'DOCKERFILEEOF'
 ${escapedContent}
 DOCKERFILEEOF
-    echo "✅ Dockerfile created at ${dockerfilePath}"
+    echo "Dockerfile created at ${dockerfilePath}"
 else
     echo "Dockerfile already exists at ${dockerfilePath}, skipping creation"
 fi
@@ -976,7 +1030,15 @@ function buildServiceUrls(
 
 function resolveServices(repoName: string, deployConfig: DeployConfig, multi: MultiServiceConfig): ServiceDef[] {
 	if (multi.isMultiService && multi.services.length > 0) {
-		return multi.services.map(s => ({ name: s.name, dir: s.workdir, port: s.port || 8080 }));
+		return multi.services.map(s => ({
+			name: s.name,
+			dir: s.workdir,
+			port: s.port || 8080,
+			isMonorepo: multi.isMonorepo || false,
+			relativePath: s.relativePath,
+			framework: s.framework,
+			language: s.language,
+		}));
 	}
 	return [{ name: repoName, dir: ".", port: deployConfig.core_deployment_info?.port || 8080 }];
 }

@@ -104,6 +104,16 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		send("Analyzing application structure...", 'detect');
 		const multiServiceConfig = detectMultiService(cloneDir);
 
+		// Deploy all services in the repo on one instance (no per-service filtering).
+		if (multiServiceConfig.isMonorepo) {
+			send(`📦 Detected monorepo (${multiServiceConfig.packageManager || 'npm'} workspaces) with ${multiServiceConfig.services.length} deployable service(s)`, 'detect');
+			for (const svc of multiServiceConfig.services) {
+				send(`  - ${svc.name} (${svc.language || 'node'}, port ${svc.port})${svc.relativePath ? ` at ${svc.relativePath}` : ''}`, 'detect');
+			}
+		} else if (multiServiceConfig.isMultiService) {
+			send(`🔧 Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
+		}
+
 		const dbConfig = detectDatabase(appDir);
 
 		if (dbConfig) {
@@ -571,8 +581,8 @@ async function handleGCPDeploy(
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
 	const serviceName = `${repoName}`;
 
-	// Handle multi-service deployment
-	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
+	// Handle multi-service (or single-service from monorepo) deployment
+	if (multiServiceConfig.isMultiService && (multiServiceConfig.services.length > 1 || deployConfig.monorepo_service_name)) {
 		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
 		send("Starting multi-service deployment...", 'detect');
 		

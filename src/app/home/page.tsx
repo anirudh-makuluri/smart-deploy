@@ -16,15 +16,11 @@ export default function HomePage() {
 	const [selectedRepo, setSelectedRepo] = React.useState<repoType | null>(null);
 	const [activeView, setActiveView] = React.useState<"overview" | "deployments">("overview");
 
-	const availableRepos = React.useMemo(() => {
-		return repoList.filter((repo) => !deployments.some((dep) => dep.url === repo.html_url));
-	}, [repoList, deployments]);
-
 	function openDeploySheet(repo?: repoType) {
-		if (!repo && availableRepos.length === 0) {
+		if (!repo && repoList.length === 0) {
 			return;
 		}
-		setSelectedRepo(repo ?? availableRepos[0] ?? null);
+		setSelectedRepo(repo ?? repoList[0] ?? null);
 		setIsDeploySheetOpen(true);
 	}
 

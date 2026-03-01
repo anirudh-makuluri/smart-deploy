@@ -53,6 +53,21 @@ create table if not exists public.user_repos (
   primary key (user_id, repo_name)
 );
 
+-- Detected services per repo (from detect-services); one row per repo per user
+create table if not exists public.repo_services (
+  user_id text not null references public.users(id) on delete cascade,
+  repo_url text not null,
+  branch text not null default 'main',
+  repo_owner text not null,
+  repo_name text not null,
+  services jsonb not null default '[]',
+  is_monorepo boolean default false,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, repo_url)
+);
+create index if not exists idx_repo_services_user on public.repo_services(user_id);
+alter table public.repo_services enable row level security;
+
 -- Waiting list: emails (and optional name) of users who attempted sign-in but were not granted access
 create table if not exists public.waiting_list (
   id uuid primary key default gen_random_uuid(),

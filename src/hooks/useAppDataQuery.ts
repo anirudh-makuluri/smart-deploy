@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 import { useAppData } from "@/store/useAppData";
-import type { DeployConfig, repoType } from "@/app/types";
+import type { DeployConfig, repoType, RepoServicesRecord } from "@/app/types";
 
 const CACHE_KEY = "smart-deploy-app-data";
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -13,10 +13,11 @@ type CachedAppData = {
 	userID: string;
 	repoList: repoType[];
 	deployments: DeployConfig[];
+	repoServices?: RepoServicesRecord[];
 	timestamp: number;
 };
 
-function readCache(userID: string): { repoList: repoType[]; deployments: DeployConfig[] } | null {
+function readCache(userID: string): { repoList: repoType[]; deployments: DeployConfig[]; repoServices: RepoServicesRecord[] } | null {
 	if (typeof window === "undefined") return null;
 	try {
 		const raw = localStorage.getItem(CACHE_KEY);
@@ -24,18 +25,18 @@ function readCache(userID: string): { repoList: repoType[]; deployments: DeployC
 		const data: CachedAppData = JSON.parse(raw);
 		if (data.userID !== userID) return null;
 		if (Date.now() - data.timestamp > CACHE_MAX_AGE_MS) return null;
-		return { repoList: data.repoList ?? [], deployments: data.deployments ?? [] };
+		return { repoList: data.repoList ?? [], deployments: data.deployments ?? [], repoServices: data.repoServices ?? [] };
 	} catch {
 		return null;
 	}
 }
 
-function writeCache(userID: string, repoList: repoType[], deployments: DeployConfig[]) {
+function writeCache(userID: string, repoList: repoType[], deployments: DeployConfig[], repoServices: RepoServicesRecord[] = []) {
 	if (typeof window === "undefined") return;
 	try {
 		localStorage.setItem(
 			CACHE_KEY,
-			JSON.stringify({ userID, repoList, deployments, timestamp: Date.now() } satisfies CachedAppData)
+			JSON.stringify({ userID, repoList, deployments, repoServices, timestamp: Date.now() } satisfies CachedAppData)
 		);
 	} catch {
 		// ignore quota / private mode
@@ -51,14 +52,16 @@ function clearCache() {
 	}
 }
 
-async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: DeployConfig[] }> {
-	const [sessionRes, deploymentsRes] = await Promise.all([
+async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: DeployConfig[]; repoServices: RepoServicesRecord[] }> {
+	const [sessionRes, deploymentsRes, servicesRes] = await Promise.all([
 		fetch("/api/session").then((r) => r.json()),
 		fetch("/api/get-deployments").then((r) => r.json()),
+		fetch("/api/repos/services").then((r) => r.json()),
 	]);
 	const repoList = sessionRes?.repoList ?? [];
 	const deployments = deploymentsRes?.deployments ?? [];
-	return { repoList, deployments };
+	const repoServices = servicesRes?.services ?? [];
+	return { repoList, deployments, repoServices };
 }
 
 /**
@@ -77,7 +80,7 @@ export function useAppDataQuery() {
 		hasRehydrated.current = true;
 		const cached = readCache(userID);
 		if (cached) {
-			setAppData(cached.repoList, cached.deployments, false);
+			setAppData(cached.repoList, cached.deployments, false, cached.repoServices);
 		}
 	}, [status, userID, setAppData]);
 
@@ -91,8 +94,8 @@ export function useAppDataQuery() {
 	// Sync query result to Zustand and persist to localStorage
 	useEffect(() => {
 		if (!query.data || !userID) return;
-		setAppData(query.data.repoList, query.data.deployments, false);
-		writeCache(userID, query.data.repoList, query.data.deployments);
+		setAppData(query.data.repoList, query.data.deployments, false, query.data.repoServices);
+		writeCache(userID, query.data.repoList, query.data.deployments, query.data.repoServices ?? []);
 	}, [query.data, userID, setAppData]);
 
 	// Clear store and cache when user logs out
