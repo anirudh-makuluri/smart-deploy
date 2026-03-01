@@ -20,21 +20,16 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 	const { data: session } = useSession();
 	const { deployments, repoList, repoServices, isLoading } = useAppData();
 
-	// Overview: one deployment per repo (all services on one instance)
+	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
 		const repoUrlNorm = normalizeUrl(record.repo_url);
-		const repoId = `https://github.com/${record.repo_owner}/${record.repo_name}`;
-		const repoName = record.repo_name;
-		const deployment = deployments.find(
-			(d) => normalizeUrl(d.url ?? "") === repoUrlNorm && (d.id === repoId || d.service_name === repoName)
-		);
+		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
-		const isDeployed = !!deployment;
-		const isCrashed = deployment?.status === "stopped" || deployment?.status === "paused";
+		const isDeployed = repoDeployments.length > 0;
+		const isCrashed = repoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
 
 		const subtitle = isCrashed ? "Crashed" : isDeployed ? "Deployed" : "Not deployed";
 		if (totalServices > 0) {
-			// e.g. "Deployed · 2 services"
 			return {
 				owner: record.repo_owner,
 				name: record.repo_name,

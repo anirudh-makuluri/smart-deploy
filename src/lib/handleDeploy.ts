@@ -102,9 +102,21 @@ export async function handleDeploy(deployConfig: DeployConfig, token: string, ws
 		// Analyze application structure from the repo root (so docker-compose at root is detected
 		// even when workdir points to a subdirectory)
 		send("Analyzing application structure...", 'detect');
-		const multiServiceConfig = detectMultiService(cloneDir);
+		let multiServiceConfig = detectMultiService(cloneDir);
 
-		// Deploy all services in the repo on one instance (no per-service filtering).
+		// Single-service deploy from sheet: filter to that service only (one instance for that service).
+		// Page "Deploy all" does not set monorepo_service_name → all services on one instance.
+		const requestedService = deployConfig.monorepo_service_name?.trim();
+		if (requestedService) {
+			const one = multiServiceConfig.services.find((s) => s.name === requestedService);
+			if (!one) {
+				const available = multiServiceConfig.services.map((s) => s.name).join(", ") || "none";
+				throw new Error(`Service '${requestedService}' not found. Available: ${available}`);
+			}
+			multiServiceConfig = { ...multiServiceConfig, services: [one], isMultiService: true };
+			send(`Deploying single service: ${requestedService}`, 'detect');
+		}
+
 		if (multiServiceConfig.isMonorepo) {
 			send(`📦 Detected monorepo (${multiServiceConfig.packageManager || 'npm'} workspaces) with ${multiServiceConfig.services.length} deployable service(s)`, 'detect');
 			for (const svc of multiServiceConfig.services) {
@@ -581,8 +593,8 @@ async function handleGCPDeploy(
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
 	const serviceName = `${repoName}`;
 
-	// Handle multi-service (or single-service from monorepo) deployment
-	if (multiServiceConfig.isMultiService && (multiServiceConfig.services.length > 1 || deployConfig.monorepo_service_name)) {
+	// Handle multi-service deployment
+	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
 		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
 		send("Starting multi-service deployment...", 'detect');
 		

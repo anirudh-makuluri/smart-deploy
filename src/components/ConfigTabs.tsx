@@ -59,15 +59,13 @@ export const formSchema = z.object({
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo, initialWorkdir }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
 			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
 			onConfigChange?: (partial: Partial<DeployConfig>) => void,
 			editMode: boolean, isDeploying: boolean,
-			repo: repoType, deployment?: DeployConfig,
-			/** Prefill workdir when opening deploy sheet for a monorepo service (e.g. "apps/web"). */
-			initialWorkdir?: string
+			repo: repoType, deployment?: DeployConfig
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -115,7 +113,7 @@ export default function ConfigTabs(
 			build_cmd: deployment?.core_deployment_info?.build_cmd || "",
 			run_cmd: deployment?.core_deployment_info?.run_cmd || "",
 			env_vars: deployment?.env_vars || "",
-			workdir: deployment?.core_deployment_info?.workdir || initialWorkdir || "",
+			workdir: deployment?.core_deployment_info?.workdir || "",
 			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
 			custom_url: deployment?.custom_url || "",
 		},

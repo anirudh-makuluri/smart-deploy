@@ -54,17 +54,23 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 	};
 }
 
-/** One deployment per repo (all services on one instance). Prefer deployment with id === repoId. */
-function getDeploymentForRepo(
+/** A service is deployed if there is a per-service deployment or a repo-level deployment. */
+function getDeploymentForService(
 	deployments: DeployConfig[],
 	repoUrl: string,
+	serviceName: string,
+	repoName: string,
 	repoId: string
 ): DeployConfig | undefined {
 	const norm = normalizeRepoUrl(repoUrl);
-	const repoName = repoUrl.split("/").pop()?.replace(".git", "") ?? "";
-	const byId = deployments.find((d) => normalizeRepoUrl(d.url) === norm && d.id === repoId);
-	if (byId) return byId;
-	return deployments.find((d) => normalizeRepoUrl(d.url) === norm && d.service_name === repoName);
+	for (const d of deployments) {
+		if (normalizeRepoUrl(d.url) !== norm) continue;
+		if (d.monorepo_service_name === serviceName) return d;
+		if (d.service_name === `${repoName}-${serviceName}`) return d;
+		if (d.id === repoId) return d; // repo-level deployment covers all services
+		if (d.service_name === repoName) return d;
+	}
+	return undefined;
 }
 
 function normalizeRepoUrlForMatch(url: string): string {
@@ -78,6 +84,8 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = React.useState(false);
+	/** When set, sheet is for this service (per-service deploy). When null, sheet is for deploy-all. */
+	const [selectedService, setSelectedService] = React.useState<DetectedService | null>(null);
 
 	const repoUrl = `https://github.com/${owner}/${repo}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repo), [owner, repo]);
@@ -150,12 +158,19 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		return deployments.filter((d) => normalizeRepoUrl(d.url) === norm);
 	}, [deployments, repoUrl]);
 
-	function openSheet() {
+	function openSheetForService(svc: DetectedService) {
+		setSelectedService(svc);
+		setSheetOpen(true);
+	}
+
+	function openSheetForAll() {
+		setSelectedService(null);
 		setSheetOpen(true);
 	}
 
 	function closeSheet() {
 		setSheetOpen(false);
+		setSelectedService(null);
 		refetchAll();
 	}
 
@@ -175,13 +190,20 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 			</header>
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
-					<div className="mb-6">
-						<h1 className="text-xl font-semibold text-foreground">
-							{owner} / {repo}
-						</h1>
-						<p className="text-sm text-muted-foreground mt-0.5">
-							{services.length} service{services.length !== 1 ? "s" : ""}
-						</p>
+					<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+						<div>
+							<h1 className="text-xl font-semibold text-foreground">
+								{owner} / {repo}
+							</h1>
+							<p className="text-sm text-muted-foreground mt-0.5">
+								{services.length} service{services.length !== 1 ? "s" : ""}
+							</p>
+						</div>
+						{!loading && !error && services.length > 0 && (
+							<Button onClick={openSheetForAll} className="shrink-0">
+								Deploy all on one instance
+							</Button>
+						)}
 					</div>
 
 					{loading && (
@@ -197,68 +219,72 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 							No deployable services detected. Add a service or check the repository structure.
 						</div>
 					)}
-					{!loading && !error && services.length > 0 && (() => {
-						const deployment = getDeploymentForRepo(repoDeployments, repoUrl, minimalRepo.id);
-						const status = deployment?.status;
-						const isOnline = status === "running";
-						const isCrashed = status === "stopped" || status === "paused";
-						const isNotDeployed = !deployment;
+					{!loading && !error && services.length > 0 && (
+						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+							{services.map((svc) => {
+								const deployment = getDeploymentForService(
+									repoDeployments,
+									repoUrl,
+									svc.name,
+									repo,
+									minimalRepo.id
+								);
+								const status = deployment?.status;
+								const isOnline = status === "running";
+								const isCrashed = status === "stopped" || status === "paused";
+								const isNotDeployed = !deployment;
 
-						const handleCardClick = () => {
-							if (deployment) {
-								router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
-							} else {
-								openSheet();
-							}
-						};
+								const handleCardClick = () => {
+									if (deployment) {
+										router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
+									} else {
+										openSheetForService(svc);
+									}
+								};
 
-						return (
-							<div className="space-y-4">
-								<button
-									type="button"
-									onClick={handleCardClick}
-									className={`w-full hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${
-										isCrashed ? "border-destructive/60" : "border-border"
-									}`}
-								>
-									<div className="flex items-center gap-3">
-										<Github className="size-6 shrink-0 text-muted-foreground" />
-										<div className="min-w-0 flex-1">
-											<p className="font-semibold text-foreground truncate">
-												{owner} / {repo}
-											</p>
-											<p className="text-sm text-muted-foreground mt-0.5">
-												{services.length} service{services.length !== 1 ? "s" : ""}: {services.map((s) => s.name).join(", ")}
-											</p>
+								return (
+									<button
+										key={svc.name}
+										type="button"
+										onClick={handleCardClick}
+										className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${
+											isCrashed ? "border-destructive/60" : "border-border"
+										}`}
+									>
+										<div className="flex items-center gap-3">
+											<Github className="size-6 shrink-0 text-muted-foreground" />
+											<span className="font-semibold text-foreground truncate">
+												@{repo}/{svc.name}
+											</span>
 										</div>
-									</div>
-									<div className="mt-3 flex items-center gap-2">
-										{isNotDeployed && (
-											<span className="text-sm text-muted-foreground">
-												Not deployed — click to deploy all services on one instance
-											</span>
-										)}
-										{isOnline && (
-											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
-												<span className="size-2 rounded-full bg-green-500" />
-												Online
-											</span>
-										)}
-										{isCrashed && (
-											<>
-												<span className="text-sm text-destructive flex items-center gap-1">
-													Crashed
+										<div className="mt-3 flex items-center gap-2">
+											{isNotDeployed && (
+												<span className="text-sm text-muted-foreground">
+													Not deployed
 												</span>
-												<span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
-													<AlertTriangle className="size-4" />
+											)}
+											{isOnline && (
+												<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+													<span className="size-2 rounded-full bg-green-500" />
+													Online
 												</span>
-											</>
-										)}
-									</div>
-								</button>
-							</div>
-						);
-					})()}
+											)}
+											{isCrashed && (
+												<>
+													<span className="text-sm text-destructive flex items-center gap-1">
+														Crashed
+													</span>
+													<span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+														<AlertTriangle className="size-4" />
+													</span>
+												</>
+											)}
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					)}
 			</main>
 
 			{sheetOpen && (
@@ -266,6 +292,8 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 					open={sheetOpen}
 					onClose={closeSheet}
 					repo={minimalRepo}
+					selectedServiceName={selectedService?.name ?? undefined}
+					selectedServicePath={selectedService?.path ?? undefined}
 				/>
 			)}
 		</div>
