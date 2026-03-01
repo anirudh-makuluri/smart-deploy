@@ -32,7 +32,7 @@ import DeployOptions from "@/components/DeployOptions";
 import { RotateCw, Upload, Trash2, Plus, Layers, Check, X } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
+import { AIGenProjectMetadata, AWSDeploymentTarget, CoreDeploymentInfo, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -59,13 +59,17 @@ export const formSchema = z.object({
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo, initialWorkdir, initialCoreInfo }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
 			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
 			onConfigChange?: (partial: Partial<DeployConfig>) => void,
 			editMode: boolean, isDeploying: boolean,
-			repo: repoType, deployment?: DeployConfig
+			repo: repoType, deployment?: DeployConfig,
+			/** When no deployment: prefill workdir from detected service path. */
+			initialWorkdir?: string,
+			/** When no deployment: rule-based detected config (install/build/run/workdir/port). */
+			initialCoreInfo?: CoreDeploymentInfo
 		}) {
 
 	const [dockerfile, setDockerfile] = useState<File | null>(null);
@@ -78,16 +82,24 @@ export default function ConfigTabs(
 	const [isAiFetching, setAiFetching] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
-	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
-		deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes
-			? {
+	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(() => {
+		if (deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes) {
+			return {
 				core_deployment_info: deployment.core_deployment_info,
 				features_infrastructure: deployment.features_infrastructure,
 				final_notes: deployment.final_notes,
 				...(deployment.monorepo_services && { monorepo_services: deployment.monorepo_services }),
-			}
-			: null
-	);
+			};
+		}
+		if (initialCoreInfo) {
+			return {
+				core_deployment_info: initialCoreInfo,
+				features_infrastructure: { uses_websockets: false, uses_cron: false, uses_mobile: false, cloud_run_compatible: true, is_library: false, requires_build_but_missing_cmd: false },
+				final_notes: { comment: "Rule-based detection" },
+			};
+		}
+		return null;
+	});
 	const [monorepoServices, setMonorepoServices] = useState<MonorepoServiceInfo[]>(
 		deployment?.monorepo_services ?? []
 	);
@@ -103,17 +115,18 @@ export default function ConfigTabs(
 
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
+	const core = deployment?.core_deployment_info ?? initialCoreInfo;
 	const form = useForm<z.infer<typeof formSchema>>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			url: repo?.html_url,
 			service_name: service_name || repo?.name,
 			branch: deployment?.branch || "main",
-			install_cmd: deployment?.core_deployment_info?.install_cmd || "",
-			build_cmd: deployment?.core_deployment_info?.build_cmd || "",
-			run_cmd: deployment?.core_deployment_info?.run_cmd || "",
+			install_cmd: core?.install_cmd ?? "",
+			build_cmd: core?.build_cmd ?? "",
+			run_cmd: core?.run_cmd ?? "",
 			env_vars: deployment?.env_vars || "",
-			workdir: deployment?.core_deployment_info?.workdir || "",
+			workdir: core?.workdir ?? initialWorkdir ?? "",
 			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
 			custom_url: deployment?.custom_url || "",
 		},

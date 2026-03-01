@@ -190,6 +190,28 @@ export type MonorepoServiceInfo = {
 	is_deployable: boolean;
 };
 
+/** One detected service (from detect-services API / repo_services table). */
+export type DetectedServiceInfo = {
+	name: string;
+	path: string;
+	language?: string;
+	framework?: string;
+	port?: number;
+	/** Rule-based detected deploy config when available. */
+	core_deployment_info?: CoreDeploymentInfo;
+};
+
+/** Stored repo services record (repo_services table). */
+export type RepoServicesRecord = {
+	repo_url: string;
+	branch: string;
+	repo_owner: string;
+	repo_name: string;
+	services: DetectedServiceInfo[];
+	is_monorepo: boolean;
+	updated_at: string;
+};
+
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */
 export type ServiceCompatibility = {
 	amplify?: boolean;

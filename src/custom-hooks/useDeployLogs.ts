@@ -15,8 +15,26 @@ const defaultSteps: DeployStep[] = [
 	{ id: "done", label: "✅ Done", logs: [], status: "pending" },
 ];
 
+const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
 
-function getWebSocketUrl(): string {
+/** Read active deployment from sessionStorage (set when deploy starts, cleared when it finishes). Used for "deployment in progress" notification and repo banner. */
+export function getActiveDeployment(): { deploymentId: string; userID?: string } | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const raw = sessionStorage.getItem(ACTIVE_DEPLOYMENT_KEY);
+		if (!raw) return null;
+		return JSON.parse(raw) as { deploymentId: string; userID?: string };
+	} catch {
+		return null;
+	}
+}
+
+export function clearActiveDeployment(): void {
+	if (typeof window === "undefined") return;
+	sessionStorage.removeItem(ACTIVE_DEPLOYMENT_KEY);
+}
+
+export function getWebSocketUrl(): string {
 	const env = process.env.NEXT_PUBLIC_WS_URL;
 	if (typeof env === "string" && env) {
 		return env.replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"));
@@ -87,8 +105,20 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 						}));
 					});
 					break;
+				case "deploy_logs_snapshot": {
+					const snap = payload as { steps?: DeployStep[]; status?: DeployStatus; error?: string | null };
+					if (Array.isArray(snap.steps) && snap.steps.length > 0) setSteps(snap.steps);
+					if (snap.status) {
+						setDeployStatus(snap.status);
+						if (snap.status === "running") wasDeployingRef.current = true;
+					}
+					if (snap.error != null) setDeployError(snap.error); else setDeployError(null);
+					if (snap.status === "success" || snap.status === "error") clearActiveDeployment();
+					break;
+				}
 				case "deploy_complete":
 					wasDeployingRef.current = false;
+					clearActiveDeployment();
 					setDeployStatus(payload.success ? "success" : "error");
 					if (!payload.success) {
 						setDeployError(payload.error ?? "Deployment failed");
@@ -160,7 +190,23 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		return ws;
 	}
 
-	// Only close socket on unmount; do not auto-open on mount.
+	// On mount: if this deployment is in progress (sessionStorage), open socket and request logs so user sees them after refresh.
+	useEffect(() => {
+		if (!deploymentId || typeof window === "undefined") return;
+		const active = getActiveDeployment();
+		if (!active || active.deploymentId !== deploymentId) return;
+		openSocket(() => {
+			const socket = wsRef.current;
+			if (socket?.readyState === WebSocket.OPEN) {
+				socket.send(JSON.stringify({
+					type: "get_deploy_logs",
+					payload: { deploymentId: active.deploymentId, userID: active.userID },
+				}));
+			}
+		});
+	}, [deploymentId]);
+
+	// Only close socket on unmount; do not auto-open on mount (except for get_deploy_logs above).
 	useEffect(() => {
 		return () => {
 			wsRef.current?.close();
@@ -182,6 +228,12 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		setDeployError(null);
 		setDeployStatus("running");
 		setSteps([...defaultSteps]);
+
+		if (typeof window !== "undefined") {
+			try {
+				sessionStorage.setItem(ACTIVE_DEPLOYMENT_KEY, JSON.stringify({ deploymentId: deployConfig.id, userID }));
+			} catch { /* ignore */ }
+		}
 
 		const file = deployConfig.dockerfile;
 
@@ -264,20 +316,34 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		setServiceLogs(prev => [...prev, ...logs]);
 	}
 
-	function deployLogs({ id, msg }: { id: string; msg: string }) {
+	function formatLogWithTime(time?: string, msg?: string): string {
+		if (!time || msg == null) return msg ?? "";
+		try {
+			const d = new Date(time);
+			const h = d.getHours().toString().padStart(2, "0");
+			const m = d.getMinutes().toString().padStart(2, "0");
+			const s = d.getSeconds().toString().padStart(2, "0");
+			return `[${h}:${m}:${s}] ${msg}`;
+		} catch {
+			return msg;
+		}
+	}
+
+	function deployLogs({ id, msg, time }: { id: string; msg: string; time?: string }) {
 		setDeployStatus("running");
+		const logLine = formatLogWithTime(time, msg);
 
 		setSteps((prev) => {
 			const existing = prev.find((s) => s.id === id);
 			if (!existing) {
-				return [...prev, { id, label: id, logs: [msg], status: "in_progress" as const }];
+				return [...prev, { id, label: id, logs: [logLine], status: "in_progress" as const }];
 			}
 			return prev.map((step) =>
 				step.id === id
 					? {
 							...step,
 							status: msg.includes("✅") ? "success" : msg.includes("❌") ? "error" : step.status === "pending" ? "in_progress" : step.status,
-							logs: [...step.logs, msg],
+							logs: [...step.logs, logLine],
 						}
 					: step
 			);

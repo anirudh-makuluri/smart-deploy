@@ -1,10 +1,10 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-
 import { WebSocketServer } from "ws";
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
+import * as deployLogsStore from "./lib/deployLogsStore";
 
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer();
@@ -15,7 +15,7 @@ function sendDeployComplete(ws: any, success: boolean, error?: string) {
 	if (ws?.readyState === 1) {
 		ws.send(JSON.stringify({
 			type: "deploy_complete",
-			payload: { success, deployUrl: null, error: error ?? null },
+			payload: { success, deployUrl: null, error: error ?? null, time: new Date().toISOString() },
 		}));
 	}
 }
@@ -40,6 +40,26 @@ wss.on("connection", (ws) => {
 				case "service_logs":
 					serviceLogs(response.payload, ws);
 					break;
+				case "get_deploy_logs": {
+					const { deploymentId, userID } = response.payload ?? {};
+					if (!deploymentId) {
+						if (ws?.readyState === 1) {
+							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "deploymentId required", time: new Date().toISOString() } }));
+						}
+						break;
+					}
+					const snapshot = deployLogsStore.getSnapshot(userID, deploymentId);
+					const time = new Date().toISOString();
+					if (snapshot) {
+						if (ws?.readyState === 1) {
+							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { ...snapshot, time } }));
+						}
+						deployLogsStore.addSubscriber(userID, deploymentId, ws);
+					} else if (ws?.readyState === 1) {
+						ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { steps: [], status: "error", error: "No logs found for this deployment", time } }));
+					}
+					break;
+				}
 				default:
 					break;
 			}
@@ -51,6 +71,7 @@ wss.on("connection", (ws) => {
 
 	ws.on("close", () => {
 		console.log("Client disconnected");
+		deployLogsStore.removeSubscriberFromAll(ws);
 	});
 });
 
@@ -58,7 +79,7 @@ wss.on("connection", (ws) => {
 function broadcastDeployFailed(reason: string) {
 	const payload = JSON.stringify({
 		type: "deploy_complete",
-		payload: { success: false, deployUrl: null, error: reason },
+		payload: { success: false, deployUrl: null, error: reason, time: new Date().toISOString() },
 	});
 	wss.clients.forEach((client) => {
 		if (client.readyState === 1) client.send(payload);

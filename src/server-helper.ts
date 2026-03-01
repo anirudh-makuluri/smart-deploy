@@ -89,9 +89,10 @@ export async function runCommandLiveWithWebSocket(
 					type: 'deploy_logs',
 					payload: {
 						id,
-						msg
+						msg,
+						time: new Date().toISOString()
 					}
-				}
+				};
 				ws.send(JSON.stringify(object));
 			}
 			// Also send through the send function if provided (for deploySteps tracking)

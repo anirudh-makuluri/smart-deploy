@@ -20,18 +20,22 @@ type NewDeploySheetProps = {
 	selectedServiceName?: string | null;
 	/** Relative path for the service (e.g. "apps/web") for workdir prefill. */
 	selectedServicePath?: string | null;
+	/** Rule-based detected config for this service when no deployment exists. */
+	selectedServiceCoreInfo?: import("@/app/types").CoreDeploymentInfo | null;
 };
 
 function normalizeRepoUrl(url: string): string {
 	return url.replace(/\.git$/, "").toLowerCase().trim();
 }
 
-export default function NewDeploySheet({ open, onClose, repo, selectedServiceName, selectedServicePath }: NewDeploySheetProps) {
+export default function NewDeploySheet({ open, onClose, repo, selectedServiceName, selectedServicePath, selectedServiceCoreInfo }: NewDeploySheetProps) {
 	const { data: session } = useSession();
 	const { updateDeploymentById, deployments } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const deployKey = selectedServiceName ? `${repo.name}-${selectedServiceName}` : repo.name;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(deployKey);
+	const deploymentSlug = repo.full_name.replace(/\//g, "-");
+	const deploymentId = selectedServiceName ? `${deploymentSlug}-${selectedServiceName}` : deploymentSlug;
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(deployKey, deploymentId);
 
 	const deployLogEntries = React.useMemo(() => {
 		const entries: { timestamp?: string; message?: string }[] = [];
@@ -88,9 +92,11 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 		const serviceNameForDeploy = selectedServiceName
 			? `${repo.name}-${selectedServiceName}`
 			: (values.service_name || repo.name);
+		// Deployment ID must not contain '/' (DB constraint); use slug from full_name (e.g. owner-repo)
+		const deploymentSlug = repo.full_name.replace(/\//g, "-");
 		const deploymentId = selectedServiceName
-			? `${repo.id}-${selectedServiceName}`
-			: repo.id;
+			? `${deploymentSlug}-${selectedServiceName}`
+			: deploymentSlug;
 
 		const payload: DeployConfig = {
 			id: deploymentId,
@@ -168,6 +174,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedServiceNam
 							editMode={true}
 							isDeploying={isDeploying}
 							initialWorkdir={selectedServicePath ?? undefined}
+							initialCoreInfo={selectedServiceCoreInfo ?? undefined}
 						/>
 					</div>
 

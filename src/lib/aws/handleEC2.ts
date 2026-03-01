@@ -744,8 +744,8 @@ async function launchNewInstance(params: {
 	let instanceId: string;
 	try {
 		send(`Launching EC2 instance: ${instanceName}...`, "deploy");
-		// Increase root EBS volume to 20GB (default is 8GB which is too small for Docker builds)
-		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=20,VolumeType=gp3,DeleteOnTermination=true}`;
+		// Root EBS volume: 30GB minimum (AMI snapshot may require >= 30GB; 8GB default is too small for Docker builds)
+		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=30,VolumeType=gp3,DeleteOnTermination=true}`;
 		const out = await runAWSCommand([
 			"ec2", "run-instances",
 			"--image-id", amiId,
@@ -762,7 +762,7 @@ async function launchNewInstance(params: {
 			"--region", region,
 		], ws, "deploy");
 		instanceId = out.trim();
-		send(`Instance launched: ${instanceId} (20GB EBS volume)`, "deploy");
+		send(`Instance launched: ${instanceId} (30GB EBS volume)`, "deploy");
 	} finally {
 		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
 	}
@@ -777,9 +777,9 @@ async function launchNewInstance(params: {
 	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
 
 	if (!detectedPort) {
-		send("❌ Instance failed to respond on any known ports.", "deploy");
-		try { await terminateInstance(instanceId, region, ws); } catch { /* ignore */ }
-		throw new Error("Instance failed to respond on any known ports");
+		send("❌ Instance did not respond on any known ports yet (app may still be starting). Instance left running; you can check the URL once the app is up.", "deploy");
+		// Do not terminate: user-data may still be building/running the app; instance can be used or inspected.
+		throw new Error("Instance did not respond on any known ports yet. Instance was left running.");
 	}
 
 	return { instanceId, publicIp, detectedPort };
@@ -906,7 +906,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 	let consecutiveErrors = 0;
 	let encodingErrorShown = false;
 	let cloudInitFailureDetected = false;
-	for (let i = 1; i <= 24; i++) {
+	for (let i = 1; i <= 48; i++) {
 		try {
 			const raw = await getConsoleOutput(instanceId, region);
 			consecutiveErrors = 0; // Reset error counter on success

@@ -5,25 +5,41 @@ import { streamLogs } from "./gcloud-logs/streamLogs";
 import { handleDeploy } from "./lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
+import * as deployLogsStore from "./lib/deployLogsStore";
 
-
-export async function deploy(payload: { deployConfig: DeployConfig, token: string, userID?: string }, ws: any) {
+export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID?: string }, ws: any) {
 	const {
 		deployConfig,
 		token,
-		userID
-	}: { deployConfig: DeployConfig, token: string, userID?: string } = payload;
+		userID,
+	}: { deployConfig: DeployConfig; token: string; userID?: string } = payload;
 
 	if (deployConfig.dockerfileInfo) {
 		const { name, content } = deployConfig.dockerfileInfo;
-
-		const base64 = content.split(',')[1];
-		const buffer = Buffer.from(base64, 'base64');
-
+		const base64 = content.split(",")[1];
+		const buffer = Buffer.from(base64, "base64");
 		deployConfig.dockerfileContent = buffer.toString();
 	}
 
-	await handleDeploy(deployConfig, token, ws, userID);
+	const deploymentId = deployConfig.id;
+	deployLogsStore.createEntry(userID, deploymentId, ws);
+
+	const options = {
+		onStepsChange: (steps: import("./app/types").DeployStep[]) => {
+			deployLogsStore.updateSteps(userID, deploymentId, steps);
+		},
+		broadcast: (id: string, msg: string) => {
+			deployLogsStore.broadcastLog(userID, deploymentId, id, msg);
+		},
+	};
+
+	try {
+		await handleDeploy(deployConfig, token, ws, userID, options);
+		deployLogsStore.setStatus(userID, deploymentId, "success");
+	} catch (err: any) {
+		deployLogsStore.setStatus(userID, deploymentId, "error", err?.message ?? "Deployment failed");
+		throw err;
+	}
 }
 
 export async function serviceLogs(payload: { serviceName?: string; deploymentId?: string }, ws: any) {

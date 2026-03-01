@@ -112,7 +112,7 @@ async function zipDirectory(
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({
 				type: "deploy_logs",
-				payload: { id: stepId, msg },
+				payload: { id: stepId, msg, time: new Date().toISOString() },
 			}));
 		}
 	};
@@ -144,7 +144,7 @@ async function uploadZipToUrl(
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({
 				type: "deploy_logs",
-				payload: { id: stepId, msg },
+				payload: { id: stepId, msg, time: new Date().toISOString() },
 			}));
 		}
 	};

@@ -3,20 +3,16 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Github, AlertTriangle } from "lucide-react";
+import { Github, AlertTriangle, Loader2 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/store/useAppData";
-import type { DeployConfig, repoType } from "@/app/types";
+import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
 import NewDeploySheet from "@/components/NewDeploySheet";
+import { getActiveDeployment } from "@/custom-hooks/useDeployLogs";
+import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 
-type DetectedService = {
-	name: string;
-	path: string;
-	language?: string;
-	framework?: string;
-	port?: number;
-};
+type DetectedService = DetectedServiceInfo;
 
 type RepoPageClientProps = {
 	owner: string;
@@ -54,6 +50,16 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 	};
 }
 
+/** Deployment ID slug from repo URL (no slashes, for DB); e.g. owner-repo */
+function repoSlugFromUrl(repoUrl: string): string {
+	return repoUrl
+		.replace(/\.git$/, "")
+		.split("/")
+		.filter(Boolean)
+		.slice(-2)
+		.join("-");
+}
+
 /** A service is deployed if there is a per-service deployment or a repo-level deployment. */
 function getDeploymentForService(
 	deployments: DeployConfig[],
@@ -63,11 +69,13 @@ function getDeploymentForService(
 	repoId: string
 ): DeployConfig | undefined {
 	const norm = normalizeRepoUrl(repoUrl);
+	const slug = repoSlugFromUrl(repoUrl);
 	for (const d of deployments) {
 		if (normalizeRepoUrl(d.url) !== norm) continue;
 		if (d.monorepo_service_name === serviceName) return d;
 		if (d.service_name === `${repoName}-${serviceName}`) return d;
-		if (d.id === repoId) return d; // repo-level deployment covers all services
+		if (d.id === repoId || d.id === slug) return d; // repo-level (legacy url id or slug)
+		if (d.id === `${slug}-${serviceName}`) return d;
 		if (d.service_name === repoName) return d;
 	}
 	return undefined;
@@ -89,6 +97,35 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 	const repoUrl = `https://github.com/${owner}/${repo}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repo), [owner, repo]);
+	const repoSlug = `${owner}-${repo}`;
+	const { openLogsModal } = useActiveDeployment();
+	const [activeDeploy, setActiveDeploy] = React.useState<{
+		deploymentId: string;
+		userID?: string;
+	} | null>(() => {
+		const a = getActiveDeployment();
+		if (!a) return null;
+		if (a.deploymentId === repoSlug || a.deploymentId.startsWith(`${repoSlug}-`)) return a;
+		return null;
+	});
+
+	React.useEffect(() => {
+		const tick = () => {
+			const a = getActiveDeployment();
+			if (!a) {
+				setActiveDeploy(null);
+				return;
+			}
+			if (a.deploymentId === repoSlug || a.deploymentId.startsWith(`${repoSlug}-`)) {
+				setActiveDeploy(a);
+			} else {
+				setActiveDeploy(null);
+			}
+		};
+		tick();
+		const id = setInterval(tick, 2000);
+		return () => clearInterval(id);
+	}, [repoSlug]);
 
 	React.useEffect(() => {
 		const cached = getDetectedRepoCache(repoUrl);
@@ -190,6 +227,17 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 			</header>
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
+					{activeDeploy && (
+						<button
+							type="button"
+							onClick={() => openLogsModal(activeDeploy.deploymentId, activeDeploy.userID)}
+							className="mb-4 flex w-full cursor-pointer items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 py-3 px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary/15"
+						>
+							<Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+							<span>A deployment is in progress for this repo.</span>
+							<span className="text-primary">Click to view logs</span>
+						</button>
+					)}
 					<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 						<div>
 							<h1 className="text-xl font-semibold text-foreground">
@@ -294,6 +342,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 					repo={minimalRepo}
 					selectedServiceName={selectedService?.name ?? undefined}
 					selectedServicePath={selectedService?.path ?? undefined}
+					selectedServiceCoreInfo={selectedService?.core_deployment_info ?? undefined}
 				/>
 			)}
 		</div>
