@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { AWSDeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, ECSDeployDetails, AmplifyDeployDetails, ElasticBeanstalkDeployDetails, DeployStep } from "../app/types";
+import { DeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, DeployStep } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -13,7 +13,7 @@ import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 
 // AWS imports
-import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
+import { setupAWSCredentials } from "./aws";
 import { handleEC2 } from "./aws/handleEC2";
 import { createRDSInstance } from "./aws/handleRDS";
 
@@ -35,7 +35,7 @@ export async function handleDeploy(
 	}
 ): Promise<string> {
 	const deployStartTime = Date.now();
-	
+
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
 	const send = createDeployStepsLogger(ws, deploySteps, options);
@@ -77,13 +77,13 @@ export async function handleDeploy(
 		const branch = deployConfig.branch?.trim() || "main";
 		const commitSha = deployConfig.commitSha?.trim();
 		deployConfig.deploymentTarget = "ec2";
-		
+
 		if (commitSha) {
 			send(`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
 		} else {
 			send(`Cloning repo from branch "${branch}"...`, 'clone');
 		}
-		
+
 		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone', { send });
 
 		// Checkout specific commit if provided
@@ -166,35 +166,7 @@ export async function handleDeploy(
 }
 
 /** Step definitions per AWS target so the client shows accurate labels */
-const AWS_DEPLOY_STEPS: Record<AWSDeploymentTarget, { id: string; label: string }[]> = {
-	"amplify": [
-		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Analyzing app" },
-		{ id: "auth", label: "🔐 Authentication" },		
-		{ id: "build", label: "🔨 Build" },
-		{ id: "amplify", label: "🚀 Deploy to Amplify" },
-		{ id: "done", label: "✅ Done" },
-	],
-	"elastic-beanstalk": [
-		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "auth", label: "🔐 Authentication" },
-		{ id: "detect", label: "🔍 Analyzing app" },
-		{ id: "setup", label: "⚙️ Setup (S3, app)" },
-		{ id: "bundle", label: "📦 Create bundle" },
-		{ id: "upload", label: "📤 Upload to S3" },
-		{ id: "deploy", label: "🚀 Deploy to Elastic Beanstalk" },
-		{ id: "done", label: "✅ Done" },
-	],
-	"ecs": [
-		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Analyzing app" },
-		{ id: "auth", label: "🔐 Authentication" },
-		{ id: "database", label: "🗄️ Database (RDS)" },
-		{ id: "setup", label: "⚙️ Setup (VPC, ECR, S3, CodeBuild)" },
-		{ id: "docker", label: "🐳 Build image (CodeBuild)" },
-		{ id: "deploy", label: "🚀 Deploy to ECS + ALB" },
-		{ id: "done", label: "✅ Done" },
-	],
+const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 	"ec2": [
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "auth", label: "🔐 Authentication" },
@@ -254,9 +226,6 @@ async function saveDeploymentToDB(
 			...(deployUrl && { deployUrl }),
 			...(customUrl && { custom_url: customUrl }),
 			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
-			...(serviceDetails?.ecs && { ecs: serviceDetails.ecs }),
-			...(serviceDetails?.amplify && { amplify: serviceDetails.amplify }),
-			...(serviceDetails?.elasticBeanstalk && { elasticBeanstalk: serviceDetails.elasticBeanstalk }),
 		};
 
 		// Update deployment document (creates if doesn't exist)
@@ -299,9 +268,6 @@ async function saveDeploymentToDB(
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
 	ec2?: EC2DeployDetails;
-	ecs?: ECSDeployDetails;
-	amplify?: AmplifyDeployDetails;
-	elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 };
 
 function sendDeployComplete(
@@ -318,8 +284,8 @@ function sendDeployComplete(
 ) {
 	// Save to database before sending WebSocket message
 	console.log("Saving deployment result to database...");
-	console.log("Deployment details:", {deployConfig, deployUrl, success, deploymentTarget, vercelDns, serviceDetails, durationMs});
-	
+	console.log("Deployment details:", { deployConfig, deployUrl, success, deploymentTarget, vercelDns, serviceDetails, durationMs });
+
 	saveDeploymentToDB(
 		deployConfig,
 		deployUrl,
@@ -340,18 +306,12 @@ function sendDeployComplete(
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
 			ec2?: EC2DeployDetails;
-			ecs?: ECSDeployDetails;
-			amplify?: AmplifyDeployDetails;
-			elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 		} = {
 			deployUrl: deployUrl ?? null,
 			success,
 			deploymentTarget: deploymentTarget ?? null,
 		};
 		if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
-		if (serviceDetails?.ecs) payload.ecs = serviceDetails.ecs;
-		if (serviceDetails?.amplify) payload.amplify = serviceDetails.amplify;
-		if (serviceDetails?.elasticBeanstalk) payload.elasticBeanstalk = serviceDetails.elasticBeanstalk;
 		if (vercelDns) {
 			payload.vercelDnsAdded = vercelDns.success;
 			if (vercelDns.success) {
@@ -391,7 +351,7 @@ async function handleAWSDeploy(
 	send("✅ AWS credentials authenticated", 'auth');
 
 	// EC2-only AWS deploy path
-	const target: AWSDeploymentTarget = 'ec2';
+	const target: DeploymentTarget = 'ec2';
 	deployConfig.deploymentTarget = target;
 	sendDeploySteps(ws, AWS_DEPLOY_STEPS.ec2);
 
@@ -460,7 +420,7 @@ async function handleAWSDeploy(
 		result = "done";
 	}
 
-	
+
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (deployUrl && deployConfig.custom_url != deployUrl && deployConfig.service_name?.trim() && success) {
 		send("Adding Vercel DNS record...", 'done');
@@ -469,10 +429,10 @@ async function handleAWSDeploy(
 			previousCustomUrl: deployConfig.custom_url ?? null,
 		});
 	}
-	
-	if(vercelResult && vercelResult.success) {
+
+	if (vercelResult && vercelResult.success) {
 		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
-	} else if(deployUrl && vercelResult && success) {
+	} else if (deployUrl && vercelResult && success) {
 		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
 		success = false; // Mark overall deployment as failure if DNS addition failed (since custom URL is a key feature)
 	}
@@ -539,14 +499,14 @@ async function handleGCPDeploy(
 	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
 		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
 		send("Starting multi-service deployment...", 'detect');
-		
+
 		const { serviceUrls } = await handleMultiServiceDeploy(
 			deployConfig,
 			token,
 			ws,
 			cloneDir
 		);
-		
+
 		let summary = `\nMulti-service deployment completed!\n\nDeployed services:\n`;
 		for (const [name, url] of serviceUrls.entries()) {
 			summary += `  - ${name}: ${url}\n`;
@@ -598,7 +558,13 @@ async function handleGCPDeploy(
 	}
 
 	if (!deployConfig.use_custom_dockerfile && !fs.existsSync(dockerfilePath)) {
-		const language = detectAppLanguage(appDir, multiServiceConfig) ?? "node";
+		const language = deployConfig.core_deployment_info?.language?.toLowerCase() ||
+			(fs.existsSync(path.join(appDir, "package.json")) ? "node" :
+				fs.existsSync(path.join(appDir, "requirements.txt")) ? "python" :
+					fs.existsSync(path.join(appDir, "go.mod")) ? "go" :
+						fs.existsSync(path.join(appDir, "pom.xml")) || fs.existsSync(path.join(appDir, "build.gradle")) ? "java" :
+							fs.existsSync(path.join(appDir, "Cargo.toml")) ? "rust" :
+								"node");
 		send(`Detected Language: ${language}`, 'clone');
 
 		let dockerfileContent = "";
@@ -701,7 +667,7 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 	], ws, 'docker', { send });
 
 	send("Deploying to Cloud Run...", 'deploy');
-	
+
 	// Build environment variables
 	const envVarsList: string[] = [];
 	if (deployConfig.env_vars) {
@@ -711,9 +677,9 @@ CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
 		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
 		envVarsList.push(`ConnectionStrings__DefaultConnection=${dbConnectionString}`);
 	}
-	
+
 	const envArgs = envVarsList.length > 0 ? ["--set-env-vars", envVarsList.join(",")] : [];
-	
+
 	await runCommandLiveWithWebSocket("gcloud", [
 		"run", "deploy", serviceName,
 		"--image", gcpImage,

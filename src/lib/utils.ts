@@ -49,15 +49,12 @@ export function formatTimestamp(isoString: string | undefined): string {
 
 export function formatDeploymentTargetName(target: DeploymentTarget | undefined): string {
 	if (!target) return "Unknown";
-	
+
 	const targetNames: Record<DeploymentTarget, string> = {
-		'amplify': 'AWS Amplify',
-		'elastic-beanstalk': 'AWS Elastic Beanstalk',
-		'ecs': 'AWS ECS Fargate',
 		'ec2': 'AWS EC2 t3.micro',
 		'cloud-run': 'Google Cloud Run',
 	};
-	
+
 	return targetNames[target] || target;
 }
 
@@ -104,13 +101,13 @@ export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string
 
 export function parseEnvVarsToDisplay(envVarsString: string = "") {
 	const result = envVarsString
-	.split(",")
-	.map(pair => pair.trim())
-	.filter(pair => pair.includes("="))
-	.map(pair => {
-		const [key, ...rest] = pair.split("=")
-		return { name: key, value: rest.join("=") }
-	})
+		.split(",")
+		.map(pair => pair.trim())
+		.filter(pair => pair.includes("="))
+		.map(pair => {
+			const [key, ...rest] = pair.split("=")
+			return { name: key, value: rest.join("=") }
+		})
 
 	return result;
 }

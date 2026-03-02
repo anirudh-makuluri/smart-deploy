@@ -106,7 +106,7 @@ async function callBedrock(prompt: string): Promise<string> {
 
 	const response = await client.send(command);
 	const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-	
+
 	if (!responseBody.content || !responseBody.content[0]?.text) {
 		throw new Error("Invalid response from Bedrock API");
 	}
@@ -187,8 +187,8 @@ ${filePaths.join("\n")}
 
 File contents:
 ${Object.entries(fileContents)
-		.map(([file, content]) => `\n--- ${file} ---\n${content}`)
-		.join("\n")}
+			.map(([file, content]) => `\n--- ${file} ---\n${content}`)
+			.join("\n")}
 
 Required JSON keys:
 - core_deployment_info: { language (e.g. TypeScript, Python), framework (e.g. Next.js, Express), install_cmd, build_cmd (string or null), run_cmd, workdir (string or null) }
@@ -205,19 +205,15 @@ ${include_extra_info ? `
   - Static SPAs (Create React App, Vite, Angular, Vue CLI, Svelte) have uses_server=false because they are client-side only and don't need a server runtime.
   - Firebase, Supabase client SDKs, and other BaaS (Backend-as-a-Service) clients are NOT server code - they run in the browser. Static SPAs using Firebase/Supabase should have uses_server=false.
   - If mobile-only with no server code, set uses_mobile=true and uses_server=false.
-  - WebSockets alone do NOT automatically mean ECS is required - they can run on Elastic Beanstalk or EC2. Only use ECS for multi-service architectures or when Dockerfile is present.
+  - If mobile-only with no server code, set uses_mobile=true and uses_server=false.
 - deployment_hints: { has_dockerfile (boolean), is_multi_service (boolean), is_monorepo (boolean), has_database (boolean), nextjs_static_export (boolean; true only if Next.js and next.config has output: "export") }
   IMPORTANT: is_monorepo = true if the repo uses workspace tooling (pnpm-workspace.yaml, npm/yarn workspaces in package.json, turbo.json, nx.json, or lerna.json) with multiple apps/services in subdirectories (apps/, packages/, services/). A monorepo is automatically is_multi_service=true if it has 2+ deployable services. Mobile-only packages (React Native, Expo, Flutter) should NOT count as deployable services.
 - monorepo_services: (array, only if is_monorepo=true, otherwise omit or set to []) Each entry: { name (string), path (relative path e.g. "apps/web"), language (e.g. "TypeScript"), framework (e.g. "Next.js", "Express"), port (number or null), is_deployable (boolean - false for mobile-only, shared libs, config packages) }
   For each workspace package/app, identify if it's a deployable server-side service. Skip shared library packages (e.g. packages/config, packages/eslint-config) and mobile-only packages.
-- service_compatibility: For each platform set true ONLY if this project can be deployed and run there. All boolean:
-  - amplify: true for (1) static/frontend apps that build to static files (Create React App, Vite, Angular, Vue CLI, Svelte, or Next.js static export with output: "export"), OR (2) minimal/simple Next.js apps (e.g. hello-world examples: no api/ directory, no API routes, no getServerSideProps – just a few simple pages). Amplify supports these; prefer it as the simplest option. Do NOT set true for Next.js with API routes, getServerSideProps, or clear backend complexity.
-  - elastic_beanstalk: true for single-service Node.js, Python, Java, Go, .NET, PHP, Ruby apps without Dockerfile; includes apps with WebSockets; no multi-service architecture required. Best fit for full-stack Next.js (API routes, SSR, databases). For minimal Next.js (hello-world style) you may set both amplify and elastic_beanstalk true so Amplify is preferred.
-  - ecs: true ONLY for: (1) apps with explicit Dockerfile present, OR (2) true multi-service architecture (multiple interconnected services, not just frontend+websocket server), OR (3) apps requiring Docker-specific features. Do NOT use ECS just because WebSockets are present - Elastic Beanstalk handles WebSockets fine.
   - ec2: true for complex apps requiring full OS-level control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
-  Prefer the simplest compatible platform. For minimal Next.js (e.g. examples/hello-world: no api/, no API routes), set amplify=true so Amplify is recommended. For full Next.js with API routes or SSR complexity, set elastic_beanstalk=true (and amplify=false).
+  Prefer the simplest compatible platform. For Cloud Run, ensure the app is stateless.
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;

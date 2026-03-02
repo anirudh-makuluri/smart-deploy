@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, parseEnvVarsToStore, sanitizeAndParseAIResponse } from "@/lib/utils";
 import { toast } from "sonner";
-import { selectDeploymentTargetFromMetadata, isDeploymentDisabled, type DeploymentAnalysisFromMetadata } from "@/lib/deploymentTargetFromMetadata";
+import { isDeploymentDisabled } from "@/lib/deploymentTargetFromMetadata";
 import { useAppData } from "@/store/useAppData";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
@@ -32,7 +32,7 @@ import DeployOptions from "@/components/DeployOptions";
 import { RotateCw, Upload, Trash2, Plus, Layers, Check, X } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, AWSDeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
+import { AIGenProjectMetadata, DeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -92,14 +92,9 @@ export default function ConfigTabs(
 		deployment?.monorepo_services ?? []
 	);
 
-	const isDeploymentTarget = (t: string): t is AWSDeploymentTarget =>
-		["amplify", "elastic-beanstalk", "ecs", "ec2", "cloud-run"].includes(t);
-	// Always use EC2 for AWS deployments; deployment target selector has been removed
-	const [deploymentAnalysis, setDeploymentAnalysis] = useState<DeploymentAnalysisFromMetadata>(() => ({
-		target: "ec2",
-		reason: "Using EC2.",
-		warnings: [],
-	}));
+	const isDeploymentTarget = (t: string): t is DeploymentTarget =>
+		["ec2", "cloud-run"].includes(t);
+
 
 	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
 
@@ -198,10 +193,8 @@ export default function ConfigTabs(
 				use_custom_dockerfile: values.use_custom_dockerfile,
 				env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
 				...(values.custom_url && { custom_url: values.custom_url }),
-				...(deploymentAnalysis && {
-					deploymentTarget: deploymentAnalysis.target,
-					deployment_target_reason: deploymentAnalysis.reason,
-				}),
+				deploymentTarget: "ec2",
+				deployment_target_reason: "Using EC2.",
 				...(mergedCoreInfo && { core_deployment_info: mergedCoreInfo }),
 				...(projectMetadata && {
 					features_infrastructure: projectMetadata.features_infrastructure,
@@ -216,7 +209,7 @@ export default function ConfigTabs(
 			onConfigChangeRef.current?.(partial);
 		}, AUTO_SAVE_DEBOUNCE_MS);
 		return () => clearTimeout(timer);
-	}, [watchedForm, envEntries, deploymentAnalysis, projectMetadata, monorepoServices, deployment?.id]);
+	}, [watchedForm, envEntries, projectMetadata, monorepoServices, deployment?.id]);
 
 	function handleAIBtn() {
 		setAiFetching(true);
@@ -247,20 +240,13 @@ export default function ConfigTabs(
 					form.setValue('run_cmd', core_deployment_info.run_cmd);
 					form.setValue('workdir', core_deployment_info.workdir ?? '');
 				}
-				const analysis = parsed_response ? selectDeploymentTargetFromMetadata(parsed_response) : null;
-				// Always use EC2; keep reason from scan if available
-				setDeploymentAnalysis(
-					analysis
-						? { target: "ec2", reason: analysis.reason, warnings: analysis.warnings }
-						: { target: "ec2", reason: "Using EC2.", warnings: [] }
-				);
 				if (parsed_response) {
 					const payload = {
 						...form.getValues(),
 						...parsed_response,
 						monorepo_services: parsed_response.monorepo_services ?? [],
 						deploymentTarget: "ec2",
-					deployment_target_reason: analysis?.reason ?? "Using EC2.",
+						deployment_target_reason: "Using EC2.",
 					};
 					onScanComplete(payload);
 				}
@@ -277,13 +263,13 @@ export default function ConfigTabs(
 		} as DeployConfig;
 		if (isDeploymentDisabled(effective)) return true;
 		// No compatible deployment target (LLM set all platforms false)
-		if (projectMetadata && !deploymentAnalysis) {
+		if (projectMetadata) {
 			const compat = (projectMetadata as AIGenProjectMetadata).service_compatibility;
 			if (compat && typeof compat === "object" && Object.values(compat).every((v) => v === false))
 				return true;
 		}
 		return false;
-	}, [deployment, projectMetadata, deploymentAnalysis]);
+	}, [deployment, projectMetadata]);
 
 	const featuresInfra = projectMetadata?.features_infrastructure;
 
@@ -308,9 +294,9 @@ export default function ConfigTabs(
 										{!projectMetadata?.core_deployment_info?.language && !projectMetadata?.core_deployment_info?.run_cmd && (
 											<li>No deployable code detected (empty repo or docs-only)</li>
 										)}
-										{projectMetadata && !deploymentAnalysis && (() => {
+										{projectMetadata && (() => {
 											const compat = (projectMetadata as any).service_compatibility;
-											if (compat && typeof compat === "object" && Object.values(compat).every(v => v === false)) {
+											if (compat && typeof compat === "object" && Object.values(compat).every((v: any) => v === false)) {
 												return <li>No compatible deployment platform found</li>;
 											}
 											return null;
@@ -370,11 +356,10 @@ export default function ConfigTabs(
 							{monorepoServices.map((svc, idx) => (
 								<div
 									key={idx}
-									className={`flex items-center justify-between p-3 rounded-lg border ${
-										svc.is_deployable
-											? 'border-border/60 bg-background/60'
-											: 'border-border/30 bg-muted/20 opacity-60'
-									}`}
+									className={`flex items-center justify-between p-3 rounded-lg border ${svc.is_deployable
+										? 'border-border/60 bg-background/60'
+										: 'border-border/30 bg-muted/20 opacity-60'
+										}`}
 								>
 									<div className="flex items-center gap-3 flex-wrap">
 										<div className="flex items-center gap-2">
@@ -407,11 +392,10 @@ export default function ConfigTabs(
 										)}
 										<Badge
 											variant={svc.is_deployable ? "default" : "secondary"}
-											className={`text-xs ${
-												svc.is_deployable
-													? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/15'
-													: 'bg-muted text-muted-foreground'
-											}`}
+											className={`text-xs ${svc.is_deployable
+												? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/15'
+												: 'bg-muted text-muted-foreground'
+												}`}
 										>
 											{svc.is_deployable ? 'Deploy' : 'Skip'}
 										</Badge>
@@ -434,10 +418,6 @@ export default function ConfigTabs(
 						...data,
 						env_vars: envString,
 						...(projectMetadata ?? {}), // merge only if not null
-						...(deploymentAnalysis && {
-							deploymentTarget: deploymentAnalysis.target,
-							deployment_target_reason: deploymentAnalysis.reason
-						}),
 					});
 				})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
 					<p className="font-bold text-xl whitespace-nowrap my-4 text-foreground">Environment & Configuration</p>
@@ -470,10 +450,6 @@ export default function ConfigTabs(
 											...formValues,
 											env_vars: envString,
 											...(projectMetadata ?? {}),
-											...(deploymentAnalysis && {
-												deploymentTarget: deploymentAnalysis.target,
-												deployment_target_reason: deploymentAnalysis.reason
-											}),
 											...(commitSha && { commitSha }),
 										});
 									}}

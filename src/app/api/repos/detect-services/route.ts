@@ -29,7 +29,7 @@ function toDetectedService(s: ServiceDefinition, repoRoot: string, cloneDir: str
 	return {
 		name: s.name,
 		path: pathRel,
-		language: s.language,
+		language: s.language || "",
 		framework: s.framework,
 		port: s.port,
 		...(core_deployment_info && { core_deployment_info }),
@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
 				multiServiceConfig.services.length > 0
 					? multiServiceConfig.services.map((s) => toDetectedService(s, cloneDir, cloneDir))
 					: (() => {
-							const core = detectDeployConfig(cloneDir, { relativeWorkdir: ".", language: "node" });
-							return [{ name: "app", path: ".", language: "node", port: 3000, core_deployment_info: core }];
-						})();
+						const core = detectDeployConfig(cloneDir, { relativeWorkdir: ".", language: "node" });
+						return [{ name: "app", path: ".", language: "node", port: 3000, core_deployment_info: core }];
+					})();
 
 			// Persist to DB for this user
 			const userID = (session as { userID?: string })?.userID;

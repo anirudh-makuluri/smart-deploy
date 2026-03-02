@@ -41,9 +41,7 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type AWSDeploymentTarget = 'amplify' | 'elastic-beanstalk' | 'ecs' | 'ec2' | 'cloud-run';
-export type GCPDeploymentTarget = 'cloud-run';
-export type DeploymentTarget = AWSDeploymentTarget | GCPDeploymentTarget;
+export type DeploymentTarget = 'ec2' | 'cloud-run';
 
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
@@ -56,31 +54,6 @@ export type EC2DeployDetails = {
 	subnetId: string;
 	securityGroupId: string;
 	amiId: string;
-};
-
-export type ECSDeployDetails = {
-	success: boolean;
-	clusterName: string;
-	clusterArn: string;
-	/** ECS service names (e.g. ["my-app-svc"]) */
-	serviceNames: string[];
-	vpcId: string;
-	subnetIds: string[];
-	securityGroupId: string;
-};
-
-export type AmplifyDeployDetails = {
-	success: boolean;
-	appId: string;
-	appName: string;
-	branchName: string;
-};
-
-export type ElasticBeanstalkDeployDetails = {
-	success: boolean;
-	appName: string;
-	envName: string;
-	s3Bucket: string;
 };
 
 export type CloudRunDeployDetails = {
@@ -127,9 +100,6 @@ export type DeployConfig = {
 
 	// Per-service deployment details (populated after deploy, persisted for redeploy)
 	ec2?: EC2DeployDetails;
-	ecs?: ECSDeployDetails;
-	amplify?: AmplifyDeployDetails;
-	elasticBeanstalk?: ElasticBeanstalkDeployDetails;
 	cloudRun?: CloudRunDeployDetails;
 }
 
@@ -211,9 +181,6 @@ export type RepoServicesRecord = {
 
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */
 export type ServiceCompatibility = {
-	amplify?: boolean;
-	elastic_beanstalk?: boolean;
-	ecs?: boolean;
 	ec2?: boolean;
 	cloud_run?: boolean;
 };

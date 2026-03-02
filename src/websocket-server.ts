@@ -23,7 +23,7 @@ async function getSnapshotFromHistory(deploymentId: string, userID?: string) {
 	const latest = historyResponse.history[0];
 	return {
 		steps: latest.steps ?? [],
-		status: latest.success ? "success" : "error",
+		status: (latest.success ? "success" : "error") as "success" | "error",
 		error: latest.success ? null : "Deployment failed",
 	};
 }

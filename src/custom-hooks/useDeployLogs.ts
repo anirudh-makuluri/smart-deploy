@@ -53,7 +53,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 	const [deployError, setDeployError] = useState<string | null>(null);
 	const [vercelDnsStatus, setVercelDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
 	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
-	const [serviceLogs, setServiceLogs] = useState<{timestamp : string, message ?: string}[]>([]);
+	const [serviceLogs, setServiceLogs] = useState<{ timestamp: string, message?: string }[]>([]);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
@@ -148,18 +148,15 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 									payload.deploymentTarget ??
 									deployConfigRef.current.deploymentTarget,
 								...(payload.ec2 != null && { ec2: payload.ec2 }),
-								...(payload.ecs != null && { ecs: payload.ecs }),
-								...(payload.amplify != null && { amplify: payload.amplify }),
-								...(payload.elasticBeanstalk != null && { elasticBeanstalk: payload.elasticBeanstalk }),
 							};
 							// Use backend-provided customUrl when Vercel DNS was added there
 							updated.custom_url =
 								typeof payload.customUrl === "string" && payload.customUrl.trim()
 									? payload.customUrl.trim()
 									: (() => {
-											const displayUrl = getDeploymentDisplayUrl(updated);
-											return displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
-										})();
+										const displayUrl = getDeploymentDisplayUrl(updated);
+										return displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
+									})();
 							deployConfigRef.current = updated;
 						}
 						setSteps((prev) =>
@@ -257,7 +254,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 				if (socket?.readyState === WebSocket.OPEN) {
 					const object = {
 						type: 'deploy',
-						payload : {
+						payload: {
 							deployConfig,
 							token,
 							userID
@@ -273,7 +270,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		} else {
 			const reader = new FileReader();
 
-			reader.onload =  async () => {
+			reader.onload = async () => {
 				const base64 = reader.result as string;
 				deployConfig.dockerfileInfo = {
 					name: file.name,
@@ -306,18 +303,18 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 			};
 
 			reader.readAsDataURL(file);
-			
+
 		}
 	};
 
 	const initiateServiceLogs = () => {
-		if(!serviceName && !deploymentId) return;
+		if (!serviceName && !deploymentId) return;
 
 		const socket = wsRef.current;
 		if (socket?.readyState === WebSocket.OPEN) {
 			const object = {
 				type: 'service_logs',
-				payload : {
+				payload: {
 					serviceName,
 					deploymentId,
 				}
@@ -326,7 +323,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		}
 	}
 
-	function processServiceLogs(logs : {timestamp : string, message ?: string}[]) {
+	function processServiceLogs(logs: { timestamp: string, message?: string }[]) {
 		setServiceLogs(prev => [...prev, ...logs]);
 	}
 
@@ -348,10 +345,10 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 			return prev.map((step) =>
 				step.id === id
 					? {
-							...step,
-							status: msg.includes("✅") ? "success" : msg.includes("❌") ? "error" : step.status === "pending" ? "in_progress" : step.status,
-							logs: [...step.logs, msg],
-						}
+						...step,
+						status: msg.includes("✅") ? "success" : msg.includes("❌") ? "error" : step.status === "pending" ? "in_progress" : step.status,
+						logs: [...step.logs, msg],
+					}
 					: step
 			);
 		});

@@ -305,11 +305,11 @@ function generateUserDataScript(
 	let wsPort = "";
 	const ports: string[] = [];
 	const serviceDirs = services.map(s => s.dir === "." ? "." : `./${s.dir}`).join(" ");
-	
+
 	// Generate Dockerfile content for each service
 	const dockerfileContents: Record<string, string> = {};
 	const isMonorepo = services.some(s => s.isMonorepo);
-	
+
 	for (const svc of services) {
 		if (isMonorepo && svc.relativePath) {
 			// For monorepo services, generate a monorepo-aware Dockerfile
@@ -341,7 +341,7 @@ function generateUserDataScript(
 			dockerfileContents[svc.dir] = generateDockerfileContent(deployConfig, svc.dir);
 		}
 	}
-	
+
 	for (const svc of services) {
 		const p = svc.port || 8080;
 		ports.push(String(p));
@@ -985,7 +985,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 			consecutiveErrors++;
 			const errorMsg = e.message ?? String(e);
 			const sanitized = sanitizeConsoleOutput(errorMsg.replace(/[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF]/g, ""));
-			
+
 			if (errorMsg.includes("charmap") || errorMsg.includes("codec") || errorMsg.includes("encode")) {
 				if (!encodingErrorShown) {
 					send(`Note: Console output encoding issue detected (Windows compatibility). Continuing...`, "deploy");
@@ -995,7 +995,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 			} else {
 				send(`Error fetching console: ${sanitized}`, "deploy");
 			}
-			
+
 			if (consecutiveErrors >= 5) {
 				send("Too many consecutive errors fetching console output. Continuing deployment...", "deploy");
 				break;
@@ -1003,7 +1003,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 		}
 		await new Promise(r => setTimeout(r, 15_000));
 	}
-	
+
 	if (cloudInitFailureDetected) {
 		send("⚠️ Cloud-init failure was detected. Proceeding to check if application is running despite the failure...", "deploy");
 	}
@@ -1107,7 +1107,7 @@ export async function handleEC2(
 	const send: SendFn = parentSend || createWebSocketLogger(ws);
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const certificateArn = config.ECS_ACM_CERTIFICATE_ARN?.trim() || "";
+	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 	const sharedAlbEnabled = !!certificateArn && !!buildServiceHostname("app");
 	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
 

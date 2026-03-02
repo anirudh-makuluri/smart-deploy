@@ -7,7 +7,7 @@ import DeploymentHistory from "@/components/DeploymentHistory";
 import DeployWorkspaceMenu, { MenuSection } from "@/components/deploy-workspace/DeployWorkspaceMenu";
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
- 
+
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -49,10 +49,10 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	const deploymentIdForLogs = deployment?.id ?? deploymentId;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, deploymentIdForLogs);
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
-	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" : 
-		deployStatus === "running" ? "running" : 
-		deployStatus === "success" ? "success" : 
-		deployStatus === "error" ? "error" : "not-started";
+	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" :
+		deployStatus === "running" ? "running" :
+			deployStatus === "success" ? "success" :
+				deployStatus === "error" ? "error" : "not-started";
 
 	// Timer effect - starts when deployment begins
 	React.useEffect(() => {
@@ -77,7 +77,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		const hrs = Math.floor(seconds / 3600);
 		const mins = Math.floor((seconds % 3600) / 60);
 		const secs = seconds % 60;
-		
+
 		if (hrs > 0) {
 			return `${hrs}h ${mins}m ${secs}s`;
 		} else if (mins > 0) {
@@ -139,7 +139,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	// Fetch deployment history once when page loads
 	React.useEffect(() => {
 		if (!resolvedDeploymentId || deploymentHistory !== null) return;
-		
+
 		setIsLoadingHistory(true);
 		fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(resolvedDeploymentId)}`)
 			.then((res) => res.json())
@@ -300,11 +300,11 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		const baseCoreInfo = values.core_deployment_info ?? resolvedDeployment?.core_deployment_info;
 		const coreDeploymentInfo = baseCoreInfo
 			? {
-					...baseCoreInfo,
-					...(values.install_cmd != null && { install_cmd: values.install_cmd }),
-					...(values.run_cmd != null && { run_cmd: values.run_cmd }),
-					...(values.workdir != null && { workdir: values.workdir || null }),
-				}
+				...baseCoreInfo,
+				...(values.install_cmd != null && { install_cmd: values.install_cmd }),
+				...(values.run_cmd != null && { run_cmd: values.run_cmd }),
+				...(values.workdir != null && { workdir: values.workdir || null }),
+			}
 			: undefined;
 
 		const payload: DeployConfig = {
@@ -321,9 +321,6 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 			...(values.deploymentTarget && { deploymentTarget: values.deploymentTarget }),
 			...(values.deployment_target_reason && { deployment_target_reason: values.deployment_target_reason }),
 			...(resolvedDeployment?.ec2 && { ec2: resolvedDeployment.ec2 }),
-			...(resolvedDeployment?.ecs && { ecs: resolvedDeployment.ecs }),
-			...(resolvedDeployment?.amplify && { amplify: resolvedDeployment.amplify }),
-			...(resolvedDeployment?.elasticBeanstalk && { elasticBeanstalk: resolvedDeployment.elasticBeanstalk }),
 		};
 
 		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
@@ -378,9 +375,9 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 						{resolvedDeployment && (
-							<DeploymentHistory 
-								deploymentId={resolvedDeployment.id} 
-								prefetchedData={deploymentHistory} 
+							<DeploymentHistory
+								deploymentId={resolvedDeployment.id}
+								prefetchedData={deploymentHistory}
 								isPrefetching={isLoadingHistory}
 							/>
 						)}
@@ -422,11 +419,11 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 						{resolvedDeployment && (
-							<DeployOverview 
-								deployment={resolvedDeployment} 
+							<DeployOverview
+								deployment={resolvedDeployment}
 								isDeploying={isDeploying}
 								onRedeploy={handleRedeploy}
-								onEditConfiguration={() => {setActiveSection("env"); setEditMode(true);}}
+								onEditConfiguration={() => { setActiveSection("env"); setEditMode(true); }}
 								repo={resolvedRepo}
 							/>
 						)}

@@ -296,7 +296,7 @@ export default function Home() {
 									<div>
 										<h3 className="font-mono text-sm font-bold mb-2">02_MULTI_REGION</h3>
 										<p className="text-sm text-muted-foreground">
-											Replicate cloud infrastructure provisioning across AWS, and GCP as a single target.
+											Replicate cloud infrastructure provisioning across AWS and GCP as a single target.
 										</p>
 									</div>
 								</div>
