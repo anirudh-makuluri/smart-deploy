@@ -105,18 +105,10 @@ function needsOpenSSLLegacyProvider(appDir: string): boolean {
 async function zipDirectory(
 	sourceDir: string,
 	outputPath: string,
-	ws: any,
+	send: (msg: string, id: string) => void,
 	stepId: string
 ): Promise<string> {
-	const send = (msg: string) => {
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({
-				type: "deploy_logs",
-				payload: { id: stepId, msg, time: new Date().toISOString() },
-			}));
-		}
-	};
-	send("Creating zip from build output...");
+	send("Creating zip from build output...", stepId);
 	await new Promise<void>((resolve, reject) => {
 		const out = fs.createWriteStream(outputPath);
 		const archive = archiver("zip", { zlib: { level: 6 } });
@@ -127,7 +119,7 @@ async function zipDirectory(
 		archive.directory(sourceDir, false);
 		archive.finalize();
 	});
-	send(`Zip created: ${path.basename(outputPath)}`);
+	send(`Zip created: ${path.basename(outputPath)}`, stepId);
 	return outputPath;
 }
 
@@ -137,18 +129,10 @@ async function zipDirectory(
 async function uploadZipToUrl(
 	zipPath: string,
 	uploadUrl: string,
-	ws: any,
+	send: (msg: string, id: string) => void,
 	stepId: string
 ): Promise<void> {
-	const send = (msg: string) => {
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({
-				type: "deploy_logs",
-				payload: { id: stepId, msg, time: new Date().toISOString() },
-			}));
-		}
-	};
-	send("Uploading zip to Amplify...");
+	send("Uploading zip to Amplify...", stepId);
 	const buf = fs.readFileSync(zipPath);
 	const res = await fetch(uploadUrl, {
 		method: "PUT",
@@ -158,7 +142,7 @@ async function uploadZipToUrl(
 	if (!res.ok) {
 		throw new Error(`Upload failed: ${res.status} ${res.statusText}`);
 	}
-	send("Zip upload complete.");
+	send("Zip upload complete.", stepId);
 }
 
 /**
@@ -288,6 +272,8 @@ export async function handleAmplify(
 	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "amplify-deploy-"));
 	const zipPath = path.join(tmpDir, "deploy.zip");
 	await zipDirectory(buildOutputDir, zipPath, ws, "bundle");
+	await zipDirectory(buildOutputDir, zipPath, send, "bundle");
+	await uploadZipToUrl(zipPath, uploadUrl, send, "upload");
 
 	// Get or create Amplify app
 	let appId: string;

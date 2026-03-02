@@ -5,6 +5,28 @@ import { WebSocketServer } from "ws";
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
+import { dbHelper } from "./db-helper";
+
+async function getSnapshotFromHistory(deploymentId: string, userID?: string) {
+	let resolvedUserId = userID;
+	if (!resolvedUserId) {
+		const deploymentResponse = await dbHelper.getDeployment(deploymentId);
+		resolvedUserId = deploymentResponse.deployment?.ownerID;
+	}
+	if (!resolvedUserId) return null;
+
+	const historyResponse = await dbHelper.getDeploymentHistory(deploymentId, resolvedUserId);
+	if (historyResponse.error || !historyResponse.history || historyResponse.history.length === 0) {
+		return null;
+	}
+
+	const latest = historyResponse.history[0];
+	return {
+		steps: latest.steps ?? [],
+		status: latest.success ? "success" : "error",
+		error: latest.success ? null : "Deployment failed",
+	};
+}
 
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer();
@@ -48,7 +70,10 @@ wss.on("connection", (ws) => {
 						}
 						break;
 					}
-					const snapshot = deployLogsStore.getSnapshot(userID, deploymentId);
+					let snapshot = deployLogsStore.getSnapshot(userID, deploymentId);
+					if (!snapshot) {
+						snapshot = await getSnapshotFromHistory(deploymentId, userID);
+					}
 					const time = new Date().toISOString();
 					if (snapshot) {
 						if (ws?.readyState === 1) {

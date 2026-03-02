@@ -203,17 +203,17 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		return ws;
 	}
 
-	// On mount: if this deployment is in progress (sessionStorage), open socket and request logs so user sees them after refresh.
+	// On mount: whenever deploymentId is provided, request deploy logs snapshot.
 	useEffect(() => {
 		if (!deploymentId || typeof window === "undefined") return;
 		const active = getActiveDeployment();
-		if (!active || active.deploymentId !== deploymentId) return;
+		const payloadUserId = active?.deploymentId === deploymentId ? active.userID : undefined;
 		openSocket(() => {
 			const socket = wsRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
 				socket.send(JSON.stringify({
 					type: "get_deploy_logs",
-					payload: { deploymentId: active.deploymentId, userID: active.userID },
+					payload: { deploymentId, userID: payloadUserId },
 				}));
 			}
 		});

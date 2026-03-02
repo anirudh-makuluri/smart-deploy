@@ -14,9 +14,6 @@ import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogge
 
 // AWS imports
 import { setupAWSCredentials, detectLanguage as detectAppLanguage } from "./aws";
-import { handleAmplify } from "./aws/handleAmplify";
-import { handleElasticBeanstalk } from "./aws/handleElasticBeanstalk";
-import { handleECS } from "./aws/handleECS";
 import { handleEC2 } from "./aws/handleEC2";
 import { createRDSInstance } from "./aws/handleRDS";
 
@@ -42,6 +39,10 @@ export async function handleDeploy(
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
 	const send = createDeployStepsLogger(ws, deploySteps, options);
+	const previousDeploySend = ws ? (ws as any).__deploySend : undefined;
+	if (ws) {
+		(ws as any).__deploySend = send;
+	}
 
 	console.log("in handle deploy");
 
@@ -153,6 +154,14 @@ export async function handleDeploy(
 		);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		throw error;
+	} finally {
+		if (ws) {
+			if (previousDeploySend) {
+				(ws as any).__deploySend = previousDeploySend;
+			} else {
+				delete (ws as any).__deploySend;
+			}
+		}
 	}
 }
 
@@ -381,17 +390,10 @@ async function handleAWSDeploy(
 	await setupAWSCredentials(ws);
 	send("✅ AWS credentials authenticated", 'auth');
 
-	// Always use EC2 for AWS deployments (other targets remain in codebase for reference)
-	const awsTargets: AWSDeploymentTarget[] = ['amplify', 'elastic-beanstalk', 'ecs', 'ec2'];
-	const savedTarget = deployConfig.deploymentTarget;
-	
-	if (!savedTarget || !awsTargets.includes(savedTarget)) {
-		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
-	}
-	const target: AWSDeploymentTarget = savedTarget;
-
-
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
+	// EC2-only AWS deploy path
+	const target: AWSDeploymentTarget = 'ec2';
+	deployConfig.deploymentTarget = target;
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS.ec2);
 
 	// Handle database provisioning if needed
 	let dbConnectionString: string | undefined;
@@ -418,100 +420,44 @@ async function handleAWSDeploy(
 	const serviceDetails: ServiceDeployDetails = {};
 	let success = false;
 
-	// Route to appropriate AWS service
-	switch (target) {
-		case 'amplify':
-			const amplifyResult = await handleAmplify(deployConfig, appDir, ws, send);
-			deployUrl = amplifyResult.url;
-			serviceDetails.amplify = amplifyResult.details;
-			success = amplifyResult.success;
-			result = "done";
-			break;
+	const ec2Result = await handleEC2(
+		deployConfig,
+		appDir,
+		multiServiceConfig,
+		token,
+		dbConnectionString,
+		ws,
+		send
+	);
+	success = ec2Result.success;
 
-		case 'elastic-beanstalk':
-			const ebResult = await handleElasticBeanstalk(deployConfig, appDir, ws, send);
-			deployUrl = ebResult.url;
-			serviceDetails.elasticBeanstalk = ebResult.details;
-			success = ebResult.success;
-			result = "done";
-			break;
+	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
+	serviceDetails.ec2 = {
+		success: ec2Result.success,
+		baseUrl: ec2Result.baseUrl,
+		instanceId: ec2Result.instanceId,
+		publicIp: ec2Result.publicIp,
+		vpcId: ec2Result.vpcId,
+		subnetId: ec2Result.subnetId,
+		securityGroupId: ec2Result.securityGroupId,
+		amiId: ec2Result.amiId,
+	};
 
-		case 'ecs':
-			const ecsResult = await handleECS(
-				deployConfig,
-				appDir,
-				multiServiceConfig,
-				dbConnectionString,
-				ws,
-				send
-			);
-			// Build summary
-			let summary = `\nDeployment completed!\n\nDeployed services:\n`;
-			for (const [name, url] of ecsResult.serviceUrls.entries()) {
-				summary += `  - ${name}: ${url}\n`;
-			}
-			send(summary, 'done');
-			// Primary URL for client (first service); use shared ALB DNS for Vercel DNS if available
-			const firstUrl = ecsResult.serviceUrls.entries().next().value;
-			deployUrl = ecsResult.sharedAlbDns || (firstUrl ? firstUrl[1] : undefined);
-		serviceDetails.ecs = {
-			success: ecsResult.success,
-			clusterName: ecsResult.details.clusterName,
-			clusterArn: ecsResult.details.clusterArn,
-			serviceNames: ecsResult.details.serviceNames,
-			vpcId: ecsResult.details.vpcId,
-			subnetIds: ecsResult.details.subnetIds,
-			securityGroupId: ecsResult.details.securityGroupId,
-		};
-			success = ecsResult.success;
-			result = "done";
-			break;
-
-		case 'ec2':
-			const ec2Result = await handleEC2(
-				deployConfig,
-				appDir,
-				multiServiceConfig,
-				token,
-				dbConnectionString,
-				ws,
-				send
-			);
-			success = ec2Result.success;
-
-			// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
-			serviceDetails.ec2 = {
-				success: ec2Result.success,
-				baseUrl: ec2Result.baseUrl,
-				instanceId: ec2Result.instanceId,
-				publicIp: ec2Result.publicIp,
-				vpcId: ec2Result.vpcId,
-				subnetId: ec2Result.subnetId,
-				securityGroupId: ec2Result.securityGroupId,
-				amiId: ec2Result.amiId,
-			};
-
-			if(ec2Result.baseUrl == "") {
-				send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
-				result = "error";
-				break;
-			}
-
-			// Build summary
-			let ec2Summary = `\nDeployment completed!\n`;
-			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-			ec2Summary += `\nService URLs:\n`;
-			for (const [name, url] of ec2Result.serviceUrls.entries()) {
-				ec2Summary += `  - ${name}: ${url}\n`;
-			}
-			send(ec2Summary, 'done');
-			deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
-			result = "done";
-			break;
-
-		default:
-			throw new Error(`Unknown deployment target: ${target}`);
+	if (ec2Result.baseUrl == "") {
+		send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
+		result = "error";
+	} else {
+		// Build summary
+		let ec2Summary = `\nDeployment completed!\n`;
+		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
+		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
+		ec2Summary += `\nService URLs:\n`;
+		for (const [name, url] of ec2Result.serviceUrls.entries()) {
+			ec2Summary += `  - ${name}: ${url}\n`;
+		}
+		send(ec2Summary, 'done');
+		deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
+		result = "done";
 	}
 
 	

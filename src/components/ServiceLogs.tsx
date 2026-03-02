@@ -98,7 +98,7 @@ export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 			</div>
 
 			<AlertDialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
-				<AlertDialogContent className="w-[80vw]">
+				<AlertDialogContent className="w-[80vw] z-120">
 					<AlertDialogHeader>
 						<AlertDialogTitle>Log Message</AlertDialogTitle>
 					</AlertDialogHeader>

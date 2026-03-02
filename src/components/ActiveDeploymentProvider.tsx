@@ -6,11 +6,18 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
 import { Button } from "@/components/ui/button";
 import { X, Loader2 } from "lucide-react";
+import type { DeployStep } from "@/app/types";
 
-type LogsModalState = { deploymentId: string; userID?: string } | null;
+type PrefetchedDeployLogs = {
+	steps: DeployStep[];
+	status?: "running" | "success" | "error";
+	error?: string | null;
+};
+
+type LogsModalState = { deploymentId: string; userID?: string; prefetched?: PrefetchedDeployLogs } | null;
 
 const ActiveDeploymentContext = React.createContext<{
-	openLogsModal: (deploymentId: string, userID?: string) => void;
+	openLogsModal: (deploymentId: string, userID?: string, prefetched?: PrefetchedDeployLogs) => void;
 	closeLogsModal: () => void;
 }>({
 	openLogsModal: () => {},
@@ -96,10 +103,12 @@ function ActiveDeploymentNotification() {
 
 function DeployLogsModalContent({
 	deploymentId,
+	prefetched,
 	onClose,
 }: {
 	deploymentId: string;
 	userID?: string;
+	prefetched?: PrefetchedDeployLogs;
 	onClose: () => void;
 }) {
 	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
@@ -107,12 +116,30 @@ function DeployLogsModalContent({
 		deploymentId
 	);
 
+	const fallbackEntries = React.useMemo(() => {
+		if (!prefetched?.steps?.length) return [] as { timestamp?: string; message?: string }[];
+		const entries: { timestamp?: string; message?: string }[] = [];
+		for (const step of prefetched.steps) {
+			for (const log of step.logs ?? []) {
+				entries.push({
+					timestamp: step.endedAt ?? step.startedAt,
+					message: log,
+				});
+			}
+		}
+		return entries;
+	}, [prefetched]);
+
+	const effectiveDeployLogEntries = deployLogEntries.length > 0 ? deployLogEntries : fallbackEntries;
+	const effectiveStatus = deployStatus === "not-started" && prefetched?.status ? prefetched.status : deployStatus;
+	const effectiveError = deployError ?? prefetched?.error ?? null;
+
 	return (
 		<>
 			<div className="flex items-center justify-between gap-4 pr-8">
 				<h2 className="text-lg font-semibold text-foreground">
 					Deployment logs
-					{deployStatus === "running" && (
+					{effectiveStatus === "running" && (
 						<span className="ml-2 inline-flex items-center gap-1 text-sm font-normal text-muted-foreground">
 							<Loader2 className="size-3.5 animate-spin" />
 							In progress
@@ -126,10 +153,10 @@ function DeployLogsModalContent({
 			<div className="mt-4 min-h-[50vh] max-h-[70vh] overflow-hidden flex flex-col rounded-xl border border-border bg-card p-4">
 				<DeployLogsView
 					showDeployLogs={true}
-					deployLogEntries={deployLogEntries}
+					deployLogEntries={effectiveDeployLogEntries}
 					serviceLogs={serviceLogs}
-					deployStatus={deployStatus}
-					deployError={deployError}
+					deployStatus={effectiveStatus}
+					deployError={effectiveError}
 				/>
 			</div>
 			<div className="mt-4 flex justify-end">
@@ -155,6 +182,7 @@ function DeployLogsModal({ state, onClose }: { state: LogsModalState; onClose: (
 				<DeployLogsModalContent
 					deploymentId={state.deploymentId}
 					userID={state.userID}
+					prefetched={state.prefetched}
 					onClose={onClose}
 				/>
 			</div>
@@ -170,8 +198,8 @@ export default function ActiveDeploymentProvider({
 	const [logsModal, setLogsModal] = React.useState<LogsModalState>(null);
 
 	const openLogsModal = React.useCallback(
-		(deploymentId: string, userID?: string) => {
-			setLogsModal({ deploymentId, userID });
+		(deploymentId: string, userID?: string, prefetched?: PrefetchedDeployLogs) => {
+			setLogsModal({ deploymentId, userID, prefetched });
 		},
 		[]
 	);

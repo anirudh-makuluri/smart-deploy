@@ -20,6 +20,8 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Download, Loader2, Search } from "lucide-react";
+import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
+import type { DeployStep } from "@/app/types";
 
 const statusOptions = ["all", "success", "failed"] as const;
 const envOptions = ["all", "production", "staging", "development"] as const;
@@ -35,7 +37,7 @@ type DeploymentHistoryRow = {
 	durationMs?: number;
 	serviceName: string;
 	repoUrl?: string;
-	steps: { id: string; label: string; logs: string[]; status: string }[];
+	steps: DeployStep[];
 	configSnapshot: Record<string, unknown>;
 };
 
@@ -83,6 +85,7 @@ function downloadCsv(rows: DeploymentHistoryRow[]) {
 }
 
 export default function DeploymentHistoryTable() {
+	const { openLogsModal } = useActiveDeployment();
 	const [history, setHistory] = React.useState<DeploymentHistoryRow[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [query, setQuery] = React.useState("");
@@ -186,7 +189,17 @@ export default function DeploymentHistoryTable() {
 						</TableHeader>
 						<TableBody>
 							{filtered.map((row) => (
-								<TableRow key={row.id}>
+								<TableRow
+									key={row.id}
+									onClick={() =>
+										openLogsModal(row.deploymentId, undefined, {
+											steps: row.steps,
+											status: row.success ? "success" : "error",
+											error: row.success ? null : "Deployment failed",
+										})
+									}
+									className="cursor-pointer"
+								>
 									<TableCell>
 										<Badge
 											variant="outline"

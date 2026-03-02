@@ -7,6 +7,12 @@ import { DeployStep } from "../app/types";
  */
 export function createWebSocketLogger(ws: any) {
 	return (msg: string, id: string) => {
+		const trackedSend = ws ? (ws as any).__deploySend : undefined;
+		if (trackedSend && typeof trackedSend === "function") {
+			trackedSend(msg, id);
+			return;
+		}
+
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
 				type: 'deploy_logs',
