@@ -20,8 +20,8 @@ const ActiveDeploymentContext = React.createContext<{
 	openLogsModal: (deploymentId: string, userID?: string, prefetched?: PrefetchedDeployLogs) => void;
 	closeLogsModal: () => void;
 }>({
-	openLogsModal: () => {},
-	closeLogsModal: () => {},
+	openLogsModal: () => { },
+	closeLogsModal: () => { },
 });
 
 export function useActiveDeployment() {
@@ -111,9 +111,12 @@ function DeployLogsModalContent({
 	prefetched?: PrefetchedDeployLogs;
 	onClose: () => void;
 }) {
+	const active = getActiveDeployment();
+	const skipSnapshotFetch = !!prefetched && active?.deploymentId !== deploymentId;
 	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
 		undefined,
-		deploymentId
+		deploymentId,
+		skipSnapshotFetch
 	);
 
 	const fallbackEntries = React.useMemo(() => {

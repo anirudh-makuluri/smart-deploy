@@ -45,7 +45,7 @@ export function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string, deploymentId?: string) {
+export function useDeployLogs(serviceName?: string, deploymentId?: string, skipSnapshotFetch?: boolean) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -202,7 +202,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 
 	// On mount: whenever deploymentId is provided, request deploy logs snapshot.
 	useEffect(() => {
-		if (!deploymentId || typeof window === "undefined") return;
+		if (!deploymentId || typeof window === "undefined" || skipSnapshotFetch) return;
 		const active = getActiveDeployment();
 		const payloadUserId = active?.deploymentId === deploymentId ? active.userID : undefined;
 		openSocket(() => {
@@ -214,7 +214,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 				}));
 			}
 		});
-	}, [deploymentId]);
+	}, [deploymentId, skipSnapshotFetch]);
 
 	// Only close socket on unmount; do not auto-open on mount (except for get_deploy_logs above).
 	useEffect(() => {
