@@ -3,7 +3,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { useSession } from "next-auth/react";
-import type { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types";
+import type { AIGenProjectMetadata, CoreDeploymentInfo, DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import ConfigTabs, { FormSchemaType } from "@/components/ConfigTabs";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
@@ -16,24 +16,137 @@ type NewDeploySheetProps = {
 	open: boolean;
 	onClose: () => void;
 	repo: repoType;
+	selectedService?: DetectedServiceInfo;
 };
 
-export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetProps) {
+const DEFAULT_PORT: Record<string, number> = {
+	node: 3000,
+	python: 8000,
+	go: 8080,
+	java: 8080,
+	rust: 8080,
+	dotnet: 5000,
+	php: 8000,
+};
+
+function nonEmpty(value: string | null | undefined): string | undefined {
+	if (value == null) return undefined;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function fallbackCoreDeploymentInfo(selectedService?: DetectedServiceInfo): CoreDeploymentInfo {
+	const language = (selectedService?.language || "node").toLowerCase();
+	const framework = selectedService?.framework ?? "";
+	const workdir = nonEmpty(selectedService?.path) ?? ".";
+
+	if (language === "python") {
+		return {
+			language: "python",
+			framework,
+			install_cmd: "pip install -r requirements.txt",
+			build_cmd: "",
+			run_cmd: "python main.py",
+			workdir,
+			port: DEFAULT_PORT.python,
+		};
+	}
+
+	if (language === "go") {
+		return {
+			language: "go",
+			framework,
+			install_cmd: "go mod download",
+			build_cmd: "go build -o app .",
+			run_cmd: "./app",
+			workdir,
+			port: DEFAULT_PORT.go,
+		};
+	}
+
+	if (language === "java") {
+		return {
+			language: "java",
+			framework,
+			install_cmd: "mvn dependency:go-offline -B",
+			build_cmd: "mvn package -DskipTests -B",
+			run_cmd: "java -jar target/*.jar",
+			workdir,
+			port: DEFAULT_PORT.java,
+		};
+	}
+
+	if (language === "rust") {
+		return {
+			language: "rust",
+			framework,
+			install_cmd: "cargo fetch",
+			build_cmd: "cargo build --release",
+			run_cmd: "./target/release/app",
+			workdir,
+			port: DEFAULT_PORT.rust,
+		};
+	}
+
+	if (language === "dotnet") {
+		return {
+			language: "dotnet",
+			framework,
+			install_cmd: "dotnet restore",
+			build_cmd: "dotnet publish -c Release -o out",
+			run_cmd: "dotnet out/app.dll",
+			workdir,
+			port: DEFAULT_PORT.dotnet,
+		};
+	}
+
+	if (language === "php") {
+		return {
+			language: "php",
+			framework,
+			install_cmd: "composer install --no-dev --optimize-autoloader",
+			build_cmd: "",
+			run_cmd: "php -S 0.0.0.0:8000 -t public",
+			workdir,
+			port: DEFAULT_PORT.php,
+		};
+	}
+
+	return {
+		language: language || "node",
+		framework,
+		install_cmd: "npm install",
+		build_cmd: "npm run build || true",
+		run_cmd: "npm start",
+		workdir,
+		port: DEFAULT_PORT.node,
+	};
+}
+
+export default function NewDeploySheet({ open, onClose, repo, selectedService }: NewDeploySheetProps) {
 	const { data: session } = useSession();
 	const { updateDeploymentById } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(repo.name);
-
-	const deployLogEntries = React.useMemo(() => {
-		const entries: { timestamp?: string; message?: string }[] = [];
-		steps.forEach((step) => {
-			step.logs.forEach((log) => {
-				const prefix = step.label ? `[${step.label}] ` : "";
-				entries.push({ message: `${prefix}${log}` });
-			});
-		});
-		return entries;
-	}, [steps]);
+	const prefilledCoreInfo = React.useMemo(
+		() => selectedService?.core_deployment_info ?? fallbackCoreDeploymentInfo(selectedService),
+		[selectedService]
+	);
+	const prefilledServiceName = React.useMemo(
+		() => (selectedService ? `${repo.name}-${selectedService.name}` : repo.name),
+		[repo.name, selectedService]
+	);
+	const prefilledDeployment = React.useMemo<DeployConfig | undefined>(() => {
+		if (!selectedService) return undefined;
+		return {
+			id: repo.id,
+			url: repo.html_url,
+			branch: repo.default_branch || repo.branches?.[0]?.name || "main",
+			use_custom_dockerfile: false,
+			service_name: prefilledServiceName,
+			core_deployment_info: prefilledCoreInfo,
+		};
+	}, [prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService]);
+	const { sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(prefilledServiceName);
 
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
@@ -74,7 +187,17 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 			deployment_target_reason = "Using EC2.";
 		}
 
+		const ruleBasedCoreInfo = prefilledCoreInfo;
 		const coreInfo = values.core_deployment_info;
+		const effectiveCoreInfo: CoreDeploymentInfo = {
+			language: nonEmpty(coreInfo?.language) ?? ruleBasedCoreInfo.language,
+			framework: nonEmpty(coreInfo?.framework) ?? ruleBasedCoreInfo.framework,
+			install_cmd: nonEmpty(values.install_cmd) ?? nonEmpty(coreInfo?.install_cmd) ?? ruleBasedCoreInfo.install_cmd,
+			build_cmd: nonEmpty(values.build_cmd) ?? nonEmpty(coreInfo?.build_cmd) ?? ruleBasedCoreInfo.build_cmd,
+			run_cmd: nonEmpty(values.run_cmd) ?? nonEmpty(coreInfo?.run_cmd) ?? ruleBasedCoreInfo.run_cmd,
+			workdir: nonEmpty(values.workdir) ?? nonEmpty(coreInfo?.workdir ?? undefined) ?? ruleBasedCoreInfo.workdir,
+			...(coreInfo?.port != null ? { port: coreInfo.port } : ruleBasedCoreInfo.port != null ? { port: ruleBasedCoreInfo.port } : {}),
+		};
 
 		const payload: DeployConfig = {
 			id: repo.id,
@@ -92,15 +215,7 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 			...(values.final_notes && { final_notes: values.final_notes }),
 			...((values as any).monorepo_services?.length && { monorepo_services: (values as any).monorepo_services }),
 			...((values as any).deployment_hints && { deployment_hints: (values as any).deployment_hints }),
-			core_deployment_info: {
-				language: coreInfo?.language ?? "",
-				framework: coreInfo?.framework ?? "",
-				install_cmd: values.install_cmd ?? coreInfo?.install_cmd ?? "",
-				build_cmd: values.build_cmd ?? coreInfo?.build_cmd ?? "",
-				run_cmd: values.run_cmd ?? coreInfo?.run_cmd ?? "",
-				workdir: values.workdir ?? coreInfo?.workdir ?? null,
-				...(coreInfo?.port != null && { port: coreInfo.port }),
-			},
+			core_deployment_info: effectiveCoreInfo,
 		};
 
 		setIsDeploying(true);
@@ -129,10 +244,11 @@ export default function NewDeploySheet({ open, onClose, repo }: NewDeploySheetPr
 
 					<div className="mt-6 rounded-xl border border-border bg-card p-4">
 						<ConfigTabs
-							service_name={repo.name}
+							service_name={prefilledServiceName}
 							onSubmit={handleSubmit}
 							onScanComplete={() => undefined}
 							repo={repo}
+							deployment={prefilledDeployment}
 							editMode={true}
 							isDeploying={isDeploying}
 						/>

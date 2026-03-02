@@ -63,7 +63,7 @@ export default function DeployLogsView({
 				</Alert>
 			)}
 			<div ref={logsContainerRef}>
-				<ServiceLogs logs={[...deployLogEntries, ...serviceLogs]} />
+				<ServiceLogs logs={[...deployLogEntries]} />
 			</div>
 		</div>
 	);

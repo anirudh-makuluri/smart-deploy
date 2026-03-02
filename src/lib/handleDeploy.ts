@@ -27,12 +27,21 @@ import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 /**
  * Main deployment handler - routes to AWS (default) or GCP
  */
-export async function handleDeploy(deployConfig: DeployConfig, token: string, ws: any, userID?: string): Promise<string> {
+export async function handleDeploy(
+	deployConfig: DeployConfig,
+	token: string,
+	ws: any,
+	userID?: string,
+	options?: {
+		onStepsChange?: (steps: DeployStep[]) => void;
+		broadcast?: (id: string, msg: string) => void;
+	}
+): Promise<string> {
 	const deployStartTime = Date.now();
 	
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps);
+	const send = createDeployStepsLogger(ws, deploySteps, options);
 
 	console.log("in handle deploy");
 

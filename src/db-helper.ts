@@ -56,7 +56,6 @@ export const dbHelper = {
 		try {
 			const deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
 			if (!deploymentId) return { error: "Deployment ID is required" };
-			if (deploymentId.includes("/")) return { error: "Deployment ID cannot contain '/'." };
 
 			const supabase = getSupabaseServer();
 
@@ -271,7 +270,7 @@ export const dbHelper = {
 	) {
 		try {
 			const id = deploymentId != null ? String(deploymentId).trim() : "";
-			if (!id || id.includes("/")) return { error: "Deployment ID is required and cannot contain '/'." };
+			if (!id) return { error: "Deployment ID is required." };
 
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();

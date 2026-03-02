@@ -47,6 +47,7 @@ export function getWebSocketUrl(): string {
 
 export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
+	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
 	const [deployError, setDeployError] = useState<string | null>(null);
@@ -107,7 +108,19 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 					break;
 				case "deploy_logs_snapshot": {
 					const snap = payload as { steps?: DeployStep[]; status?: DeployStatus; error?: string | null };
-					if (Array.isArray(snap.steps) && snap.steps.length > 0) setSteps(snap.steps);
+					if (Array.isArray(snap.steps) && snap.steps.length > 0) {
+						setSteps(snap.steps);
+						const entries: { timestamp?: string; message?: string }[] = [];
+						snap.steps.forEach((step) => {
+							step.logs.forEach((log) => {
+								entries.push({
+									timestamp: step.startedAt,
+									message: log,
+								});
+							});
+						});
+						setDeployLogEntries(entries);
+					}
 					if (snap.status) {
 						setDeployStatus(snap.status);
 						if (snap.status === "running") wasDeployingRef.current = true;
@@ -228,6 +241,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		setDeployError(null);
 		setDeployStatus("running");
 		setSteps([...defaultSteps]);
+		setDeployLogEntries([]);
 
 		if (typeof window !== "undefined") {
 			try {
@@ -316,34 +330,27 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		setServiceLogs(prev => [...prev, ...logs]);
 	}
 
-	function formatLogWithTime(time?: string, msg?: string): string {
-		if (!time || msg == null) return msg ?? "";
-		try {
-			const d = new Date(time);
-			const h = d.getHours().toString().padStart(2, "0");
-			const m = d.getMinutes().toString().padStart(2, "0");
-			const s = d.getSeconds().toString().padStart(2, "0");
-			return `[${h}:${m}:${s}] ${msg}`;
-		} catch {
-			return msg;
-		}
-	}
-
 	function deployLogs({ id, msg, time }: { id: string; msg: string; time?: string }) {
 		setDeployStatus("running");
-		const logLine = formatLogWithTime(time, msg);
+		setDeployLogEntries((prev) => [
+			...prev,
+			{
+				timestamp: time,
+				message: msg,
+			},
+		]);
 
 		setSteps((prev) => {
 			const existing = prev.find((s) => s.id === id);
 			if (!existing) {
-				return [...prev, { id, label: id, logs: [logLine], status: "in_progress" as const }];
+				return [...prev, { id, label: id, logs: [msg], status: "in_progress" as const }];
 			}
 			return prev.map((step) =>
 				step.id === id
 					? {
 							...step,
 							status: msg.includes("✅") ? "success" : msg.includes("❌") ? "error" : step.status === "pending" ? "in_progress" : step.status,
-							logs: [...step.logs, logLine],
+							logs: [...step.logs, msg],
 						}
 					: step
 			);
@@ -352,6 +359,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 
 	return {
 		steps,
+		deployLogEntries,
 		socketStatus,
 		sendDeployConfig,
 		openSocket,

@@ -744,8 +744,9 @@ async function launchNewInstance(params: {
 	let instanceId: string;
 	try {
 		send(`Launching EC2 instance: ${instanceName}...`, "deploy");
-		// Increase root EBS volume to 20GB (default is 8GB which is too small for Docker builds)
-		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=20,VolumeType=gp3,DeleteOnTermination=true}`;
+		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
+		const rootVolumeGiB = Math.max(30, amiMinRootVolumeGiB);
+		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=${rootVolumeGiB},VolumeType=gp3,DeleteOnTermination=true}`;
 		const out = await runAWSCommand([
 			"ec2", "run-instances",
 			"--image-id", amiId,
@@ -762,7 +763,7 @@ async function launchNewInstance(params: {
 			"--region", region,
 		], ws, "deploy");
 		instanceId = out.trim();
-		send(`Instance launched: ${instanceId} (20GB EBS volume)`, "deploy");
+		send(`Instance launched: ${instanceId} (${rootVolumeGiB}GB EBS root volume)`, "deploy");
 	} finally {
 		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
 	}
@@ -868,6 +869,28 @@ async function getLatestAMI(region: string, ws: any): Promise<string> {
 	const q = "sort_by(Images, &CreationDate)[-1].ImageId";
 	const qArg = process.platform === "win32" ? `--query="${q}"` : `--query=${q}`;
 	return (await runAWSCommand(["ec2", "describe-images", "--owners", "amazon", "--filters", "Name=name,Values=al2023-ami-*-x86_64", "Name=state,Values=available", qArg, "--output", "text", `--region=${region}`], ws, "setup")).trim();
+}
+
+async function getAmiMinimumRootVolumeGiB(amiId: string, region: string, ws: any): Promise<number> {
+	try {
+		const output = await runAWSCommand([
+			"ec2",
+			"describe-images",
+			"--image-ids", amiId,
+			"--query", "max(Images[0].BlockDeviceMappings[?Ebs.VolumeSize!=null].Ebs.VolumeSize)",
+			"--output", "text",
+			"--region", region,
+		], ws, "setup");
+
+		const parsed = Number.parseInt(output.trim(), 10);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			return parsed;
+		}
+	} catch {
+		// Fallback below
+	}
+
+	return 30;
 }
 
 async function terminateInstance(instanceId: string, region: string, ws: any): Promise<void> {
@@ -1028,9 +1051,13 @@ function buildServiceUrls(
 	return { baseUrl, serviceUrls };
 }
 
+function normalizePathForMatch(p?: string | null): string {
+	return (p ?? "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim().toLowerCase();
+}
+
 function resolveServices(repoName: string, deployConfig: DeployConfig, multi: MultiServiceConfig): ServiceDef[] {
 	if (multi.isMultiService && multi.services.length > 0) {
-		return multi.services.map(s => ({
+		const allServices = multi.services.map(s => ({
 			name: s.name,
 			dir: s.workdir,
 			port: s.port || 8080,
@@ -1039,6 +1066,29 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			framework: s.framework,
 			language: s.language,
 		}));
+
+		const requestedWorkdir = normalizePathForMatch(deployConfig.core_deployment_info?.workdir);
+		if (requestedWorkdir && requestedWorkdir !== ".") {
+			const byWorkdir = allServices.find((svc) => {
+				const svcDir = normalizePathForMatch(svc.dir);
+				const svcRelativePath = normalizePathForMatch(svc.relativePath);
+				return svcDir === requestedWorkdir || svcRelativePath === requestedWorkdir;
+			});
+			if (byWorkdir) {
+				return [byWorkdir];
+			}
+		}
+
+		const serviceName = deployConfig.service_name?.trim();
+		if (serviceName?.startsWith(`${repoName}-`)) {
+			const suffix = serviceName.slice(repoName.length + 1).toLowerCase();
+			const byName = allServices.find((svc) => svc.name.toLowerCase() === suffix);
+			if (byName) {
+				return [byName];
+			}
+		}
+
+		return allServices;
 	}
 	return [{ name: repoName, dir: ".", port: deployConfig.core_deployment_info?.port || 8080 }];
 }

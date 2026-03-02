@@ -29,21 +29,40 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 		const repoUrlNorm = normalizeUrl(record.repo_url);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
-		const isDeployed = repoDeployments.length > 0;
-		const isCrashed = repoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
+		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
+		const hasFailed = repoDeployments.some((d) => d.status === "didnt_deploy");
+		const hasRepoLevelDeployment = activeRepoDeployments.some(
+			(d) => d.service_name === record.repo_name
+		);
+		const deployedServicesCount = hasRepoLevelDeployment
+			? totalServices
+			: activeRepoDeployments.filter((d) => {
+				const svcName = d.service_name?.trim();
+				if (!svcName) return false;
+				return svcName.startsWith(`${record.repo_name}-`);
+			}).length;
+		const isDeployed = deployedServicesCount > 0;
+		const isCrashed = activeRepoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
 
-		const subtitle = isCrashed ? "Crashed" : isDeployed ? "Deployed" : "Not deployed";
+		const subtitle = isCrashed
+			? "Crashed"
+			: hasFailed
+				? "Failed"
+				: isDeployed
+					? "Deployed"
+					: "Not deployed";
 		const base = {
 			owner: record.repo_owner,
 			name: record.repo_name,
 			subtitle,
 			hasCrashed: isCrashed,
+			hasFailed,
 			deployments: repoDeployments,
 		};
 		if (totalServices > 0) {
 			return {
 				...base,
-				subtitle: `${subtitle} · ${totalServices} service${totalServices !== 1 ? "s" : ""}`,
+				subtitle: `${subtitle} · ${deployedServicesCount}/${totalServices} service${totalServices !== 1 ? "s" : ""}`,
 			};
 		}
 		return base;
@@ -168,11 +187,11 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 							</div>
 						) : (
 							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoCards.map(({ owner, name, subtitle, hasCrashed, deployments: repoDeployments }) => (
+								{repoCards.map(({ owner, name, subtitle, hasCrashed, hasFailed, deployments: repoDeployments }) => (
 									<div
 										key={`${owner}/${name}`}
 										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${
-											hasCrashed ? "border-destructive/50" : "border-border"
+												hasCrashed || hasFailed ? "border-destructive/50" : "border-border"
 										}`}
 									>
 										<div className="flex items-start justify-between gap-3">

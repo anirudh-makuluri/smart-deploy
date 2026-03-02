@@ -85,7 +85,7 @@ function ActiveDeploymentNotification() {
 		<button
 			type="button"
 			onClick={() => openLogsModal(active.deploymentId, active.userID)}
-			className="fixed top-0 left-0 right-0 z-[100] flex cursor-pointer items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground text-sm font-medium shadow-md hover:bg-primary/90 transition-colors"
+			className="fixed top-0 left-0 right-0 z-100 flex cursor-pointer items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground text-sm font-medium shadow-md hover:bg-primary/90 transition-colors"
 		>
 			<Loader2 className="size-4 animate-spin shrink-0" />
 			<span>Deployment in progress</span>
@@ -102,21 +102,10 @@ function DeployLogsModalContent({
 	userID?: string;
 	onClose: () => void;
 }) {
-	const { steps, deployStatus, deployError, serviceLogs } = useDeployLogs(
+	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
 		undefined,
 		deploymentId
 	);
-
-	const deployLogEntries = React.useMemo(() => {
-		const entries: { timestamp?: string; message?: string }[] = [];
-		steps.forEach((step) => {
-			step.logs.forEach((log) => {
-				const prefix = step.label ? `[${step.label}] ` : "";
-				entries.push({ message: `${prefix}${log}` });
-			});
-		});
-		return entries;
-	}, [steps]);
 
 	return (
 		<>
@@ -156,7 +145,7 @@ function DeployLogsModal({ state, onClose }: { state: LogsModalState; onClose: (
 	if (!state) return null;
 
 	return (
-		<div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+		<div className="fixed inset-0 z-110 flex items-center justify-center p-4">
 			<div
 				className="absolute inset-0 bg-black/60"
 				aria-hidden

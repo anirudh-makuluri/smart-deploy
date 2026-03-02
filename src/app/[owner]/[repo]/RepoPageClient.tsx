@@ -71,15 +71,32 @@ function getDeploymentForService(
 ): DeployConfig | undefined {
 	const norm = normalizeRepoUrl(repoUrl);
 	const slug = repoSlugFromUrl(repoUrl);
+	const matches: DeployConfig[] = [];
 	for (const d of deployments) {
 		if (normalizeRepoUrl(d.url) !== norm) continue;
-		if (d.monorepo_service_name === serviceName) return d;
-		if (d.service_name === `${repoName}-${serviceName}`) return d;
-		if (d.id === repoId || d.id === slug) return d; // repo-level (legacy url id or slug)
-		if (d.id === `${slug}-${serviceName}`) return d;
-		if (d.service_name === repoName) return d;
+		if (d.monorepo_services?.some((service) => service.name === serviceName)) matches.push(d);
+		else if (d.service_name === `${repoName}-${serviceName}`) matches.push(d);
+		else if (d.id === repoId || d.id === slug) matches.push(d); // repo-level (legacy url id or slug)
+		else if (d.id === `${slug}-${serviceName}`) matches.push(d);
+		else if (d.service_name === repoName) matches.push(d);
 	}
-	return undefined;
+
+	if (matches.length === 0) return undefined;
+
+	const statusRank = (status?: string) => {
+		if (status === "running") return 3;
+		if (status === "paused" || status === "stopped") return 2;
+		if (status === "didnt_deploy") return 1;
+		return 0;
+	};
+
+	return matches.sort((a, b) => {
+		const statusDelta = statusRank(b.status) - statusRank(a.status);
+		if (statusDelta !== 0) return statusDelta;
+		const aTime = new Date(a.last_deployment ?? 0).getTime();
+		const bTime = new Date(b.last_deployment ?? 0).getTime();
+		return bTime - aTime;
+	})[0];
 }
 
 function normalizeRepoUrlForMatch(url: string): string {
@@ -88,7 +105,7 @@ function normalizeRepoUrlForMatch(url: string): string {
 
 export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const router = useRouter();
-	const { deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments } = useAppData();
+	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments } = useAppData();
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [services, setServices] = React.useState<DetectedService[]>([]);
 	const [loading, setLoading] = React.useState(true);
@@ -99,6 +116,16 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 	const repoUrl = `https://github.com/${owner}/${repo}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repo), [owner, repo]);
+	const resolvedRepo = React.useMemo<repoType>(() => {
+		const normalizedTarget = normalizeRepoUrlForMatch(repoUrl);
+		const fromStore = repoList.find((r) => {
+			const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repo}`.toLowerCase();
+			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedTarget;
+			return sameFullName || sameUrl;
+		});
+		return fromStore ?? minimalRepo;
+	}, [repoList, repoUrl, owner, repo, minimalRepo]);
+	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
 	const repoSlug = `${owner}-${repo}`;
 	const { openLogsModal } = useActiveDeployment();
 	const [activeDeploy, setActiveDeploy] = React.useState<{
@@ -158,7 +185,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		fetch("/api/repos/detect-services", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ url: repoUrl, branch: "main" }),
+			body: JSON.stringify({ url: repoUrl, branch: activeBranch }),
 		})
 			.then((res) => res.json())
 			.then((data) => {
@@ -190,7 +217,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [repoUrl, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
+	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
@@ -335,10 +362,12 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 								const status = deployment?.status;
 								const isOnline = status === "running";
 								const isCrashed = status === "stopped" || status === "paused";
-								const isNotDeployed = !deployment;
+								const isFailed = status === "didnt_deploy";
+								const isNotDeployed = !deployment || isFailed;
+								const canNavigateToService = !!deployment && !isFailed;
 
 								const handleCardClick = () => {
-									if (deployment) {
+									if (canNavigateToService) {
 										router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
 									} else {
 										openSheetForService(svc);
@@ -363,7 +392,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 										<div className="mt-3 flex items-center gap-2">
 											{isNotDeployed && (
 												<span className="text-sm text-muted-foreground">
-													Not deployed
+													{isFailed ? "Deployment failed" : "Not deployed"}
 												</span>
 											)}
 											{isOnline && (
@@ -394,10 +423,8 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 				<NewDeploySheet
 					open={sheetOpen}
 					onClose={closeSheet}
-					repo={minimalRepo}
-					selectedServiceName={selectedService?.name ?? undefined}
-					selectedServicePath={selectedService?.path ?? undefined}
-					selectedServiceCoreInfo={selectedService?.core_deployment_info ?? undefined}
+					repo={resolvedRepo}
+					selectedService={selectedService ?? undefined}
 				/>
 			)}
 		</div>

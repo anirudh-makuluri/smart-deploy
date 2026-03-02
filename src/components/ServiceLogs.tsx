@@ -2,13 +2,45 @@
 
 import React from "react";
 import { ScrollArea } from "./ui/scroll-area";
-import { formatLogTimestamp } from "@/lib/utils";
+import {
+	AlertDialog,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "./ui/alert-dialog";
 
 type LogEntry = { timestamp?: string; message?: string };
+
+function getLogType(message: string): "ERROR" | "WARN" | "SUCCESS" | "INFO" {
+	const normalized = message.toLowerCase();
+	if (normalized.includes("error") || normalized.includes("failed") || normalized.includes("exception")) {
+		return "ERROR";
+	}
+	if (normalized.includes("warn")) {
+		return "WARN";
+	}
+	if (normalized.includes("success") || normalized.includes("completed") || normalized.includes("deployed")) {
+		return "SUCCESS";
+	}
+	return "INFO";
+}
+
+function formatTimeOnly(timestamp?: string): string {
+	if (!timestamp) return "-";
+	const date = new Date(timestamp);
+	if (Number.isNaN(date.getTime())) return "-";
+	const hours = String(date.getHours()).padStart(2, "0");
+	const minutes = String(date.getMinutes()).padStart(2, "0");
+	const seconds = String(date.getSeconds()).padStart(2, "0");
+	return `${hours}:${minutes}:${seconds}`;
+}
 
 export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 	const containerRef = React.useRef<HTMLDivElement>(null);
 	const prevLogsLengthRef = React.useRef(0);
+	const [selectedLog, setSelectedLog] = React.useState<LogEntry | null>(null);
 
 	React.useEffect(() => {
 		const previousLength = prevLogsLengthRef.current;
@@ -28,29 +60,59 @@ export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 	}, [logs.length]);
 
 	return (
-		<div ref={containerRef}>
-			<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card p-4" data-logs-scroll>
-				<div className="space-y-2 font-mono text-sm text-muted-foreground">
-					{logs.length == 0 ? (
-						<p className="text-center text-4xl mt-10 text-muted-foreground/70">😴 No logs yet</p>
-					) : (
-						logs.map((log, i) => (
-							<div key={i} className="wrap-break-word whitespace-pre-wrap w-full">
-								{log.timestamp && !Number.isNaN(new Date(log.timestamp).getTime()) && (
-									<>
-										<span className="text-primary">{formatLogTimestamp(log.timestamp)}</span>
-										{" - "}
-									</>
-								)}
-								<span className="wrap-break-word whitespace-pre-wrap text-foreground">
-									{typeof log.message === "string" ? log.message : JSON.stringify(log.message)}
-								</span>
-							</div>
-						))
-					)}
-				</div>
-			</ScrollArea>
-		</div>
+		<>
+			<div ref={containerRef}>
+				<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card" data-logs-scroll>
+					<div className="min-w-full font-mono text-sm text-muted-foreground">
+						{logs.length === 0 ? (
+							<p className="mt-10 text-center text-4xl text-muted-foreground/70">😴 No logs yet</p>
+						) : (
+							<>
+								<div className="sticky top-0 z-10 grid grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/60 bg-card px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground/90">
+									<span>Type</span>
+									<span>Time</span>
+									<span>Message</span>
+								</div>
+								{logs.map((log, i) => {
+									const message = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
+									const type = getLogType(message || "");
+									const formattedTime = formatTimeOnly(log.timestamp);
+
+									return (
+										<button
+											type="button"
+											key={i}
+											onClick={() => setSelectedLog(log)}
+											className="grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40"
+										>
+											<span className="text-primary">{type}</span>
+											<span className="truncate">{formattedTime}</span>
+											<span className="truncate text-foreground">{message || "-"}</span>
+										</button>
+									);
+								})}
+							</>
+						)}
+					</div>
+				</ScrollArea>
+			</div>
+
+			<AlertDialog open={!!selectedLog} onOpenChange={(open) => !open && setSelectedLog(null)}>
+				<AlertDialogContent className="w-[80vw]">
+					<AlertDialogHeader>
+						<AlertDialogTitle>Log Message</AlertDialogTitle>
+					</AlertDialogHeader>
+					<div className="max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-muted/20 p-3 font-mono text-sm text-foreground whitespace-pre-wrap wrap-break-word">
+						{selectedLog
+							? (typeof selectedLog.message === "string" ? selectedLog.message : JSON.stringify(selectedLog.message, null, 2))
+							: ""}
+					</div>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Close</AlertDialogCancel>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
 	);
 }
 

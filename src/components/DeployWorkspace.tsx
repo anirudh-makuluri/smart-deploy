@@ -47,17 +47,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
 	const deploymentIdForLogs = deployment?.id ?? deploymentId;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs } = useDeployLogs(serviceNameForLogs, deploymentIdForLogs);
-	const deployLogEntries = React.useMemo(() => {
-		const entries: { timestamp?: string; message?: string }[] = [];
-		steps.forEach((step) => {
-			step.logs.forEach((log) => {
-				const prefix = step.label ? `[${step.label}] ` : "";
-				entries.push({ message: `${prefix}${log}` });
-			});
-		});
-		return entries;
-	}, [steps]);
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, deploymentIdForLogs);
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
 	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" : 
 		deployStatus === "running" ? "running" : 

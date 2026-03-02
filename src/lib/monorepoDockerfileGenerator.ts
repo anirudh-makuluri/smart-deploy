@@ -99,8 +99,6 @@ ${lockfiles}
 
 # Copy all workspace package.json files so install can resolve workspace deps
 COPY ${relativePath}/package.json ./${relativePath}/package.json
-# Copy other workspace packages that this service may depend on
-COPY packages/ ./packages/ 2>/dev/null || true
 
 ${installCmd}
 
