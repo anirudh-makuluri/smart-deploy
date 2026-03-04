@@ -152,11 +152,27 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 		if (deployStatus === "success" && deployConfigRef.current) {
 			updateDeploymentById(deployConfigRef.current);
 			setIsDeploying(false);
+
+			const url = deployConfigRef.current.custom_url || deployConfigRef.current.deployUrl;
+			if (url) {
+				const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+				toast.success("Deployment completed successfully!", {
+					description: `Your application is now live.`,
+					action: {
+						label: "Open App",
+						onClick: () => window.open(fullUrl, "_blank", "noopener,noreferrer"),
+					},
+					duration: 10000,
+				});
+			} else {
+				toast.success("Deployment completed successfully!");
+			}
+			onClose();
 		}
 		if (deployStatus === "error") {
 			setIsDeploying(false);
 		}
-	}, [deployStatus, deployConfigRef, updateDeploymentById]);
+	}, [deployStatus, deployConfigRef, updateDeploymentById, onClose]);
 
 	if (!open) return null;
 

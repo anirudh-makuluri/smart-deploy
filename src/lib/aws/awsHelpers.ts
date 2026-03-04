@@ -22,7 +22,7 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 	} else {
 		send("No access keys found - using IAM instance role (if on EC2) or default credentials", 'auth');
 	}
-	
+
 	process.env.AWS_DEFAULT_REGION = config.AWS_REGION;
 
 	// Verify credentials
@@ -31,7 +31,7 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 			"sts", "get-caller-identity",
 			"--output", "json"
 		], ws, 'auth');
-		
+
 		// Parse and display identity info
 		try {
 			const identity = JSON.parse(identityOutput.trim().split('\n').pop() || '{}');
@@ -41,7 +41,7 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 		} catch {
 			// Ignore parsing errors
 		}
-		
+
 		send("AWS credentials verified successfully", 'auth');
 	} catch (error: any) {
 		send(`AWS credentials verification failed: ${error.message}`, 'auth');
@@ -179,12 +179,12 @@ export async function ensureS3Bucket(
 			"s3api", "create-bucket",
 			"--bucket", bucketName
 		];
-		
+
 		// LocationConstraint is required for regions other than us-east-1
 		if (region !== 'us-east-1') {
 			createArgs.push("--create-bucket-configuration", `LocationConstraint=${region}`);
 		}
-		
+
 		await runAWSCommand(createArgs, ws, 'setup');
 		send(`S3 bucket ${bucketName} created`, 'setup');
 	}
@@ -202,13 +202,13 @@ export async function uploadToS3(
 	const send = createWebSocketLogger(ws);
 
 	send(`Uploading to S3: s3://${bucketName}/${s3Key}...`, 'upload');
-	
+
 	await runAWSCommand([
 		"s3", "cp",
 		localPath,
 		`s3://${bucketName}/${s3Key}`
 	], ws, 'upload');
-	
+
 	send(`Upload complete: s3://${bucketName}/${s3Key}`, 'upload');
 	return `s3://${bucketName}/${s3Key}`;
 }
@@ -259,7 +259,7 @@ export async function getDefaultVpcId(ws: any): Promise<string> {
 		"--query", "Vpcs[0].VpcId",
 		"--output", "text"
 	], ws, 'setup');
-	
+
 	return output.trim();
 }
 
@@ -273,7 +273,7 @@ export async function getSubnetIds(vpcId: string, ws: any): Promise<string[]> {
 		"--query", "Subnets[*].SubnetId",
 		"--output", "text"
 	], ws, 'setup');
-	
+
 	return output.trim().split(/\s+/).filter(Boolean);
 }
 
@@ -296,7 +296,7 @@ export async function ensureSecurityGroup(
 			"--query", "SecurityGroups[0].GroupId",
 			"--output", "text"
 		], ws, 'setup');
-		
+
 		const groupId = output.trim();
 		if (groupId && groupId !== 'None') {
 			send(`Security group ${groupName} already exists: ${groupId}`, 'setup');
@@ -319,9 +319,9 @@ export async function ensureSecurityGroup(
 		"--query", "GroupId",
 		"--output", "text"
 	], ws, 'setup');
-	
+
 	const groupId = createOutput.trim();
-	
+
 	// Add inbound rules for HTTP and HTTPS
 	await runAWSCommand([
 		"ec2", "authorize-security-group-ingress",
@@ -330,7 +330,7 @@ export async function ensureSecurityGroup(
 		"--port", "80",
 		"--cidr", "0.0.0.0/0"
 	], ws, 'setup');
-	
+
 	await runAWSCommand([
 		"ec2", "authorize-security-group-ingress",
 		"--group-id", groupId,
@@ -338,7 +338,7 @@ export async function ensureSecurityGroup(
 		"--port", "443",
 		"--cidr", "0.0.0.0/0"
 	], ws, 'setup');
-	
+
 	send(`Security group created: ${groupId}`, 'setup');
 	return groupId;
 }
@@ -374,11 +374,11 @@ export async function waitForResource(
 		} catch {
 			// Continue waiting
 		}
-		
+
 		send(`Waiting for resource... (${i + 1}/${maxAttempts})`, 'wait');
 		await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
 	}
-	
+
 	return false;
 }
 
@@ -640,25 +640,24 @@ async function ensureHttpListener(
 ): Promise<string> {
 	const redirectToHttps = opts?.redirectToHttps ?? false;
 	try {
-		const listenerArn = (
-			await runAWSCommand(
-				[
-					"elbv2",
-					"describe-listeners",
-					"--load-balancer-arn",
-					albArn,
-					"--query",
-					"Listeners[?Port==`80`].ListenerArn[0]",
-					"--output",
-					"text",
-					"--region",
-					region,
-				],
-				ws,
-				"deploy"
-			)
-		).trim();
-		if (listenerArn && listenerArn !== "None") {
+		const raw = await runAWSCommand(
+			[
+				"elbv2",
+				"describe-listeners",
+				"--load-balancer-arn",
+				albArn,
+				"--output",
+				"json",
+				"--region",
+				region,
+			],
+			ws,
+			"deploy"
+		);
+		const listeners = JSON.parse(raw).Listeners || [];
+		const listener = listeners.find((l: any) => l.Port === 80);
+		if (listener?.ListenerArn) {
+			const listenerArn = listener.ListenerArn;
 			if (redirectToHttps) {
 				await runAWSCommand(
 					[
@@ -677,7 +676,7 @@ async function ensureHttpListener(
 			}
 			return listenerArn;
 		}
-	} catch {
+	} catch (e: any) {
 		// ignore
 	}
 
@@ -685,50 +684,22 @@ async function ensureHttpListener(
 		? "Type=redirect,RedirectConfig={Protocol=HTTPS,Port=443,StatusCode=HTTP_301}"
 		: "Type=fixed-response,FixedResponseConfig={StatusCode=404,ContentType=text/plain,MessageBody=NotFound}";
 
-	const createdArn = (
-		await runAWSCommand(
-			[
-				"elbv2",
-				"create-listener",
-				"--load-balancer-arn",
-				albArn,
-				"--protocol",
-				"HTTP",
-				"--port",
-				"80",
-				"--default-actions",
-				defaultAction,
-				"--query",
-				"Listeners[0].ListenerArn",
-				"--output",
-				"text",
-				"--region",
-				region,
-			],
-			ws,
-			"deploy"
-		)
-	).trim();
-
-	return createdArn;
-}
-
-async function ensureHttpsListener(
-	albArn: string,
-	certificateArn: string,
-	region: string,
-	ws: any
-): Promise<string> {
 	try {
-		const existing = (
+		const createdArn = (
 			await runAWSCommand(
 				[
 					"elbv2",
-					"describe-listeners",
+					"create-listener",
 					"--load-balancer-arn",
 					albArn,
+					"--protocol",
+					"HTTP",
+					"--port",
+					"80",
+					"--default-actions",
+					defaultAction,
 					"--query",
-					"Listeners[?Port==`443`].ListenerArn[0]",
+					"Listeners[0].ListenerArn",
 					"--output",
 					"text",
 					"--region",
@@ -738,39 +709,87 @@ async function ensureHttpsListener(
 				"deploy"
 			)
 		).trim();
-		if (existing && existing !== "None") return existing;
-	} catch {
-		// ignore
-	}
 
-	const createdArn = (
-		await runAWSCommand(
+		return createdArn;
+	} catch (e: any) {
+		if (e.message?.includes("DuplicateListener")) {
+			const raw = await runAWSCommand(["elbv2", "describe-listeners", "--load-balancer-arn", albArn, "--output", "json", "--region", region], ws, "deploy");
+			const listeners = JSON.parse(raw).Listeners || [];
+			const listener = listeners.find((l: any) => l.Port === 80);
+			if (listener?.ListenerArn) return listener.ListenerArn;
+		}
+		throw e;
+	}
+}
+
+async function ensureHttpsListener(
+	albArn: string,
+	certificateArn: string,
+	region: string,
+	ws: any
+): Promise<string> {
+	try {
+		const raw = await runAWSCommand(
 			[
 				"elbv2",
-				"create-listener",
+				"describe-listeners",
 				"--load-balancer-arn",
 				albArn,
-				"--protocol",
-				"HTTPS",
-				"--port",
-				"443",
-				"--certificates",
-				`CertificateArn=${certificateArn}`,
-				"--default-actions",
-				"Type=fixed-response,FixedResponseConfig={StatusCode=404,ContentType=text/plain,MessageBody=NotFound}",
-				"--query",
-				"Listeners[0].ListenerArn",
 				"--output",
-				"text",
+				"json",
 				"--region",
 				region,
 			],
 			ws,
 			"deploy"
-		)
-	).trim();
+		);
+		const listeners = JSON.parse(raw).Listeners || [];
+		const listener = listeners.find((l: any) => l.Port === 443);
+		if (listener?.ListenerArn) {
+			return listener.ListenerArn;
+		}
+	} catch (e: any) {
+		// ignore
+	}
 
-	return createdArn;
+	try {
+		const createdArn = (
+			await runAWSCommand(
+				[
+					"elbv2",
+					"create-listener",
+					"--load-balancer-arn",
+					albArn,
+					"--protocol",
+					"HTTPS",
+					"--port",
+					"443",
+					"--certificates",
+					`CertificateArn=${certificateArn}`,
+					"--default-actions",
+					"Type=fixed-response,FixedResponseConfig={StatusCode=404,ContentType=text/plain,MessageBody=NotFound}",
+					"--query",
+					"Listeners[0].ListenerArn",
+					"--output",
+					"text",
+					"--region",
+					region,
+				],
+				ws,
+				"deploy"
+			)
+		).trim();
+
+		return createdArn;
+	} catch (e: any) {
+		if (e.message?.includes("DuplicateListener")) {
+			const raw = await runAWSCommand(["elbv2", "describe-listeners", "--load-balancer-arn", albArn, "--output", "json", "--region", region], ws, "deploy");
+			const listeners = JSON.parse(raw).Listeners || [];
+			const listener = listeners.find((l: any) => l.Port === 443);
+			if (listener?.ListenerArn) return listener.ListenerArn;
+		}
+		throw e;
+	}
 }
 
 export async function ensureHostRule(
