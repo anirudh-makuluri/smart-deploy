@@ -2,6 +2,9 @@ import * as React from "react";
 import { useEffect, useRef } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Loader2, HelpCircle } from "lucide-react";
+import { DeployStep } from "@/app/types";
 
 export type DeployStatus = "not-started" | "running" | "success" | "error";
 
@@ -15,6 +18,8 @@ type DeployLogsViewProps = {
 	deployStatus: DeployStatus;
 	deployError?: string | null;
 	deployingCommitInfo?: CommitInfo | null;
+	steps?: DeployStep[];
+	configSnapshot?: any;
 };
 
 export default function DeployLogsView({
@@ -24,8 +29,35 @@ export default function DeployLogsView({
 	deployStatus,
 	deployError,
 	deployingCommitInfo,
+	steps,
+	configSnapshot,
 }: DeployLogsViewProps) {
 	const logsContainerRef = useRef<HTMLDivElement>(null);
+	const [analyzing, setAnalyzing] = React.useState(false);
+	const [analysisResult, setAnalysisResult] = React.useState<string | null>(null);
+
+	const handleWhyDidItFail = async () => {
+		if (!steps || !configSnapshot) return;
+		setAnalyzing(true);
+		setAnalysisResult(null);
+		try {
+			const res = await fetch("/api/llm/analyze-failure", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ steps, configSnapshot }),
+			});
+			const data = await res.json();
+			if (data.response) {
+				setAnalysisResult(data.response);
+			} else {
+				setAnalysisResult(data.error || data.details || "Analysis failed.");
+			}
+		} catch (err) {
+			setAnalysisResult(err instanceof Error ? err.message : "Request failed.");
+		} finally {
+			setAnalyzing(false);
+		}
+	};
 
 	// Auto-scroll to bottom when new logs arrive
 	useEffect(() => {
@@ -57,9 +89,41 @@ export default function DeployLogsView({
 				</div>
 			</div>
 			{showDeployLogs && deployError && (
-				<Alert className="border-destructive/50 bg-destructive/10 text-foreground">
-					<AlertTitle className="text-destructive/80">Deployment failed</AlertTitle>
-					<AlertDescription className="overflow-x-auto">{deployError}</AlertDescription>
+				<Alert className="border-destructive/50 bg-destructive/10 text-foreground flex flex-col gap-3">
+					<div>
+						<AlertTitle className="text-destructive/80">Deployment failed</AlertTitle>
+						<AlertDescription className="overflow-x-auto">{deployError}</AlertDescription>
+					</div>
+					{steps && configSnapshot && (
+						<div className="mt-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="border-destructive/30 bg-background/50 text-foreground hover:bg-destructive/20"
+								onClick={handleWhyDidItFail}
+								disabled={analyzing}
+							>
+								{analyzing ? (
+									<>
+										<Loader2 className="size-4 animate-spin mr-2" />
+										Analyzing logs…
+									</>
+								) : (
+									<>
+										<HelpCircle className="size-4 mr-2" />
+										Why did it fail?
+									</>
+								)}
+							</Button>
+							{analysisResult && (
+								<Alert className="mt-3 border-destructive/30 bg-background/50 text-foreground">
+									<AlertDescription className="text-sm pb-0 whitespace-pre-wrap">
+										{analysisResult}
+									</AlertDescription>
+								</Alert>
+							)}
+						</div>
+					)}
 				</Alert>
 			)}
 			<div ref={logsContainerRef}>

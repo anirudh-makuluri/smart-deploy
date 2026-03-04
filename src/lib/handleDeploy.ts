@@ -44,23 +44,6 @@ export async function handleDeploy(
 		(ws as any).__deploySend = send;
 	}
 
-	console.log("in handle deploy");
-
-	const target = deployConfig.deploymentTarget;
-	if (!target) {
-		throw new Error('Deployment target not set. Please run Smart Project Scan first.');
-	}
-	if (!AWS_DEPLOY_STEPS[target]) {
-		throw new Error(`Unknown deployment target: ${target}`);
-	}
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS[target]);
-	const commitSha = deployConfig.commitSha?.trim();
-	if (commitSha) {
-		send(`Deploying commit ${commitSha.substring(0, 7)} to: ${target.toUpperCase()}`, 'clone');
-	} else {
-		send(`Deploying to: ${target.toUpperCase()}`, 'clone');
-	}
-
 	// Determine cloud provider (default to AWS)
 	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
 	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'clone');
@@ -109,10 +92,10 @@ export async function handleDeploy(
 			}
 		}
 
-		// Analyze application structure from the repo root (so docker-compose at root is detected
-		// even when workdir points to a subdirectory)
+		// Analyze application structure from the deployment directory (to avoid 
+		// detecting the entire monorepo when deploying a single service)
 		send("Analyzing application structure...", 'detect');
-		const multiServiceConfig = detectMultiService(cloneDir);
+		const multiServiceConfig = detectMultiService(appDir);
 
 		if (multiServiceConfig.isMonorepo) {
 			send(`📦 Detected monorepo (${multiServiceConfig.packageManager || 'npm'} workspaces) with ${multiServiceConfig.services.length} deployable service(s)`, 'detect');
@@ -131,7 +114,7 @@ export async function handleDeploy(
 
 		// Route to appropriate cloud provider
 		if (cloudProvider === 'aws') {
-			return await handleAWSDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
+			return await handleAWSDeploy(deployConfig, appDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
 		} else {
 			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
 		}
@@ -330,7 +313,6 @@ function sendDeployComplete(
 async function handleAWSDeploy(
 	deployConfig: DeployConfig,
 	appDir: string,
-	cloneDir: string,
 	tmpDir: string,
 	multiServiceConfig: MultiServiceConfig,
 	dbConfig: DatabaseConfig | null,

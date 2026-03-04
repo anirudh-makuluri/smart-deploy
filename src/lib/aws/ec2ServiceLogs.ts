@@ -115,7 +115,9 @@ function buildDockerLogsCommand(serviceName?: string, sinceIso?: string, tail: n
 
 	return [
 		"set -e",
-		"cd /home/ec2-user/app",
+		"COMPOSE_DIR=$(dirname $(find /home/ec2-user/app -name 'docker-compose.yml' | head -1))",
+		"if [ -z \"$COMPOSE_DIR\" ]; then COMPOSE_DIR=\"/home/ec2-user/app\"; fi",
+		"cd \"$COMPOSE_DIR\"",
 		`docker compose logs --no-color --timestamps --tail ${tail}${sinceArg}${serviceArg} 2>/dev/null || true`,
 		`docker-compose logs --no-color --timestamps --tail ${tail}${sinceArg}${serviceArg} 2>/dev/null || true`,
 	].join("; ");

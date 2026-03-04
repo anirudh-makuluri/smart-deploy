@@ -1,4 +1,4 @@
-import { DeployConfig } from "./app/types";
+import { DeployConfig, DeployStep } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
@@ -25,7 +25,7 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 	deployLogsStore.createEntry(userID, deploymentId, ws);
 
 	const options = {
-		onStepsChange: (steps: import("./app/types").DeployStep[]) => {
+		onStepsChange: (steps: DeployStep[]) => {
 			deployLogsStore.updateSteps(userID, deploymentId, steps);
 		},
 		broadcast: (id: string, msg: string) => {

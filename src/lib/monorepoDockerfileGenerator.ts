@@ -61,7 +61,7 @@ function generateNodeMonorepoDockerfile(
 		? "RUN corepack enable && corepack prepare pnpm@latest --activate && pnpm install --frozen-lockfile"
 		: pm === "yarn"
 			? "RUN yarn install --frozen-lockfile"
-			: "RUN npm ci";
+			: "RUN npm ci || npm install || (npm install -g pnpm && pnpm install)";
 
 	const lockfiles = pm === "pnpm"
 		? "COPY pnpm-lock.yaml pnpm-workspace.yaml ./"
@@ -109,6 +109,7 @@ ${nextjsNote}
 ${buildCmd}
 
 ENV PORT=${port}
+ENV HOSTNAME="0.0.0.0"
 EXPOSE ${port}
 
 ${startCmd}

@@ -111,12 +111,9 @@ function DeployLogsModalContent({
 	prefetched?: PrefetchedDeployLogs;
 	onClose: () => void;
 }) {
-	const active = getActiveDeployment();
-	const skipSnapshotFetch = !!prefetched && active?.deploymentId !== deploymentId;
 	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
 		undefined,
-		deploymentId,
-		skipSnapshotFetch
+		deploymentId
 	);
 
 	const fallbackEntries = React.useMemo(() => {

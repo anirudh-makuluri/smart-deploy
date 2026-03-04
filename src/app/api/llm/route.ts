@@ -15,12 +15,12 @@ export async function POST(req: Request) {
 	}
 
 	const body = await req.json();
-	let { full_name, branch, include_extra_info } = body;
+	let { full_name, branch, include_extra_info, target_workdir } = body;
 
 	if (include_extra_info === undefined) include_extra_info = false;
 
 	const { filePaths, fileContents } = await getRepoFilePaths(full_name, branch, token);
-	const prompt = createPrompt(filePaths, fileContents, include_extra_info);
+	const prompt = createPrompt(filePaths, fileContents, include_extra_info, target_workdir);
 
 	try {
 		const text = await callLLMWithFallback(prompt);
@@ -177,8 +177,12 @@ async function callLocalLLM(prompt: string): Promise<string> {
 }
 
 
-function createPrompt(filePaths: string[], fileContents: Record<string, string>, include_extra_info: boolean) {
-	const prompt = `Analyze this repo for deployment.
+function createPrompt(filePaths: string[], fileContents: Record<string, string>, include_extra_info: boolean, target_workdir?: string) {
+	const targetDirInstruction = target_workdir ?
+		`\n\nCRITICAL CONTEXT FOR SINGLE SERVICE DIRECTORY:\nThe user is deploying a specific service located at "${target_workdir}". You MUST analyze ONLY the code and configuration within this directory, ignoring the rest of the monorepo root (unless standard workspace files like package.json or lockfiles are needed for global context of how it runs). DO NOT return deployment data for the monorepo root; you MUST output the framework, language, and run commands relating SPECIFICALLY to the service at "${target_workdir}". `
+		: "";
+
+	const prompt = `Analyze this repo for deployment.${targetDirInstruction}
 
 Output rules: Return ONLY a single JSON object. No text, explanation, or markdown before or after. No code fences (\`\`\`). No comments inside the JSON (no // or /* */). No trailing commas. The response must be parseable by JSON.parse().
 
@@ -196,7 +200,10 @@ Required JSON keys:
   Look for "start", "start-all", "dev", "build" keys, etc. Use what's defined in package.json scripts: install_cmd typically "npm install" (or custom script if defined), build_cmd from "build" script (e.g., "npm run build"), run_cmd from "start" or "start-all" script (e.g., "npm start" or "npm run start-all"). 
   Do NOT assume "node server.js" for run_cmd or generic build tools for build_cmd - use the actual package.json scripts. For example: if package.json has "scripts": { "build": "tsc", "start-all": "concurrently ..." }, then build_cmd="npm run build" and run_cmd="npm run start-all".
   IMPORTANT: If the repo has NO deployable code (empty, only docs/README, only config files, only mobile code with no backend), set language to null or empty string, and run_cmd to null.
-  IMPORTANT FOR MONOREPOS: If the repo is a monorepo (has pnpm-workspace.yaml, workspaces in package.json, turbo.json, nx.json, or lerna.json), set install_cmd/build_cmd/run_cmd based on the ROOT package.json scripts (which typically use turborepo/nx/lerna to orchestrate). Set workdir to null (root). For monorepos, individual service details should go in monorepo_services.
+${target_workdir ?
+			`  IMPORTANT FOR THIS SERVICE: Even though this is a monorepo, DO NOT set workdir to null. Set workdir strictly to "${target_workdir}". Set install_cmd/build_cmd/run_cmd based on the package.json scripts nested INSIDE "${target_workdir}", not the root.`
+			:
+			`  IMPORTANT FOR MONOREPOS: If the repo is a monorepo (has pnpm-workspace.yaml, workspaces in package.json, turbo.json, nx.json, or lerna.json), set install_cmd/build_cmd/run_cmd based on the ROOT package.json scripts (which typically use turborepo/nx/lerna to orchestrate). Set workdir to null (root). For monorepos, individual service details should go in monorepo_services.`}
 ${include_extra_info ? `
 - features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, cloud_run_compatible, requires_build_but_missing_cmd } (all boolean; cloud_run_compatible = true only if stateless HTTP, no long-lived WebSockets, no mobile/lib)
   IMPORTANT: 

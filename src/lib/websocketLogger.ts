@@ -56,12 +56,12 @@ export function createDeployStepsLogger(
 		onStepsChange?.(deploySteps);
 		broadcast?.(id, msg);
 
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg, time: now }
-			};
-			ws.send(JSON.stringify(object));
-		}
+		// if (ws && ws.readyState === ws.OPEN) {
+		// 	const object = {
+		// 		type: 'deploy_logs',
+		// 		payload: { id, msg, time: now }
+		// 	};
+		// 	ws.send(JSON.stringify(object));
+		// }
 	};
 }

@@ -108,7 +108,8 @@ function generateDockerfileContent(
 
 	const coreInfo = deployConfig.core_deployment_info;
 	const language = (coreInfo?.language || "node").toLowerCase();
-	const workdir = coreInfo?.workdir || (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
+	const userWorkdir = coreInfo?.workdir;
+	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
 	const port = coreInfo?.port || 8080;
 	const installCmd = coreInfo?.install_cmd || "";
 	const buildCmd = coreInfo?.build_cmd || "";
@@ -122,12 +123,14 @@ function generateDockerfileContent(
 		case "typescript":
 			dockerfileContent = `
 FROM node:20-alpine
-WORKDIR ${workdir}
-COPY package*.json ./
-RUN ${installCmd || "npm ci --production=false"}
+WORKDIR /app
 COPY . .
+RUN npm install -g pnpm
+RUN ${installCmd || "npm install"}
+WORKDIR ${workdir}
 ${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
 ENV PORT=${port}
+ENV HOSTNAME="0.0.0.0"
 EXPOSE ${port}
 CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
 			`.trim();
@@ -223,13 +226,15 @@ CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["dotnet", "*.dll"])}
 			// Default to Node.js
 			dockerfileContent = `
 FROM node:20-alpine
-WORKDIR ${workdir}
-COPY package*.json ./
-RUN npm install
+WORKDIR /app
 COPY . .
+RUN npm install -g pnpm
+RUN ${installCmd || "npm install"}
+WORKDIR ${workdir}
+${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
 ENV PORT=${port}
 EXPOSE ${port}
-CMD ["npm", "start"]
+CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
 			`.trim();
 	}
 
@@ -268,7 +273,7 @@ function buildComposeAndEnv(
 			};
 		} else {
 			composeServices[svc.name] = {
-				build: { context: svc.dir === "." ? "." : `./${svc.dir}`, dockerfile: "Dockerfile" },
+				build: { context: ".", dockerfile: svc.dir === "." ? "Dockerfile" : `${svc.dir}/Dockerfile` },
 				ports: [`${p}:${p}`],
 				environment: env,
 				restart: "unless-stopped",
@@ -424,8 +429,13 @@ echo "==============================="
 
 # Clone repository
 cd /home/ec2-user
-git clone -b ${branch} ${authUrl} app && cd app
+git clone -b ${branch} ${authUrl} app
+cd app
 ${commitSha ? `git checkout ${commitSha}` : ""}
+
+# We removed the cd into workdir step here. 
+# Docker context will now be executed from the root of the repository
+# even for single services.
 
 # Clean up git history to save space (keep only current commit)
 git gc --aggressive --prune=now || true
@@ -477,7 +487,7 @@ fi
     cat > docker-compose.yml << 'COMPOSEEOF'
 ${composeYml}
 COMPOSEEOF
-    echo "✅ docker-compose.yml created"
+    echo "docker-compose.yml created"
 fi
 
 echo "=== Disk space before build ==="
@@ -779,7 +789,7 @@ async function launchNewInstance(params: {
 
 	if (!detectedPort) {
 		send("❌ Instance failed to respond on any known ports.", "deploy");
-		try { await terminateInstance(instanceId, region, ws); } catch { /* ignore */ }
+		// try { await terminateInstance(instanceId, region, ws); } catch { /* ignore */ }
 		throw new Error("Instance failed to respond on any known ports");
 	}
 
@@ -925,27 +935,38 @@ async function getConsoleOutput(instanceId: string, region: string): Promise<str
 
 async function waitForUserData(instanceId: string, region: string, ws: any, send: SendFn): Promise<void> {
 	send("Waiting for user-data to finish...", "deploy");
-	let lastSentLineCount = 0;
+	let lastSnippet = "";
 	let consecutiveErrors = 0;
 	let encodingErrorShown = false;
 	let cloudInitFailureDetected = false;
-	for (let i = 1; i <= 24; i++) {
+	for (let i = 1; i <= 72; i++) {
 		try {
 			const raw = await getConsoleOutput(instanceId, region);
-			consecutiveErrors = 0; // Reset error counter on success
+			consecutiveErrors = 0;
 			if (raw?.trim()) {
 				const clean = sanitizeConsoleOutput(raw);
-				const lines = clean.split(/\n/).map(l => l.trim()).filter(Boolean);
 
-				// Append only new lines (by line count) so we never show the same log twice
-				if (lines.length < lastSentLineCount) lastSentLineCount = lines.length; // API returned fewer lines (e.g. truncated)
-				if (lines.length > lastSentLineCount) {
-					const newLines = lines.slice(lastSentLineCount);
-					if (newLines.length) send(newLines.join("\n"), "deploy");
-					lastSentLineCount = lines.length;
+				let newContent = "";
+
+				if (!lastSnippet) {
+					newContent = clean;
+				} else {
+					const overlapIndex = clean.indexOf(lastSnippet);
+					if (overlapIndex !== -1) {
+						newContent = clean.substring(overlapIndex + lastSnippet.length);
+					} else {
+						newContent = clean;
+					}
 				}
 
-				// Check for cloud-init failures
+				if (newContent) {
+					const lines = newContent.split(/\n/);
+					for (const line of lines) {
+						if (line.trim()) send(line.trim(), "deploy");
+					}
+					lastSnippet = clean.slice(-250);
+				}
+
 				if (!cloudInitFailureDetected) {
 					const failurePatterns = [
 						/Failed to start.*cloud-final/i,
@@ -956,8 +977,8 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 					for (const pattern of failurePatterns) {
 						if (pattern.test(clean)) {
 							cloudInitFailureDetected = true;
-							send("⚠️ Warning: Cloud-init failure detected. User-data script may have failed. Checking if application is running anyway...", "deploy");
-							break;
+							send("❌ Error: Cloud-init failure detected. The deployment script failed.", "deploy");
+							throw new Error("Deployment failed during instance initialization (Cloud-init error). See logs for details.");
 						}
 					}
 				}
@@ -967,7 +988,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 					if (cloudInitFailureDetected) {
 						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
 					} else {
-						send("Instance user-data finished.", "deploy");
+						send("Instance user-data finished successfully.", "deploy");
 					}
 					return;
 				}
@@ -976,8 +997,8 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				if (clean.includes("Cloud-init v.") && clean.includes("finished") && i >= 12) {
 					send("Cloud-init finished. Checking if deployment completed...", "deploy");
 					if (i >= 18) {
-						send("Cloud-init finished but no deployment completion signal found. Proceeding to check application status...", "deploy");
-						return;
+						send("❌ Error: Cloud-init finished but no deployment completion signal found. The build likely failed.", "deploy");
+						throw new Error("Deployment did not complete successfully. See deployment logs for Docker or build errors.");
 					}
 				}
 			}
@@ -1001,7 +1022,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				break;
 			}
 		}
-		await new Promise(r => setTimeout(r, 15_000));
+		await new Promise(r => setTimeout(r, 5_000));
 	}
 
 	if (cloudInitFailureDetected) {
@@ -1014,14 +1035,20 @@ async function detectRespondingPort(publicIp: string, services: ServiceDef[], ws
 		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 		const candidates = Array.from(new Set([80, 8080, 3000, 5000, ...services.map(s => s.port).filter(Boolean)]));
-		for (const port of candidates) {
-			try {
-				const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
-				if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3"))) {
-					send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
-					return port;
-				}
-			} catch { /* try next */ }
+		send("Waiting for application to be ready (this may take a minute)...", "deploy");
+		for (let attempt = 1; attempt <= 12; attempt++) {
+			for (const port of candidates) {
+				try {
+					const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
+					if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
+						send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
+						return port;
+					}
+				} catch { /* try next */ }
+			}
+			if (attempt < 12) {
+				await new Promise(r => setTimeout(r, 5000));
+			}
 		}
 	} catch { /* curl unavailable */ }
 	return null;

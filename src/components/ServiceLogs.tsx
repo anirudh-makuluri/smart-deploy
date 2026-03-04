@@ -10,6 +10,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "./ui/alert-dialog";
+import { Button } from "./ui/button";
 
 type LogEntry = { timestamp?: string; message?: string };
 
@@ -79,16 +80,15 @@ export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 									const formattedTime = formatTimeOnly(log.timestamp);
 
 									return (
-										<button
-											type="button"
+										<div
 											key={i}
-											onClick={() => setSelectedLog(log)}
 											className="grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40"
 										>
 											<span className="text-primary">{type}</span>
 											<span className="truncate">{formattedTime}</span>
 											<span className="truncate text-foreground">{message || "-"}</span>
-										</button>
+											{/* <Button type="button" onClick={() => setSelectedLog(log)}>OPEN</Button> */}
+										</div>
 									);
 								})}
 							</>

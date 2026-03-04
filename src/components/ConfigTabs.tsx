@@ -211,17 +211,80 @@ export default function ConfigTabs(
 		return () => clearTimeout(timer);
 	}, [watchedForm, envEntries, projectMetadata, monorepoServices, deployment?.id]);
 
+	const verifySubdomain = async (subdomainInput: string) => {
+		if (!subdomainInput) return;
+		const subdomain = subdomainInput.replace(/^https?:\/\//, "").split(".")[0];
+		if (!subdomain) return;
+
+		setCustomUrlVerifying(true);
+		try {
+			const res = await fetch("/api/verify-dns", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					subdomain,
+					currentDeploymentId: deployment?.id ?? ""
+				}),
+			});
+			const data = await res.json();
+
+			if (data.available) {
+				if (data.isOwned) {
+					setCustomUrlStatus({
+						type: 'owned',
+						message: `This is your current URL: ${data.customUrl}`
+					});
+				} else {
+					setCustomUrlStatus({
+						type: 'success',
+						message: `Available: ${data.customUrl}`
+					});
+				}
+				form.setValue("custom_url", data.customUrl);
+			} else {
+				setCustomUrlStatus({
+					type: 'error',
+					message: data.message || "Subdomain is already taken",
+					alternatives: data.alternatives || []
+				});
+			}
+		} catch (error) {
+			setCustomUrlStatus({
+				type: 'error',
+				message: "Failed to verify subdomain"
+			});
+		} finally {
+			setCustomUrlVerifying(false);
+		}
+	};
+
+	useEffect(() => {
+		if (editMode && !form.getValues("custom_url")) {
+			const currentService = form.getValues("service_name");
+			if (currentService) {
+				verifySubdomain(currentService);
+			}
+		}
+	}, [editMode, deployment?.id]);
+
 	function handleAIBtn() {
 		setAiFetching(true);
 
 		if (!repo?.full_name || !repo.default_branch) return;
+
+		const currentWorkdir = form.getValues("workdir");
 
 		fetch('/api/llm', {
 			method: "POST",
 			headers: {
 				'Content-Type': 'application/json'
 			},
-			body: JSON.stringify({ full_name: repo.full_name, branch: repo.default_branch, include_extra_info: true })
+			body: JSON.stringify({
+				full_name: repo.full_name,
+				branch: repo.default_branch,
+				include_extra_info: true,
+				target_workdir: currentWorkdir
+			})
 		}).then(res => res.json())
 			.then((response) => {
 				setAiFetching(false);
@@ -508,50 +571,8 @@ export default function ConfigTabs(
 												if (e.key === "Enter") {
 													e.preventDefault();
 													const customUrl = form.watch("custom_url");
-													if (!customUrl) return;
-
-													const subdomain = customUrl.replace(/^https?:\/\//, "").split(".")[0];
-													if (!subdomain) return;
-
-													setCustomUrlVerifying(true);
-													try {
-														const res = await fetch("/api/verify-dns", {
-															method: "POST",
-															headers: { "Content-Type": "application/json" },
-															body: JSON.stringify({
-																subdomain,
-																currentDeploymentId: deployment?.id ?? ""
-															}),
-														});
-														const data = await res.json();
-
-														if (data.available) {
-															if (data.isOwned) {
-																setCustomUrlStatus({
-																	type: 'owned',
-																	message: `This is your current URL: ${data.customUrl}`
-																});
-															} else {
-																setCustomUrlStatus({
-																	type: 'success',
-																	message: `✓ Available: ${data.customUrl}`
-																});
-															}
-															form.setValue("custom_url", data.customUrl);
-														} else {
-															setCustomUrlStatus({
-																type: 'error',
-																message: data.message || "Subdomain is already taken",
-																alternatives: data.alternatives || []
-															});
-														}
-													} catch (error) {
-														setCustomUrlStatus({
-															type: 'error',
-															message: "Failed to verify subdomain"
-														});
-													} finally {
-														setCustomUrlVerifying(false);
+													if (customUrl) {
+														verifySubdomain(customUrl);
 													}
 												}
 											}}

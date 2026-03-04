@@ -12,7 +12,7 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { AIGenProjectMetadata, DeployConfig, repoType } from "@/app/types";
-import { parseEnvVarsToStore } from "@/lib/utils";
+import { parseEnvVarsToStore, configSnapshotFromDeployConfig } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { isEqual } from "lodash";
 import { Clock } from "lucide-react";
@@ -393,6 +393,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 							deployStatus={effectiveDeployStatus}
 							deployError={deployError}
 							deployingCommitInfo={deployingCommitInfo}
+							steps={steps}
+							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (resolvedDeployment ? configSnapshotFromDeployConfig(resolvedDeployment) : {})}
 						/>
 					</div>
 				);

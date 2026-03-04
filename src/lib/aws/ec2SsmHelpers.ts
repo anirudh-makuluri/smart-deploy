@@ -72,7 +72,7 @@ export async function ensureSSMInstanceProfile(
 	// Write policy to temp file to avoid Windows PowerShell JSON escaping issues
 	const policyFile = path.join(os.tmpdir(), `iam-trust-policy-${Date.now()}.json`);
 	const policyFileUri = "file://" + path.resolve(policyFile).replace(/\\/g, "/");
-	
+
 	try {
 		fs.writeFileSync(policyFile, trustPolicy, "utf8");
 		await runAWSCommand(
@@ -173,7 +173,8 @@ function generateDockerfileContentForRedeploy(
 
 	const coreInfo = deployConfig.core_deployment_info;
 	const language = (coreInfo?.language || "node").toLowerCase();
-	const workdir = coreInfo?.workdir || (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
+	const userWorkdir = coreInfo?.workdir;
+	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
 	const port = coreInfo?.port || 8080;
 	const installCmd = coreInfo?.install_cmd || "";
 	const buildCmd = coreInfo?.build_cmd || "";
@@ -185,12 +186,14 @@ function generateDockerfileContentForRedeploy(
 		case "typescript":
 			return `
 FROM node:20-alpine
-WORKDIR ${workdir}
-COPY package*.json ./
-RUN ${installCmd || "npm ci --production=false"}
+WORKDIR /app
 COPY . .
+RUN npm install -g pnpm
+RUN ${installCmd || "npm install"}
+WORKDIR ${workdir}
 ${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
 ENV PORT=${port}
+ENV HOSTNAME="0.0.0.0"
 EXPOSE ${port}
 CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
 			`.trim();
@@ -227,11 +230,13 @@ CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./main"])}
 		default:
 			return `
 FROM node:20-alpine
-WORKDIR ${workdir}
-COPY package*.json ./
-RUN npm install
+WORKDIR /app
 COPY . .
+RUN npm install -g pnpm
+RUN npm install
+WORKDIR ${workdir}
 ENV PORT=${port}
+ENV HOSTNAME="0.0.0.0"
 EXPOSE ${port}
 CMD ["npm", "start"]
 			`.trim();
@@ -476,7 +481,7 @@ export async function ensureInstanceSsmReady(
 		send("Instance is registered with SSM.", "deploy");
 		return;
 	}
-	
+
 
 	// Get current IAM instance profile (ARN or "None")
 	const currentProfileOut = await runAWSCommand(
@@ -557,7 +562,7 @@ export async function ensureInstanceSsmReady(
 	if (diagnostics) send("SSM diagnostic:" + diagnostics, "deploy");
 	throw new Error(
 		"Instance did not register with SSM. Common causes: (1) Instance has no outbound internet (e.g. private subnet without NAT). Add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages). (2) SSM agent not running — in EC2 console, reboot the instance and redeploy. (3) Wrong account/region. Fix network or reboot the instance in EC2 console, then redeploy." +
-			(diagnostics ? diagnostics : "")
+		(diagnostics ? diagnostics : "")
 	);
 }
 
