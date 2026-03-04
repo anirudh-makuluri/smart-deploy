@@ -415,8 +415,7 @@ async function handleAWSDeploy(
 	if (vercelResult && vercelResult.success) {
 		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
 	} else if (deployUrl && vercelResult && success) {
-		send(`❌ Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}`, 'done');
-		success = false; // Mark overall deployment as failure if DNS addition failed (since custom URL is a key feature)
+		send(`⚠️ Warning: Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}. Proceeding with instance IP.`, 'done');
 	}
 
 	// Mark final step as success

@@ -657,11 +657,10 @@ async function redeployInstance(params: {
 	net: NetworkingResult;
 	amiId: string;
 	certificateArn: string;
-	sharedAlbEnabled: boolean;
 	ws: any;
 	send: SendFn;
 }): Promise<EC2Result> {
-	const { deployConfig, existingInstanceId, region, services, repoName, token, composeYml, envBase64, net, amiId, certificateArn, sharedAlbEnabled, ws, send } = params;
+	const { deployConfig, existingInstanceId, region, services, repoName, token, composeYml, envBase64, net, amiId, certificateArn, ws, send } = params;
 
 	send("Reusing existing instance (SSM redeploy)...", "deploy");
 	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
@@ -709,7 +708,7 @@ async function redeployInstance(params: {
 		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 	).trim();
 
-	const { baseUrl, serviceUrls } = buildServiceUrls(deployConfig, services, repoName, publicIp, certificateArn, sharedAlbEnabled);
+	const { baseUrl, serviceUrls } = buildServiceUrls(deployConfig, services, repoName, publicIp, certificateArn);
 	send("Redeploy complete.", "done");
 	send(`Application URL: ${baseUrl}`, "done");
 	return { success: true, baseUrl, serviceUrls, instanceId: existingInstanceId, publicIp, ...net, subnetId: net.subnetIds[0], amiId };
@@ -725,11 +724,10 @@ async function launchNewInstance(params: {
 	dbConnectionString: string | undefined;
 	net: NetworkingResult;
 	amiId: string;
-	sharedAlbEnabled: boolean;
 	ws: any;
 	send: SendFn;
 }): Promise<{ instanceId: string; publicIp: string; detectedPort: number }> {
-	const { deployConfig, instanceName, region, services, token, dbConnectionString, net, amiId, sharedAlbEnabled, ws, send } = params;
+	const { deployConfig, instanceName, region, services, token, dbConnectionString, net, amiId, ws, send } = params;
 	const keyName = "smartdeploy";
 
 	await ensureSSMInstanceProfile(region, ws);
@@ -744,7 +742,7 @@ async function launchNewInstance(params: {
 		deployConfig.env_vars || "",
 		dbConnectionString,
 		deployConfig.commitSha,
-		sharedAlbEnabled ? undefined : deployConfig.custom_url,
+		undefined,
 	);
 	const b64 = Buffer.from(userData).toString("base64");
 	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.b64`);
@@ -1060,14 +1058,13 @@ function buildServiceUrls(
 	repoName: string,
 	publicIp: string,
 	certificateArn: string,
-	sharedAlbEnabled: boolean,
 ): { baseUrl: string; serviceUrls: Map<string, string> } {
 	const serviceUrls = new Map<string, string>();
 	const customHost = normalizeDomain(deployConfig.custom_url);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl: string;
-	if (sharedAlbEnabled && deployConfig.service_name) {
+	if (deployConfig.service_name) {
 		const host = customHost || buildServiceHostname(deployConfig.service_name, deployConfig.service_name);
 		baseUrl = host ? `${scheme}://${host}` : deployConfig.ec2?.baseUrl || `http://${publicIp}`;
 		serviceUrls.set(services[0]?.name || repoName, baseUrl);
@@ -1135,14 +1132,12 @@ export async function handleEC2(
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const sharedAlbEnabled = !!certificateArn && !!buildServiceHostname("app");
 	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
 	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
-	const customDomain = sharedAlbEnabled ? undefined : deployConfig.custom_url;
-	const { composeYml, envBase64 } = buildComposeAndEnv(services, deployConfig.env_vars || "", dbConnectionString, customDomain);
+	const { composeYml, envBase64 } = buildComposeAndEnv(services, deployConfig.env_vars || "", dbConnectionString, undefined);
 
 	// ── Redeploy path: reuse existing running instance via SSM ──
 	if (existingInstanceId) {
@@ -1150,7 +1145,7 @@ export async function handleEC2(
 		if (state === "running") {
 			return redeployInstance({
 				deployConfig, existingInstanceId, region, services, repoName, token,
-				composeYml, envBase64, net, amiId, certificateArn, sharedAlbEnabled, ws, send,
+				composeYml, envBase64, net, amiId, certificateArn, ws, send,
 			});
 		}
 	}
@@ -1159,7 +1154,7 @@ export async function handleEC2(
 	const instanceName = generateResourceName(repoName, "ec2");
 	const { instanceId, publicIp, detectedPort } = await launchNewInstance({
 		deployConfig, instanceName, region, services, token, dbConnectionString,
-		net, amiId, sharedAlbEnabled, ws, send,
+		net, amiId, ws, send,
 	});
 
 	const customHost = normalizeDomain(deployConfig.custom_url);
@@ -1169,14 +1164,16 @@ export async function handleEC2(
 	let serviceUrls = new Map<string, string>();
 	let sharedAlbDns: string | undefined;
 
-	if (sharedAlbEnabled) {
+	try {
 		const alb = await configureAlb({
 			deployConfig, instanceId, existingInstanceId, services, repoName, net, region, certificateArn, ws, send,
 		});
 		sharedAlbDns = alb.sharedAlbDns;
 		serviceUrls = alb.serviceUrls;
 		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
-	} else {
+	} catch (e: any) {
+		send(`⚠️ Warning: ALB configuration skipped or failed: ${e.message}`, "deploy");
+		send(`Falling back to direct instance IP.`, "deploy");
 		const fallbackBase = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
 		for (const svc of services) {
 			serviceUrls.set(svc.name, services.length === 1 ? (customBaseUrl || fallbackBase) : `http://${publicIp}:${svc.port}`);
