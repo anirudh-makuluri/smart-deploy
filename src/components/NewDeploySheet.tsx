@@ -138,15 +138,15 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 
 	const existingDeployment = React.useMemo(() => {
 		return deployments.find(
-			(d) => d.repo_id === repo.id.toString() && d.service_name === prefilledServiceName
+			(d) => d.repo_name === repo.name && d.service_name === prefilledServiceName
 		);
-	}, [deployments, repo.id, prefilledServiceName]);
+	}, [deployments, repo.name, prefilledServiceName]);
 
 	const prefilledDeployment = React.useMemo<DeployConfig | undefined>(() => {
 		if (existingDeployment) return existingDeployment;
 		return {
 			id: crypto.randomUUID(),
-			repo_id: repo.id.toString(),
+			repo_name: repo.name,
 			url: repo.html_url,
 			branch: repo.default_branch || repo.branches?.[0]?.name || "main",
 			use_custom_dockerfile: false,
@@ -256,7 +256,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 
 		const payload: DeployConfig = {
 			id: existingDeployment?.id || crypto.randomUUID(),
-			repo_id: repo.id.toString(),
+			repo_name: repo.name,
 			deploymentTarget,
 			...(deployment_target_reason && { deployment_target_reason }),
 			url: values.url,

@@ -65,8 +65,7 @@ export type CloudRunDeployDetails = {
 export type DeployConfig = {
 	/** Unique UUID for this deployment attempt */
 	id: string;
-	/** The GitHub API numeric ID of the repository this deployment belongs to */
-	repo_id: string;
+	repo_name: string;
 	url: string;
 	branch: string;
 	/** Optional commit SHA to deploy a specific commit instead of branch HEAD */

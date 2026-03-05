@@ -66,12 +66,11 @@ function getDeploymentForService(
 	deployments: DeployConfig[],
 	repoUrl: string,
 	serviceName: string,
-	repoName: string,
-	repoId: string
+	repoName: string
 ): DeployConfig | undefined {
 	const matches: DeployConfig[] = [];
 	for (const d of deployments) {
-		if (d.repo_id !== repoId && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+		if (d.repo_name !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
 
 		if (d.monorepo_services?.some((service) => service.name === serviceName)) {
 			matches.push(d);
@@ -227,7 +226,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
-		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_id === resolvedRepo.id.toString() || normalizeRepoUrl(d.url) === norm)));
+		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_name === resolvedRepo.name || normalizeRepoUrl(d.url) === norm)));
 	}, [deployments, repoUrl, resolvedRepo]);
 
 	function openSheetForService(svc: DetectedService) {
@@ -362,8 +361,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 								repoDeployments,
 								repoUrl,
 								svc.name,
-								repo,
-								resolvedRepo.id.toString()
+								resolvedRepo.name
 							);
 							const status = deployment?.status;
 							const isOnline = status === "running";

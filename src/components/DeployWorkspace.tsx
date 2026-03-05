@@ -186,7 +186,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 
 		const base: DeployConfig = resolvedDeployment ?? {
 			id: resolvedDeploymentId,
-			repo_id: resolvedRepo.id.toString(),
+			repo_name: resolvedRepo.name,
 			url: data.url || resolvedRepo.html_url,
 			service_name: data.service_name || resolvedRepo.name,
 			branch: data.branch || resolvedRepo.default_branch || "main",
@@ -310,7 +310,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 
 		const payload: DeployConfig = {
 			id: resolvedDeploymentId,
-			repo_id: resolvedRepo.id.toString(),
+			repo_name: resolvedRepo.name,
 			url: values.url,
 			service_name: values.service_name,
 			branch: values.branch,

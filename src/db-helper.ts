@@ -3,7 +3,8 @@ import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, Re
 
 type RowDeployment = {
 	id: string;
-	repo_id: string;
+	repo_name: string;
+	service_name: string;
 	owner_id: string;
 	status: string | null;
 	first_deployment: string | null;
@@ -13,10 +14,11 @@ type RowDeployment = {
 };
 
 function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
-	const { id, repo_id, owner_id, status, first_deployment, last_deployment, revision, data } = row;
+	const { id, repo_name, service_name, owner_id, status, first_deployment, last_deployment, revision, data } = row;
 	return {
 		id,
-		repo_id,
+		repo_name,
+		service_name,
 		ownerID: owner_id,
 		status: (status as DeployConfig["status"]) ?? "running",
 		first_deployment: first_deployment ?? undefined,
@@ -61,45 +63,36 @@ export const dbHelper = {
 
 			const supabase = getSupabaseServer();
 
-			const { data: userRow, error: userError } = await supabase
-				.from("users")
-				.select("id, deployment_ids")
-				.eq("id", userID)
-				.single();
-
-			if (userError || !userRow) return { error: "User doesn't exist" };
-
-			const deploymentIds: string[] = (userRow.deployment_ids as string[]) || [];
-
 			if (deployConfig.status === "stopped") {
 				await supabase.from("deployments").delete().eq("id", deploymentId);
-				const updatedIds = deploymentIds.filter((id) => id !== deploymentId);
-				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
 				return { success: "Deployment stopped and deleted" };
 			}
 
 			// Columns we store at top level; rest goes into data jsonb
 			const {
 				id: _id,
-				repo_id,
+				repo_name,
+				service_name,
 				status,
 				first_deployment,
 				last_deployment,
 				revision,
 				...rest
 			} = deployConfig as DeployConfig & { ownerID?: string };
-			const dataJson = { ...rest, repo_id } as Record<string, unknown>;
+			const dataJson = { ...rest } as Record<string, unknown>;
 
 			const { data: existing } = await supabase
 				.from("deployments")
-				.select("id, revision, data")
-				.eq("id", deploymentId)
+				.select("revision, data")
+				.eq("repo_name", repo_name)
+				.eq("service_name", service_name)
 				.single();
 
 			if (!existing) {
 				await supabase.from("deployments").insert({
 					id: deploymentId,
-					repo_id: repo_id || dataJson.repo_id,
+					repo_name: repo_name,
+					service_name: service_name,
 					owner_id: userID,
 					status: deployConfig.status ?? "running",
 					first_deployment: new Date().toISOString(),
@@ -107,8 +100,6 @@ export const dbHelper = {
 					revision: 1,
 					data: dataJson,
 				});
-				const updatedIds = deploymentIds.includes(deploymentId) ? deploymentIds : [...deploymentIds, deploymentId];
-				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
 				return { success: "New deployment created and added to user" };
 			}
 
@@ -118,13 +109,13 @@ export const dbHelper = {
 			await supabase
 				.from("deployments")
 				.update({
-					repo_id: repo_id || dataJson.repo_id,
-					status: deployConfig.status ?? "running",
+					status: deployConfig.status ?? "didnt_deploy",
 					last_deployment: lastDeployment,
 					revision: nextRevision,
 					data: mergedData,
 				})
-				.eq("id", deploymentId);
+				.eq("repo_name", repo_name)
+				.eq("service_name", service_name);
 
 			return { success: "Deployment data updated successfully" };
 		} catch (error) {

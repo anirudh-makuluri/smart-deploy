@@ -7,13 +7,13 @@ create table if not exists public.users (
   name text,
   image text,
   created_at timestamptz default now(),
-  deployment_ids text[] default '{}'
 );
 
 -- Deployments: one row per deployment; id = deployment id (e.g. repo/branch slug)
 create table if not exists public.deployments (
   id text primary key,
-  repo_id text,
+  repo_name text not null,
+  service_name text not null,
   owner_id text not null references public.users(id) on delete cascade,
   status text default 'running',
   first_deployment timestamptz,
