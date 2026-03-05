@@ -13,6 +13,7 @@ create table if not exists public.users (
 -- Deployments: one row per deployment; id = deployment id (e.g. repo/branch slug)
 create table if not exists public.deployments (
   id text primary key,
+  repo_id text,
   owner_id text not null references public.users(id) on delete cascade,
   status text default 'running',
   first_deployment timestamptz,

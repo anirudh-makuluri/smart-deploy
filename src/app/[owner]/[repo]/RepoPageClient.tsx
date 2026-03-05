@@ -69,16 +69,22 @@ function getDeploymentForService(
 	repoName: string,
 	repoId: string
 ): DeployConfig | undefined {
-	const norm = normalizeRepoUrl(repoUrl);
-	const slug = repoSlugFromUrl(repoUrl);
 	const matches: DeployConfig[] = [];
 	for (const d of deployments) {
-		if (normalizeRepoUrl(d.url) !== norm) continue;
-		if (d.monorepo_services?.some((service) => service.name === serviceName)) matches.push(d);
-		else if (d.service_name === `${repoName}-${serviceName}`) matches.push(d);
-		else if (d.id === repoId || d.id === slug) matches.push(d); // repo-level (legacy url id or slug)
-		else if (d.id === `${slug}-${serviceName}`) matches.push(d);
-		else if (d.service_name === repoName) matches.push(d);
+		if (d.repo_id !== repoId && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+
+		if (d.monorepo_services?.some((service) => service.name === serviceName)) {
+			matches.push(d);
+			continue;
+		}
+
+		const dbServiceName = d.service_name || "";
+		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
+		const isRepoLevel = dbServiceName === "." || dbServiceName.toLowerCase() === repoName.toLowerCase();
+
+		if (isExactHit || isRepoLevel) {
+			matches.push(d);
+		}
 	}
 
 	if (matches.length === 0) return undefined;
@@ -221,8 +227,8 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
-		return deployments.filter((d) => normalizeRepoUrl(d.url) === norm);
-	}, [deployments, repoUrl]);
+		return deployments.filter((d) => d.repo_id === resolvedRepo.id.toString() || normalizeRepoUrl(d.url) === norm);
+	}, [deployments, repoUrl, resolvedRepo]);
 
 	function openSheetForService(svc: DetectedService) {
 		setSelectedService(svc);
@@ -276,7 +282,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		}
 	}
 
-		return (
+	return (
 		<div className="dot-grid-bg min-h-svh flex flex-col text-foreground">
 			{isDeleting && (
 				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
@@ -298,125 +304,124 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 			</header>
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
-					{activeDeploy && (
-						<button
-							type="button"
-							onClick={() => openLogsModal(activeDeploy.deploymentId, activeDeploy.userID)}
-							className="mb-4 flex w-full cursor-pointer items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 py-3 px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary/15"
-						>
-							<Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-							<span>A deployment is in progress for this repo.</span>
-							<span className="text-primary">Click to view logs</span>
-						</button>
-					)}
-					<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-						<div>
-							<h1 className="text-xl font-semibold text-foreground">
-								{owner} / {repo}
-							</h1>
-							<p className="text-sm text-muted-foreground mt-0.5">
-								{services.length} service{services.length !== 1 ? "s" : ""}
-							</p>
-						</div>
-						{!loading && !error && services.length > 0 && (
-							<div className="flex items-center gap-2">
-								<Button onClick={openSheetForAll} className="shrink-0">
-									Deploy all on one instance
-								</Button>
-								{repoDeployments.length > 0 && (
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={handleDeleteAllDeployments}
-									>
-										Delete all deployments
-									</Button>
-								)}
-							</div>
-						)}
+				{activeDeploy && (
+					<button
+						type="button"
+						onClick={() => openLogsModal(activeDeploy.deploymentId, activeDeploy.userID)}
+						className="mb-4 flex w-full cursor-pointer items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 py-3 px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary/15"
+					>
+						<Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+						<span>A deployment is in progress for this repo.</span>
+						<span className="text-primary">Click to view logs</span>
+					</button>
+				)}
+				<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+					<div>
+						<h1 className="text-xl font-semibold text-foreground">
+							{owner} / {repo}
+						</h1>
+						<p className="text-sm text-muted-foreground mt-0.5">
+							{services.length} service{services.length !== 1 ? "s" : ""}
+						</p>
 					</div>
-
-					{loading && (
-						<div className="text-muted-foreground py-8 text-center">Loading services…</div>
-					)}
-					{error && (
-						<div className="rounded-xl border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3">
-							{error}
-						</div>
-					)}
-					{!loading && !error && services.length === 0 && (
-						<div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center text-muted-foreground">
-							No deployable services detected. Add a service or check the repository structure.
-						</div>
-					)}
 					{!loading && !error && services.length > 0 && (
-						<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-							{services.map((svc) => {
-								const deployment = getDeploymentForService(
-									repoDeployments,
-									repoUrl,
-									svc.name,
-									repo,
-									minimalRepo.id
-								);
-								const status = deployment?.status;
-								const isOnline = status === "running";
-								const isCrashed = status === "stopped" || status === "paused";
-								const isFailed = status === "didnt_deploy";
-								const isNotDeployed = !deployment || isFailed;
-								const canNavigateToService = !!deployment && !isFailed;
-
-								const handleCardClick = () => {
-									if (canNavigateToService) {
-										router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
-									} else {
-										openSheetForService(svc);
-									}
-								};
-
-								return (
-									<button
-										key={svc.name}
-										type="button"
-										onClick={handleCardClick}
-										className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${
-											isCrashed ? "border-destructive/60" : "border-border"
-										}`}
-									>
-										<div className="flex items-center gap-3">
-											<Github className="size-6 shrink-0 text-muted-foreground" />
-											<span className="font-semibold text-foreground truncate">
-												@{repo}/{svc.name}
-											</span>
-										</div>
-										<div className="mt-3 flex items-center gap-2">
-											{isNotDeployed && (
-												<span className="text-sm text-muted-foreground">
-													{isFailed ? "Deployment failed" : "Not deployed"}
-												</span>
-											)}
-											{isOnline && (
-												<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
-													<span className="size-2 rounded-full bg-green-500" />
-													Online
-												</span>
-											)}
-											{isCrashed && (
-												<>
-													<span className="text-sm text-destructive flex items-center gap-1">
-														Crashed
-													</span>
-													<span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
-														<AlertTriangle className="size-4" />
-													</span>
-												</>
-											)}
-										</div>
-									</button>
-								);
-							})}
+						<div className="flex items-center gap-2">
+							<Button onClick={openSheetForAll} className="shrink-0">
+								Deploy all on one instance
+							</Button>
+							{repoDeployments.length > 0 && (
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={handleDeleteAllDeployments}
+								>
+									Delete all deployments
+								</Button>
+							)}
 						</div>
 					)}
+				</div>
+
+				{loading && (
+					<div className="text-muted-foreground py-8 text-center">Loading services…</div>
+				)}
+				{error && (
+					<div className="rounded-xl border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3">
+						{error}
+					</div>
+				)}
+				{!loading && !error && services.length === 0 && (
+					<div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center text-muted-foreground">
+						No deployable services detected. Add a service or check the repository structure.
+					</div>
+				)}
+				{!loading && !error && services.length > 0 && (
+					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+						{services.map((svc) => {
+							const deployment = getDeploymentForService(
+								repoDeployments,
+								repoUrl,
+								svc.name,
+								repo,
+								resolvedRepo.id.toString()
+							);
+							const status = deployment?.status;
+							const isOnline = status === "running";
+							const isCrashed = status === "stopped" || status === "paused";
+							const isFailed = status === "didnt_deploy";
+							const isNotDeployed = !deployment || isFailed;
+							const canNavigateToService = !!deployment && !isFailed;
+
+							const handleCardClick = () => {
+								if (canNavigateToService) {
+									router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
+								} else {
+									openSheetForService(svc);
+								}
+							};
+
+							return (
+								<button
+									key={svc.name}
+									type="button"
+									onClick={handleCardClick}
+									className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isCrashed ? "border-destructive/60" : "border-border"
+										}`}
+								>
+									<div className="flex items-center gap-3">
+										<Github className="size-6 shrink-0 text-muted-foreground" />
+										<span className="font-semibold text-foreground truncate">
+											@{repo}/{svc.name}
+										</span>
+									</div>
+									<div className="mt-3 flex items-center gap-2">
+										{isNotDeployed && (
+											<span className="text-sm text-muted-foreground">
+												{isFailed ? "Deployment failed" : "Not deployed"}
+											</span>
+										)}
+										{isOnline && (
+											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+												<span className="size-2 rounded-full bg-green-500" />
+												Online
+											</span>
+										)}
+										{isCrashed && (
+											<>
+												<span className="text-sm text-destructive flex items-center gap-1">
+													Crashed
+												</span>
+												<span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+													<AlertTriangle className="size-4" />
+												</span>
+											</>
+										)}
+									</div>
+								</button>
+							);
+						})}
+					</div>
+				)}
 			</main>
 
 			{sheetOpen && (

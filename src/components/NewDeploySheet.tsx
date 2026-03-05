@@ -125,27 +125,35 @@ function fallbackCoreDeploymentInfo(selectedService?: DetectedServiceInfo): Core
 
 export default function NewDeploySheet({ open, onClose, repo, selectedService }: NewDeploySheetProps) {
 	const { data: session } = useSession();
-	const { updateDeploymentById } = useAppData();
+	const { updateDeploymentById, deployments } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const prefilledCoreInfo = React.useMemo(
 		() => selectedService?.core_deployment_info ?? fallbackCoreDeploymentInfo(selectedService),
 		[selectedService]
 	);
 	const prefilledServiceName = React.useMemo(
-		() => (selectedService ? `${repo.name}-${selectedService.name}` : repo.name),
-		[repo.name, selectedService]
+		() => (selectedService ? selectedService.name : "."),
+		[selectedService]
 	);
+
+	const existingDeployment = React.useMemo(() => {
+		return deployments.find(
+			(d) => d.repo_id === repo.id.toString() && d.service_name === prefilledServiceName
+		);
+	}, [deployments, repo.id, prefilledServiceName]);
+
 	const prefilledDeployment = React.useMemo<DeployConfig | undefined>(() => {
 		if (!selectedService) return undefined;
 		return {
-			id: repo.id,
+			id: existingDeployment?.id || crypto.randomUUID(),
+			repo_id: repo.id.toString(),
 			url: repo.html_url,
 			branch: repo.default_branch || repo.branches?.[0]?.name || "main",
 			use_custom_dockerfile: false,
 			service_name: prefilledServiceName,
 			core_deployment_info: prefilledCoreInfo,
 		};
-	}, [prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService]);
+	}, [prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService, existingDeployment?.id]);
 	const { sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(prefilledServiceName);
 
 	React.useEffect(() => {
@@ -216,7 +224,8 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 		};
 
 		const payload: DeployConfig = {
-			id: repo.id,
+			id: existingDeployment?.id || crypto.randomUUID(),
+			repo_id: repo.id.toString(),
 			deploymentTarget,
 			...(deployment_target_reason && { deployment_target_reason }),
 			url: values.url,

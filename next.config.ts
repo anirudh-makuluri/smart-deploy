@@ -4,7 +4,6 @@ import path from "path";
 const nextConfig: NextConfig = {
 	// Enable standalone output for Docker deployment
 	output: "standalone",
-	serverExternalPackages: ["@opentelemetry/api"],
 	// Ensure TypeScript path aliases work during build
 	webpack: (config) => {
 		config.resolve.alias = {

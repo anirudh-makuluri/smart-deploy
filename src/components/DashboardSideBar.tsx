@@ -20,7 +20,7 @@ type DashboardSideBarProps = {
 export default function DashboardSideBar({ onOpenDeploySheet, activeView, onViewChange }: DashboardSideBarProps) {
 	const router = useRouter();
 	const { data: session } = useSession();
-	const { repoList, deployments, refreshRepoList, isLoading } = useAppData();
+	const { repoList, deployments, repoServices, isLoading, setAppData, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showAddRepo, setShowAddRepo] = useState(false);
 	const [repoUrl, setRepoUrl] = useState("");
@@ -50,19 +50,19 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			// github.com/owner/repo
 			// owner/repo
 			let cleanUrl = url.trim();
-			
+
 			// Remove .git suffix if present
 			cleanUrl = cleanUrl.replace(/\.git$/, "");
-			
+
 			// Remove protocol if present
 			cleanUrl = cleanUrl.replace(/^https?:\/\//, "");
-			
+
 			// Remove github.com/ prefix if present
 			cleanUrl = cleanUrl.replace(/^github\.com\//, "");
-			
+
 			// Remove trailing slash
 			cleanUrl = cleanUrl.replace(/\/$/, "");
-			
+
 			const parts = cleanUrl.split("/").filter(Boolean);
 			// Need at least owner and repo; extra segments (tree, branch, path) are ignored for "add repo"
 			if (parts.length >= 2) {
@@ -100,7 +100,7 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			});
 
 			const data = await response.json();
-			
+
 			if (!response.ok) {
 				toast.error(data.error || "Failed to fetch repository");
 				return;
@@ -109,6 +109,11 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 			const repo: repoType = data.repo;
 			setRepoUrl("");
 			setShowAddRepo(false);
+
+			// Immediately push the new repository footprint into the Zustand array
+			// This circumvents the RepoPageClient mock-fallback that assigns HTTP URLs to the deployment ID.
+			setAppData([repo, ...repoList], deployments, isLoading, repoServices);
+
 			toast.success(`Added ${repo.full_name}`);
 			router.push(`/${repo.owner.login}/${repo.name}`);
 		} catch (error: any) {
@@ -131,11 +136,10 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 						<button
 							type="button"
 							onClick={() => onViewChange("overview")}
-							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-								activeView === "overview"
+							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${activeView === "overview"
 									? "border-primary/40 bg-primary/10 text-primary"
 									: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
-							}`}
+								}`}
 						>
 							<LayoutGrid className="size-4" />
 							Overview
@@ -143,11 +147,10 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 						<button
 							type="button"
 							onClick={() => onViewChange("deployments")}
-							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${
-								activeView === "deployments"
+							className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors ${activeView === "deployments"
 									? "border-primary/40 bg-primary/10 text-primary"
 									: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
-							}`}
+								}`}
 						>
 							<History className="size-4" />
 							Deployments
@@ -230,11 +233,11 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 					) : (
 						reposToShow.map((repo: repoType) => (
 							<li key={repo.id}>
-									<button
-										type="button"
-										onClick={() => router.push(`/${repo.full_name}`)}
-										className="w-full cursor-pointer text-left rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
-									>
+								<button
+									type="button"
+									onClick={() => router.push(`/${repo.full_name}`)}
+									className="w-full cursor-pointer text-left rounded-lg border border-border bg-background hover:bg-secondary hover:border-border p-3 transition-colors"
+								>
 									<p className="font-medium text-foreground truncate">{repo.full_name.split("/")[1]}</p>
 									<p className="text-xs text-muted-foreground truncate mt-1">{repo.full_name}</p>
 									{repo.latest_commit && (

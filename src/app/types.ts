@@ -63,7 +63,10 @@ export type CloudRunDeployDetails = {
 // ── Main deployment config ──
 
 export type DeployConfig = {
+	/** Unique UUID for this deployment attempt */
 	id: string;
+	/** The GitHub API numeric ID of the repository this deployment belongs to */
+	repo_id: string;
 	url: string;
 	branch: string;
 	/** Optional commit SHA to deploy a specific commit instead of branch HEAD */
@@ -73,6 +76,7 @@ export type DeployConfig = {
 	deployUrl?: string;
 	/** Custom URL (e.g. https://myapp.anirudh-makuluri.xyz) when NEXT_PUBLIC_DEPLOYMENT_DOMAIN is used. */
 	custom_url?: string;
+	/** The name of the service being deployed. Use "." to denote all-services (repo-level) deployments. */
 	service_name: string;
 	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy';
 	first_deployment?: string;

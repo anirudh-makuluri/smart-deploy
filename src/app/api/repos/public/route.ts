@@ -3,13 +3,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/authOptions";
 import { repoType } from "@/app/types";
 
+import { dbHelper } from "@/db-helper";
+
 export async function POST(req: NextRequest) {
 	try {
 		const session = await getServerSession(authOptions);
 		const token = session?.accessToken;
+		const userID = session?.userID;
 
-		if (!token) {
-			return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+		if (!token || !userID) {
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
 		const body = await req.json();
@@ -92,12 +95,12 @@ export async function POST(req: NextRequest) {
 			},
 			latest_commit: latestCommit
 				? {
-						message: latestCommit.commit.message,
-						author: latestCommit.commit.author.name,
-						date: latestCommit.commit.author.date,
-						sha: latestCommit.sha,
-						url: latestCommit.html_url,
-					}
+					message: latestCommit.commit.message,
+					author: latestCommit.commit.author.name,
+					date: latestCommit.commit.author.date,
+					sha: latestCommit.sha,
+					url: latestCommit.html_url,
+				}
 				: null,
 			branches: branches.map((b: any) => ({
 				name: b.name,
@@ -105,6 +108,9 @@ export async function POST(req: NextRequest) {
 				protected: b.protected,
 			})),
 		};
+
+		// Bind this public repo to the user's profile in the database
+		await dbHelper.syncUserRepos(userID, [repo]);
 
 		return NextResponse.json({ repo }, { status: 200 });
 	} catch (error: any) {
