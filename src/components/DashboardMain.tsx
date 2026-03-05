@@ -30,7 +30,7 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
-		const hasFailed = repoDeployments.some((d) => d.status === "didnt_deploy");
+		const hasFailed = repoDeployments.some((d) => d.status === "failed");
 		const hasRepoLevelDeployment = activeRepoDeployments.some(
 			(d) => d.service_name === record.repo_name
 		);
@@ -190,9 +190,8 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 								{repoCards.map(({ owner, name, subtitle, hasCrashed, hasFailed, deployments: repoDeployments }) => (
 									<div
 										key={`${owner}/${name}`}
-										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${
-												hasCrashed || hasFailed ? "border-destructive/50" : "border-border"
-										}`}
+										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${hasFailed ? "border-destructive/50" : "border-border"
+											}`}
 									>
 										<div className="flex items-start justify-between gap-3">
 											<Link

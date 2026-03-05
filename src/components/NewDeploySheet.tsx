@@ -143,17 +143,18 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 	}, [deployments, repo.id, prefilledServiceName]);
 
 	const prefilledDeployment = React.useMemo<DeployConfig | undefined>(() => {
-		if (!selectedService) return undefined;
+		if (existingDeployment) return existingDeployment;
 		return {
-			id: existingDeployment?.id || crypto.randomUUID(),
+			id: crypto.randomUUID(),
 			repo_id: repo.id.toString(),
 			url: repo.html_url,
 			branch: repo.default_branch || repo.branches?.[0]?.name || "main",
 			use_custom_dockerfile: false,
 			service_name: prefilledServiceName,
 			core_deployment_info: prefilledCoreInfo,
+			status: "didnt_deploy",
 		};
-	}, [prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService, existingDeployment?.id]);
+	}, [existingDeployment, prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService]);
 	const { sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(prefilledServiceName);
 
 	React.useEffect(() => {
@@ -190,6 +191,36 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 	function handleClose() {
 		if (isDeploying) return;
 		onClose();
+	}
+
+	async function handleScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
+		if (!session?.user || !prefilledDeployment) return;
+
+		const scanConfig: DeployConfig = {
+			...prefilledDeployment,
+			url: data.url || prefilledDeployment.url,
+			service_name: data.service_name || prefilledDeployment.service_name,
+			branch: data.branch || prefilledDeployment.branch,
+			use_custom_dockerfile: data.use_custom_dockerfile ?? prefilledDeployment.use_custom_dockerfile,
+			env_vars: data.env_vars,
+			status: prefilledDeployment.status || "didnt_deploy",
+			core_deployment_info: {
+				...(data.core_deployment_info || prefilledDeployment.core_deployment_info || ({} as any)),
+				...(data.install_cmd != null && { install_cmd: data.install_cmd }),
+				...(data.build_cmd != null && { build_cmd: data.build_cmd }),
+				...(data.run_cmd != null && { run_cmd: data.run_cmd }),
+				...(data.workdir != null && { workdir: data.workdir }),
+			},
+			features_infrastructure: data.features_infrastructure ?? prefilledDeployment.features_infrastructure,
+			final_notes: data.final_notes ?? prefilledDeployment.final_notes,
+			deploymentTarget: (data as DeployConfig).deploymentTarget ?? prefilledDeployment.deploymentTarget,
+			deployment_target_reason: (data as DeployConfig).deployment_target_reason ?? prefilledDeployment.deployment_target_reason,
+			...((data as any).monorepo_services?.length && { monorepo_services: (data as any).monorepo_services }),
+			...((data as any).deployment_hints && { deployment_hints: (data as any).deployment_hints }),
+		};
+
+		await updateDeploymentById(scanConfig);
+		toast.success("Scan saved to configuration");
 	}
 
 	async function handleSubmit(
@@ -233,7 +264,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 			branch: values.branch,
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars ? parseEnvVarsToStore(values.env_vars) : "",
-			status: "didnt_deploy",
+			status: existingDeployment?.status || "didnt_deploy",
 			...(values.commitSha && { commitSha: values.commitSha }),
 			...(values.custom_url && { custom_url: values.custom_url }),
 			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
@@ -271,7 +302,11 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 						<ConfigTabs
 							service_name={prefilledServiceName}
 							onSubmit={handleSubmit}
-							onScanComplete={() => undefined}
+							onScanComplete={handleScanComplete}
+							onConfigChange={(partial) => {
+								if (!prefilledDeployment) return;
+								updateDeploymentById({ ...prefilledDeployment, ...partial, status: prefilledDeployment.status || "didnt_deploy" });
+							}}
 							repo={repo}
 							deployment={prefilledDeployment}
 							editMode={true}

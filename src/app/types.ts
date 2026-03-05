@@ -78,7 +78,7 @@ export type DeployConfig = {
 	custom_url?: string;
 	/** The name of the service being deployed. Use "." to denote all-services (repo-level) deployments. */
 	service_name: string;
-	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy';
+	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
 	first_deployment?: string;
 	last_deployment?: string;
 	revision?: number;

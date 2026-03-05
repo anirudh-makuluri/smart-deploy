@@ -220,7 +220,7 @@ ${include_extra_info ? `
   - ec2: true for complex apps requiring full OS-level control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
-  Prefer the simplest compatible platform. For Cloud Run, ensure the app is stateless.
+  Prefer the simplest compatible platform.
 - final_notes: { comment (1–2 sentences on structure and deploy readiness) }` : ""}
 `;
 	return prompt;

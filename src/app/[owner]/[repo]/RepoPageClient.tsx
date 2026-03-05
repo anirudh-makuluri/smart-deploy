@@ -227,7 +227,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
-		return deployments.filter((d) => d.repo_id === resolvedRepo.id.toString() || normalizeRepoUrl(d.url) === norm);
+		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_id === resolvedRepo.id.toString() || normalizeRepoUrl(d.url) === norm)));
 	}, [deployments, repoUrl, resolvedRepo]);
 
 	function openSheetForService(svc: DetectedService) {
@@ -367,14 +367,13 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 							);
 							const status = deployment?.status;
 							const isOnline = status === "running";
-							const isCrashed = status === "stopped" || status === "paused";
-							const isFailed = status === "didnt_deploy";
-							const isNotDeployed = !deployment || isFailed;
-							const canNavigateToService = !!deployment && !isFailed;
+							const isDraft = (status === "didnt_deploy") || !deployment;
+							const isFailed = status === "failed";
+							const canNavigateToService = !!deployment && !isDraft;
 
 							const handleCardClick = () => {
 								if (canNavigateToService) {
-									router.push(`/services/${encodeURIComponent(deployment.service_name)}?deploymentId=${encodeURIComponent(deployment.id)}`);
+									router.push(`/services/${encodeURIComponent(deployment!.service_name)}?deploymentId=${encodeURIComponent(deployment!.id)}`);
 								} else {
 									openSheetForService(svc);
 								}
@@ -385,7 +384,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 									key={svc.name}
 									type="button"
 									onClick={handleCardClick}
-									className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isCrashed ? "border-destructive/60" : "border-border"
+									className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
 										}`}
 								>
 									<div className="flex items-center gap-3">
@@ -395,26 +394,26 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 										</span>
 									</div>
 									<div className="mt-3 flex items-center gap-2">
-										{isNotDeployed && (
+										{isDraft && (
 											<span className="text-sm text-muted-foreground">
-												{isFailed ? "Deployment failed" : "Not deployed"}
+												Draft (Not deployed)
 											</span>
+										)}
+										{isFailed && (
+											<>
+												<span className="text-sm text-destructive flex items-center gap-1">
+													Failed
+												</span>
+												<span className="flex items-center gap-0.5 text-destructive/80">
+													<AlertTriangle className="size-4" />
+												</span>
+											</>
 										)}
 										{isOnline && (
 											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
 												<span className="size-2 rounded-full bg-green-500" />
 												Online
 											</span>
-										)}
-										{isCrashed && (
-											<>
-												<span className="text-sm text-destructive flex items-center gap-1">
-													Crashed
-												</span>
-												<span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
-													<AlertTriangle className="size-4" />
-												</span>
-											</>
 										)}
 									</div>
 								</button>

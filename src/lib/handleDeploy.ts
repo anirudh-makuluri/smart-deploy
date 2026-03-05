@@ -205,7 +205,7 @@ async function saveDeploymentToDB(
 		const minimalDeployment: DeployConfig = {
 			...deployConfig,
 			id: deploymentId,
-			status: success ? "running" : "didnt_deploy",
+			status: success ? "running" : "failed",
 			...(deployUrl && { deployUrl }),
 			...(customUrl && { custom_url: customUrl }),
 			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
