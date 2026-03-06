@@ -1,7 +1,7 @@
 -- Run this in the Supabase SQL Editor (Dashboard → SQL Editor) to create tables.
 -- Replace existing Firebase/Firestore usage with these tables.
 
--- Users: id = auth provider user id (e.g. GitHub), profile fields, list of deployment ids
+-- Users: id = auth provider user id (e.g. GitHub), profile fields
 create table if not exists public.users (
   id text primary key,
   name text,
@@ -27,8 +27,9 @@ create index if not exists idx_deployments_owner on public.deployments(owner_id)
 -- Deployment history: stored per user so it survives deployment deletion
 create table if not exists public.deployment_history (
   id uuid primary key default gen_random_uuid(),
-  deployment_id text not null,
   user_id text not null references public.users(id) on delete cascade,
+  repo_name text not null,
+  service_name text not null,
   timestamp timestamptz not null default now(),
   success boolean not null,
   steps jsonb not null default '[]',
@@ -36,13 +37,11 @@ create table if not exists public.deployment_history (
   commit_sha text,
   commit_message text,
   branch text,
-  duration_ms int,
-  service_name text,
-  repo_url text
+  duration_ms int
 );
 
-create index if not exists idx_deployment_history_user_deployment
-  on public.deployment_history(user_id, deployment_id);
+create index if not exists idx_deployment_history_user_repo_service
+  on public.deployment_history(user_id, repo_name, service_name);
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
 

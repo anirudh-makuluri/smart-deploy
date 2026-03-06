@@ -223,7 +223,8 @@ export default function ConfigTabs(
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					subdomain,
-					currentDeploymentId: deployment?.id ?? ""
+					repoName: deployment?.repo_name ?? "",
+					serviceName: deployment?.service_name ?? ""
 				}),
 			});
 			const data = await res.json();

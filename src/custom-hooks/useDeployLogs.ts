@@ -18,12 +18,12 @@ const defaultSteps: DeployStep[] = [
 const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
 
 /** Read active deployment from sessionStorage (set when deploy starts, cleared when it finishes). Used for "deployment in progress" notification and repo banner. */
-export function getActiveDeployment(): { deploymentId: string; userID?: string } | null {
+export function getActiveDeployment(): { repoName: string; serviceName: string; userID?: string } | null {
 	if (typeof window === "undefined") return null;
 	try {
 		const raw = sessionStorage.getItem(ACTIVE_DEPLOYMENT_KEY);
 		if (!raw) return null;
-		return JSON.parse(raw) as { deploymentId: string; userID?: string };
+		return JSON.parse(raw) as { repoName: string; serviceName: string; userID?: string };
 	} catch {
 		return null;
 	}
@@ -45,7 +45,7 @@ export function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string, deploymentId?: string) {
+export function useDeployLogs(serviceName?: string, repoName?: string) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -200,21 +200,21 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 		return ws;
 	}
 
-	// On mount: whenever deploymentId is provided, request deploy logs snapshot.
+	// On mount: whenever repoName + serviceName are provided, request deploy logs snapshot.
 	useEffect(() => {
-		if (!deploymentId || typeof window === "undefined") return;
+		if (!repoName || !serviceName || typeof window === "undefined") return;
 		const active = getActiveDeployment();
-		const payloadUserId = active?.deploymentId === deploymentId ? active.userID : undefined;
+		const payloadUserId = (active?.repoName === repoName && active?.serviceName === serviceName) ? active.userID : undefined;
 		openSocket(() => {
 			const socket = wsRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
 				socket.send(JSON.stringify({
 					type: "get_deploy_logs",
-					payload: { deploymentId, userID: payloadUserId },
+					payload: { repoName, serviceName, userID: payloadUserId },
 				}));
 			}
 		});
-	}, [deploymentId]);
+	}, [repoName, serviceName]);
 
 	// Only close socket on unmount; do not auto-open on mount (except for get_deploy_logs above).
 	useEffect(() => {
@@ -242,7 +242,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 
 		if (typeof window !== "undefined") {
 			try {
-				sessionStorage.setItem(ACTIVE_DEPLOYMENT_KEY, JSON.stringify({ deploymentId: deployConfig.id, userID }));
+				sessionStorage.setItem(ACTIVE_DEPLOYMENT_KEY, JSON.stringify({ repoName: deployConfig.repo_name, serviceName: deployConfig.service_name, userID }));
 			} catch { /* ignore */ }
 		}
 
@@ -308,7 +308,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 	};
 
 	const initiateServiceLogs = () => {
-		if (!serviceName && !deploymentId) return;
+		if (!serviceName && !repoName) return;
 
 		const socket = wsRef.current;
 		if (socket?.readyState === WebSocket.OPEN) {
@@ -316,7 +316,7 @@ export function useDeployLogs(serviceName?: string, deploymentId?: string) {
 				type: 'service_logs',
 				payload: {
 					serviceName,
-					deploymentId,
+					repoName,
 				}
 			}
 			socket.send(JSON.stringify(object))

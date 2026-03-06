@@ -7,15 +7,15 @@ import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
 
-async function getSnapshotFromHistory(deploymentId: string, userID?: string) {
+async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
 	if (!resolvedUserId) {
-		const deploymentResponse = await dbHelper.getDeployment(deploymentId);
+		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
 		resolvedUserId = deploymentResponse.deployment?.ownerID;
 	}
 	if (!resolvedUserId) return null;
 
-	const historyResponse = await dbHelper.getDeploymentHistory(deploymentId, resolvedUserId);
+	const historyResponse = await dbHelper.getDeploymentHistory(repoName, serviceName, resolvedUserId);
 	if (historyResponse.error || !historyResponse.history || historyResponse.history.length === 0) {
 		return null;
 	}
@@ -63,23 +63,23 @@ wss.on("connection", (ws) => {
 					serviceLogs(response.payload, ws);
 					break;
 				case "get_deploy_logs": {
-					const { deploymentId, userID } = response.payload ?? {};
-					if (!deploymentId) {
+					const { repoName, serviceName, userID } = response.payload ?? {};
+					if (!repoName || !serviceName) {
 						if (ws?.readyState === 1) {
-							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "deploymentId required", time: new Date().toISOString() } }));
+							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "repoName and serviceName required", time: new Date().toISOString() } }));
 						}
 						break;
 					}
-					let snapshot = deployLogsStore.getSnapshot(userID, deploymentId);
+					let snapshot = deployLogsStore.getSnapshot(userID, repoName, serviceName);
 					if (!snapshot) {
-						snapshot = await getSnapshotFromHistory(deploymentId, userID);
+						snapshot = await getSnapshotFromHistory(repoName, serviceName, userID);
 					}
 					const time = new Date().toISOString();
 					if (snapshot) {
 						if (ws?.readyState === 1) {
 							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { ...snapshot, time } }));
 						}
-						deployLogsStore.addSubscriber(userID, deploymentId, ws);
+						deployLogsStore.addSubscriber(userID, repoName, serviceName, ws);
 					} else if (ws?.readyState === 1) {
 						ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { steps: [], status: "error", error: "No logs found for this deployment", time } }));
 					}

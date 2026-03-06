@@ -40,14 +40,14 @@ export default function DashboardDeploymentItem({
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
-						deploymentId: deployConfig.id,
+						repoName: deployConfig.repo_name,
 						serviceName: deployConfig.service_name,
 					}),
 				});
 				const response = await res.json();
 				toast.dismiss(loadingId);
 				if (response.status === "success") {
-					removeDeployment(deployConfig.id);
+					removeDeployment(deployConfig.repo_name, deployConfig.service_name);
 					toast.success("Deployment deleted.");
 				} else {
 					toast.error(response.error || response.details || "Failed to delete deployment.");
@@ -66,7 +66,7 @@ export default function DashboardDeploymentItem({
 				method: "PUT",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					deploymentId: deployConfig.id,
+					repoName: deployConfig.repo_name,
 					serviceName: deployConfig.service_name,
 					action,
 				}),
@@ -93,7 +93,7 @@ export default function DashboardDeploymentItem({
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
 					<Link
-						href={`/services/${deployConfig.service_name}?deploymentId=${encodeURIComponent(deployConfig.id)}`}
+						href={`/services/${deployConfig.service_name}?repoName=${encodeURIComponent(deployConfig.repo_name)}`}
 						className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
 					>
 						{deployConfig.service_name}

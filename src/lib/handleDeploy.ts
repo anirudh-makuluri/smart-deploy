@@ -193,18 +193,11 @@ async function saveDeploymentToDB(
 		console.warn("No userID provided - skipping database save");
 		return;
 	}
-	// Use provided deployment ID or create one on the spot so we always persist the deployment
-	let deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
-	if (!deploymentId) {
-		deploymentId = crypto.randomUUID?.() ?? `deploy-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-		console.log("No deployment ID provided - created:", deploymentId);
-	}
 
 	try {
-		// Prepare minimal deployment config for DB (use resolved id so new deployments get saved)
+		// Prepare minimal deployment config for DB
 		const minimalDeployment: DeployConfig = {
 			...deployConfig,
-			id: deploymentId,
 			status: success ? "running" : "failed",
 			...(deployUrl && { deployUrl }),
 			...(customUrl && { custom_url: customUrl }),
@@ -219,7 +212,7 @@ async function saveDeploymentToDB(
 			console.log("Deployment saved to DB:", updateResponse.success);
 		}
 
-		// Record deployment history under user so it survives service deletion
+		// Record deployment history using repo_name + service_name
 		const historyEntry = {
 			timestamp: new Date().toISOString(),
 			success,
@@ -228,12 +221,11 @@ async function saveDeploymentToDB(
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
-			...(deployConfig.service_name?.trim() && { serviceName: deployConfig.service_name.trim() }),
-			...(deployConfig.url?.trim() && { repoUrl: deployConfig.url.trim() }),
 		};
 
 		const historyResponse = await dbHelper.addDeploymentHistory(
-			deploymentId,
+			deployConfig.repo_name,
+			deployConfig.service_name,
 			userID,
 			historyEntry
 		);

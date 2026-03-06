@@ -12,12 +12,12 @@ type Entry = {
 const OPEN = 1;
 const store = new Map<string, Entry>();
 
-function key(userID: string | undefined, deploymentId: string): string {
-	return `${userID ?? "anonymous"}:${deploymentId}`;
+function key(userID: string | undefined, repoName: string, serviceName: string): string {
+	return `${userID ?? "anonymous"}:${repoName}:${serviceName}`;
 }
 
-export function createEntry(userID: string | undefined, deploymentId: string, ws: any): void {
-	const k = key(userID, deploymentId);
+export function createEntry(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
+	const k = key(userID, repoName, serviceName);
 	store.set(k, {
 		steps: [],
 		status: "running",
@@ -26,22 +26,23 @@ export function createEntry(userID: string | undefined, deploymentId: string, ws
 	});
 }
 
-export function getEntry(userID: string | undefined, deploymentId: string): Entry | undefined {
-	return store.get(key(userID, deploymentId));
+export function getEntry(userID: string | undefined, repoName: string, serviceName: string): Entry | undefined {
+	return store.get(key(userID, repoName, serviceName));
 }
 
-export function updateSteps(userID: string | undefined, deploymentId: string, steps: DeployStep[]): void {
-	const entry = store.get(key(userID, deploymentId));
+export function updateSteps(userID: string | undefined, repoName: string, serviceName: string, steps: DeployStep[]): void {
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (entry) entry.steps = steps;
 }
 
 export function broadcastLog(
 	userID: string | undefined,
-	deploymentId: string,
+	repoName: string,
+	serviceName: string,
 	id: string,
 	msg: string
 ): void {
-	const entry = store.get(key(userID, deploymentId));
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return;
 	const time = new Date().toISOString();
 	const payload = JSON.stringify({ type: "deploy_logs", payload: { id, msg, time } });
@@ -58,24 +59,25 @@ export function broadcastLog(
 
 export function setStatus(
 	userID: string | undefined,
-	deploymentId: string,
+	repoName: string,
+	serviceName: string,
 	status: Status,
 	error?: string | null
 ): void {
-	const entry = store.get(key(userID, deploymentId));
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (entry) {
 		entry.status = status;
 		entry.error = error ?? null;
 	}
 }
 
-export function addSubscriber(userID: string | undefined, deploymentId: string, ws: any): void {
-	const entry = store.get(key(userID, deploymentId));
+export function addSubscriber(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (entry) entry.subscribedClients.add(ws);
 }
 
-export function removeSubscriber(userID: string | undefined, deploymentId: string, ws: any): void {
-	const entry = store.get(key(userID, deploymentId));
+export function removeSubscriber(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (entry) entry.subscribedClients.delete(ws);
 }
 
@@ -86,12 +88,12 @@ export function removeSubscriberFromAll(ws: any): void {
 	}
 }
 
-export function getSnapshot(userID: string | undefined, deploymentId: string): {
+export function getSnapshot(userID: string | undefined, repoName: string, serviceName: string): {
 	steps: DeployStep[];
 	status: Status;
 	error?: string | null;
 } | null {
-	const entry = store.get(key(userID, deploymentId));
+	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return null;
 	return {
 		steps: entry.steps,

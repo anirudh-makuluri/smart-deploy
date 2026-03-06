@@ -16,7 +16,8 @@ import { Clock, GitBranch, GitCommit, History, Loader2 } from "lucide-react";
 
 type DeploymentHistoryAllEntry = {
 	id: string;
-	deploymentId: string;
+	repo_name: string;
+	service_name: string;
 	timestamp: string;
 	success: boolean;
 	steps: { id: string; label: string; logs: string[]; status: string; startedAt?: string; endedAt?: string }[];
@@ -25,8 +26,6 @@ type DeploymentHistoryAllEntry = {
 	commitMessage?: string;
 	branch?: string;
 	durationMs?: number;
-	serviceName: string;
-	repoUrl?: string;
 };
 
 export default function DeploymentHistoryAll() {
@@ -109,9 +108,9 @@ export default function DeploymentHistoryAll() {
 									)}
 								</div>
 								<div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-									<span className="font-medium text-foreground">{entry.serviceName}</span>
-									{entry.repoUrl && (
-										<span className="truncate">{entry.repoUrl}</span>
+									<span className="font-medium text-foreground">{entry.service_name}</span>
+									{entry.repo_name && (
+										<span className="truncate">{entry.repo_name}</span>
 									)}
 								</div>
 								{(entry.commitSha || entry.branch) && (

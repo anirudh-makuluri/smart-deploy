@@ -73,7 +73,7 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
 
 		setBulkOperation({ label: "Deleting deployments…" });
-		const deletedIds: string[] = [];
+		const deletedKeys: { repoName: string; serviceName: string }[] = [];
 		try {
 			for (const dep of deploys) {
 				try {
@@ -81,13 +81,13 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							deploymentId: dep.id,
+							repoName: dep.repo_name,
 							serviceName: dep.service_name,
 						}),
 					});
 					const data = await res.json();
 					if (data.status === "success") {
-						deletedIds.push(dep.id);
+						deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
 					} else {
 						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
 					}
@@ -95,8 +95,8 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
 				}
 			}
-			if (deletedIds.length) {
-				removeDeployments(deletedIds);
+			if (deletedKeys.length) {
+				removeDeployments(deletedKeys);
 				await refetchDeployments();
 			}
 			toast.success("Finished deleting deployments for this repo.");
@@ -117,7 +117,7 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 						method: "PUT",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							deploymentId: dep.id,
+							repoName: dep.repo_name,
 							serviceName: dep.service_name,
 							action,
 						}),

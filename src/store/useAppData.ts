@@ -48,9 +48,9 @@ type AppState = {
 	/** Set cached detect-services result for a repo. */
 	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
 	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
-	removeDeployment: (deploymentId: string) => void;
+	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
-	removeDeployments: (deploymentIds: string[]) => void;
+	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error'; message: string }>;
 };
 
@@ -170,32 +170,33 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 
 		const deployments = get().deployments;
+		const matchKey = (dep: DeployConfig) =>
+			dep.repo_name === newDeployment.repo_name && dep.service_name === newDeployment.service_name;
 		let updatedList: DeployConfig[];
 		if (newDeployment.status === 'stopped') {
-			updatedList = deployments.filter((dep) => dep.id !== newDeployment.id);
+			updatedList = deployments.filter((dep) => !matchKey(dep));
 		} else {
-			const exists = deployments.some((dep) => dep.id === newDeployment.id);
+			const exists = deployments.some(matchKey);
 			updatedList = exists
-				? deployments.map((dep) => (dep.id === newDeployment.id ? newDeployment : dep))
+				? deployments.map((dep) => (matchKey(dep) ? newDeployment : dep))
 				: [...deployments, newDeployment];
 		}
 		set({ deployments: sortDeployments(updatedList) });
 	},
 
-	removeDeployment: (deploymentId: string) => {
+	removeDeployment: (repoName: string, serviceName: string) => {
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => dep.id !== deploymentId)
+				state.deployments.filter((dep) => !(dep.repo_name === repoName && dep.service_name === serviceName))
 			),
 		}));
 	},
 
-	removeDeployments: (deploymentIds: string[]) => {
-		if (deploymentIds.length === 0) return;
-		const setIds = new Set(deploymentIds);
+	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => {
+		if (keys.length === 0) return;
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => !setIds.has(dep.id))
+				state.deployments.filter((dep) => !keys.some((k) => k.repoName === dep.repo_name && k.serviceName === dep.service_name))
 			),
 		}));
 	},

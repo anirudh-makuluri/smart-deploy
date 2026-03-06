@@ -19,19 +19,19 @@ import { Clock } from "lucide-react";
 
 type DeployWorkspaceProps = {
 	serviceName?: string;
-	deploymentId?: string;
+	repoName?: string;
 };
 
-export default function DeployWorkspace({ serviceName, deploymentId }: DeployWorkspaceProps) {
+export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspaceProps) {
 	const { deployments, updateDeploymentById, repoList, isLoading } = useAppData();
 	const { data: session } = useSession();
-	const deploymentFromId = deploymentId
-		? deployments.find((dep) => dep.id === deploymentId)
+	const deploymentFromRepoService = (repoName && serviceName)
+		? deployments.find((dep) => dep.repo_name === repoName && dep.service_name === serviceName)
 		: undefined;
 	const deploymentFromServiceName = serviceName
 		? deployments.find((dep) => dep.service_name === serviceName)
 		: undefined;
-	const deployment = deploymentFromId ?? deploymentFromServiceName;
+	const deployment = deploymentFromRepoService ?? deploymentFromServiceName;
 
 	const repo = React.useMemo(() => {
 		if (!deployment) return undefined;
@@ -46,8 +46,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 	const [elapsedTime, setElapsedTime] = React.useState(0);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
-	const deploymentIdForLogs = deployment?.id ?? deploymentId;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, deploymentIdForLogs);
+	const repoNameForLogs = deployment?.repo_name ?? repoName;
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, repoNameForLogs);
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
 	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" :
 		deployStatus === "running" ? "running" :
@@ -134,14 +134,15 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		};
 	})();
 	const resolvedDeployment = deployment as DeployConfig | undefined;
-	const resolvedDeploymentId = resolvedDeployment?.id ?? deploymentId ?? "";
+	const resolvedRepoName = resolvedDeployment?.repo_name ?? repoName ?? "";
+	const resolvedServiceName = resolvedDeployment?.service_name ?? serviceName ?? "";
 
 	// Fetch deployment history once when page loads
 	React.useEffect(() => {
-		if (!resolvedDeploymentId || deploymentHistory !== null) return;
+		if (!resolvedRepoName || !resolvedServiceName || deploymentHistory !== null) return;
 
 		setIsLoadingHistory(true);
-		fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(resolvedDeploymentId)}`)
+		fetch(`/api/deployment-history?repoName=${encodeURIComponent(resolvedRepoName)}&serviceName=${encodeURIComponent(resolvedServiceName)}`)
 			.then((res) => res.json())
 			.then((data) => {
 				if (data.status === "success" && Array.isArray(data.history)) {
@@ -152,12 +153,12 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 				console.error("Failed to fetch deployment history:", err);
 			})
 			.finally(() => setIsLoadingHistory(false));
-	}, [resolvedDeploymentId, deploymentHistory]);
+	}, [resolvedRepoName, resolvedServiceName, deploymentHistory]);
 
 	// Refetch history after deployment completes
 	React.useEffect(() => {
-		if ((deployStatus === "success" || deployStatus === "error") && resolvedDeploymentId) {
-			fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(resolvedDeploymentId)}`)
+		if ((deployStatus === "success" || deployStatus === "error") && resolvedRepoName && resolvedServiceName) {
+			fetch(`/api/deployment-history?repoName=${encodeURIComponent(resolvedRepoName)}&serviceName=${encodeURIComponent(resolvedServiceName)}`)
 				.then((res) => res.json())
 				.then((data) => {
 					if (data.status === "success" && Array.isArray(data.history)) {
@@ -168,7 +169,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 					console.error("Failed to refetch deployment history:", err);
 				});
 		}
-	}, [deployStatus, resolvedDeploymentId]);
+	}, [deployStatus, resolvedRepoName, resolvedServiceName]);
 
 	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
 		const now = new Date().toISOString();
@@ -185,7 +186,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 		if (!session?.user) return;
 
 		const base: DeployConfig = resolvedDeployment ?? {
-			id: resolvedDeploymentId,
+			id: "",
 			repo_name: resolvedRepo.name,
 			url: data.url || resolvedRepo.html_url,
 			service_name: data.service_name || resolvedRepo.name,
@@ -309,7 +310,7 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 			: undefined;
 
 		const payload: DeployConfig = {
-			id: resolvedDeploymentId,
+			id: "",
 			repo_name: resolvedRepo.name,
 			url: values.url,
 			service_name: values.service_name,
@@ -378,7 +379,8 @@ export default function DeployWorkspace({ serviceName, deploymentId }: DeployWor
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 						{resolvedDeployment && (
 							<DeploymentHistory
-								deploymentId={resolvedDeployment.id}
+								repoName={resolvedDeployment.repo_name}
+								serviceName={resolvedDeployment.service_name}
 								prefetchedData={deploymentHistory}
 								isPrefetching={isLoadingHistory}
 							/>

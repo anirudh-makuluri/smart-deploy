@@ -110,7 +110,7 @@ function normalizeRepoUrlForMatch(url: string): string {
 
 export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const router = useRouter();
-	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments } = useAppData();
+	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments, hasFetched } = useAppData();
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [services, setServices] = React.useState<DetectedService[]>([]);
 	const [loading, setLoading] = React.useState(true);
@@ -134,12 +134,14 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const repoSlug = `${owner}-${repo}`;
 	const { openLogsModal } = useActiveDeployment();
 	const [activeDeploy, setActiveDeploy] = React.useState<{
-		deploymentId: string;
+		repoName: string;
+		serviceName: string;
 		userID?: string;
 	} | null>(() => {
 		const a = getActiveDeployment();
 		if (!a) return null;
-		if (a.deploymentId === repoSlug || a.deploymentId.startsWith(`${repoSlug}-`)) return a;
+		// Only show if this active deployment belongs to this repo
+		if (a.repoName === repo) return a;
 		return null;
 	});
 
@@ -150,7 +152,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 				setActiveDeploy(null);
 				return;
 			}
-			if (a.deploymentId === repoSlug || a.deploymentId.startsWith(`${repoSlug}-`)) {
+			if (a.repoName === repo) {
 				setActiveDeploy(a);
 			} else {
 				setActiveDeploy(null);
@@ -159,9 +161,11 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		tick();
 		const id = setInterval(tick, 2000);
 		return () => clearInterval(id);
-	}, [repoSlug]);
+	}, [repo]);
 
 	React.useEffect(() => {
+		if (!hasFetched) return;
+
 		const cached = getDetectedRepoCache(repoUrl);
 		if (cached?.services?.length !== undefined) {
 			setServices(cached.services);
@@ -222,7 +226,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
+	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices, hasFetched]);
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
@@ -249,7 +253,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		if (repoDeployments.length === 0) return;
 		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
 		setIsDeleting(true);
-		const deletedIds: string[] = [];
+		const deletedKeys: { repoName: string; serviceName: string }[] = [];
 		try {
 			for (const dep of repoDeployments) {
 				try {
@@ -257,13 +261,13 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 						method: "POST",
 						headers: { "Content-Type": "application/json" },
 						body: JSON.stringify({
-							deploymentId: dep.id,
+							repoName: dep.repo_name,
 							serviceName: dep.service_name,
 						}),
 					});
 					const data = await res.json();
 					if (data.status === "success") {
-						deletedIds.push(dep.id);
+						deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
 					} else {
 						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
 					}
@@ -271,8 +275,8 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
 				}
 			}
-			if (deletedIds.length) {
-				removeDeployments(deletedIds);
+			if (deletedKeys.length) {
+				removeDeployments(deletedKeys);
 				await refetchDeployments();
 			}
 			toast.success("Finished deleting deployments for this repo.");
@@ -306,7 +310,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 				{activeDeploy && (
 					<button
 						type="button"
-						onClick={() => openLogsModal(activeDeploy.deploymentId, activeDeploy.userID)}
+						onClick={() => openLogsModal(activeDeploy.repoName, activeDeploy.serviceName, activeDeploy.userID)}
 						className="mb-4 flex w-full cursor-pointer items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 py-3 px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary/15"
 					>
 						<Loader2 className="size-4 shrink-0 animate-spin text-primary" />
@@ -371,7 +375,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 
 							const handleCardClick = () => {
 								if (canNavigateToService) {
-									router.push(`/services/${encodeURIComponent(deployment!.service_name)}?deploymentId=${encodeURIComponent(deployment!.id)}`);
+									router.push(`/services/${encodeURIComponent(deployment!.service_name)}?repoName=${encodeURIComponent(deployment!.repo_name)}`);
 								} else {
 									openSheetForService(svc);
 								}

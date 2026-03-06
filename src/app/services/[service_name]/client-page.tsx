@@ -7,9 +7,9 @@ import { useAppDataQuery } from "@/hooks/useAppDataQuery";
 export default function Page({ service_name }: { service_name: string }) {
 	useAppDataQuery(); // Ensure app data is loaded when opening a service
 	const searchParams = useSearchParams();
-	const deploymentId = searchParams.get("deploymentId") ?? searchParams.get("id") ?? undefined;
+	const repoName = searchParams.get("repoName") ?? undefined;
 
 	return (
-		<DeployWorkspace serviceName={service_name} deploymentId={deploymentId ?? undefined} />
+		<DeployWorkspace serviceName={service_name} repoName={repoName} />
 	);
 }

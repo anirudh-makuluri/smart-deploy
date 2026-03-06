@@ -9,21 +9,21 @@ import type { DeployConfig } from "@/app/types";
 
 export async function PUT(req: NextRequest) {
 	try {
-		const { serviceName, action, deploymentId } = await req.json();
+		const { serviceName, action, repoName } = await req.json();
 
 		if (!action) {
 			return NextResponse.json({ error: "Missing action" }, { status: 400 });
 		}
 
-		// Preferred path: control AWS deployment by deploymentId (EC2 pause/resume)
-		if (deploymentId) {
+		// Preferred path: control AWS deployment by repoName + serviceName (EC2 pause/resume)
+		if (repoName && serviceName) {
 			const session = await getServerSession(authOptions);
 			const userID = session?.userID;
 			if (!userID) {
 				return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 			}
 
-			const { deployment, error } = await dbHelper.getDeployment(deploymentId);
+			const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName);
 			if (error || !deployment) {
 				return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
 			}

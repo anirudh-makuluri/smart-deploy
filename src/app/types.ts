@@ -202,7 +202,10 @@ export type AIGenProjectMetadata = {
 /** One deployment attempt: success or failure, with logs for history and "Why did it fail?". */
 export type DeploymentHistoryEntry = {
 	id: string;
-	deploymentId: string;
+	/** Repository name (e.g. "my-app") — together with service_name identifies the deployment. */
+	repo_name: string;
+	/** Service name (e.g. "api" or "." for repo-level). */
+	service_name: string;
 	timestamp: string;
 	success: boolean;
 	/** Step-by-step deploy logs. */
@@ -217,8 +220,4 @@ export type DeploymentHistoryEntry = {
 	branch?: string;
 	/** Deployment duration in milliseconds */
 	durationMs?: number;
-	/** Service name at deploy time (kept so history is readable after deployment is deleted) */
-	serviceName?: string;
-	/** Repo URL at deploy time (kept so history is readable after deployment is deleted) */
-	repoUrl?: string;
 };

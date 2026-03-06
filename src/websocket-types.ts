@@ -21,32 +21,33 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 		deployConfig.dockerfileContent = buffer.toString();
 	}
 
-	const deploymentId = deployConfig.id;
-	deployLogsStore.createEntry(userID, deploymentId, ws);
+	const repoName = deployConfig.repo_name;
+	const serviceName = deployConfig.service_name;
+	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
 
 	const options = {
 		onStepsChange: (steps: DeployStep[]) => {
-			deployLogsStore.updateSteps(userID, deploymentId, steps);
+			deployLogsStore.updateSteps(userID, repoName, serviceName, steps);
 		},
 		broadcast: (id: string, msg: string) => {
-			deployLogsStore.broadcastLog(userID, deploymentId, id, msg);
+			deployLogsStore.broadcastLog(userID, repoName, serviceName, id, msg);
 		},
 	};
 
 	try {
 		await handleDeploy(deployConfig, token, ws, userID, options);
-		deployLogsStore.setStatus(userID, deploymentId, "success");
+		deployLogsStore.setStatus(userID, repoName, serviceName, "success");
 	} catch (err: any) {
-		deployLogsStore.setStatus(userID, deploymentId, "error", err?.message ?? "Deployment failed");
+		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Deployment failed");
 		throw err;
 	}
 }
 
-export async function serviceLogs(payload: { serviceName?: string; deploymentId?: string }, ws: any) {
+export async function serviceLogs(payload: { serviceName?: string; repoName?: string }, ws: any) {
 	const serviceName = payload?.serviceName?.trim();
-	const deploymentId = payload?.deploymentId?.trim();
+	const repoName = payload?.repoName?.trim();
 
-	if (!serviceName && !deploymentId) {
+	if (!serviceName && !repoName) {
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 		}
@@ -54,8 +55,8 @@ export async function serviceLogs(payload: { serviceName?: string; deploymentId?
 	}
 
 	let deployConfig: DeployConfig | undefined;
-	if (deploymentId) {
-		const deployment = await dbHelper.getDeployment(deploymentId);
+	if (repoName && serviceName) {
+		const deployment = await dbHelper.getDeployment(repoName, serviceName);
 		if (deployment.deployment) {
 			deployConfig = deployment.deployment;
 		}

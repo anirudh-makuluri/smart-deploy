@@ -14,10 +14,10 @@ type PrefetchedDeployLogs = {
 	error?: string | null;
 };
 
-type LogsModalState = { deploymentId: string; userID?: string; prefetched?: PrefetchedDeployLogs } | null;
+type LogsModalState = { repoName: string; serviceName: string; userID?: string; prefetched?: PrefetchedDeployLogs } | null;
 
 const ActiveDeploymentContext = React.createContext<{
-	openLogsModal: (deploymentId: string, userID?: string, prefetched?: PrefetchedDeployLogs) => void;
+	openLogsModal: (repoName: string, serviceName: string, userID?: string, prefetched?: PrefetchedDeployLogs) => void;
 	closeLogsModal: () => void;
 }>({
 	openLogsModal: () => { },
@@ -31,7 +31,8 @@ export function useActiveDeployment() {
 function ActiveDeploymentNotification() {
 	const { openLogsModal } = useActiveDeployment();
 	const [active, setActive] = React.useState<{
-		deploymentId: string;
+		repoName: string;
+		serviceName: string;
 		userID?: string;
 	} | null>(() => getActiveDeployment());
 
@@ -54,7 +55,7 @@ function ActiveDeploymentNotification() {
 			ws.send(
 				JSON.stringify({
 					type: "get_deploy_logs",
-					payload: { deploymentId: active.deploymentId, userID: active.userID },
+					payload: { repoName: active.repoName, serviceName: active.serviceName, userID: active.userID },
 				})
 			);
 		};
@@ -84,14 +85,14 @@ function ActiveDeploymentNotification() {
 			window.clearTimeout(timeout);
 			ws.close();
 		};
-	}, [active?.deploymentId, active?.userID]);
+	}, [active?.repoName, active?.serviceName, active?.userID]);
 
 	if (!active) return null;
 
 	return (
 		<button
 			type="button"
-			onClick={() => openLogsModal(active.deploymentId, active.userID)}
+			onClick={() => openLogsModal(active.repoName, active.serviceName, active.userID)}
 			className="fixed top-0 left-0 right-0 z-100 flex cursor-pointer items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground text-sm font-medium shadow-md hover:bg-primary/90 transition-colors"
 		>
 			<Loader2 className="size-4 animate-spin shrink-0" />
@@ -102,18 +103,20 @@ function ActiveDeploymentNotification() {
 }
 
 function DeployLogsModalContent({
-	deploymentId,
+	repoName,
+	serviceName,
 	prefetched,
 	onClose,
 }: {
-	deploymentId: string;
+	repoName: string;
+	serviceName: string;
 	userID?: string;
 	prefetched?: PrefetchedDeployLogs;
 	onClose: () => void;
 }) {
 	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
-		undefined,
-		deploymentId
+		serviceName,
+		repoName
 	);
 
 	const fallbackEntries = React.useMemo(() => {
@@ -180,7 +183,8 @@ function DeployLogsModal({ state, onClose }: { state: LogsModalState; onClose: (
 			/>
 			<div className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-xl">
 				<DeployLogsModalContent
-					deploymentId={state.deploymentId}
+					repoName={state.repoName}
+					serviceName={state.serviceName}
 					userID={state.userID}
 					prefetched={state.prefetched}
 					onClose={onClose}
@@ -198,8 +202,8 @@ export default function ActiveDeploymentProvider({
 	const [logsModal, setLogsModal] = React.useState<LogsModalState>(null);
 
 	const openLogsModal = React.useCallback(
-		(deploymentId: string, userID?: string, prefetched?: PrefetchedDeployLogs) => {
-			setLogsModal({ deploymentId, userID, prefetched });
+		(repoName: string, serviceName: string, userID?: string, prefetched?: PrefetchedDeployLogs) => {
+			setLogsModal({ repoName, serviceName, userID, prefetched });
 		},
 		[]
 	);

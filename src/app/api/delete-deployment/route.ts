@@ -26,26 +26,26 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const { deploymentId, serviceName } = await req.json();
+		const { repoName, serviceName } = await req.json();
 
-		// Validate payload shape before using it in Firestore paths
-		const validDeploymentId =
-			typeof deploymentId === "string" ? deploymentId.trim() : "";
+		// Validate payload shape
+		const validRepoName =
+			typeof repoName === "string" ? repoName.trim() : "";
 		const validServiceName =
 			typeof serviceName === "string" ? serviceName.trim() : "";
 
-		if (!validDeploymentId || !validServiceName) {
+		if (!validRepoName || !validServiceName) {
 			return NextResponse.json(
 				{
 					error:
-						"Missing or invalid deploymentId or serviceName. Both must be non-empty strings.",
+						"Missing or invalid repoName or serviceName. Both must be non-empty strings.",
 				},
 				{ status: 400 }
 			);
 		}
 
 		// Verify ownership and get deployment config
-		const { deployment, error: fetchError } = await dbHelper.getDeployment(validDeploymentId);
+		const { deployment, error: fetchError } = await dbHelper.getDeployment(validRepoName, validServiceName);
 
 		if (fetchError || !deployment) {
 			return NextResponse.json(
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 					"run",
 					"services",
 					"delete",
-					serviceName,
+					validServiceName,
 					"--project",
 					projectId,
 					"--region",
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
 		// 2. Delete Vercel DNS record (best effort; block on failure to avoid orphaned DNS)
 		const dnsResult = await deleteVercelDnsRecord({
 			customUrl: deployConfig.custom_url || null,
-			serviceName: deployConfig.service_name || serviceName || null,
+			serviceName: deployConfig.service_name || validServiceName || null,
 		});
 		if (!dnsResult.success) {
 			return NextResponse.json(
@@ -122,8 +122,8 @@ export async function POST(req: NextRequest) {
 			);
 		}
 
-		// 3. Delete from DB (deployment doc + user's deploymentIds)
-		const result = await dbHelper.deleteDeployment(validDeploymentId, userID);
+		// 3. Delete from DB (deployment row)
+		const result = await dbHelper.deleteDeployment(validRepoName, validServiceName, userID);
 
 		if (result.error) {
 			return NextResponse.json(

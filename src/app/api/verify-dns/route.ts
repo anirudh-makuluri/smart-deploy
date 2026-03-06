@@ -15,7 +15,7 @@ function sanitizeSubdomain(s: string): string {
 
 export async function POST(req: NextRequest) {
 	try {
-		const { subdomain, currentDeploymentId } = await req.json();
+		const { subdomain, repoName, serviceName } = await req.json();
 
 		if (!subdomain || typeof subdomain !== "string") {
 			return NextResponse.json({ error: "Subdomain is required" }, { status: 400 });
@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
 		const records = Array.isArray(listData.records)
 			? listData.records
 			: Array.isArray(listData)
-			? listData
-			: [];
+				? listData
+				: [];
 
 		// Check if the subdomain exists
 		const existingRecord = records.find(
@@ -78,11 +78,11 @@ export async function POST(req: NextRequest) {
 		// We need to check against the deployment's metadata or compare with service names
 		// For now, we'll check if the deployment ID matches (this requires metadata in DNS records)
 		// Since we don't store deployment IDs in DNS, we'll use a simpler approach:
-		// If they provide their currentDeploymentId, we check if the existing custom_url matches
+		// If they provide their repoName and serviceName, we check if the existing custom_url matches
 
 		// Get current deployment to check if this subdomain is already theirs
-		if (currentDeploymentId) {
-			const { deployment } = await dbHelper.getDeployment(currentDeploymentId);
+		if (repoName && serviceName) {
+			const { deployment } = await dbHelper.getDeployment(repoName, serviceName);
 			if (deployment) {
 				const currentCustomUrl = deployment.custom_url || "";
 				const currentSubdomain = currentCustomUrl

@@ -219,7 +219,6 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 			...((data as any).deployment_hints && { deployment_hints: (data as any).deployment_hints }),
 		};
 
-		await updateDeploymentById(scanConfig);
 		toast.success("Scan saved to configuration");
 	}
 

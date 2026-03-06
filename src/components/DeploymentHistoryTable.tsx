@@ -28,15 +28,14 @@ const envOptions = ["all", "production", "staging", "development"] as const;
 
 type DeploymentHistoryRow = {
 	id: string;
-	deploymentId: string;
+	repo_name: string;
+	service_name: string;
 	timestamp: string;
 	success: boolean;
 	commitSha?: string;
 	commitMessage?: string;
 	branch?: string;
 	durationMs?: number;
-	serviceName: string;
-	repoUrl?: string;
 	steps: DeployStep[];
 	configSnapshot: Record<string, unknown>;
 };
@@ -70,7 +69,7 @@ function downloadCsv(rows: DeploymentHistoryRow[]) {
 		const env = deriveEnvironment(row.branch);
 		const commit = row.commitSha ? row.commitSha.substring(0, 7) : "";
 		const age = toRelativeTime(row.timestamp);
-		return [status, row.serviceName, env, commit, row.commitMessage ?? "", row.branch ?? "", age, row.timestamp]
+		return [status, row.service_name, env, commit, row.commitMessage ?? "", row.branch ?? "", age, row.timestamp]
 			.map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
 			.join(",");
 	});
@@ -107,7 +106,7 @@ export default function DeploymentHistoryTable() {
 	const filtered = React.useMemo(() => {
 		return history.filter((row) => {
 			const matchQuery = query
-				? `${row.serviceName} ${row.repoUrl ?? ""} ${row.branch ?? ""} ${row.commitSha ?? ""} ${row.commitMessage ?? ""}`
+				? `${row.service_name} ${row.repo_name ?? ""} ${row.branch ?? ""} ${row.commitSha ?? ""} ${row.commitMessage ?? ""}`
 					.toLowerCase()
 					.includes(query.toLowerCase())
 				: true;
@@ -192,7 +191,7 @@ export default function DeploymentHistoryTable() {
 								<TableRow
 									key={row.id}
 									onClick={() =>
-										openLogsModal(row.deploymentId, undefined, {
+										openLogsModal(row.repo_name, row.service_name, undefined, {
 											steps: row.steps,
 											status: row.success ? "success" : "error",
 											error: row.success ? null : "Deployment failed",
@@ -213,9 +212,9 @@ export default function DeploymentHistoryTable() {
 										</Badge>
 									</TableCell>
 									<TableCell>
-										<div className="text-foreground font-medium">{row.serviceName}</div>
-										{row.repoUrl && (
-											<div className="text-xs text-muted-foreground truncate max-w-60">{row.repoUrl}</div>
+										<div className="text-foreground font-medium">{row.service_name}</div>
+										{row.repo_name && (
+											<div className="text-xs text-muted-foreground truncate max-w-60">{row.repo_name}</div>
 										)}
 									</TableCell>
 									<TableCell>

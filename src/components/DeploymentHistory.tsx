@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
 
-export default function DeploymentHistory({ deploymentId, prefetchedData, isPrefetching }: { deploymentId: string; prefetchedData?: any; isPrefetching?: boolean }) {
+export default function DeploymentHistory({ repoName, serviceName, prefetchedData, isPrefetching }: { repoName: string; serviceName: string; prefetchedData?: any; isPrefetching?: boolean }) {
 	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>(prefetchedData || []);
 	const [loading, setLoading] = React.useState(isPrefetching ? true : !prefetchedData);
 	const [error, setError] = React.useState<string | null>(null);
@@ -31,10 +31,10 @@ export default function DeploymentHistory({ deploymentId, prefetchedData, isPref
 		}
 
 		// Otherwise fetch it
-		if (!deploymentId) return;
+		if (!repoName || !serviceName) return;
 		setLoading(true);
 		setError(null);
-		fetch(`/api/deployment-history?deploymentId=${encodeURIComponent(deploymentId)}`)
+		fetch(`/api/deployment-history?repoName=${encodeURIComponent(repoName)}&serviceName=${encodeURIComponent(serviceName)}`)
 			.then((res) => res.json())
 			.then((data) => {
 				if (data.status === "success" && Array.isArray(data.history)) {
@@ -47,7 +47,7 @@ export default function DeploymentHistory({ deploymentId, prefetchedData, isPref
 				setError(err?.message || "Failed to load history");
 			})
 			.finally(() => setLoading(false));
-	}, [deploymentId, prefetchedData]);
+	}, [repoName, serviceName, prefetchedData]);
 
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);

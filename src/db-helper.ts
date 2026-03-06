@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
+import { v4 as uuidv4 } from "uuid";
 
 type RowDeployment = {
 	id: string;
@@ -58,21 +59,23 @@ export const dbHelper = {
 
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
-			const deploymentId = deployConfig.id != null ? String(deployConfig.id).trim() : "";
-			if (!deploymentId) return { error: "Deployment ID is required" };
+			const { repo_name, service_name } = deployConfig;
+			if (!repo_name || !service_name) return { error: "repo_name and service_name are required" };
 
 			const supabase = getSupabaseServer();
 
 			if (deployConfig.status === "stopped") {
-				await supabase.from("deployments").delete().eq("id", deploymentId);
+				await supabase.from("deployments").delete()
+					.eq("repo_name", repo_name)
+					.eq("service_name", service_name);
 				return { success: "Deployment stopped and deleted" };
 			}
 
 			// Columns we store at top level; rest goes into data jsonb
 			const {
 				id: _id,
-				repo_name,
-				service_name,
+				repo_name: _rn,
+				service_name: _sn,
 				status,
 				first_deployment,
 				last_deployment,
@@ -81,16 +84,22 @@ export const dbHelper = {
 			} = deployConfig as DeployConfig & { ownerID?: string };
 			const dataJson = { ...rest } as Record<string, unknown>;
 
+			console.log(repo_name, service_name)
+
 			const { data: existing } = await supabase
 				.from("deployments")
 				.select("revision, data")
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name)
-				.single();
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+
+			console.log("existing", existing);
 
 			if (!existing) {
 				await supabase.from("deployments").insert({
-					id: deploymentId,
+					id: uuidv4(),
 					repo_name: repo_name,
 					service_name: service_name,
 					owner_id: userID,
@@ -124,38 +133,34 @@ export const dbHelper = {
 		}
 	},
 
-	deleteDeploymentHistory: async function (deploymentId: string) {
+	deleteDeploymentHistory: async function (repoName: string, serviceName: string) {
 		const supabase = getSupabaseServer();
-		await supabase.from("deployment_history").delete().eq("deployment_id", deploymentId);
+		await supabase.from("deployment_history").delete()
+			.eq("repo_name", repoName)
+			.eq("service_name", serviceName);
 	},
 
-	deleteDeployment: async function (deploymentId: string, userID: string) {
+	deleteDeployment: async function (repoName: string, serviceName: string, userID: string) {
 		try {
-			if (!deploymentId || !userID) return { error: "Deployment ID and user ID are required" };
+			if (!repoName || !serviceName || !userID) return { error: "repo_name, service_name, and user ID are required" };
 
 			const supabase = getSupabaseServer();
 
 			const { data: deployment, error: fetchError } = await supabase
 				.from("deployments")
 				.select("id, owner_id")
-				.eq("id", deploymentId)
-				.single();
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
 
 			if (fetchError || !deployment) return { success: "Deployment already deleted or not found" };
 			if (deployment.owner_id !== userID) return { error: "Unauthorized: deployment does not belong to user" };
 
-			await supabase.from("deployments").delete().eq("id", deploymentId);
-
-			const { data: userRow } = await supabase
-				.from("users")
-				.select("deployment_ids")
-				.eq("id", userID)
-				.single();
-
-			if (userRow && Array.isArray(userRow.deployment_ids)) {
-				const updatedIds = (userRow.deployment_ids as string[]).filter((id: string) => id !== deploymentId);
-				await supabase.from("users").update({ deployment_ids: updatedIds }).eq("id", userID);
-			}
+			await supabase.from("deployments").delete()
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName);
 
 			return { success: "Deployment deleted" };
 		} catch (error) {
@@ -168,21 +173,12 @@ export const dbHelper = {
 		try {
 			const supabase = getSupabaseServer();
 
-			const { data: userRow, error: userError } = await supabase
-				.from("users")
-				.select("deployment_ids")
-				.eq("id", userID)
-				.single();
-
-			if (userError || !userRow) return { error: "User doesn't exist" };
-
-			const deploymentIds: string[] = (userRow.deployment_ids as string[]) || [];
-			if (deploymentIds.length === 0) return { deployments: [] };
-
-			const { data: rows } = await supabase
+			const { data: rows, error } = await supabase
 				.from("deployments")
 				.select("*")
-				.in("id", deploymentIds);
+				.eq("owner_id", userID);
+
+			if (error) return { error: error.message };
 
 			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
 			return { deployments };
@@ -192,14 +188,17 @@ export const dbHelper = {
 		}
 	},
 
-	getDeployment: async function (deploymentId: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
+	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: row, error } = await supabase
 				.from("deployments")
 				.select("*")
-				.eq("id", deploymentId)
-				.single();
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
 
 			if (error || !row) return { error: "Deployment not found" };
 			return { deployment: rowToDeployConfig(row as RowDeployment) };
@@ -251,7 +250,6 @@ export const dbHelper = {
 				name: defaults.name,
 				image: defaults.image,
 				created_at: defaults.createdAt ?? new Date().toISOString(),
-				deployment_ids: [],
 			});
 			return { created: true };
 		} catch (error) {
@@ -260,13 +258,13 @@ export const dbHelper = {
 	},
 
 	addDeploymentHistory: async function (
-		deploymentId: string,
+		repoName: string,
+		serviceName: string,
 		userID: string,
-		entry: Omit<DeploymentHistoryEntry, "id" | "deploymentId">
+		entry: Omit<DeploymentHistoryEntry, "id" | "repo_name" | "service_name">
 	) {
 		try {
-			const id = deploymentId != null ? String(deploymentId).trim() : "";
-			if (!id) return { error: "Deployment ID is required." };
+			if (!repoName || !serviceName) return { error: "repo_name and service_name are required." };
 
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
@@ -275,7 +273,8 @@ export const dbHelper = {
 			const { data: inserted, error } = await supabase
 				.from("deployment_history")
 				.insert({
-					deployment_id: id,
+					repo_name: repoName,
+					service_name: serviceName,
 					user_id: userID,
 					timestamp: entry.timestamp ?? new Date().toISOString(),
 					success: entry.success,
@@ -285,8 +284,6 @@ export const dbHelper = {
 					commit_message: entry.commitMessage ?? null,
 					branch: entry.branch ?? null,
 					duration_ms: entry.durationMs ?? null,
-					service_name: entry.serviceName ?? null,
-					repo_url: entry.repoUrl ?? null,
 				})
 				.select("id")
 				.single();
@@ -299,7 +296,7 @@ export const dbHelper = {
 		}
 	},
 
-	getDeploymentHistory: async function (deploymentId: string, userID: string) {
+	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string) {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
@@ -309,14 +306,16 @@ export const dbHelper = {
 				.from("deployment_history")
 				.select("*")
 				.eq("user_id", userID)
-				.eq("deployment_id", deploymentId)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
 				.order("timestamp", { ascending: false });
 
 			if (error) return { error };
 
 			const history: DeploymentHistoryEntry[] = (rows || []).map((row: Record<string, unknown>) => ({
 				id: row.id as string,
-				deploymentId: row.deployment_id as string,
+				repo_name: row.repo_name as string,
+				service_name: row.service_name as string,
 				timestamp: row.timestamp as string,
 				success: row.success as boolean,
 				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
@@ -325,8 +324,6 @@ export const dbHelper = {
 				commitMessage: row.commit_message as string | undefined,
 				branch: row.branch as string | undefined,
 				durationMs: row.duration_ms as number | undefined,
-				serviceName: row.service_name as string | undefined,
-				repoUrl: row.repo_url as string | undefined,
 			}));
 
 			return { history };
@@ -352,7 +349,8 @@ export const dbHelper = {
 
 			const history = (rows || []).map((row: Record<string, unknown>) => ({
 				id: row.id as string,
-				deploymentId: row.deployment_id as string,
+				repo_name: row.repo_name as string,
+				service_name: row.service_name as string,
 				timestamp: row.timestamp as string,
 				success: row.success as boolean,
 				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
@@ -361,8 +359,6 @@ export const dbHelper = {
 				commitMessage: row.commit_message as string | undefined,
 				branch: row.branch as string | undefined,
 				durationMs: row.duration_ms as number | undefined,
-				serviceName: row.service_name as string | undefined,
-				repoUrl: row.repo_url as string | undefined,
 			}));
 
 			return { history };
