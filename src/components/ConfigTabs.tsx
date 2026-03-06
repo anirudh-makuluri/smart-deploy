@@ -32,7 +32,9 @@ import DeployOptions from "@/components/DeployOptions";
 import { RotateCw, Upload, Trash2, Plus, Layers, Check, X } from "lucide-react";
 import type { SubmitHandler } from "react-hook-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, DeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType } from "@/app/types";
+import { AIGenProjectMetadata, DeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import ScanProgress from "@/components/ScanProgress";
+import PostScanResults from "@/components/PostScanResults";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -59,11 +61,12 @@ export const formSchema = z.object({
 const AUTO_SAVE_DEBOUNCE_MS = 500;
 
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, editMode, isDeploying, deployment, repo }:
+	{ service_name, onSubmit, onScanComplete, onConfigChange, onScanStateChange, editMode, isDeploying, deployment, repo }:
 		{
 			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
 			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
 			onConfigChange?: (partial: Partial<DeployConfig>) => void,
+			onScanStateChange?: (state: "form" | "scanning" | "results") => void,
 			editMode: boolean, isDeploying: boolean,
 			repo: repoType, deployment?: DeployConfig
 		}) {
@@ -78,6 +81,11 @@ export default function ConfigTabs(
 	const [isAiFetching, setAiFetching] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
+	const [scanMode, setScanMode] = useState<"form" | "scanning" | "results">("form");
+	const [scanResults, setScanResults] = useState<SDArtifactsResponse | null>(null);
+	const [scanStartTime, setScanStartTime] = useState<number>(0);
+	const [scanDuration, setScanDuration] = useState<number>(0);
+
 	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
 		deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes
 			? {
@@ -91,6 +99,10 @@ export default function ConfigTabs(
 	const [monorepoServices, setMonorepoServices] = useState<MonorepoServiceInfo[]>(
 		deployment?.monorepo_services ?? []
 	);
+
+	useEffect(() => {
+		onScanStateChange?.(scanMode);
+	}, [scanMode, onScanStateChange]);
 
 	const isDeploymentTarget = (t: string): t is DeploymentTarget =>
 		["ec2", "cloud-run"].includes(t);
@@ -269,52 +281,9 @@ export default function ConfigTabs(
 	}, [editMode, deployment?.id]);
 
 	function handleAIBtn() {
-		setAiFetching(true);
-
 		if (!repo?.full_name || !repo.default_branch) return;
-
-		const currentWorkdir = form.getValues("workdir");
-
-		fetch('/api/llm', {
-			method: "POST",
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				full_name: repo.full_name,
-				branch: repo.default_branch,
-				include_extra_info: true,
-				target_workdir: currentWorkdir
-			})
-		}).then(res => res.json())
-			.then((response) => {
-				setAiFetching(false);
-				const parsed_response = sanitizeAndParseAIResponse(response);
-				setProjectMetadata(parsed_response ?? null);
-				// Populate monorepo services if detected
-				if (parsed_response?.monorepo_services?.length) {
-					setMonorepoServices(parsed_response.monorepo_services);
-				} else {
-					setMonorepoServices([]);
-				}
-				const core_deployment_info = parsed_response?.core_deployment_info;
-				if (core_deployment_info) {
-					form.setValue('install_cmd', core_deployment_info.install_cmd);
-					form.setValue('build_cmd', core_deployment_info.build_cmd);
-					form.setValue('run_cmd', core_deployment_info.run_cmd);
-					form.setValue('workdir', core_deployment_info.workdir ?? '');
-				}
-				if (parsed_response) {
-					const payload = {
-						...form.getValues(),
-						...parsed_response,
-						monorepo_services: parsed_response.monorepo_services ?? [],
-						deploymentTarget: "ec2",
-						deployment_target_reason: "Using EC2.",
-					};
-					onScanComplete(payload);
-				}
-			})
+		setScanStartTime(Date.now());
+		setScanMode("scanning");
 	}
 
 
@@ -336,6 +305,105 @@ export default function ConfigTabs(
 	}, [deployment, projectMetadata]);
 
 	const featuresInfra = projectMetadata?.features_infrastructure;
+
+	if (scanMode === "scanning") {
+		return (
+			<ScanProgress
+				repoFullName={repo.full_name}
+				branch={repo.default_branch}
+				targetWorkdir={form.getValues("workdir")}
+				onComplete={(data) => {
+					setScanDuration(Date.now() - scanStartTime);
+					setScanResults(data);
+					setScanMode("results");
+				}}
+				onCancel={() => setScanMode("form")}
+			/>
+		);
+	}
+
+	if (scanMode === "results" && scanResults) {
+		return (
+			<PostScanResults
+				results={scanResults}
+				onUpdateResults={setScanResults}
+				repo={repo}
+				scanTime={scanDuration}
+				onStartDeployment={() => {
+					// Map SDArtifactsResponse to our existing AIGenProjectMetadata
+					const mainService = scanResults.services?.[0];
+					const mappedMetadata: AIGenProjectMetadata = {
+						core_deployment_info: {
+							language: mainService && mainService.name.includes("node") ? "node" : "unknown",
+							framework: scanResults.stack_summary,
+							install_cmd: "", // Fallbacks handle this
+							build_cmd: "",
+							run_cmd: "",
+							workdir: mainService?.build_context || ".",
+							port: mainService?.port
+						},
+						features_infrastructure: {
+							uses_websockets: scanResults.stack_summary.toLowerCase().includes("websocket"),
+							uses_cron: false,
+							uses_mobile: false,
+							uses_server: scanResults.services?.length > 0,
+							cloud_run_compatible: true,
+							is_library: false,
+							requires_build_but_missing_cmd: false
+						},
+						final_notes: {
+							comment: "AI Scan Complete.\\nTech Stack: " + scanResults.stack_summary + "\\nRisks: " + (scanResults.risks?.join(", ") || "None")
+						},
+						monorepo_services: scanResults.services?.map(s => ({
+							name: s.name,
+							path: s.build_context,
+							language: "unknown",
+							port: s.port,
+							is_deployable: true
+						}))
+					};
+
+					setProjectMetadata(mappedMetadata);
+					if (mappedMetadata.monorepo_services?.length) {
+						setMonorepoServices(mappedMetadata.monorepo_services);
+					}
+
+					// Set Dockerfile if provided
+					const dockerfileContent = scanResults.dockerfiles?.[mainService?.dockerfile_path || "Dockerfile"] || scanResults.dockerfiles?.["Dockerfile"];
+					if (dockerfileContent) {
+						form.setValue("use_custom_dockerfile", true);
+						const file = new File([dockerfileContent], "Dockerfile", { type: "text/plain" });
+						setDockerfile(file);
+					}
+
+					if (mappedMetadata.core_deployment_info.workdir) {
+						form.setValue("workdir", mappedMetadata.core_deployment_info.workdir);
+					}
+
+					const payload = {
+						...form.getValues(),
+						...mappedMetadata,
+						monorepo_services: mappedMetadata.monorepo_services ?? [],
+						deploymentTarget: "ec2",
+						deployment_target_reason: "Using EC2.",
+					};
+					onScanComplete(payload);
+					setScanMode("form");
+
+					// Automatically trigger deployment if we're in editMode
+					if (editMode) {
+						const envString = buildEnvVarsString(envEntries);
+						onSubmit({
+							...form.getValues(),
+							env_vars: envString,
+							...mappedMetadata
+						});
+					}
+				}}
+				onCancel={() => setScanMode("form")}
+			/>
+		);
+	}
 
 	return (
 		<>

@@ -221,3 +221,26 @@ export type DeploymentHistoryEntry = {
 	/** Deployment duration in milliseconds */
 	durationMs?: number;
 };
+
+export type SDArtifactsResponse = {
+	stack_summary: string;
+	services: {
+		name: string;
+		build_context: string;
+		port: number;
+		dockerfile_path: string;
+	}[];
+	dockerfiles: Record<string, string>;
+	docker_compose: string;
+	nginx_conf: string;
+	has_existing_dockerfiles: boolean;
+	has_existing_compose: boolean;
+	risks: string[];
+	confidence: number;
+	hadolint_results: Record<string, string>;
+	token_usage: {
+		input_tokens: number;
+		output_tokens: number;
+		total_tokens: number;
+	};
+};

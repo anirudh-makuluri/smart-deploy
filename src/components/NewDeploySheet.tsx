@@ -127,6 +127,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 	const { data: session } = useSession();
 	const { updateDeploymentById, deployments } = useAppData();
 	const [isDeploying, setIsDeploying] = React.useState(false);
+	const [scanState, setScanState] = React.useState<"form" | "scanning" | "results">("form");
 	const prefilledCoreInfo = React.useMemo(
 		() => selectedService?.core_deployment_info ?? fallbackCoreDeploymentInfo(selectedService),
 		[selectedService]
@@ -282,22 +283,26 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 			<div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 			<div className="absolute inset-0 bg-background text-foreground overflow-y-auto">
 				<div className="mx-auto w-full max-w-6xl px-6 py-6">
-					<div className="flex items-center justify-between gap-3">
-						<div>
-							<p className="text-xs uppercase tracking-wider text-muted-foreground">New deployment</p>
-							<h2 className="text-2xl font-semibold text-foreground">Configure and deploy</h2>
-						</div>
-						<Button variant="outline" onClick={handleClose} disabled={isDeploying}>
-							<X className="size-4" />
-						</Button>
-					</div>
+					{scanState === "form" && (
+						<>
+							<div className="flex items-center justify-between gap-3">
+								<div>
+									<p className="text-xs uppercase tracking-wider text-muted-foreground">New deployment</p>
+									<h2 className="text-2xl font-semibold text-foreground">Configure and deploy</h2>
+								</div>
+								<Button variant="outline" onClick={handleClose} disabled={isDeploying}>
+									<X className="size-4" />
+								</Button>
+							</div>
 
-					<div className="mt-6 rounded-xl border border-border bg-card p-4">
-						<span>Repository Name: </span>
-						<span className="font-semibold">{repo.name}</span>
-					</div>
+							<div className="mt-6 rounded-xl border border-border bg-card p-4">
+								<span>Repository Name: </span>
+								<span className="font-semibold">{repo.name}</span>
+							</div>
+						</>
+					)}
 
-					<div className="mt-6 rounded-xl border border-border bg-card p-4">
+					<div className={`rounded-xl border border-border bg-card p-4 ${scanState !== "form" ? "" : "mt-6"}`}>
 						<ConfigTabs
 							service_name={prefilledServiceName}
 							onSubmit={handleSubmit}
@@ -306,6 +311,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 								if (!prefilledDeployment) return;
 								updateDeploymentById({ ...prefilledDeployment, ...partial, status: prefilledDeployment.status || "didnt_deploy" });
 							}}
+							onScanStateChange={(state) => setScanState(state)}
 							repo={repo}
 							deployment={prefilledDeployment}
 							editMode={true}
