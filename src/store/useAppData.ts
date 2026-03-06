@@ -41,6 +41,8 @@ type AppState = {
 	refetchAll: () => Promise<void>;
 	/** Refetch deployments only (no loading state). Use after delete so UI stays in sync. */
 	refetchDeployments: () => Promise<void>;
+	/** Fetch deployments for a specific repository. Useful when navigating to a repo page before full fetch. */
+	fetchRepoDeployments: (repoName: string) => Promise<void>;
 	/** Refetch repo services only (e.g. after visiting a repo page that ran detect-services). */
 	refetchRepoServices: () => Promise<void>;
 	/** Get cached detect-services result for a repo (normalized URL). */
@@ -133,6 +135,21 @@ export const useAppData = create<AppState>((set, get) => ({
 			set({ deployments: sortDeployments(list) });
 		} catch (err) {
 			console.error('Refetch deployments failed', err);
+		}
+	},
+
+	fetchRepoDeployments: async (repoName: string) => {
+		try {
+			const res = await fetch(`/api/get-repo-deployments?repoName=${encodeURIComponent(repoName)}`).then((r) => r.json());
+			const fetchedList: DeployConfig[] = res.deployments ?? [];
+
+			// Upsert fetched deployments without erasing others in the store
+			set((state) => {
+				const otherDeployments = state.deployments.filter(d => d.repo_name !== repoName);
+				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
+			});
+		} catch (err) {
+			console.error('Fetch repo deployments failed', err);
 		}
 	},
 

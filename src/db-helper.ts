@@ -188,6 +188,26 @@ export const dbHelper = {
 		}
 	},
 
+	getDeploymentsByRepo: async function (userID: string, repoName: string) {
+		try {
+			const supabase = getSupabaseServer();
+
+			const { data: rows, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("owner_id", userID)
+				.eq("repo_name", repoName);
+
+			if (error) return { error: error.message };
+
+			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+			return { deployments };
+		} catch (error) {
+			console.error("getDeploymentsByRepo error:", error);
+			return { error };
+		}
+	},
+
 	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
 		try {
 			const supabase = getSupabaseServer();

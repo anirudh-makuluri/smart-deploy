@@ -110,7 +110,7 @@ function normalizeRepoUrlForMatch(url: string): string {
 
 export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	const router = useRouter();
-	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments, hasFetched } = useAppData();
+	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments, fetchRepoDeployments } = useAppData();
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [services, setServices] = React.useState<DetectedService[]>([]);
 	const [loading, setLoading] = React.useState(true);
@@ -164,8 +164,6 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 	}, [repo]);
 
 	React.useEffect(() => {
-		if (!hasFetched) return;
-
 		const cached = getDetectedRepoCache(repoUrl);
 		if (cached?.services?.length !== undefined) {
 			setServices(cached.services);
@@ -226,12 +224,19 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices, hasFetched]);
+	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
 		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_name === resolvedRepo.name || normalizeRepoUrl(d.url) === norm)));
 	}, [deployments, repoUrl, resolvedRepo]);
+
+	// Fetch deployments explicitly for this repo on mount if needed
+	React.useEffect(() => {
+		if (resolvedRepo.name) {
+			fetchRepoDeployments(resolvedRepo.name);
+		}
+	}, [resolvedRepo.name, fetchRepoDeployments]);
 
 	function openSheetForService(svc: DetectedService) {
 		setSelectedService(svc);
