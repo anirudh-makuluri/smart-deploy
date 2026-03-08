@@ -172,7 +172,14 @@ export default function ConfigTabs(
 				scanTime={scanDuration}
 				deployment={deployment}
 				onStartDeployment={() => {
-					//TODO: IMPLEMENT PROPERLY
+					const values = form.getValues();
+					const envString = buildEnvVarsString(envEntries);
+					onSubmit({
+						...values,
+						env_vars: envString,
+						deploymentTarget: "ec2", // Default for now
+						...scanResults
+					} as any);
 				}}
 				onCancel={() => setScanMode("form")}
 			/>
