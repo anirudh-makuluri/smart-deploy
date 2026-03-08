@@ -63,45 +63,44 @@ export type CloudRunDeployDetails = {
 // ── Main deployment config ──
 
 export type DeployConfig = {
-	/** Unique UUID for this deployment attempt */
 	id: string;
 	repo_name: string;
 	url: string;
 	branch: string;
-	/** Optional commit SHA to deploy a specific commit instead of branch HEAD */
 	commitSha?: string;
-	use_custom_dockerfile: boolean;
 	env_vars?: string;
 	deployUrl?: string;
-	/** Custom URL (e.g. https://myapp.anirudh-makuluri.xyz) when NEXT_PUBLIC_DEPLOYMENT_DOMAIN is used. */
 	custom_url?: string;
-	/** The name of the service being deployed. Use "." to denote all-services (repo-level) deployments. */
 	service_name: string;
 	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
 	first_deployment?: string;
 	last_deployment?: string;
 	revision?: number;
-	dockerfile?: File;
-	dockerfileInfo?: {
+	docker_compose?: string;
+	nginx_conf?: string;
+	dockerfiles?: Record<string, string>;
+	stack_summary?: string;
+	services?: {
 		name: string;
-		type: string;
-		content: string;
+		build_context: string;
+		port: number;
+		dockerfile_path: string;
+		language?: string;
+		framework?: string;
+	}[];
+	has_existing_dockerfiles?: boolean;
+	has_existing_compose?: boolean;
+	risks?: string[];
+	confidence?: number;
+	hadolint_results?: Record<string, string>;
+	token_usage?: {
+		input_tokens: number;
+		output_tokens: number;
+		total_tokens: number;
 	};
-	dockerfileContent?: string;
-	core_deployment_info?: CoreDeploymentInfo;
-	features_infrastructure?: FeaturesInfrastructure;
-	final_notes?: FinalNotes;
-	deployment_hints?: DeploymentHints;
-	/** Per-service info for monorepo projects (from LLM scan). */
-	monorepo_services?: MonorepoServiceInfo[];
-
-	// Cloud provider configuration
 	cloudProvider?: CloudProvider;
 	deploymentTarget?: DeploymentTarget;
-	deployment_target_reason?: string;
 	awsRegion?: string;
-
-	// Per-service deployment details (populated after deploy, persisted for redeploy)
 	ec2?: EC2DeployDetails;
 	cloudRun?: CloudRunDeployDetails;
 }
@@ -118,48 +117,15 @@ export type DeployStep = {
 }
 
 
-export type CoreDeploymentInfo = {
-	language: string;
-	framework: string;
-	install_cmd: string;
-	build_cmd: string;
-	run_cmd: string;
-	workdir: string | null;
-	port?: number;
-};
 
-type FeaturesInfrastructure = {
-	uses_websockets: boolean;
-	uses_cron: boolean;
-	uses_mobile: boolean;
-	uses_server?: boolean;
-	cloud_run_compatible: boolean;
-	is_library: boolean;
-	requires_build_but_missing_cmd: boolean;
-};
 
-type FinalNotes = {
-	comment: string;
-};
 
-/** Hints from scan (LLM) used to derive deployment target without filesystem. */
-export type DeploymentHints = {
-	has_dockerfile?: boolean;
-	is_multi_service?: boolean;
-	is_monorepo?: boolean;
-	has_database?: boolean;
-	nextjs_static_export?: boolean;
-};
 
-/** Monorepo service info returned by LLM analysis. */
-export type MonorepoServiceInfo = {
-	name: string;
-	path: string;
-	language: string;
-	framework?: string;
-	port?: number | null;
-	is_deployable: boolean;
-};
+
+
+
+
+
 
 /** Service info detected by /api/repos/detect-services and persisted in repo_services. */
 export type DetectedServiceInfo = {
@@ -168,7 +134,6 @@ export type DetectedServiceInfo = {
 	language: string;
 	framework?: string;
 	port?: number | null;
-	core_deployment_info?: CoreDeploymentInfo;
 };
 
 /** Stored record per user+repo for detected services metadata. */
@@ -188,16 +153,7 @@ export type ServiceCompatibility = {
 	cloud_run?: boolean;
 };
 
-export type AIGenProjectMetadata = {
-	core_deployment_info: CoreDeploymentInfo;
-	features_infrastructure: FeaturesInfrastructure;
-	deployment_hints?: DeploymentHints;
-	/** LLM-reported compatibility per platform; used to pick simplest compatible target. */
-	service_compatibility?: ServiceCompatibility;
-	/** Per-service info for monorepo projects (only present when is_monorepo=true). */
-	monorepo_services?: MonorepoServiceInfo[];
-	final_notes: FinalNotes;
-};
+export type AIGenProjectMetadata = SDArtifactsResponse;
 
 /** One deployment attempt: success or failure, with logs for history and "Why did it fail?". */
 export type DeploymentHistoryEntry = {
@@ -229,6 +185,8 @@ export type SDArtifactsResponse = {
 		build_context: string;
 		port: number;
 		dockerfile_path: string;
+		language?: string;
+		framework?: string;
 	}[];
 	dockerfiles: Record<string, string>;
 	docker_compose: string;

@@ -101,19 +101,22 @@ function generateDockerfileContent(
 	deployConfig: DeployConfig,
 	serviceDir: string = "."
 ): string {
-	// Use custom Dockerfile if provided
-	if (deployConfig.dockerfileContent) {
-		return deployConfig.dockerfileContent;
+	// Use AI-generated Dockerfile if available in the record
+	const dockerfilePath = serviceDir === "." ? "Dockerfile" : `${serviceDir}/Dockerfile`;
+	const aiDockerfile = deployConfig.dockerfiles?.[dockerfilePath] || deployConfig.dockerfiles?.["Dockerfile"];
+
+	if (aiDockerfile) {
+		return aiDockerfile;
 	}
 
-	const coreInfo = deployConfig.core_deployment_info;
-	const language = (coreInfo?.language || "node").toLowerCase();
-	const userWorkdir = coreInfo?.workdir;
+	const svc = deployConfig.services?.find(s => normalizePathForMatch(s.dockerfile_path || s.build_context) === normalizePathForMatch(serviceDir)) || deployConfig.services?.[0];
+	const language = (svc?.language || "node").toLowerCase();
+	const userWorkdir = svc?.build_context;
 	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
-	const port = coreInfo?.port || 8080;
-	const installCmd = coreInfo?.install_cmd || "";
-	const buildCmd = coreInfo?.build_cmd || "";
-	const runCmd = coreInfo?.run_cmd || "";
+	const port = svc?.port || 8080;
+	const installCmd: string = ""; // AI scan handles this now
+	const buildCmd: string = "";
+	const runCmd: string = "";
 
 	let dockerfileContent = "";
 
@@ -629,7 +632,7 @@ async function ensureNetworking(
 	}
 
 	const ports = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
-	if (deployConfig.core_deployment_info?.port) ports.add(deployConfig.core_deployment_info.port);
+	if (deployConfig.services?.[0]?.port) ports.add(deployConfig.services[0].port);
 	for (const svc of services) if (typeof svc.port === "number" && !Number.isNaN(svc.port)) ports.add(svc.port);
 	if (multiServiceConfig.isMultiService) {
 		for (const svc of multiServiceConfig.services) if (typeof svc.port === "number") ports.add(svc.port);
@@ -1091,7 +1094,8 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			language: s.language,
 		}));
 
-		const requestedWorkdir = normalizePathForMatch(deployConfig.core_deployment_info?.workdir);
+		const mainService = deployConfig.services?.[0];
+		const requestedWorkdir = normalizePathForMatch(mainService?.build_context);
 		if (requestedWorkdir && requestedWorkdir !== ".") {
 			const byWorkdir = allServices.find((svc) => {
 				const svcDir = normalizePathForMatch(svc.dir);
@@ -1114,7 +1118,7 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 
 		return allServices;
 	}
-	return [{ name: repoName, dir: ".", port: deployConfig.core_deployment_info?.port || 8080 }];
+	return [{ name: repoName, dir: ".", port: deployConfig.services?.[0]?.port || 8080 }];
 }
 
 // ─── Main entry point ───────────────────────────────────────────────────────

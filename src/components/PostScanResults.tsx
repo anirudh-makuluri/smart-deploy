@@ -1,37 +1,31 @@
-import * as React from "react";
-import { useState } from "react";
-import { SDArtifactsResponse, repoType } from "@/app/types";
+import { useState, useMemo, useEffect } from "react";
+import { DeployConfig, SDArtifactsResponse, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe } from "lucide-react";
+import { toast } from "sonner";
 
 type PostScanResultsProps = {
 	results: SDArtifactsResponse;
-	repo: repoType;
+	deployment: DeployConfig;
 	scanTime?: number;
 	onStartDeployment: () => void;
 	onCancel: () => void;
 	onUpdateResults?: (results: SDArtifactsResponse) => void;
 };
 
-export default function PostScanResults({ results, repo, scanTime, onStartDeployment, onCancel, onUpdateResults }: PostScanResultsProps) {
-	const [activeTab, setActiveTab] = useState<string>("Dockerfile");
+export default function PostScanResults({ results, scanTime, deployment, onStartDeployment, onCancel, onUpdateResults }: PostScanResultsProps) {
+	const dockerfileNames = useMemo(() => {
+		if (!results.dockerfiles) return [];
+		return Object.keys(results.dockerfiles);
+	}, [results]);
+
+	const [activeTab, setActiveTab] = useState<string>(dockerfileNames.length > 0 ? dockerfileNames[0] : "");
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState("");
 
-	const dockerfileNames = results.dockerfiles ? Object.keys(results.dockerfiles) : [];
-	const firstDockerfile = dockerfileNames.length > 0 ? dockerfileNames[0] : "Dockerfile";
-
-	// Initialize to first dockerfile if "Dockerfile" isn't present but others are
-	React.useEffect(() => {
-		if (activeTab === "Dockerfile" && !dockerfileNames.includes("Dockerfile") && dockerfileNames.length > 0) {
-			setActiveTab(dockerfileNames[0]);
-		}
-	}, [dockerfileNames, activeTab]);
-
-	React.useEffect(() => {
+	useEffect(() => {
 		setIsEditing(false);
 		setEditContent("");
 	}, [activeTab]);
@@ -61,10 +55,12 @@ export default function PostScanResults({ results, repo, scanTime, onStartDeploy
 
 		onUpdateResults(updatedResults);
 		setIsEditing(false);
+		toast.success("File changes saved successfully");
 	};
 
 	const copyToClipboard = (text: string) => {
 		navigator.clipboard.writeText(text);
+		toast.success("Copied to clipboard");
 	};
 
 	const hasRisks = results.risks && results.risks.length > 0;
@@ -72,266 +68,336 @@ export default function PostScanResults({ results, repo, scanTime, onStartDeploy
 	const hadolintCount = Object.values(results.hadolint_results || {}).reduce((acc, curr) => acc + (curr ? curr.split('\\n').length : 0), 0);
 
 	return (
-		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in slide-in-from-bottom-4 duration-500">
-			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+			{/* Header Section */}
+			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10 pb-6 border-b border-white/5">
 				<div>
-					<div className="flex items-center gap-3 mb-2">
-						<Badge variant="outline" className="text-[10px] tracking-widest uppercase border-emerald-500/30 text-emerald-400 bg-emerald-500/10">Analysis Complete</Badge>
-						<span className="text-xs text-muted-foreground font-mono">ID: scan-{Math.random().toString(36).substring(7)}</span>
+					<div className="flex items-center gap-3 mb-3">
+						<div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-bold tracking-widest uppercase text-emerald-400">
+							<CheckCircle2 className="size-3" />
+							Analysis Complete
+						</div>
+						<span className="text-[10px] text-muted-foreground/40 font-mono tracking-tighter uppercase">Deployment ID: {deployment.id.substring(0, 12)}</span>
 					</div>
-					<h2 className="text-3xl font-bold tracking-tight text-foreground">Post-Scan Results</h2>
-					<p className="text-muted-foreground mt-1 flex items-center gap-2">
-						Repository: <span className="text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">{repo.name}</span>
+					<h2 className="text-4xl font-extrabold tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/40">
+						Post-Scan Results
+					</h2>
+					<p className="text-muted-foreground/60 mt-2 flex items-center gap-2 text-sm">
+						Repository: <span className="text-primary font-mono font-medium hover:underline cursor-pointer">{deployment.repo_name}{deployment.service_name != "." ? "/" + deployment.service_name : ""}</span>
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
-					<Button variant="outline" className="border-border/50 text-foreground hover:bg-secondary/50">
-						<Share2 className="size-4 mr-2" />
+					<Button variant="outline" className="h-10 px-4 border-white/5 bg-white/[0.02] text-white hover:bg-white/[0.05] hover:border-white/10 transition-all active:scale-95">
+						<Share2 className="size-4 mr-2 text-muted-foreground" />
 						Share Report
 					</Button>
-					<Button onClick={onStartDeployment} className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_20px_rgba(var(--primary),0.3)]">
-						<Rocket className="size-4 mr-2" />
+					<Button onClick={onStartDeployment} className="h-10 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-[0_0_30px_rgba(37,244,106,0.2)] transition-all active:scale-95 flex items-center gap-2">
+						<Rocket className="size-4" />
 						Start Deployment
 					</Button>
 				</div>
 			</div>
 
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-				<Card className="p-6 border-border/40 bg-card/60 relative overflow-hidden group">
-					<div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-						<ShieldCheck className="size-24" />
-					</div>
-					<div className="flex justify-between items-start relative z-10">
-						<span className="text-sm font-medium text-muted-foreground">Confidence Score</span>
-						<CheckCircle2 className="size-5 text-emerald-400" />
-					</div>
-					<div className="mt-4 relative z-10">
-						<div className="flex items-baseline gap-2">
-							<span className="text-4xl font-bold">{Math.round((results.confidence || 0) * 100)}%</span>
-							<span className="text-xs text-emerald-400 font-medium">High</span>
+			{/* Metrics Grid */}
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+				{/* Confidence Card */}
+				<div className="group relative">
+					<div className="absolute -inset-0.5 bg-gradient-to-b from-primary/20 to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500" />
+					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
+						<div className="flex justify-between items-start mb-8">
+							<div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20">
+								<ShieldCheck className="size-5 text-primary" />
+							</div>
+							<Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary text-[10px] font-bold">STABLE</Badge>
 						</div>
-						<div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden mt-4">
-							<div className="h-full bg-primary" style={{ width: `${Math.round((results.confidence || 0) * 100)}%` }} />
+						<div>
+							<div className="flex items-baseline gap-2 mb-1">
+								<h3 className="text-5xl font-black tracking-tighter text-white">{Math.round((results.confidence || 0) * 100)}%</h3>
+								<span className="text-xs font-bold text-primary uppercase tracking-widest">Confidence</span>
+							</div>
+							<p className="text-xs text-muted-foreground/60 leading-relaxed mb-4">AI probability of a successful deployment based on repo patterns.</p>
+							<div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+								<div
+									className="h-full bg-gradient-to-r from-primary/40 to-primary shadow-[0_0_15px_rgba(37,244,106,0.5)] transition-all duration-1000 ease-out"
+									style={{ width: `${Math.round((results.confidence || 0) * 100)}%` }}
+								/>
+							</div>
 						</div>
-					</div>
-				</Card>
+					</Card>
+				</div>
 
-				<Card className="p-6 border-border/40 bg-card/60 relative overflow-hidden group">
-					<div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-						<CheckCircle2 className="size-24" />
-					</div>
-					<div className="flex justify-between items-start relative z-10">
-						<span className="text-sm font-medium text-muted-foreground">Hadolint Results</span>
-						{hadolintCount > 0 ? (
-							<AlertTriangle className="size-5 text-amber-500" />
-						) : (
-							<CheckCircle2 className="size-5 text-emerald-400" />
-						)}
-					</div>
-					<div className="mt-4 relative z-10">
-						<span className="text-4xl font-bold">{hadolintCount > 0 ? `${hadolintCount} Warn` : 'Clean'}</span>
-						<p className="text-xs text-muted-foreground mt-2">
-							{hadolintCount > 0 ? "Non-critical Dockerfile lint warnings found." : "No critical Dockerfile lint errors found."}
-						</p>
-					</div>
-				</Card>
+				{/* Linter Card */}
+				<div className="group relative">
+					<div className={`absolute -inset-0.5 bg-gradient-to-b ${hadolintCount > 0 ? 'from-amber-500/20' : 'from-emerald-500/20'} to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500`} />
+					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
+						<div className="flex justify-between items-start mb-8">
+							<div className={`p-2.5 rounded-xl border ${hadolintCount > 0 ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
+								{hadolintCount > 0 ? <AlertTriangle className="size-5 text-amber-500" /> : <CheckCircle2 className="size-5 text-emerald-400" />}
+							</div>
+							<Badge variant="outline" className={`${hadolintCount > 0 ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'} text-[10px] font-bold`}>
+								{hadolintCount > 0 ? 'WARNING' : 'OPTIMAL'}
+							</Badge>
+						</div>
+						<div>
+							<div className="flex items-baseline gap-2 mb-1">
+								<h3 className="text-5xl font-black tracking-tighter text-white">{hadolintCount > 0 ? hadolintCount : '00'}</h3>
+								<span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Lint Issues</span>
+							</div>
+							<p className="text-xs text-muted-foreground/60 leading-relaxed">
+								{hadolintCount > 0
+									? `${hadolintCount} non-critical issues detected in Dockerfile best practices.`
+									: "All Dockerfile layers follow security and size optimization best practices."}
+							</p>
+						</div>
+					</Card>
+				</div>
 
-				<Card className="p-6 border-border/40 bg-card/60 relative overflow-hidden group">
-					<div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-						<AlertTriangle className="size-24" />
-					</div>
-					<div className="flex justify-between items-start relative z-10">
-						<span className="text-sm font-medium text-muted-foreground">Risks Identified</span>
-						{hasRisks ? (
-							<AlertTriangle className="size-5 text-amber-500" />
-						) : (
-							<CheckCircle2 className="size-5 text-emerald-400" />
-						)}
-					</div>
-					<div className="mt-4 relative z-10">
-						<span className="text-4xl font-bold">{results.risks?.length || '00'}</span>
-						<p className={`text-xs mt-2 font-medium ${hasRisks ? 'text-amber-500' : 'text-emerald-400'}`}>
-							{hasRisks ? "Minor optimizations suggested" : "No obvious risks detected"}
-						</p>
-					</div>
-				</Card>
+				{/* Risks Card */}
+				<div className="group relative">
+					<div className={`absolute -inset-0.5 bg-gradient-to-b ${hasRisks ? 'from-amber-500/20' : 'from-emerald-500/20'} to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500`} />
+					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
+						<div className="flex justify-between items-start mb-8">
+							<div className={`p-2.5 rounded-xl border ${hasRisks ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
+								<Lock className={`size-5 ${hasRisks ? 'text-amber-500' : 'text-emerald-400'}`} />
+							</div>
+							<Badge variant="outline" className={`${hasRisks ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'} text-[10px] font-bold`}>
+								{hasRisks ? 'SECURITY' : 'SECURE'}
+							</Badge>
+						</div>
+						<div>
+							<div className="flex items-baseline gap-2 mb-1">
+								<h3 className="text-5xl font-black tracking-tighter text-white">{results.risks?.length || '0'}</h3>
+								<span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Points</span>
+							</div>
+							<p className="text-xs text-muted-foreground/60 leading-relaxed">
+								{hasRisks
+									? `${results.risks.length} potential architectural risks or optimizations identified.`
+									: "No high-risk configurations or architectural anti-patterns detected."}
+							</p>
+						</div>
+					</Card>
+				</div>
 			</div >
 
-			<div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
-				<div className="col-span-1 lg:col-span-5 flex flex-col gap-8">
-					<section>
-						<h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-							<Layers className="size-5 text-primary" />
-							Tech Stack Summary
-						</h3>
-						<div className="flex flex-wrap gap-2">
+			<div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:h-[850px]">
+				{/* Left Sidebar Info */}
+				<div className="col-span-1 lg:col-span-4 flex flex-col gap-10 h-full overflow-hidden pb-4">
+					{/* Tech Stack Segment */}
+					<section className="space-y-5">
+						<div className="flex items-center gap-2 px-1">
+							<div className="size-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(37,244,106,0.8)]" />
+							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Tech Stack</h3>
+						</div>
+						<div className="flex flex-wrap gap-2.5">
 							{results.stack_summary.split(' ').filter(w => w.length > 2 && !['app', 'with', 'server', 'application'].includes(w.toLowerCase())).map((tech, i) => (
-								<Badge key={i} variant="secondary" className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground border border-border/50 shadow-sm flex items-center gap-2">
-									<TerminalSquare className="size-3.5 text-primary" />
-									{tech}
-								</Badge>
+								<div key={i} className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 flex items-center gap-2 group hover:border-primary/30 transition-colors">
+									<div className="size-1.5 rounded-sm bg-white/20 group-hover:bg-primary transition-colors" />
+									<span className="text-xs font-medium text-white/80 group-hover:text-white">{tech}</span>
+								</div>
 							))}
 						</div>
 					</section>
 
-					<section>
-						<h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-							<Server className="size-5 text-primary" />
-							Detected Services
-						</h3>
-						<div className="flex flex-col gap-3">
+					{/* Services Segment */}
+					<section className="space-y-5">
+						<div className="flex items-center gap-2 px-1">
+							<div className="size-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(37,244,106,0.8)]" />
+							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Detected Services</h3>
+						</div>
+						<div className="grid gap-3">
 							{results.services?.map((svc, i) => (
-								<Card key={i} className="p-4 border-border/30 bg-background/40 hover:bg-secondary/20 transition-colors flex items-center justify-between">
-									<div className="flex items-center gap-3">
-										<div className="p-2 bg-primary/10 rounded-lg">
-											{svc.name.includes('web') ? <Settings className="size-4 text-primary" /> : <Database className="size-4 text-primary" />}
+								<div key={i} className="group relative">
+									<div className="absolute inset-0 bg-primary/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity" />
+									<div className="relative p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between group-hover:border-primary/20 transition-all">
+										<div className="flex items-center gap-4">
+											<div className="size-10 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center p-2 group-hover:bg-primary/10 group-hover:border-primary/20 transition-colors">
+												{svc.name.includes('web') ? <Settings className="size-5 text-muted-foreground group-hover:text-primary" /> : <Database className="size-5 text-muted-foreground group-hover:text-primary" />}
+											</div>
+											<div>
+												<p className="font-bold text-white text-sm tracking-tight">{svc.name}</p>
+												<p className="text-[10px] text-muted-foreground/50 font-mono mt-0.5">{svc.dockerfile_path}</p>
+											</div>
 										</div>
-										<div>
-											<p className="font-semibold text-foreground text-sm">{svc.name}</p>
-											<p className="text-xs text-muted-foreground">{svc.dockerfile_path}</p>
+										<div className="text-right">
+											<span className="text-[10px] font-black text-white/20 group-hover:text-primary/50 tracking-tighter uppercase transition-colors">Port</span>
+											<p className="text-xs font-bold text-white/60 group-hover:text-white transition-colors">{svc.port || 'Auto'}</p>
 										</div>
 									</div>
-									<Badge variant="outline" className="font-mono text-[10px] tracking-wider border-border/50 bg-background text-muted-foreground">
-										PORT {svc.port || 'N/A'}
-									</Badge>
-								</Card>
+								</div>
 							))}
 						</div>
 					</section>
 
-					<section>
-						<h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
-							<ShieldCheck className="size-5 text-primary" />
-							Deployment Risks
-						</h3>
-						{hasRisks ? (
-							<div className="flex flex-col gap-3">
-								{results.risks.map((risk, i) => (
-									<div key={i} className="p-4 rounded-lg border border-amber-500/20 bg-amber-500/5 text-sm text-foreground flex gap-3 items-start shadow-sm">
-										<AlertTriangle className="size-4 text-amber-500 shrink-0 mt-0.5" />
-										<p className="leading-relaxed text-muted-foreground"><strong className="text-foreground">Notice:</strong> {risk}</p>
+					{/* Deployment Risks Segment - Now the scrollable part of the sidebar if content overflows */}
+					<section className="space-y-5 flex-1 min-h-0 flex flex-col">
+						<div className="flex items-center gap-2 px-1">
+							<div className="size-1.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]" />
+							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Security & Risks</h3>
+						</div>
+						<div className="space-y-3 overflow-y-auto pr-1 flex-1 stealth-scrollbar transition-colors">
+							{hasRisks ? (
+								results.risks.map((risk, i) => (
+									<div key={i} style={{ wordBreak: 'break-word' }} className="p-4 rounded-xl border border-amber-500/10 bg-amber-500/5 text-sm text-white/70 leading-relaxed flex gap-3 group hover:bg-amber-500/10 transition-colors">
+										<AlertTriangle className="size-4 text-amber-500 shrink-0" />
+										<p>{risk}</p>
 									</div>
-								))}
-							</div>
-						) : (
-							<div className="p-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5 text-sm text-emerald-400 flex items-center gap-3">
-								<CheckCircle2 className="size-4" />
-								All checks passed cleanly.
-							</div>
-						)}
+								))
+							) : (
+								<div className="p-5 rounded-xl border border-emerald-500/10 bg-emerald-500/5 flex items-center gap-3">
+									<div className="size-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+										<CheckCircle2 className="size-4 text-emerald-500" />
+									</div>
+									<span className="text-xs font-medium text-emerald-500/80">Everything looks optimized for deployment.</span>
+								</div>
+							)}
+						</div>
 					</section>
 				</div>
 
-				<div className="col-span-1 lg:col-span-7 flex flex-col">
-					<div className="flex items-center justify-between mb-4">
-						<h3 className="text-lg font-semibold flex items-center gap-2">
-							<TerminalSquare className="size-5 text-primary" />
-							Infrastructure Files
-						</h3>
+				{/* Right Main Content (File Viewer) */}
+				<div className="col-span-1 lg:col-span-8 flex flex-col h-full min-h-0">
+					<div className="flex items-center justify-between mb-5 px-1 shrink-0">
+						<div className="flex items-center gap-3">
+							<div className="p-1.5 bg-primary/10 rounded-lg border border-primary/20">
+								<TerminalSquare className="size-4 text-primary" />
+							</div>
+							<h3 className="text-sm font-bold text-white tracking-tight uppercase tracking-wider">Infrastructure Sandbox</h3>
+						</div>
 						<div className="flex items-center gap-2">
 							{isEditing ? (
-								<Button variant="outline" size="sm" className="h-8 text-xs bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20" onClick={handleSave}>
-									Save Changes
+								<Button size="sm" className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border-0 px-4 transition-all" onClick={handleSave}>
+									<Save className="size-3.5 mr-2" />
+									Push Changes
 								</Button>
 							) : (
-								<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={handleEdit}>
-									Edit File
+								<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
+									<Edit2 className="size-3.5 mr-2" />
+									Modify File
 								</Button>
 							)}
-							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={() => copyToClipboard(
+							<div className="w-px h-4 bg-white/10 mx-1" />
+							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => copyToClipboard(
 								results.dockerfiles && results.dockerfiles[activeTab] ? results.dockerfiles[activeTab] :
 									activeTab === "compose" ? results.docker_compose || "" :
 										activeTab === "nginx" ? results.nginx_conf || "" : ""
 							)}>
 								<Copy className="size-3.5 mr-2" />
-								Copy File
+								Copy
 							</Button>
 						</div>
 					</div>
 
-					<Card className="flex-1 flex flex-col bg-[#0d0d0d] border-[#1e1e1e] overflow-hidden min-h-[400px]">
-						<div className="flex flex-wrap items-center gap-1 p-2 border-b border-[#1e1e1e]/50 bg-[#141414]">
+					<Card className="flex-1 flex flex-col bg-[#050505] border-white/5 shadow-2xl rounded-2xl overflow-hidden min-h-0">
+						{/* IDE Tabs */}
+						<div className="flex items-center bg-[#0a0a0a] border-b border-white/5 h-11 px-2.5 gap-1 overflow-x-auto no-scrollbar shrink-0">
 							{dockerfileNames.map(name => {
-								const displayName = name.toLowerCase() === 'dockerfile' ? 'Dockerfile' : name.toLowerCase().startsWith('dockerfile') ? name : `Dockerfile.${name}`;
+								const displayName = name.toLowerCase() === 'dockerfile' ? 'Dockerfile' : (name.length > 15 ? `${name.substring(0, 12)}...` : name);
+								const isActive = activeTab === name;
 								return (
 									<button
 										key={name}
 										onClick={() => setActiveTab(name)}
-										className={`px-4 py-2 text-xs font-medium rounded-md transition-colors ${activeTab === name ? 'bg-[#2a2a2a] text-white shadow-sm' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200'}`}
+										className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold tracking-tight rounded-md transition-all whitespace-nowrap ${isActive ? 'bg-white/5 text-primary shadow-sm' : 'text-muted-foreground/60 hover:text-white hover:bg-white/[0.03]'}`}
 									>
+										{isActive && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+										<div className={`size-1.5 rounded-full ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(37,244,106,1)]' : 'bg-white/20'}`} />
 										{displayName}
 									</button>
 								);
 							})}
-							{(!results.dockerfiles || dockerfileNames.length === 0) && (
-								<button
-									onClick={() => setActiveTab("Dockerfile")}
-									className={`px-4 py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'Dockerfile' ? 'bg-[#2a2a2a] text-white shadow-sm' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200'}`}
-								>
-									Dockerfile
-								</button>
-							)}
+							<div className="w-px h-4 bg-white/10 mx-2" />
 							<button
 								onClick={() => setActiveTab("compose")}
-								className={`px-4 py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'compose' ? 'bg-[#2a2a2a] text-white shadow-sm' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200'}`}
+								className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'compose' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
 							>
+								{activeTab === 'compose' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+								<Layers className="size-3.5" />
 								docker-compose.yml
 							</button>
 							<button
 								onClick={() => setActiveTab("nginx")}
-								className={`px-4 py-2 text-xs font-medium rounded-md transition-colors ${activeTab === 'nginx' ? 'bg-[#2a2a2a] text-white shadow-sm' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200'}`}
+								className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'nginx' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
 							>
+								{activeTab === 'nginx' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+								<Globe className="size-3.5" />
 								nginx.conf
 							</button>
 						</div>
-						{isEditing ? (
-							<textarea
-								value={editContent}
-								onChange={(e) => setEditContent(e.target.value)}
-								className="flex-1 w-full bg-transparent border-none outline-none p-4 font-mono text-xs md:text-sm text-gray-300 resize-none scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent leading-relaxed whitespace-pre"
-								spellCheck="false"
-							/>
-						) : (
-							<div className="flex-1 p-4 font-mono text-xs md:text-sm text-gray-300 overflow-y-auto whitespace-pre-wrap leading-relaxed scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-								{activeTab !== "compose" && activeTab !== "nginx" && (
-									results.dockerfiles && results.dockerfiles[activeTab] ? (
-										<div className="mb-6 last:mb-0">
-											<div className="text-xs text-gray-500 mb-2 border-b border-gray-800 pb-1">
-												# {activeTab.toLowerCase() === 'dockerfile' ? 'Dockerfile' : activeTab.toLowerCase().startsWith('dockerfile') ? activeTab : `Dockerfile.${activeTab}`}
-											</div>
+
+						{/* Code Content */}
+						<div className="relative overflow-y-auto flex-1 flex flex-col group/code stealth-scrollbar">
+							{isEditing ? (
+								<textarea
+									value={editContent}
+									onChange={(e) => setEditContent(e.target.value)}
+									className="flex-1 w-full bg-transparent border-none outline-none p-6 font-mono text-sm text-white/70 resize-none stealth-scrollbar leading-[1.6] selection:bg-primary/20"
+									spellCheck="false"
+								/>
+							) : (
+								<div className="flex-1 p-6 font-mono text-[13px] text-white/80 overflow-y-auto whitespace-pre-wrap leading-[1.7] stealth-scrollbar selection:bg-primary/20 bg-grid-white/[0.02]">
+									{activeTab !== "compose" && activeTab !== "nginx" && (
+										results.dockerfiles && results.dockerfiles[activeTab] ? (
 											<div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.dockerfiles[activeTab]) }} />
-										</div>
-									) : <span className="text-gray-500 italic">No {activeTab} generated.</span>
-								)}
-								{activeTab === "compose" && (
-									results.docker_compose ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.docker_compose) }} /> : <span className="text-gray-500 italic">No docker-compose.yml generated.</span>
-								)}
-								{activeTab === "nginx" && (
-									results.nginx_conf ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.nginx_conf) }} /> : <span className="text-gray-500 italic">No nginx.conf generated.</span>
-								)}
-							</div>
-						)}
+										) : <span className="text-white/20 italic">No instructions generated for this module.</span>
+									)}
+									{activeTab === "compose" && (
+										results.docker_compose ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.docker_compose) }} /> : <span className="text-white/20 italic">No docker-compose.yml generated.</span>
+									)}
+									{activeTab === "nginx" && (
+										results.nginx_conf ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.nginx_conf) }} /> : <span className="text-white/20 italic">No nginx.conf generated.</span>
+									)}
+								</div>
+							)}
+							{/* Floating Line Indicator */}
+							{!isEditing && (
+								<div className="absolute bottom-6 right-6 px-3 py-1.5 rounded-md bg-white/5 border border-white/10 backdrop-blur-md opacity-0 group-hover/code:opacity-100 transition-opacity">
+									<span className="text-[10px] font-mono text-muted-foreground tracking-tighter uppercase whitespace-nowrap">Mode: PROD-READY</span>
+								</div>
+							)}
+						</div>
 					</Card >
 				</div >
 			</div >
 
-			<div className="flex items-center justify-between mt-8 pt-6 border-t border-border/20 text-xs text-muted-foreground">
-				<div className="flex items-center gap-6">
-					<div className="flex items-center gap-2">
-						<Layers className="size-3.5" />
-						Token Usage: <span className="text-foreground font-semibold">{results.token_usage?.total_tokens?.toLocaleString() || 0}</span>
-						<span className="text-muted-foreground/50">({results.token_usage?.input_tokens || 0} in / {results.token_usage?.output_tokens || 0} out)</span>
-					</div>
-					{scanTime && (
-						<div className="flex items-center gap-2">
-							<Clock className="size-3.5" />
-							Scan Time: <span className="text-foreground font-semibold">{(scanTime / 1000).toFixed(1)}s</span>
+			{/* Footer Stats */}
+			<div className="flex flex-col md:flex-row items-center justify-between mt-12 pt-8 border-t border-white/5 gap-6">
+				<div className="flex flex-wrap items-center gap-8">
+					<div className="flex items-center gap-3">
+						<div className="size-8 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center">
+							<TerminalSquare className="size-4 text-primary" />
 						</div>
-					)}
+						<div>
+							<p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Compute Usage</p>
+							<div className="flex items-baseline gap-2">
+								<p className="text-sm font-bold text-white">{results.token_usage?.total_tokens?.toLocaleString() || 0} <span className="text-[10px] font-medium text-muted-foreground/50 uppercase">Total</span></p>
+								<div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40 font-medium">
+									<span>{results.token_usage?.input_tokens?.toLocaleString() || 0} in</span>
+									<span className="opacity-30">/</span>
+									<span>{results.token_usage?.output_tokens?.toLocaleString() || 0} out</span>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className="w-px h-6 bg-white/5 hidden md:block" />
+
+					<div className="flex items-center gap-3">
+						<div className="size-8 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center">
+							<Clock className="size-4 text-primary" />
+						</div>
+						<div>
+							<p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Scan Duration</p>
+							<p className="text-sm font-bold text-white">{(scanTime ? (scanTime / 1000).toFixed(1) : "0.0")} <span className="text-[10px] font-medium text-muted-foreground/50">Seconds</span></p>
+						</div>
+					</div>
 				</div>
-				<div className="flex items-center gap-4">
-					<button onClick={onCancel} className="hover:text-foreground transition-colors">Cancel</button>
-					<button className="text-primary hover:text-primary/80 transition-colors">Download Report (PDF)</button>
+
+				<div className="flex items-center gap-6">
+					<button onClick={onCancel} className="text-xs font-bold text-muted-foreground hover:text-white transition-colors uppercase tracking-widest">Reject Analysis</button>
+					<div className="w-px h-4 bg-white/5" />
+					<button className="text-xs font-bold text-primary hover:text-primary-foreground hover:bg-primary px-4 py-2 rounded-lg transition-all border border-primary/20 uppercase tracking-widest">
+						Full JSON Export
+					</button>
 				</div>
 			</div>
 		</div >
@@ -341,5 +407,24 @@ export default function PostScanResults({ results, repo, scanTime, onStartDeploy
 // Simple syntax highlighter for the presentation
 function highlightSyntax(code: string) {
 	if (!code) return "";
-	return code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	// Escape HTML tags in the source code first
+	let escaped = code.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+	// 1. Strings (Do this first so we don't match keywords inside strings, 
+	// and more importantly, so subsequent tag injection quotes aren't matched)
+	escaped = escaped.replace(/"([^"]*)"/g, '<span class="text-emerald-400">"$1"</span>');
+	escaped = escaped.replace(/'([^']*)'/g, '<span class="text-emerald-400">\'$1\'</span>');
+
+	// 2. Keywords (Dockerfile)
+	escaped = escaped.replace(/\b(FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL|AS)\b/g, '<span class="text-primary font-bold">$1</span>');
+
+	// 3. YAML Keys
+	escaped = escaped.replace(/^(\s*)([a-zA-Z0-9_-]+):/gm, '$1<span class="text-white font-bold">$2</span>:');
+
+	// 4. Comments (Only match if it's a real comment, not part of a string or tag)
+	// We do this last to wrap any highlights that might be inside a comment line
+	escaped = escaped.replace(/(^|\s)(#.*)/g, '$1<span class="text-neutral-600 font-italic">$2</span>');
+
+	return escaped;
 }
+

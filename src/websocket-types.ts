@@ -14,13 +14,6 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 		userID,
 	}: { deployConfig: DeployConfig; token: string; userID?: string } = payload;
 
-	if (deployConfig.dockerfileInfo) {
-		const { name, content } = deployConfig.dockerfileInfo;
-		const base64 = content.split(",")[1];
-		const buffer = Buffer.from(base64, "base64");
-		deployConfig.dockerfileContent = buffer.toString();
-	}
-
 	const repoName = deployConfig.repo_name;
 	const serviceName = deployConfig.service_name;
 	deployLogsStore.createEntry(userID, repoName, serviceName, ws);

@@ -77,51 +77,89 @@ export default function ScanProgress({ repoFullName, branch, targetWorkdir, onCo
 
 				appendLog("info: initialized langgraph workflow engine");
 
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-
-					buffer += decoder.decode(value, { stream: true });
-					const lines = buffer.split("\n\n");
-					buffer = lines.pop() || "";
+				const processMessage = (message: string) => {
+					const lines = message.split(/\r?\n/);
+					let eventType = "message";
+					let dataStr = "";
 
 					for (const line of lines) {
-						if (line.startsWith("event: ")) {
-							const eventType = line.substring(7).split("\n")[0].trim();
-							const dataLine = line.split("\n").find(l => l.startsWith("data: "));
+						if (!line.trim()) continue;
 
-							if (dataLine) {
-								const dataStr = dataLine.substring(6).trim();
-								try {
-									const data = JSON.parse(dataStr);
+						const colonIndex = line.indexOf(":");
+						if (colonIndex === -1) continue;
 
-									if (eventType === "progress") {
-										const { node, status } = data;
-										appendLog(`event: progress data: {"node": "${node}", "status": "${status}"}`);
+						const field = line.slice(0, colonIndex).trim();
+						const value = line.slice(colonIndex + 1).replace(/^ /, ""); // Spec: remove at most one leading space
 
-										if (status === "started") {
-											setActiveNode(node);
-										} else if (status === "completed") {
-											setCompletedNodes(prev => [...new Set([...prev, node])]);
-											// Calculate progress
-											const nodeIndex = NODES.findIndex(n => n.id === node);
-											if (nodeIndex >= 0) {
-												setProgress(Math.round(((nodeIndex + 1) / NODES.length) * 100));
-											}
-										} else if (status === "error") {
-											setFailedNode(node);
-											appendLog(`error: ${data.message || 'Unknown error in node ' + node}`);
-										}
-									} else if (eventType === "complete") {
-										appendLog("event: analysis complete");
-										setProgress(100);
-										onComplete(data);
+						if (field === "event") {
+							eventType = value;
+						} else if (field === "data") {
+							dataStr += (dataStr ? "\n" : "") + value;
+						}
+					}
+
+					if (dataStr) {
+						try {
+							const data = JSON.parse(dataStr);
+							if (eventType === "progress") {
+								const { node, status } = data;
+								appendLog(`event: progress data: {"node": "${node}", "status": "${status}"}`);
+
+								if (status === "started") {
+									setActiveNode(node);
+								} else if (status === "completed") {
+									setCompletedNodes(prev => [...new Set([...prev, node])]);
+									const nodeIndex = NODES.findIndex(n => n.id === node);
+									if (nodeIndex >= 0) {
+										setProgress(Math.round(((nodeIndex + 1) / NODES.length) * 100));
 									}
-								} catch (e) {
-									console.error("Failed to parse SSE data", e, dataStr);
+								} else if (status === "error") {
+									setFailedNode(node);
+									appendLog(`error: ${data.message || 'Unknown error in node ' + node}`);
 								}
+							} else if (eventType === "complete") {
+								appendLog("event: analysis complete");
+								setProgress(100);
+								onComplete(data);
+							} else if (eventType === "error") {
+								const errorMsg = data.detail || data.message || "Unknown error";
+								console.error("SSE Error event received:", errorMsg);
+								appendLog(`error: ${errorMsg}`);
+								setFailedNode(activeNode);
+							}
+						} catch (e) {
+							console.error("Failed to parse SSE JSON data", e, dataStr);
+							appendLog(`error: JSON parse failed for ${eventType}`);
+						}
+					} else {
+						console.warn("Message has no data field", message);
+					}
+				};
+
+				while (true) {
+					const { done, value } = await reader.read();
+
+					if (value) {
+						const chunk = decoder.decode(value, { stream: true });
+						buffer += chunk;
+
+						// More robust split: handle \n\n or just \n if we detect a full message
+						// Usually SSE is \n\n, but let's be safe
+						const messages = buffer.split("\n\n");
+						buffer = messages.pop() || "";
+
+						for (const msg of messages) {
+							if (msg.trim()) {
+								processMessage(msg);
 							}
 						}
+					}
+
+					if (done) {
+						if (buffer.trim()) {
+							processMessage(buffer);
+						}
+						break;
 					}
 				}
 			} catch (error: any) {
@@ -165,9 +203,9 @@ export default function ScanProgress({ repoFullName, branch, targetWorkdir, onCo
 
 							return (
 								<Card key={node.id} className={`p-4 border transition-all duration-300 ${isActive ? 'border-primary/50 shadow-[0_0_15px_rgba(var(--primary),0.1)] bg-card/80' :
-										isCompleted ? 'border-emerald-500/20 bg-background/40' :
-											isFailed ? 'border-destructive/50 bg-destructive/10' :
-												'border-border/30 bg-background/20 opacity-60'
+									isCompleted ? 'border-emerald-500/20 bg-background/40' :
+										isFailed ? 'border-destructive/50 bg-destructive/10' :
+											'border-border/30 bg-background/20 opacity-60'
 									}`}>
 									<div className="flex items-center justify-between">
 										<div className="flex items-center gap-3">

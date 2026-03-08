@@ -203,19 +203,12 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 			use_custom_dockerfile: data.use_custom_dockerfile ?? base.use_custom_dockerfile,
 			env_vars: data.env_vars,
 			status: resolvedDeployment?.status ?? base.status,
-			core_deployment_info: {
-				...(data.core_deployment_info || resolvedDeployment?.core_deployment_info || ({} as any)),
-				...(data.install_cmd != null && { install_cmd: data.install_cmd }),
-				...(data.build_cmd != null && { build_cmd: data.build_cmd }),
-				...(data.run_cmd != null && { run_cmd: data.run_cmd }),
-				...(data.workdir != null && { workdir: data.workdir }),
-			},
-			features_infrastructure: data.features_infrastructure ?? resolvedDeployment?.features_infrastructure,
-			final_notes: data.final_notes ?? resolvedDeployment?.final_notes,
 			deploymentTarget: (data as DeployConfig).deploymentTarget ?? resolvedDeployment?.deploymentTarget,
-			deployment_target_reason: (data as DeployConfig).deployment_target_reason ?? resolvedDeployment?.deployment_target_reason,
 			...((data as any).monorepo_services?.length && { monorepo_services: (data as any).monorepo_services }),
 			...((data as any).deployment_hints && { deployment_hints: (data as any).deployment_hints }),
+			...((data as any).docker_compose && { docker_compose: (data as any).docker_compose }),
+			...((data as any).nginx_conf && { nginx_conf: (data as any).nginx_conf }),
+			...((data as any).dockerfiles && { dockerfiles: (data as any).dockerfiles }),
 		};
 
 		await updateDeploymentById(scanConfig);
@@ -274,7 +267,6 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 		values: FormSchemaType &
 			Partial<AIGenProjectMetadata> & {
 				deploymentTarget?: DeployConfig["deploymentTarget"];
-				deployment_target_reason?: string;
 				commitSha?: string;
 			}
 	) {
@@ -299,16 +291,6 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 			return;
 		}
 
-		const baseCoreInfo = values.core_deployment_info ?? resolvedDeployment?.core_deployment_info;
-		const coreDeploymentInfo = baseCoreInfo
-			? {
-				...baseCoreInfo,
-				...(values.install_cmd != null && { install_cmd: values.install_cmd }),
-				...(values.run_cmd != null && { run_cmd: values.run_cmd }),
-				...(values.workdir != null && { workdir: values.workdir || null }),
-			}
-			: undefined;
-
 		const payload: DeployConfig = {
 			id: "",
 			repo_name: resolvedRepo.name,
@@ -318,11 +300,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 			use_custom_dockerfile: values.use_custom_dockerfile,
 			env_vars: values.env_vars,
 			...(values.commitSha && { commitSha: values.commitSha }),
-			...(coreDeploymentInfo && { core_deployment_info: coreDeploymentInfo }),
-			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
-			...(values.final_notes && { final_notes: values.final_notes }),
 			...(values.deploymentTarget && { deploymentTarget: values.deploymentTarget }),
-			...(values.deployment_target_reason && { deployment_target_reason: values.deployment_target_reason }),
 			...(resolvedDeployment?.ec2 && { ec2: resolvedDeployment.ec2 }),
 		};
 

@@ -282,6 +282,33 @@ button {
   }
 }
 
-.loading-fade-in {
-  animation: loading-fade-in 0.3s ease-out forwards;
+/* Premium Stealth Scrollbar */
+@layer utilities {
+  .stealth-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .stealth-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .stealth-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+    transition: background 0.3s ease;
+  }
+
+  .stealth-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    background-clip: content-box;
+  }
+
+  /* Firefox support */
+  .stealth-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.05) transparent;
+  }
 }

@@ -1,227 +1,80 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parseEnvVarsToDisplay, parseEnvLinesToEntries, buildEnvVarsString, parseEnvVarsToStore, sanitizeAndParseAIResponse } from "@/lib/utils";
-import { toast } from "sonner";
-import { isDeploymentDisabled } from "@/lib/deploymentTargetFromMetadata";
-import { useAppData } from "@/store/useAppData";
-import { Separator } from "@/components/ui/separator";
-import { useState, useEffect } from "react";
+import { parseEnvVarsToDisplay, buildEnvVarsString, parseEnvVarsToStore } from "@/lib/utils";
+
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as React from "react"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Textarea } from "@/components/ui/textarea"
 import {
 	Form,
 	FormControl,
 	FormField,
 	FormItem,
 } from "@/components/ui/form"
+import { Alert, AlertDescription } from "./ui/alert"
 
-import { Switch } from "@/components/ui/switch";
-import {
-	Table,
-	TableBody,
-	TableCaption,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table"
-import DeployOptions from "@/components/DeployOptions";
-import { RotateCw, Upload, Trash2, Plus, Layers, Check, X } from "lucide-react";
-import type { SubmitHandler } from "react-hook-form"
+import { RotateCw, Layers, Terminal, FileCode, Folder, Github, Plus, Trash2, Globe, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, DeploymentTarget, DeployConfig, MonorepoServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import { AIGenProjectMetadata, DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
 import ScanProgress from "@/components/ScanProgress";
 import PostScanResults from "@/components/PostScanResults";
-import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
-import { Badge } from "./ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Label } from "@/components/ui/label";
-
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
 export type CombinedSubmitType = FormSchemaType & AIGenProjectMetadata;
 
 export const formSchema = z.object({
-	url: z.string().url({ message: "Must be a valid URL" }),
-	service_name: z.string(),
 	branch: z.string().min(1, { message: "Branch is required" }),
-	install_cmd: z.string().optional(),
-	build_cmd: z.string().optional(),
-	run_cmd: z.string().optional(),
 	env_vars: z.string().optional(),
-	workdir: z.string().optional(),
-	use_custom_dockerfile: z.boolean(),
 	custom_url: z.string().optional(),
 })
 
-const AUTO_SAVE_DEBOUNCE_MS = 500;
-
 export default function ConfigTabs(
-	{ service_name, onSubmit, onScanComplete, onConfigChange, onScanStateChange, editMode, isDeploying, deployment, repo }:
+	{ onSubmit, onConfigChange, deployment, branches: branchesProp, repoFullName }:
 		{
-			service_name: string, onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
-			onScanComplete: (data: FormSchemaType & Partial<AIGenProjectMetadata>) => void | Promise<void>,
-			onConfigChange?: (partial: Partial<DeployConfig>) => void,
-			onScanStateChange?: (state: "form" | "scanning" | "results") => void,
-			editMode: boolean, isDeploying: boolean,
-			repo: repoType, deployment?: DeployConfig
+			repoFullName: string,
+			onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
+			onConfigChange: (partial: Partial<DeployConfig>) => void,
+			deployment: DeployConfig, branches?: string[]
 		}) {
 
-	const [dockerfile, setDockerfile] = useState<File | null>(null);
-	const envFileInputRef = React.useRef<HTMLInputElement>(null);
-	const lastSavedSnapshotRef = React.useRef<string | null>(null);
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
-		parseEnvVarsToDisplay(deployment?.env_vars ?? "")
+		parseEnvVarsToDisplay(deployment.env_vars ?? "")
 	);
-	const appliedDeploymentId = React.useRef<string | null>(null);
-	const [isAiFetching, setAiFetching] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
 	const [scanMode, setScanMode] = useState<"form" | "scanning" | "results">("form");
 	const [scanResults, setScanResults] = useState<SDArtifactsResponse | null>(null);
 	const [scanStartTime, setScanStartTime] = useState<number>(0);
 	const [scanDuration, setScanDuration] = useState<number>(0);
-
-	const [projectMetadata, setProjectMetadata] = useState<AIGenProjectMetadata | null>(
-		deployment?.core_deployment_info && deployment?.features_infrastructure && deployment?.final_notes
-			? {
-				core_deployment_info: deployment.core_deployment_info,
-				features_infrastructure: deployment.features_infrastructure,
-				final_notes: deployment.final_notes,
-				...(deployment.monorepo_services && { monorepo_services: deployment.monorepo_services }),
-			}
-			: null
-	);
-	const [monorepoServices, setMonorepoServices] = useState<MonorepoServiceInfo[]>(
-		deployment?.monorepo_services ?? []
-	);
-
-	useEffect(() => {
-		onScanStateChange?.(scanMode);
-	}, [scanMode, onScanStateChange]);
-
-	const isDeploymentTarget = (t: string): t is DeploymentTarget =>
-		["ec2", "cloud-run"].includes(t);
+	const onConfigChangeRef = React.useRef(onConfigChange);
+	onConfigChangeRef.current = onConfigChange;
 
 
-	const branches = React.useRef(repo ? repo.branches.map(dat => dat.name) : ["main"]);
-
-	const form = useForm<z.infer<typeof formSchema>>({
+	const form = useForm<FormSchemaType>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
-			url: repo?.html_url,
-			service_name: service_name || repo?.name,
-			branch: deployment?.branch || "main",
-			install_cmd: deployment?.core_deployment_info?.install_cmd || "",
-			build_cmd: deployment?.core_deployment_info?.build_cmd || "",
-			run_cmd: deployment?.core_deployment_info?.run_cmd || "",
-			env_vars: deployment?.env_vars || "",
-			workdir: deployment?.core_deployment_info?.workdir || "",
-			use_custom_dockerfile: deployment?.use_custom_dockerfile || false,
-			custom_url: deployment?.custom_url || "",
+			branch: deployment.branch,
+			env_vars: deployment.env_vars ?? "",
+			custom_url: deployment.custom_url ?? "",
 		},
 	})
 
+	const handleInfraChange = (updatedResults: SDArtifactsResponse) => {
+		setScanResults(updatedResults);
 
-	useEffect(() => {
-		if (!deployment?.id) {
-			appliedDeploymentId.current = null;
-			return;
-		}
+		const values = form.getValues();
+		const envString = buildEnvVarsString(envEntries);
 
-		if (appliedDeploymentId.current === deployment.id) return;
-
-		appliedDeploymentId.current = deployment.id;
-		form.reset({
-			url: repo?.html_url ?? deployment.url,
-			service_name: deployment.service_name || service_name || repo?.name,
-			branch: deployment.branch || "main",
-			install_cmd: deployment.core_deployment_info?.install_cmd ?? "",
-			build_cmd: deployment.core_deployment_info?.build_cmd ?? "",
-			run_cmd: deployment.core_deployment_info?.run_cmd ?? "",
-			env_vars: deployment.env_vars ?? "",
-			workdir: deployment.core_deployment_info?.workdir ?? "",
-			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
-			custom_url: deployment.custom_url ?? "",
+		onConfigChangeRef.current({
+			branch: values.branch,
+			custom_url: values.custom_url,
+			env_vars: parseEnvVarsToStore(envString),
+			...updatedResults
 		});
-		setEnvEntries(parseEnvVarsToDisplay(deployment.env_vars ?? ""));
-		if (deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes) {
-			setProjectMetadata({
-				core_deployment_info: deployment.core_deployment_info,
-				features_infrastructure: deployment.features_infrastructure,
-				final_notes: deployment.final_notes,
-				...(deployment.monorepo_services && { monorepo_services: deployment.monorepo_services }),
-			});
-		}
-		setMonorepoServices(deployment.monorepo_services ?? []);
-		// deploymentAnalysis is always EC2; not synced from deployment
-
-		const initialPartial: Partial<DeployConfig> = {
-			id: deployment.id,
-			url: deployment.url ?? repo?.html_url ?? "",
-			service_name: (deployment.service_name || service_name || repo?.name) ?? "",
-			branch: deployment.branch ?? "main",
-			use_custom_dockerfile: deployment.use_custom_dockerfile ?? false,
-			env_vars: deployment.env_vars ?? "",
-			...(deployment.custom_url && { custom_url: deployment.custom_url }),
-			deploymentTarget: "ec2",
-			deployment_target_reason: "Using EC2.",
-			...(deployment.core_deployment_info && deployment.features_infrastructure && deployment.final_notes && {
-				core_deployment_info: deployment.core_deployment_info,
-				features_infrastructure: deployment.features_infrastructure,
-				final_notes: deployment.final_notes,
-			}),
-		};
-		lastSavedSnapshotRef.current = JSON.stringify(initialPartial);
-	}, [deployment, repo?.html_url, service_name, repo?.name]);
-
-	const onConfigChangeRef = React.useRef(onConfigChange);
-	onConfigChangeRef.current = onConfigChange;
-	const watchedForm = form.watch();
-	useEffect(() => {
-		if (!onConfigChangeRef.current || !deployment?.id) return;
-		const timer = setTimeout(() => {
-			const values = form.getValues();
-			// Merge user-edited form fields into core_deployment_info
-			const baseCoreInfo = projectMetadata?.core_deployment_info ?? deployment?.core_deployment_info;
-			const mergedCoreInfo = baseCoreInfo
-				? {
-					...baseCoreInfo,
-					...(values.install_cmd != null && { install_cmd: values.install_cmd }),
-					...(values.run_cmd != null && { run_cmd: values.run_cmd }),
-					...(values.workdir != null && { workdir: values.workdir || null }),
-				}
-				: undefined;
-
-			const partial: Partial<DeployConfig> = {
-				id: deployment.id,
-				url: values.url,
-				service_name: values.service_name,
-				branch: values.branch,
-				use_custom_dockerfile: values.use_custom_dockerfile,
-				env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
-				...(values.custom_url && { custom_url: values.custom_url }),
-				deploymentTarget: "ec2",
-				deployment_target_reason: "Using EC2.",
-				...(mergedCoreInfo && { core_deployment_info: mergedCoreInfo }),
-				...(projectMetadata && {
-					features_infrastructure: projectMetadata.features_infrastructure,
-					final_notes: projectMetadata.final_notes,
-					...(projectMetadata.deployment_hints && { deployment_hints: projectMetadata.deployment_hints }),
-				}),
-				...(monorepoServices.length > 0 && { monorepo_services: monorepoServices }),
-			};
-			const snapshot = JSON.stringify(partial);
-			if (lastSavedSnapshotRef.current === snapshot) return;
-			lastSavedSnapshotRef.current = snapshot;
-			onConfigChangeRef.current?.(partial);
-		}, AUTO_SAVE_DEBOUNCE_MS);
-		return () => clearTimeout(timer);
-	}, [watchedForm, envEntries, projectMetadata, monorepoServices, deployment?.id]);
+	};
 
 	const verifySubdomain = async (subdomainInput: string) => {
 		if (!subdomainInput) return;
@@ -235,8 +88,8 @@ export default function ConfigTabs(
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					subdomain,
-					repoName: deployment?.repo_name ?? "",
-					serviceName: deployment?.service_name ?? ""
+					repoName: deployment.repo_name,
+					serviceName: deployment.service_name
 				}),
 			});
 			const data = await res.json();
@@ -272,50 +125,39 @@ export default function ConfigTabs(
 	};
 
 	useEffect(() => {
-		if (editMode && !form.getValues("custom_url")) {
-			const currentService = form.getValues("service_name");
-			if (currentService) {
-				verifySubdomain(currentService);
-			}
+		if (!deployment.custom_url) {
+			verifySubdomain(deployment.service_name);
 		}
-	}, [editMode, deployment?.id]);
+	}, []);
 
 	function handleAIBtn() {
-		if (!repo?.full_name || !repo.default_branch) return;
 		setScanStartTime(Date.now());
 		setScanMode("scanning");
 	}
 
-
-	const isDeployDisabled = React.useMemo(() => {
-		const base = deployment ?? {};
-		const effective: DeployConfig = {
-			...base,
-			features_infrastructure: projectMetadata?.features_infrastructure ?? deployment?.features_infrastructure,
-			core_deployment_info: projectMetadata?.core_deployment_info ?? deployment?.core_deployment_info,
-		} as DeployConfig;
-		if (isDeploymentDisabled(effective)) return true;
-		// No compatible deployment target (LLM set all platforms false)
-		if (projectMetadata) {
-			const compat = (projectMetadata as AIGenProjectMetadata).service_compatibility;
-			if (compat && typeof compat === "object" && Object.values(compat).every((v) => v === false))
-				return true;
-		}
-		return false;
-	}, [deployment, projectMetadata]);
-
-	const featuresInfra = projectMetadata?.features_infrastructure;
-
 	if (scanMode === "scanning") {
 		return (
 			<ScanProgress
-				repoFullName={repo.full_name}
-				branch={repo.default_branch}
-				targetWorkdir={form.getValues("workdir")}
+				repoFullName={repoFullName}
+				branch={form.getValues("branch")}
 				onComplete={(data) => {
+					console.log("ConfigTabs: onComplete called with data:", data);
+					console.log("ConfigTabs: scanStartTime was:", scanStartTime);
 					setScanDuration(Date.now() - scanStartTime);
 					setScanResults(data);
 					setScanMode("results");
+
+					// Immediate save after scan
+					if (deployment?.id) {
+						console.log("ConfigTabs: Auto-saving config for deployment:", deployment.id);
+						onConfigChangeRef.current?.({
+							id: deployment.id,
+							...form.getValues(),
+							env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
+							deploymentTarget: "ec2",
+							...data
+						});
+					}
 				}}
 				onCancel={() => setScanMode("form")}
 			/>
@@ -326,79 +168,11 @@ export default function ConfigTabs(
 		return (
 			<PostScanResults
 				results={scanResults}
-				onUpdateResults={setScanResults}
-				repo={repo}
+				onUpdateResults={handleInfraChange}
 				scanTime={scanDuration}
+				deployment={deployment}
 				onStartDeployment={() => {
-					// Map SDArtifactsResponse to our existing AIGenProjectMetadata
-					const mainService = scanResults.services?.[0];
-					const mappedMetadata: AIGenProjectMetadata = {
-						core_deployment_info: {
-							language: mainService && mainService.name.includes("node") ? "node" : "unknown",
-							framework: scanResults.stack_summary,
-							install_cmd: "", // Fallbacks handle this
-							build_cmd: "",
-							run_cmd: "",
-							workdir: mainService?.build_context || ".",
-							port: mainService?.port
-						},
-						features_infrastructure: {
-							uses_websockets: scanResults.stack_summary.toLowerCase().includes("websocket"),
-							uses_cron: false,
-							uses_mobile: false,
-							uses_server: scanResults.services?.length > 0,
-							cloud_run_compatible: true,
-							is_library: false,
-							requires_build_but_missing_cmd: false
-						},
-						final_notes: {
-							comment: "AI Scan Complete.\\nTech Stack: " + scanResults.stack_summary + "\\nRisks: " + (scanResults.risks?.join(", ") || "None")
-						},
-						monorepo_services: scanResults.services?.map(s => ({
-							name: s.name,
-							path: s.build_context,
-							language: "unknown",
-							port: s.port,
-							is_deployable: true
-						}))
-					};
-
-					setProjectMetadata(mappedMetadata);
-					if (mappedMetadata.monorepo_services?.length) {
-						setMonorepoServices(mappedMetadata.monorepo_services);
-					}
-
-					// Set Dockerfile if provided
-					const dockerfileContent = scanResults.dockerfiles?.[mainService?.dockerfile_path || "Dockerfile"] || scanResults.dockerfiles?.["Dockerfile"];
-					if (dockerfileContent) {
-						form.setValue("use_custom_dockerfile", true);
-						const file = new File([dockerfileContent], "Dockerfile", { type: "text/plain" });
-						setDockerfile(file);
-					}
-
-					if (mappedMetadata.core_deployment_info.workdir) {
-						form.setValue("workdir", mappedMetadata.core_deployment_info.workdir);
-					}
-
-					const payload = {
-						...form.getValues(),
-						...mappedMetadata,
-						monorepo_services: mappedMetadata.monorepo_services ?? [],
-						deploymentTarget: "ec2",
-						deployment_target_reason: "Using EC2.",
-					};
-					onScanComplete(payload);
-					setScanMode("form");
-
-					// Automatically trigger deployment if we're in editMode
-					if (editMode) {
-						const envString = buildEnvVarsString(envEntries);
-						onSubmit({
-							...form.getValues(),
-							env_vars: envString,
-							...mappedMetadata
-						});
-					}
+					//TODO: IMPLEMENT PROPERLY
 				}}
 				onCancel={() => setScanMode("form")}
 			/>
@@ -407,598 +181,257 @@ export default function ConfigTabs(
 
 	return (
 		<>
-			{projectMetadata && (
-				<>
-					{(featuresInfra?.uses_mobile ||
-						featuresInfra?.is_library ||
-						isDeployDisabled) && (
-							<Alert variant="destructive" className="border-destructive/50 bg-destructive/10 text-foreground">
-								<AlertTitle className="text-destructive/80">Deployment Disabled</AlertTitle>
-								<AlertDescription className="text-muted-foreground">
-									<p>
-										❌ This project <strong>cannot be deployed</strong>.
-									</p>
-									<ul className="list-disc pl-4 mt-2 text-sm">
-										{featuresInfra?.uses_mobile && !featuresInfra?.uses_server && !projectMetadata?.core_deployment_info?.run_cmd && (
-											<li>It is a mobile-only app with no server/backend code</li>
-										)}
-										{featuresInfra?.is_library && <li>It is a library, not a deployable service</li>}
-										{!projectMetadata?.core_deployment_info?.language && !projectMetadata?.core_deployment_info?.run_cmd && (
-											<li>No deployable code detected (empty repo or docs-only)</li>
-										)}
-										{projectMetadata && (() => {
-											const compat = (projectMetadata as any).service_compatibility;
-											if (compat && typeof compat === "object" && Object.values(compat).every((v: any) => v === false)) {
-												return <li>No compatible deployment platform found</li>;
-											}
-											return null;
-										})()}
-									</ul>
-								</AlertDescription>
-							</Alert>
-						)}
-
-					{featuresInfra?.requires_build_but_missing_cmd && (
-						<Alert variant="destructive" className="border-destructive/50 bg-destructive/10 text-foreground">
-							<AlertTitle className="text-destructive/80">Error!</AlertTitle>
-							<AlertDescription className="text-muted-foreground">
-								<p>
-									❌ Build is required but no build command was detected. <strong>Deployment will fail.</strong>
-								</p>
-							</AlertDescription>
-						</Alert>
-					)}
-					{
-						projectMetadata.final_notes?.comment && (
-							<Card className="my-4 border-border/60 bg-card/60">
-								<CardHeader>
-									<CardTitle className="text-foreground">💡 Final AI Notes</CardTitle>
-								</CardHeader>
-								<CardContent className="text-muted-foreground text-sm whitespace-pre-wrap">
-									{projectMetadata?.final_notes?.comment}
-								</CardContent>
-							</Card>
-						)
-					}
-					<Alert className="my-4 border-border/60 bg-card/40 text-muted-foreground">
-						<AlertDescription className="text-sm">
-							AI can make mistakes. Please verify the detected settings (commands, framework, etc.) before deploying for a higher success rate.
-						</AlertDescription>
-					</Alert>
-				</>
-			)}
-
-			{/* Monorepo Services Section */}
-			{monorepoServices.length > 0 && (
-				<Card className="my-4 border-border/60 bg-card/60">
-					<CardHeader className="pb-3">
-						<CardTitle className="text-foreground flex items-center gap-2">
-							<Layers className="h-5 w-5" />
-							Monorepo Services
-							<Badge variant="outline" className="ml-2 border-border text-muted-foreground">
-								{monorepoServices.filter(s => s.is_deployable).length} deployable
-							</Badge>
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-2">
-						<p className="text-sm text-muted-foreground mb-3">
-							The following services were detected in this monorepo. Each deployable service will be containerized and deployed separately.
-						</p>
-						<div className="grid gap-2">
-							{monorepoServices.map((svc, idx) => (
-								<div
-									key={idx}
-									className={`flex items-center justify-between p-3 rounded-lg border ${svc.is_deployable
-										? 'border-border/60 bg-background/60'
-										: 'border-border/30 bg-muted/20 opacity-60'
-										}`}
-								>
-									<div className="flex items-center gap-3 flex-wrap">
-										<div className="flex items-center gap-2">
-											{svc.is_deployable ? (
-												<Check className="h-4 w-4 text-emerald-500 shrink-0" />
-											) : (
-												<X className="h-4 w-4 text-muted-foreground shrink-0" />
-											)}
-											<span className="font-medium text-foreground">{svc.name}</span>
-										</div>
-										<span className="text-xs text-muted-foreground font-mono">{svc.path}</span>
-										<div className="flex gap-1.5">
-											{svc.language && (
-												<Badge variant="outline" className="text-xs border-border text-muted-foreground">
-													{svc.language}
-												</Badge>
-											)}
-											{svc.framework && (
-												<Badge variant="outline" className="text-xs border-border text-muted-foreground">
-													{svc.framework}
-												</Badge>
-											)}
-										</div>
-									</div>
-									<div className="flex items-center gap-2 shrink-0">
-										{svc.port && (
-											<span className="text-xs text-muted-foreground">
-												Port {svc.port}
-											</span>
-										)}
-										<Badge
-											variant={svc.is_deployable ? "default" : "secondary"}
-											className={`text-xs ${svc.is_deployable
-												? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/15'
-												: 'bg-muted text-muted-foreground'
-												}`}
-										>
-											{svc.is_deployable ? 'Deploy' : 'Skip'}
-										</Badge>
-									</div>
-								</div>
-							))}
-						</div>
-						{monorepoServices.some(s => !s.is_deployable) && (
-							<p className="text-xs text-muted-foreground mt-2">
-								Non-deployable packages (mobile apps, shared libraries, config) are automatically skipped during deployment.
-							</p>
-						)}
-					</CardContent>
-				</Card>
-			)}
 			<Form {...form}>
 				<form onSubmit={form.handleSubmit((data) => {
 					const envString = buildEnvVarsString(envEntries);
 					onSubmit({
 						...data,
 						env_vars: envString,
-						...(projectMetadata ?? {}), // merge only if not null
-					});
-				})} className="h-full py-4 px-4 sm:px-8 lg:px-12">
-					<p className="font-bold text-xl whitespace-nowrap my-4 text-foreground">Environment & Configuration</p>
-					<Separator className="bg-border/60 h-px" />
-					{editMode && (
-						<div className="flex flex-row items-center gap-4 my-6 flex-wrap">
-							<Button
-								disabled={isAiFetching}
-								variant="outline"
-								onClick={handleAIBtn}
-								className="border-border bg-transparent text-foreground hover:bg-secondary/50"
-							>
-								<RotateCw className={isAiFetching ? "animate-spin" : ""} />
-								Smart Project Scan
-							</Button>
-							{deployment && deployment?.status != 'didnt_deploy' ? (
-								<Button
-									type="submit"
-									disabled={isDeployDisabled || isDeploying}
-									className="landing-build-blue hover:opacity-95 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-								>
-									Save Changes
-								</Button>
-							) : (
-								<DeployOptions
-									onDeploy={(commitSha) => {
-										const formValues = form.getValues();
-										const envString = buildEnvVarsString(envEntries);
-										onSubmit({
-											...formValues,
-											env_vars: envString,
-											...(projectMetadata ?? {}),
-											...(commitSha && { commitSha }),
-										});
-									}}
-									disabled={(featuresInfra?.uses_mobile ||
-										featuresInfra?.is_library ||
-										isDeployDisabled) || isDeploying}
-									repo={repo}
-									branch={form.watch("branch") || deployment?.branch || "main"}
-								/>
-							)}
+					} as any);
+				})} className="flex flex-col gap-6">
+
+					{/* PROJECT SOURCE */}
+					<div className="space-y-3 pt-2">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] mb-4">
+							<Folder className="size-3.5" />
+							Project Source
 						</div>
-					)}
 
-					<div className="my-4 flex flex-row justify-start items-center space-x-4 flex-wrap gap-2">
-						<span className="font-semibold min-w-37.5 text-foreground">Service Name:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="service_name"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Input {...field} className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary" />
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.service_name}</span>
-						)}
-						{projectMetadata?.core_deployment_info.language && <Badge variant="outline" className="border-border text-muted-foreground">Language: {projectMetadata?.core_deployment_info.language}</Badge>}
-						{projectMetadata?.core_deployment_info.framework && <Badge variant="outline" className="border-border text-muted-foreground">Framework: {projectMetadata?.core_deployment_info.framework}</Badge>}
+						<div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-center gap-4">
+							<div className="bg-primary/10 p-2.5 rounded-lg shrink-0">
+								<Github className="size-6 text-primary" />
+							</div>
+							<div className="flex flex-col">
+								<span className="font-semibold text-foreground text-sm">{deployment.service_name != "." ? deployment.service_name + "@" : ""}{deployment.repo_name}</span>
+								<span className="text-xs text-muted-foreground/60 italic">{deployment.url}</span>
+							</div>
+						</div>
 
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-					{/* Custom URL */}
-					<div className="my-4 flex flex-col space-y-2">
-						<div className="flex flex-row justify-start items-center space-x-4">
-							<span className="font-semibold min-w-37.5 text-foreground">Custom URL:</span>
-							{editMode ? (
-								<div className="flex-1 max-w-md space-y-2">
-									<div className="flex items-center gap-2">
-										<Input
-											placeholder="Enter subdomain (e.g., my-app)"
-											value={form.watch("custom_url") ? form.watch("custom_url")!.replace(/^https?:\/\//, "").split(".")[0] : ""}
-											onChange={(e) => {
-												const subdomain = e.target.value;
-												const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
-												const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-												const fullUrl = subdomain ? `https://${subdomain}.${baseDomain}` : "";
-												form.setValue("custom_url", fullUrl);
-												setCustomUrlStatus({ type: null });
-											}}
-											onKeyDown={async (e) => {
-												if (e.key === "Enter") {
-													e.preventDefault();
-													const customUrl = form.watch("custom_url");
-													if (customUrl) {
-														verifySubdomain(customUrl);
-													}
-												}
-											}}
-											className="border-border bg-background/60 text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
-											disabled={customUrlVerifying}
-										/>
-										<span className="text-muted-foreground text-sm whitespace-nowrap">.{process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}</span>
-									</div>
-									{customUrlVerifying && (
-										<p className="text-xs text-muted-foreground">Verifying subdomain...</p>
-									)}
-									{customUrlStatus.type === 'success' && (
-										<p className="text-xs text-teal-400">{customUrlStatus.message}</p>
-									)}
-									{customUrlStatus.type === 'owned' && (
-										<p className="text-xs text-sky-400">{customUrlStatus.message}</p>
-									)}
-									{customUrlStatus.type === 'error' && (
-										<div className="text-xs space-y-1">
-											<p className="text-destructive/80">{customUrlStatus.message}</p>
-											{customUrlStatus.alternatives && customUrlStatus.alternatives.length > 0 && (
-												<div className="space-y-1">
-													<p className="text-muted-foreground">Available alternatives:</p>
-													<div className="flex gap-2 flex-wrap">
-														{customUrlStatus.alternatives.map((alt) => (
-															<button
-																key={alt}
-																type="button"
-																onClick={() => {
-																	const domain = process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "";
-																	const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-																	form.setValue("custom_url", `https://${alt}.${baseDomain}`);
-																	setCustomUrlStatus({ type: null });
-																}}
-																className="px-2 py-1 text-teal-400 bg-teal-400/10 border border-teal-400/40 rounded hover:bg-teal-400/20 transition-colors"
-															>
-																{alt}
-															</button>
+						<div className="space-y-5 mt-6">
+							<div className="space-y-2">
+								<label className="text-xs font-semibold text-muted-foreground/80">Deployment Branch</label>
+								<FormField
+									control={form.control}
+									name="branch"
+									render={({ field }) => (
+										<FormItem>
+											<FormControl>
+												<Select
+													onValueChange={field.onChange}
+													defaultValue={field.value}
+												>
+													<SelectTrigger className="w-full h-11 bg-white/[0.03] border-white/5 text-foreground rounded-lg focus:ring-primary/20">
+														<SelectValue placeholder="Select a branch" />
+													</SelectTrigger>
+													<SelectContent className="bg-[#121019] border-white/10">
+														{(branchesProp || ["main"]).map((branch) => (
+															<SelectItem key={branch} value={branch}>
+																{branch}
+															</SelectItem>
 														))}
-													</div>
-												</div>
-											)}
-										</div>
+													</SelectContent>
+												</Select>
+											</FormControl>
+										</FormItem>
 									)}
-									<p className="text-xs text-muted-foreground/70">Press Enter to verify availability</p>
-								</div>
-							) : (
-								<span className="text-muted-foreground">{deployment?.custom_url || 'Not set'}</span>
-							)}
+								/>
+							</div>
+
+
 						</div>
 					</div>
-					<Separator className="bg-border/60 h-px" />
 
-					{/* Install Command */}
-					<div className="my-4 flex flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Install Command:</span>
-						{editMode ? (
+					{/* CUSTOM URL */}
+					<div className="space-y-4 pt-4 border-t border-white/5">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
+							<Globe className="size-3.5" />
+							Custom Domain
+						</div>
+						<div className="space-y-3 pl-1">
 							<FormField
 								control={form.control}
-								name="install_cmd"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Input {...field} />
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.install_cmd}</span>
-						)}
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-					{/* Build Command */}
-					<div className="my-4 flex flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Build Command:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="build_cmd"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Input {...field} />
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.build_cmd}</span>
-						)}
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-					{/* Run Command */}
-					<div className="my-4 flex flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Run Command:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="run_cmd"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Input {...field} />
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.run_cmd}</span>
-						)}
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-					{/* Branch */}
-					<div className="my-4 flex flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Branch:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="branch"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Select
-												onValueChange={field.onChange}
-												defaultValue={field.value}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Select a branch" />
-												</SelectTrigger>
-												<SelectContent>
-													{branches.current.map((branch) => (
-														<SelectItem key={branch} value={branch}>
-															{branch}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.branch}</span>
-						)}
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-
-					{/* Working Directory */}
-					<div className="my-4 flex flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Working Directory:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="workdir"
-								render={({ field }) => (
-									<FormItem className="w-40">
-										<FormControl>
-											<Input {...field} />
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-						) : (
-							<span className="text-muted-foreground w-40">{deployment?.core_deployment_info?.workdir || '-'}</span>
-						)}
-					</div>
-					<Separator className="bg-border/60 h-px" />
-
-					{/* Custom Dockerfile */}
-					<div className="my-4 hidden flex-row justify-start items-center space-x-4">
-						<span className="font-semibold min-w-37.5 text-foreground">Custom Dockerfile:</span>
-						{editMode ? (
-							<FormField
-								control={form.control}
-								name="use_custom_dockerfile"
+								name="custom_url"
 								render={({ field }) => (
 									<FormItem>
 										<FormControl>
-											<Switch
-												disabled
-												checked={field.value}
-												onCheckedChange={field.onChange}
-											/>
-										</FormControl>
-										{field.value && (
-											<div>
-												<label className="block text-sm font-medium text-muted-foreground mb-1">
-													Upload Dockerfile
-												</label>
+											<div className="flex rounded-lg overflow-hidden border border-white/5 bg-white/[0.03] transition-all focus-within:ring-1 focus-within:ring-primary/20">
 												<Input
-													type="file"
-													accept=".dockerfile,.txt,.Dockerfile"
+													{...field}
+													placeholder="my-app"
+													className="border-0 bg-transparent h-11 rounded-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground/30"
+													onBlur={(e) => {
+														field.onBlur();
+														if (e.target.value) {
+															verifySubdomain(e.target.value);
+														}
+													}}
 													onChange={(e) => {
-														const file = e.target.files?.[0];
-														if (file) setDockerfile(file);
+														field.onChange(e);
+														setCustomUrlStatus({ type: null });
 													}}
 												/>
 											</div>
-										)}
+										</FormControl>
 									</FormItem>
 								)}
 							/>
-						) : (
-							<span className="text-muted-foreground w-40">
-								{deployment?.use_custom_dockerfile ? 'Yes' : 'No'}
-							</span>
-						)}
-					</div>
-					{/* {
-							dockerfileContent && (
-								<div className="bg-card p-2 rounded-md">
-									<p className="text-sm">{dockerfileContent}</p>
-								</div>
-							)
-						} */}
 
-					{/* Env Vars */}
-					<p className="font-bold text-xl whitespace-nowrap mt-10 text-foreground">Environment Variables</p>
-					<div className="w-full mt-2">
-						{editMode ? (
-							<div className="space-y-3">
-								<div className="max-h-75 overflow-y-auto space-y-2">
-									{(envEntries.length > 0 ? envEntries : [{ name: "", value: "" }]).map((row, index) => (
-										<div key={index} className="flex flex-wrap items-center gap-2">
-											<div className="flex-1 min-w-35 space-y-1">
-												<Label className="text-xs text-muted-foreground">Key</Label>
+							{customUrlVerifying && (
+								<div className="flex items-center gap-2 text-xs text-muted-foreground/60 animate-pulse">
+									<RotateCw className="size-3 animate-spin" />
+									Verifying domain availability...
+								</div>
+							)}
+
+							{customUrlStatus.type && !customUrlVerifying && (
+								<Alert className={`py-2 px-3 ${customUrlStatus.type === 'error' ? 'bg-destructive/10 border-destructive/20 text-destructive' :
+									customUrlStatus.type === 'owned' ? 'bg-primary/10 border-primary/20 text-primary' :
+										'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+									}`}>
+									<div className="flex items-center gap-2">
+										{customUrlStatus.type === 'error' ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
+										<AlertDescription className="text-xs font-medium m-0">
+											{customUrlStatus.message}
+										</AlertDescription>
+									</div>
+								</Alert>
+							)}
+						</div>
+					</div>
+
+					{/* ENVIRONMENT VARIABLES */}
+					<div className="space-y-4 pt-4 border-t border-white/5">
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
+								<Layers className="size-3.5" />
+								Environment Variables
+							</div>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="h-7 text-xs px-2 text-primary hover:text-primary hover:bg-primary/10"
+								onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
+							>
+								<Plus className="size-3 mr-1" />
+								Add Variable
+							</Button>
+						</div>
+
+						<div className="space-y-3">
+							<div className="bg-[#121019] border border-white/5 rounded-xl overflow-hidden shadow-2xl">
+								{/* Header */}
+								<div className="grid grid-cols-[1fr,1.5fr,auto] gap-px bg-white/5 border-b border-white/5">
+									<div className="px-4 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Key</div>
+									<div className="px-4 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Value</div>
+									<div className="w-[50px]"></div>
+								</div>
+
+								{/* Body */}
+								<div className="divide-y divide-white/5">
+									{envEntries.map((entry, index) => (
+										<div key={index} className="grid grid-cols-[1fr,1.5fr,auto] gap-px bg-transparent transition-colors hover:bg-white/[0.02]">
+											<div className="px-2 py-1.5 flex items-center">
 												<Input
-													placeholder="e.g. NODE_ENV"
-													value={row.name}
+													value={entry.name}
 													onChange={(e) => {
-														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-														const next = displayRows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r));
-														setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
+														const newEntries = [...envEntries];
+														newEntries[index].name = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+														setEnvEntries(newEntries);
 													}}
-													onPaste={(e) => {
-														const pasted = e.clipboardData?.getData("text");
-														if (pasted && /\n/.test(pasted)) {
-															e.preventDefault();
-															const parsed = parseEnvLinesToEntries(pasted);
-															const existingKeys = new Set((envEntries.length > 0 ? envEntries : []).filter((r) => r.name.trim()).map((r) => r.name));
-															const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
-															setEnvEntries([...(envEntries.length > 0 ? envEntries : []), ...toAdd]);
-														}
-													}}
-													className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
+													placeholder="API_KEY"
+													className="h-8 bg-transparent border-0 focus-visible:ring-1 focus-visible:ring-primary/30 text-xs text-foreground placeholder:text-muted-foreground/30 px-2 font-mono"
 												/>
 											</div>
-											<div className="flex-1 min-w-35 space-y-1">
-												<Label className="text-xs text-muted-foreground">Value</Label>
+											<div className="px-2 py-1.5 flex items-center border-l border-white/5">
 												<Input
-													placeholder="e.g. production"
-													value={row.value}
+													value={entry.value}
 													onChange={(e) => {
-														const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-														const next = displayRows.map((r, i) => (i === index ? { ...r, value: e.target.value } : r));
-														setEnvEntries(next.filter((r) => r.name.trim() || r.value.trim()).length ? next : []);
+														const newEntries = [...envEntries];
+														newEntries[index].value = e.target.value;
+														setEnvEntries(newEntries);
 													}}
-													className="bg-background/80 border-border/60 text-foreground placeholder:text-muted-foreground/70"
-													autoComplete="off"
+													type="password"
+													placeholder="sk_live_..."
+													className="h-8 bg-transparent border-0 focus-visible:ring-1 focus-visible:ring-primary/30 text-xs text-foreground placeholder:text-muted-foreground/30 px-2 font-mono"
 												/>
 											</div>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												className="mt-6 text-muted-foreground hover:text-foreground shrink-0"
-												onClick={() => {
-													const displayRows = envEntries.length > 0 ? envEntries : [{ name: "", value: "" }];
-													const next = displayRows.filter((_, i) => i !== index);
-													setEnvEntries(next.length ? next : []);
-												}}
-												aria-label="Remove variable"
-											>
-												<Trash2 className="h-4 w-4" />
-											</Button>
+											<div className="px-2 py-1.5 flex items-center justify-center border-l border-white/5 w-[50px]">
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md"
+													onClick={() => {
+														const newEntries = envEntries.filter((_, i) => i !== index);
+														setEnvEntries(newEntries);
+													}}
+												>
+													<Trash2 className="size-3.5" />
+												</Button>
+											</div>
 										</div>
 									))}
-								</div>
-								<div className="flex flex-wrap items-center gap-2 pt-1">
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										className="border-border/60 text-foreground hover:bg-secondary/30"
-										onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
-									>
-										<Plus className="h-4 w-4 mr-1" />
-										Add variable
-									</Button>
-									<input
-										ref={envFileInputRef}
-										type="file"
-										accept=".env,.env.*,text/plain"
-										className="hidden"
-										onChange={(e) => {
-											const file = e.target.files?.[0];
-											if (!file) return;
-											const reader = new FileReader();
-											reader.onload = () => {
-												const text = (reader.result as string) ?? "";
-												const parsed = parseEnvLinesToEntries(text);
-												const existingKeys = new Set(envEntries.filter((r) => r.name.trim()).map((r) => r.name));
-												const toAdd = parsed.filter((p) => p.name.trim() && !existingKeys.has(p.name));
-												setEnvEntries([...envEntries, ...toAdd]);
-											};
-											reader.readAsText(file);
-											e.target.value = "";
-										}}
-									/>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										className="border-border/60 text-foreground hover:bg-secondary/30"
-										onClick={() => envFileInputRef.current?.click()}
-									>
-										<Upload className="h-4 w-4 mr-1" />
-										Import .env
-									</Button>
+
+									{envEntries.length === 0 && (
+										<div className="px-4 py-8 text-center text-sm text-muted-foreground/60 border-l border-white/5">
+											No environment variables configured.
+										</div>
+									)}
 								</div>
 							</div>
-						) : (
-							<>
-								{deployment?.env_vars ? (
-									<Table className="border max-h-25 overflow-y-auto border-border/60 p-2 rounded-md overflow-hidden">
-										<TableHeader className="bg-card/80">
-											<TableRow className="border-border/40 hover:bg-transparent">
-												<TableHead className="text-foreground">Name</TableHead>
-												<TableHead className="text-foreground">Value</TableHead>
-											</TableRow>
-										</TableHeader>
-										<TableBody>
-											{parseEnvVarsToDisplay(deployment.env_vars).map((env, idx) => (
-												<TableRow key={idx} className="border-border/40 hover:bg-secondary/30">
-													<TableCell className="text-muted-foreground max-w-25 truncate">{env.name}</TableCell>
-													<TableCell className="text-foreground font-mono">
-														{"*".repeat(Math.min(env.value.length, 25))}
-													</TableCell>
-												</TableRow>
-											))}
-										</TableBody>
-									</Table>
-								) : (
-									<span className="text-muted-foreground">-</span>
-								)}
-							</>
-						)}
+						</div>
+					</div>
+
+					{/* SMART PROJECT SCAN BUTTON */}
+					<div className="py-2">
+						<Button
+							type="button"
+							onClick={handleAIBtn}
+							className="w-full h-11 text-sm font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center gap-2 shadow-lg shadow-primary/20 transition-all rounded-lg"
+						>
+							Smart Project Scan
+						</Button>
+					</div>
+
+					{/* BUILD & RUNTIME COMMANDS */}
+					<div className="space-y-6 mt-6 transition-all duration-500 opacity-20 pointer-events-none grayscale">
+						<div className="space-y-3">
+							<div className="flex items-center gap-3">
+								<span className="text-[9px] font-bold text-primary px-1.5 py-0.5 border border-primary/30 rounded bg-primary/5 uppercase tracking-tighter whitespace-nowrap">[ Scan Required ]</span>
+								<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
+									<Terminal className="size-3.5" />
+									Build & Runtime Commands
+								</div>
+							</div>
+						</div>
+
+						<div className="space-y-3">
+							<div className="flex items-center gap-3">
+								<span className="text-[9px] font-bold text-primary px-1.5 py-0.5 border border-primary/30 rounded bg-primary/5 uppercase tracking-tighter whitespace-nowrap">[ Scan Required ]</span>
+								<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
+									<FileCode className="size-3.5" />
+									Infrastructure Files
+								</div>
+							</div>
+							<div className="flex gap-3">
+								{[
+									{ label: 'Dockerfile' },
+									{ label: 'Compose' },
+									{ label: 'Nginx' }
+								].map((file) => (
+									<div
+										key={file.label}
+										className={`flex-1 h-11 rounded-lg border flex items-center justify-center text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all border-white/5 bg-white/[0.02] text-muted-foreground`}
+									>
+										{file.label}
+									</div>
+								))}
+							</div>
+						</div>
 					</div>
 				</form>
 			</Form>
 		</>
 	)
 }
-
-

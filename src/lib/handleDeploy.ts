@@ -76,8 +76,8 @@ export async function handleDeploy(
 			send(`✅ Checked out commit ${commitSha.substring(0, 7)}`, 'clone');
 		}
 
-		const appDir = deployConfig.core_deployment_info?.workdir
-			? path.join(cloneDir, deployConfig.core_deployment_info.workdir)
+		const appDir = deployConfig.services && deployConfig.services.length > 0
+			? path.join(cloneDir, deployConfig.services[0].build_context || ".")
 			: cloneDir;
 
 		send("✅ Clone repository completed", 'clone');
@@ -92,25 +92,22 @@ export async function handleDeploy(
 			}
 		}
 
-		// Analyze application structure from the deployment directory (to avoid 
-		// detecting the entire monorepo when deploying a single service)
-		send("Analyzing application structure...", 'detect');
-		const multiServiceConfig = detectMultiService(appDir);
+		// Construct multiServiceConfig from AI results if available
+		const multiServiceConfig: MultiServiceConfig = {
+			isMultiService: (deployConfig.services?.length || 0) > 1,
+			services: (deployConfig.services || []).map(s => ({
+				name: s.name,
+				workdir: path.join(cloneDir, s.build_context || "."),
+				dockerfile: s.dockerfile_path,
+				port: s.port,
+				build_context: path.join(cloneDir, s.build_context || ".")
+			})),
+			hasDockerCompose: !!deployConfig.docker_compose,
+			isMonorepo: (deployConfig.services?.length || 0) > 1, // Simple heuristic for now
+		};
 
-		if (multiServiceConfig.isMonorepo) {
-			send(`📦 Detected monorepo (${multiServiceConfig.packageManager || 'npm'} workspaces) with ${multiServiceConfig.services.length} deployable service(s)`, 'detect');
-			for (const svc of multiServiceConfig.services) {
-				send(`  - ${svc.name} (${svc.language || 'node'}, port ${svc.port})${svc.relativePath ? ` at ${svc.relativePath}` : ''}`, 'detect');
-			}
-		} else if (multiServiceConfig.isMultiService) {
-			send(`🔧 Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
-		}
+		const dbConfig = null; // AI-driven DB provisioning not yet structured in SDArtifactsResponse
 
-		const dbConfig = detectDatabase(appDir);
-
-		if (dbConfig) {
-			send(`✅ Detected ${dbConfig.type.toUpperCase()} database requirement`, 'detect');
-		}
 
 		// Route to appropriate cloud provider
 		if (cloudProvider === 'aws') {
@@ -525,108 +522,15 @@ async function handleGCPDeploy(
 	// Single-service GCP deployment
 	const dockerfilePath = path.join(appDir, "Dockerfile");
 
-	if (deployConfig.use_custom_dockerfile && deployConfig.dockerfileContent) {
-		send("Writing custom Dockerfile...", 'clone');
-		fs.writeFileSync(dockerfilePath, deployConfig.dockerfileContent);
-	}
+	if (!fs.existsSync(dockerfilePath)) {
+		const dockerfileContent = deployConfig.dockerfiles?.["Dockerfile"] || (deployConfig.services?.[0]?.dockerfile_path ? deployConfig.dockerfiles?.[deployConfig.services[0].dockerfile_path] : null);
 
-	if (!deployConfig.use_custom_dockerfile && !fs.existsSync(dockerfilePath)) {
-		const language = deployConfig.core_deployment_info?.language?.toLowerCase() ||
-			(fs.existsSync(path.join(appDir, "package.json")) ? "node" :
-				fs.existsSync(path.join(appDir, "requirements.txt")) ? "python" :
-					fs.existsSync(path.join(appDir, "go.mod")) ? "go" :
-						fs.existsSync(path.join(appDir, "pom.xml")) || fs.existsSync(path.join(appDir, "build.gradle")) ? "java" :
-							fs.existsSync(path.join(appDir, "Cargo.toml")) ? "rust" :
-								"node");
-		send(`Detected Language: ${language}`, 'clone');
-
-		let dockerfileContent = "";
-
-		const coreInfo = deployConfig.core_deployment_info;
-
-		switch (language) {
-			case "node":
-				dockerfileContent = `
-FROM node:18
-WORKDIR ${coreInfo?.workdir || "."}
-COPY . .
-RUN ${coreInfo?.install_cmd || "npm install"}
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["npm", "start"])}
-		`.trim();
-				break;
-
-			case "python":
-				dockerfileContent = `
-FROM python:3.11
-WORKDIR ${coreInfo?.workdir || "/app"}
-COPY . .
-RUN ${coreInfo?.install_cmd || "pip install -r requirements.txt"}
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : ""}
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["python", "main.py"])}
-		`.trim();
-				break;
-
-			case "go":
-				dockerfileContent = `
-FROM golang:1.20
-WORKDIR ${coreInfo?.workdir || "/app"}
-COPY . .
-RUN ${coreInfo?.install_cmd || "go mod tidy"}
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN go build -o app"}
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./app"])}
-		`.trim();
-				break;
-
-			case "java":
-				dockerfileContent = `
-FROM openjdk:17
-WORKDIR ${coreInfo?.workdir || "/app"}
-COPY . .
-RUN ${coreInfo?.install_cmd || "./mvnw install"}
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN ./mvnw package"}
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
-		`.trim();
-				break;
-
-			case "rust":
-				dockerfileContent = `
-FROM rust:1.70
-WORKDIR ${coreInfo?.workdir || "/app"}
-COPY . .
-RUN ${coreInfo?.install_cmd || "cargo fetch"}
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN cargo build --release"}
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["./target/release/app"])}
-		`.trim();
-				break;
-
-			case "dotnet":
-				dockerfileContent = `
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR ${coreInfo?.workdir || "/app"}
-COPY . .
-RUN dotnet restore
-${coreInfo?.build_cmd ? `RUN ${coreInfo.build_cmd}` : "RUN dotnet build -c Release"}
-RUN dotnet publish -c Release -o /app/publish
-
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/publish .
-EXPOSE 8080
-CMD ${JSON.stringify(coreInfo?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
-		`.trim();
-				break;
-
-			default:
-				throw new Error("Unsupported language or missing Dockerfile.");
+		if (dockerfileContent) {
+			send(`Using AI-generated Dockerfile`, 'clone');
+			fs.writeFileSync(dockerfilePath, dockerfileContent);
+		} else {
+			throw new Error("No Dockerfile found in deployment config and no AI-generated Dockerfile available.");
 		}
-
-		fs.writeFileSync(dockerfilePath, dockerfileContent);
 	}
 
 	const imageName = `${repoName}-image`;

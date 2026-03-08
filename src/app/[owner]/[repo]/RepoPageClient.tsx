@@ -13,11 +13,9 @@ import { getActiveDeployment } from "@/custom-hooks/useDeployLogs";
 import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import { toast } from "sonner";
 
-type DetectedService = DetectedServiceInfo;
-
 type RepoPageClientProps = {
 	owner: string;
-	repo: string;
+	repoName: string;
 };
 
 function normalizeRepoUrl(url: string): string {
@@ -51,17 +49,7 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 	};
 }
 
-/** Deployment ID slug from repo URL (no slashes, for DB); e.g. owner-repo */
-function repoSlugFromUrl(repoUrl: string): string {
-	return repoUrl
-		.replace(/\.git$/, "")
-		.split("/")
-		.filter(Boolean)
-		.slice(-2)
-		.join("-");
-}
 
-/** A service is deployed if there is a per-service deployment or a repo-level deployment. */
 function getDeploymentForService(
 	deployments: DeployConfig[],
 	repoUrl: string,
@@ -69,13 +57,9 @@ function getDeploymentForService(
 	repoName: string
 ): DeployConfig | undefined {
 	const matches: DeployConfig[] = [];
+
 	for (const d of deployments) {
 		if (d.repo_name !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
-
-		if (d.monorepo_services?.some((service) => service.name === serviceName)) {
-			matches.push(d);
-			continue;
-		}
 
 		const dbServiceName = d.service_name || "";
 		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
@@ -108,30 +92,30 @@ function normalizeRepoUrlForMatch(url: string): string {
 	return url.replace(/\.git$/, "").toLowerCase();
 }
 
-export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
+export default function RepoPageClient({ owner, repoName }: RepoPageClientProps) {
 	const router = useRouter();
 	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments, fetchRepoDeployments } = useAppData();
 	const [isDeleting, setIsDeleting] = React.useState(false);
-	const [services, setServices] = React.useState<DetectedService[]>([]);
+	const [services, setServices] = React.useState<DetectedServiceInfo[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = React.useState(false);
-	/** When set, sheet is for this service (per-service deploy). When null, sheet is for deploy-all. */
-	const [selectedService, setSelectedService] = React.useState<DetectedService | null>(null);
+	const [selectedService, setSelectedService] = React.useState<DetectedServiceInfo | null>(null);
 
-	const repoUrl = `https://github.com/${owner}/${repo}`;
-	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repo), [owner, repo]);
+	const repoUrl = `https://github.com/${owner}/${repoName}`;
+	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
 	const resolvedRepo = React.useMemo<repoType>(() => {
 		const normalizedTarget = normalizeRepoUrlForMatch(repoUrl);
 		const fromStore = repoList.find((r) => {
-			const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repo}`.toLowerCase();
+			const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
 			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedTarget;
 			return sameFullName || sameUrl;
 		});
 		return fromStore ?? minimalRepo;
-	}, [repoList, repoUrl, owner, repo, minimalRepo]);
+	}, [repoList, repoUrl, owner, repoName, minimalRepo]);
+	
 	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
-	const repoSlug = `${owner}-${repo}`;
+
 	const { openLogsModal } = useActiveDeployment();
 	const [activeDeploy, setActiveDeploy] = React.useState<{
 		repoName: string;
@@ -141,7 +125,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		const a = getActiveDeployment();
 		if (!a) return null;
 		// Only show if this active deployment belongs to this repo
-		if (a.repoName === repo) return a;
+		if (a.repoName === repoName) return a;
 		return null;
 	});
 
@@ -152,7 +136,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 				setActiveDeploy(null);
 				return;
 			}
-			if (a.repoName === repo) {
+			if (a.repoName === repoName) {
 				setActiveDeploy(a);
 			} else {
 				setActiveDeploy(null);
@@ -161,7 +145,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		tick();
 		const id = setInterval(tick, 2000);
 		return () => clearInterval(id);
-	}, [repo]);
+	}, [repoName]);
 
 	React.useEffect(() => {
 		const cached = getDetectedRepoCache(repoUrl);
@@ -238,7 +222,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 		}
 	}, [resolvedRepo.name, fetchRepoDeployments]);
 
-	function openSheetForService(svc: DetectedService) {
+	function openSheetForService(svc: DetectedServiceInfo) {
 		setSelectedService(svc);
 		setSheetOpen(true);
 	}
@@ -326,7 +310,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 				<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 					<div>
 						<h1 className="text-xl font-semibold text-foreground">
-							{owner} / {repo}
+							{owner} / {repoName}
 						</h1>
 						<p className="text-sm text-muted-foreground mt-0.5">
 							{services.length} service{services.length !== 1 ? "s" : ""}
@@ -397,7 +381,7 @@ export default function RepoPageClient({ owner, repo }: RepoPageClientProps) {
 									<div className="flex items-center gap-3">
 										<Github className="size-6 shrink-0 text-muted-foreground" />
 										<span className="font-semibold text-foreground truncate">
-											@{repo}/{svc.name}
+											@{repoName}/{svc.name}
 										</span>
 									</div>
 									<div className="mt-3 flex items-center gap-2">

@@ -167,18 +167,21 @@ function generateDockerfileContentForRedeploy(
 	deployConfig: any,
 	serviceDir: string = "."
 ): string {
-	if (deployConfig.dockerfileContent) {
-		return deployConfig.dockerfileContent;
+	const dockerfilePath = serviceDir === "." ? "Dockerfile" : `${serviceDir}/Dockerfile`;
+	const aiDockerfile = deployConfig.dockerfiles?.[dockerfilePath] || deployConfig.dockerfiles?.["Dockerfile"];
+
+	if (aiDockerfile) {
+		return aiDockerfile;
 	}
 
-	const coreInfo = deployConfig.core_deployment_info;
-	const language = (coreInfo?.language || "node").toLowerCase();
-	const userWorkdir = coreInfo?.workdir;
+	const svc = deployConfig.services?.find((s: any) => s.build_context === serviceDir) || deployConfig.services?.[0];
+	const language = (svc?.language || "node").toLowerCase();
+	const userWorkdir = svc?.build_context;
 	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
-	const port = coreInfo?.port || 8080;
-	const installCmd = coreInfo?.install_cmd || "";
-	const buildCmd = coreInfo?.build_cmd || "";
-	const runCmd = coreInfo?.run_cmd || "";
+	const port = svc?.port || 8080;
+	const installCmd: string = "";
+	const buildCmd: string = "";
+	const runCmd: string = "";
 
 	switch (language) {
 		case "node":

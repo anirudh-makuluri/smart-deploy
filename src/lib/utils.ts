@@ -225,7 +225,6 @@ export function sanitizeAndParseAIResponse(raw: any): AIGenProjectMetadata | nul
 /** Build a serializable config snapshot for deployment history (no File/binary). */
 export function configSnapshotFromDeployConfig(config: DeployConfig | null): Record<string, unknown> {
 	if (!config) return {};
-	const { dockerfile, dockerfileInfo, dockerfileContent, ...rest } = config;
-	return { ...rest } as Record<string, unknown>;
+	return { ...config } as Record<string, unknown>;
 }
 

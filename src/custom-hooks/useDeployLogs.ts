@@ -246,65 +246,24 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 			} catch { /* ignore */ }
 		}
 
-		const file = deployConfig.dockerfile;
-
-		if (!file || !deployConfig.use_custom_dockerfile) {
-			const sendDeployMessage = () => {
-				const socket = wsRef.current;
-				if (socket?.readyState === WebSocket.OPEN) {
-					const object = {
-						type: 'deploy',
-						payload: {
-							deployConfig,
-							token,
-							userID
-						}
-					};
-					socket.send(JSON.stringify(object));
-				} else {
-					console.error("Socket not open");
-				}
-			};
-
-			openSocket(sendDeployMessage);
-		} else {
-			const reader = new FileReader();
-
-			reader.onload = async () => {
-				const base64 = reader.result as string;
-				deployConfig.dockerfileInfo = {
-					name: file.name,
-					type: file.type,
-					content: base64
-				}
-
-				deployConfig.dockerfileContent = await readDockerfile(file);
-
-				deployConfigRef.current = deployConfig;
-
-				const sendDeployMessageWithDockerfile = () => {
-					const socket = wsRef.current;
-					if (socket?.readyState === WebSocket.OPEN) {
-						const object = {
-							type: 'deploy',
-							payload: {
-								deployConfig,
-								token,
-								userID
-							}
-						};
-						socket.send(JSON.stringify(object));
-					} else {
-						console.error("Socket not open");
+		const sendDeployMessage = () => {
+			const socket = wsRef.current;
+			if (socket?.readyState === WebSocket.OPEN) {
+				const object = {
+					type: 'deploy',
+					payload: {
+						deployConfig,
+						token,
+						userID
 					}
 				};
+				socket.send(JSON.stringify(object));
+			} else {
+				console.error("Socket not open");
+			}
+		};
 
-				openSocket(sendDeployMessageWithDockerfile);
-			};
-
-			reader.readAsDataURL(file);
-
-		}
+		openSocket(sendDeployMessage);
 	};
 
 	const initiateServiceLogs = () => {

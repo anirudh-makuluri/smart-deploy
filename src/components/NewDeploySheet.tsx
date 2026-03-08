@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X, Rocket } from "lucide-react";
 import { useSession } from "next-auth/react";
-import type { AIGenProjectMetadata, CoreDeploymentInfo, DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
+import type { AIGenProjectMetadata, DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import ConfigTabs, { FormSchemaType } from "@/components/ConfigTabs";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
@@ -19,123 +19,16 @@ type NewDeploySheetProps = {
 	selectedService?: DetectedServiceInfo;
 };
 
-const DEFAULT_PORT: Record<string, number> = {
-	node: 3000,
-	python: 8000,
-	go: 8080,
-	java: 8080,
-	rust: 8080,
-	dotnet: 5000,
-	php: 8000,
-};
-
-function nonEmpty(value: string | null | undefined): string | undefined {
-	if (value == null) return undefined;
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function fallbackCoreDeploymentInfo(selectedService?: DetectedServiceInfo): CoreDeploymentInfo {
-	const language = (selectedService?.language || "node").toLowerCase();
-	const framework = selectedService?.framework ?? "";
-	const workdir = nonEmpty(selectedService?.path) ?? ".";
-
-	if (language === "python") {
-		return {
-			language: "python",
-			framework,
-			install_cmd: "pip install -r requirements.txt",
-			build_cmd: "",
-			run_cmd: "python main.py",
-			workdir,
-			port: DEFAULT_PORT.python,
-		};
-	}
-
-	if (language === "go") {
-		return {
-			language: "go",
-			framework,
-			install_cmd: "go mod download",
-			build_cmd: "go build -o app .",
-			run_cmd: "./app",
-			workdir,
-			port: DEFAULT_PORT.go,
-		};
-	}
-
-	if (language === "java") {
-		return {
-			language: "java",
-			framework,
-			install_cmd: "mvn dependency:go-offline -B",
-			build_cmd: "mvn package -DskipTests -B",
-			run_cmd: "java -jar target/*.jar",
-			workdir,
-			port: DEFAULT_PORT.java,
-		};
-	}
-
-	if (language === "rust") {
-		return {
-			language: "rust",
-			framework,
-			install_cmd: "cargo fetch",
-			build_cmd: "cargo build --release",
-			run_cmd: "./target/release/app",
-			workdir,
-			port: DEFAULT_PORT.rust,
-		};
-	}
-
-	if (language === "dotnet") {
-		return {
-			language: "dotnet",
-			framework,
-			install_cmd: "dotnet restore",
-			build_cmd: "dotnet publish -c Release -o out",
-			run_cmd: "dotnet out/app.dll",
-			workdir,
-			port: DEFAULT_PORT.dotnet,
-		};
-	}
-
-	if (language === "php") {
-		return {
-			language: "php",
-			framework,
-			install_cmd: "composer install --no-dev --optimize-autoloader",
-			build_cmd: "",
-			run_cmd: "php -S 0.0.0.0:8000 -t public",
-			workdir,
-			port: DEFAULT_PORT.php,
-		};
-	}
-
-	return {
-		language: language || "node",
-		framework,
-		install_cmd: "npm install",
-		build_cmd: "npm run build || true",
-		run_cmd: "npm start",
-		workdir,
-		port: DEFAULT_PORT.node,
-	};
-}
-
 export default function NewDeploySheet({ open, onClose, repo, selectedService }: NewDeploySheetProps) {
 	const { data: session } = useSession();
 	const { updateDeploymentById, deployments } = useAppData();
-	const [isDeploying, setIsDeploying] = React.useState(false);
-	const [scanState, setScanState] = React.useState<"form" | "scanning" | "results">("form");
-	const prefilledCoreInfo = React.useMemo(
-		() => selectedService?.core_deployment_info ?? fallbackCoreDeploymentInfo(selectedService),
-		[selectedService]
-	);
+
 	const prefilledServiceName = React.useMemo(
 		() => (selectedService ? selectedService.name : "."),
 		[selectedService]
 	);
+	const { sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(prefilledServiceName);
+
 
 	const existingDeployment = React.useMemo(() => {
 		return deployments.find(
@@ -143,27 +36,23 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 		);
 	}, [deployments, repo.name, prefilledServiceName]);
 
-	const prefilledDeployment = React.useMemo<DeployConfig | undefined>(() => {
-		if (existingDeployment) return existingDeployment;
-		return {
-			id: crypto.randomUUID(),
-			repo_name: repo.name,
-			url: repo.html_url,
-			branch: repo.default_branch || repo.branches?.[0]?.name || "main",
-			use_custom_dockerfile: false,
-			service_name: prefilledServiceName,
-			core_deployment_info: prefilledCoreInfo,
-			status: "didnt_deploy",
-		};
-	}, [existingDeployment, prefilledCoreInfo, prefilledServiceName, repo.html_url, repo.id, selectedService]);
-	const { sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(prefilledServiceName);
+	const [isDeploying, setIsDeploying] = React.useState(false);
+	const [deployment, setDeployment] = React.useState<DeployConfig>(existingDeployment ?? {
+		id: crypto.randomUUID(),
+		repo_name: repo.name,
+		url: repo.html_url,
+		service_name: prefilledServiceName,
+		branch: repo.default_branch,
+		status: "didnt_deploy"
+	});
+
 
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
 			updateDeploymentById(deployConfigRef.current);
 			setIsDeploying(false);
 
-			const url = deployConfigRef.current.custom_url || deployConfigRef.current.deployUrl;
+			const url = deployConfigRef.current.custom_url ?? deployConfigRef.current.deployUrl;
 			if (url) {
 				const fullUrl = url.startsWith("http") ? url : `https://${url}`;
 				toast.success("Deployment completed successfully!", {
@@ -182,10 +71,7 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 		if (deployStatus === "error") {
 			setIsDeploying(false);
 		}
-	}, [deployStatus, deployConfigRef, updateDeploymentById, onClose]);
-
-	if (!open) return null;
-
+	}, [deployStatus, deployConfigRef]);
 
 	const showDeployLogs = isDeploying || deployStatus === "running" || deployStatus === "success" || deployStatus === "error";
 
@@ -194,133 +80,59 @@ export default function NewDeploySheet({ open, onClose, repo, selectedService }:
 		onClose();
 	}
 
-	async function handleScanComplete(data: FormSchemaType & Partial<AIGenProjectMetadata>) {
-		if (!session?.user || !prefilledDeployment) return;
-
-		const scanConfig: DeployConfig = {
-			...prefilledDeployment,
-			url: data.url || prefilledDeployment.url,
-			service_name: data.service_name || prefilledDeployment.service_name,
-			branch: data.branch || prefilledDeployment.branch,
-			use_custom_dockerfile: data.use_custom_dockerfile ?? prefilledDeployment.use_custom_dockerfile,
-			env_vars: data.env_vars,
-			status: prefilledDeployment.status || "didnt_deploy",
-			core_deployment_info: {
-				...(data.core_deployment_info || prefilledDeployment.core_deployment_info || ({} as any)),
-				...(data.install_cmd != null && { install_cmd: data.install_cmd }),
-				...(data.build_cmd != null && { build_cmd: data.build_cmd }),
-				...(data.run_cmd != null && { run_cmd: data.run_cmd }),
-				...(data.workdir != null && { workdir: data.workdir }),
-			},
-			features_infrastructure: data.features_infrastructure ?? prefilledDeployment.features_infrastructure,
-			final_notes: data.final_notes ?? prefilledDeployment.final_notes,
-			deploymentTarget: (data as DeployConfig).deploymentTarget ?? prefilledDeployment.deploymentTarget,
-			deployment_target_reason: (data as DeployConfig).deployment_target_reason ?? prefilledDeployment.deployment_target_reason,
-			...((data as any).monorepo_services?.length && { monorepo_services: (data as any).monorepo_services }),
-			...((data as any).deployment_hints && { deployment_hints: (data as any).deployment_hints }),
-		};
-
-		toast.success("Scan saved to configuration");
-	}
-
 	async function handleSubmit(
 		values: FormSchemaType &
 			Partial<AIGenProjectMetadata> & {
 				commitSha?: string;
-				deploymentTarget?: DeployConfig["deploymentTarget"];
-				deployment_target_reason?: string;
 			}
 	) {
-		if (!session?.accessToken || !repo) return;
-
-		let deploymentTarget = values.deploymentTarget;
-		let deployment_target_reason = values.deployment_target_reason;
-
-		// Always use EC2 for AWS deployments
-		if (!deploymentTarget) {
-			deploymentTarget = "ec2";
-			deployment_target_reason = "Using EC2.";
-		}
-
-		const ruleBasedCoreInfo = prefilledCoreInfo;
-		const coreInfo = values.core_deployment_info;
-		const effectiveCoreInfo: CoreDeploymentInfo = {
-			language: nonEmpty(coreInfo?.language) ?? ruleBasedCoreInfo.language,
-			framework: nonEmpty(coreInfo?.framework) ?? ruleBasedCoreInfo.framework,
-			install_cmd: nonEmpty(values.install_cmd) ?? nonEmpty(coreInfo?.install_cmd) ?? ruleBasedCoreInfo.install_cmd,
-			build_cmd: nonEmpty(values.build_cmd) ?? nonEmpty(coreInfo?.build_cmd) ?? ruleBasedCoreInfo.build_cmd,
-			run_cmd: nonEmpty(values.run_cmd) ?? nonEmpty(coreInfo?.run_cmd) ?? ruleBasedCoreInfo.run_cmd,
-			workdir: nonEmpty(values.workdir) ?? nonEmpty(coreInfo?.workdir ?? undefined) ?? ruleBasedCoreInfo.workdir,
-			...(coreInfo?.port != null ? { port: coreInfo.port } : ruleBasedCoreInfo.port != null ? { port: ruleBasedCoreInfo.port } : {}),
-		};
+		if (!session?.accessToken) return;
 
 		const payload: DeployConfig = {
-			id: existingDeployment?.id || crypto.randomUUID(),
-			repo_name: repo.name,
-			deploymentTarget,
-			...(deployment_target_reason && { deployment_target_reason }),
-			url: values.url,
-			service_name: values.service_name,
-			branch: values.branch,
-			use_custom_dockerfile: values.use_custom_dockerfile,
+			...deployment,
+			...values,
 			env_vars: values.env_vars ? parseEnvVarsToStore(values.env_vars) : "",
-			status: existingDeployment?.status || "didnt_deploy",
-			...(values.commitSha && { commitSha: values.commitSha }),
-			...(values.custom_url && { custom_url: values.custom_url }),
-			...(values.features_infrastructure && { features_infrastructure: values.features_infrastructure }),
-			...(values.final_notes && { final_notes: values.final_notes }),
-			...((values as any).monorepo_services?.length && { monorepo_services: (values as any).monorepo_services }),
-			...((values as any).deployment_hints && { deployment_hints: (values as any).deployment_hints }),
-			core_deployment_info: effectiveCoreInfo,
 		};
 
+		setDeployment(payload);
 		setIsDeploying(true);
-		sendDeployConfig(payload, session.accessToken, session.userID);
+		sendDeployConfig(payload, session.accessToken, (session as any).userID);
 	}
 
 	return (
 		<div className="fixed inset-0 z-50">
 			<div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 			<div className="absolute inset-0 bg-background text-foreground overflow-y-auto">
-				<div className="mx-auto w-full max-w-6xl px-6 py-6">
-					{scanState === "form" && (
-						<>
-							<div className="flex items-center justify-between gap-3">
-								<div>
-									<p className="text-xs uppercase tracking-wider text-muted-foreground">New deployment</p>
-									<h2 className="text-2xl font-semibold text-foreground">Configure and deploy</h2>
-								</div>
-								<Button variant="outline" onClick={handleClose} disabled={isDeploying}>
-									<X className="size-4" />
-								</Button>
+				<div className="mx-auto w-full max-w-4xl px-6 py-10">
+					<div className="flex items-center justify-between gap-3 border-b border-border/50 pb-4 mb-6">
+						<div className="flex items-center gap-2">
+							<div className="bg-primary/20 p-1.5 rounded-md">
+								<Rocket className="size-4 text-primary" />
 							</div>
-
-							<div className="mt-6 rounded-xl border border-border bg-card p-4">
-								<span>Repository Name: </span>
-								<span className="font-semibold">{repo.name}</span>
-							</div>
-						</>
-					)}
-
-					<div className={`rounded-xl border border-border bg-card p-4 ${scanState !== "form" ? "" : "mt-6"}`}>
-						<ConfigTabs
-							service_name={prefilledServiceName}
-							onSubmit={handleSubmit}
-							onScanComplete={handleScanComplete}
-							onConfigChange={(partial) => {
-								if (!prefilledDeployment) return;
-								updateDeploymentById({ ...prefilledDeployment, ...partial, status: prefilledDeployment.status || "didnt_deploy" });
-							}}
-							onScanStateChange={(state) => setScanState(state)}
-							repo={repo}
-							deployment={prefilledDeployment}
-							editMode={true}
-							isDeploying={isDeploying}
-						/>
+							<h2 className="text-base font-semibold text-foreground">Deploy Sheet</h2>
+						</div>
+						<Button variant="ghost" size="icon" onClick={handleClose} disabled={isDeploying} className="h-8 w-8 bg-card border border-border/50">
+							<X className="size-4" />
+						</Button>
 					</div>
 
+					<div className="mb-6">
+						<h1 className="text-3xl font-bold tracking-tight text-foreground mb-1">Setup Project</h1>
+						<p className="text-primary/80">Configure your deployment environment to begin.</p>
+					</div>
+					<ConfigTabs
+						onSubmit={handleSubmit}
+						onConfigChange={(partial) => {
+							updateDeploymentById({ ...deployment, ...partial });
+							setDeployment({ ...deployment, ...partial });
+						}}
+						branches={repo.branches.length > 0 ? repo.branches.map((b) => b.name) : ["main"]}
+						deployment={deployment}
+						repoFullName={repo.full_name}
+					/>
+
 					{showDeployLogs && (
-						<div className="mt-6 rounded-xl border border-border bg-card p-4">
+						<div className="mt-8 rounded-2xl border border-white/5 bg-white/[0.02] p-6 shadow-2xl">
 							<DeployLogsView
 								showDeployLogs={true}
 								deployLogEntries={deployLogEntries}
