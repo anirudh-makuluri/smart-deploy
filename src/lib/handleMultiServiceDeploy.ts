@@ -31,9 +31,9 @@ FROM node:18-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN npm install
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN npm run build || true"}
+RUN npm run build || true
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["npm", "start"])}
+CMD ["npm", "start"]
 			`.trim();
 			break;
 
@@ -43,9 +43,8 @@ FROM python:3.11-slim
 WORKDIR ${workdir}
 COPY . .
 RUN pip install -r requirements.txt
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : ""}
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["python", "main.py"])}
+CMD ["python", "main.py"]
 			`.trim();
 			break;
 
@@ -55,9 +54,9 @@ FROM golang:1.20-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN go mod tidy
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN go build -o app"}
+RUN go build -o app
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["./app"])}
+CMD ["./app"]
 			`.trim();
 			break;
 
@@ -66,10 +65,10 @@ CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || [
 FROM openjdk:17-alpine
 WORKDIR ${workdir}
 COPY . .
-RUN ${deployConfig.core_deployment_info?.install_cmd || "./mvnw install || mvn install"}
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN ./mvnw package || mvn package"}
+RUN ./mvnw install || mvn install
+RUN ./mvnw package || mvn package
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["java", "-jar", "target/app.jar"])}
+CMD ["java", "-jar", "target/app.jar"]
 			`.trim();
 			break;
 
@@ -79,9 +78,9 @@ FROM rust:1.70-alpine
 WORKDIR ${workdir}
 COPY . .
 RUN cargo fetch
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN cargo build --release"}
+RUN cargo build --release
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["./target/release/app"])}
+CMD ["./target/release/app"]
 			`.trim();
 			break;
 
@@ -91,14 +90,14 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR ${workdir}
 COPY . .
 RUN dotnet restore
-${deployConfig.core_deployment_info?.build_cmd ? `RUN ${deployConfig.core_deployment_info.build_cmd}` : "RUN dotnet build -c Release"}
+RUN dotnet build -c Release
 RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app/publish .
 EXPOSE ${port}
-CMD ${JSON.stringify(deployConfig.core_deployment_info?.run_cmd?.split(" ") || ["dotnet", "*.dll"])}
+CMD ["dotnet", "*.dll"]
 			`.trim();
 			break;
 
@@ -129,10 +128,10 @@ async function deployService(
 	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
 
 	send(`🐳 Building Docker image for service "${service.name}"...`, `docker-${serviceIndex}`);
-	
+
 	// Build context is the service's workdir (or monorepo root for monorepo services)
 	const buildContext = service.build_context || service.workdir;
-	
+
 	if (service.dockerfile && service.dockerfile !== "Dockerfile") {
 		// For custom Dockerfile names (e.g. monorepo Dockerfile.<name>), create a cloudbuild.yaml
 		const cloudbuildConfig = {
@@ -152,7 +151,7 @@ async function deployService(
 		], ws, `docker-${serviceIndex}`);
 
 		// Cleanup temp cloudbuild file
-		try { fs.unlinkSync(cloudbuildPath); } catch {}
+		try { fs.unlinkSync(cloudbuildPath); } catch { }
 	} else {
 		await runCommandLiveWithWebSocket("gcloud", [
 			"builds", "submit",
@@ -165,7 +164,7 @@ async function deployService(
 
 	// Prepare environment variables
 	const envVars: string[] = [];
-	
+
 	// Add service's own env vars
 	if (service.env_vars) {
 		for (const [key, value] of Object.entries(service.env_vars)) {
@@ -253,9 +252,7 @@ export async function handleMultiServiceDeploy(
 	const repoUrl = deployConfig.url;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
 
-	const appDir = deployConfig.core_deployment_info?.workdir
-		? path.join(cloneDir, deployConfig.core_deployment_info.workdir)
-		: cloneDir;
+	const appDir = cloneDir;
 
 	// Detect multi-service configuration from the repo root so docker-compose at root is honored
 	send("🔍 Detecting application structure...", 'detect');
@@ -279,13 +276,13 @@ export async function handleMultiServiceDeploy(
 	let dbConfig = null;
 	let dbConnectionName: string | undefined;
 	let dbConnectionString: string | undefined;
-	
+
 	// Check each service for database dependencies
 	for (const service of multiServiceConfig.services) {
-		const serviceDir = path.isAbsolute(service.workdir) 
-			? service.workdir 
+		const serviceDir = path.isAbsolute(service.workdir)
+			? service.workdir
 			: path.join(appDir, service.workdir);
-		
+
 		const detectedDb = detectDatabase(appDir, serviceDir);
 		if (detectedDb) {
 			dbConfig = detectedDb;
@@ -334,8 +331,8 @@ export async function handleMultiServiceDeploy(
 		send(`\n📦 Processing service: ${service.name}`, `service-${i}`);
 
 		// Ensure workdir is absolute
-		const serviceWorkdir = path.isAbsolute(service.workdir) 
-			? service.workdir 
+		const serviceWorkdir = path.isAbsolute(service.workdir)
+			? service.workdir
 			: path.join(appDir, service.workdir);
 
 		if (multiServiceConfig.isMonorepo) {
@@ -354,7 +351,7 @@ export async function handleMultiServiceDeploy(
 			service.dockerfile = `Dockerfile.${service.name}`;
 		} else {
 			// Check if service has a Dockerfile
-			const dockerfilePath = service.dockerfile 
+			const dockerfilePath = service.dockerfile
 				? path.join(serviceWorkdir, service.dockerfile)
 				: path.join(serviceWorkdir, "Dockerfile");
 
@@ -390,6 +387,6 @@ export async function handleMultiServiceDeploy(
 	}
 
 	send(`\n✅ All ${deployedServices.length} services deployed successfully!`, 'done');
-	
+
 	return { serviceUrls, deployedServices };
 }

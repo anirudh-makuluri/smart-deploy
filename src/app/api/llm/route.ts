@@ -195,15 +195,11 @@ ${Object.entries(fileContents)
 			.join("\n")}
 
 Required JSON keys:
-- core_deployment_info: { language (e.g. TypeScript, Python), framework (e.g. Next.js, Express), install_cmd, build_cmd (string or null), run_cmd, workdir (string or null) }
-  IMPORTANT FOR run_cmd, install_cmd and build_cmd: For Node.js/TypeScript projects, ALWAYS check package.json "scripts" section for the actual commands. 
-  Look for "start", "start-all", "dev", "build" keys, etc. Use what's defined in package.json scripts: install_cmd typically "npm install" (or custom script if defined), build_cmd from "build" script (e.g., "npm run build"), run_cmd from "start" or "start-all" script (e.g., "npm start" or "npm run start-all"). 
-  Do NOT assume "node server.js" for run_cmd or generic build tools for build_cmd - use the actual package.json scripts. For example: if package.json has "scripts": { "build": "tsc", "start-all": "concurrently ..." }, then build_cmd="npm run build" and run_cmd="npm run start-all".
   IMPORTANT: If the repo has NO deployable code (empty, only docs/README, only config files, only mobile code with no backend), set language to null or empty string, and run_cmd to null.
 ${target_workdir ?
-			`  IMPORTANT FOR THIS SERVICE: Even though this is a monorepo, DO NOT set workdir to null. Set workdir strictly to "${target_workdir}". Set install_cmd/build_cmd/run_cmd based on the package.json scripts nested INSIDE "${target_workdir}", not the root.`
+			`  IMPORTANT FOR THIS SERVICE: Even though this is a monorepo, analyze strictly the service at "${target_workdir}".`
 			:
-			`  IMPORTANT FOR MONOREPOS: If the repo is a monorepo (has pnpm-workspace.yaml, workspaces in package.json, turbo.json, nx.json, or lerna.json), set install_cmd/build_cmd/run_cmd based on the ROOT package.json scripts (which typically use turborepo/nx/lerna to orchestrate). Set workdir to null (root). For monorepos, individual service details should go in monorepo_services.`}
+			`  IMPORTANT FOR MONOREPOS: If the repo is a monorepo (has pnpm-workspace.yaml, workspaces in package.json, turbo.json, nx.json, or lerna.json), individual service details should go in monorepo_services.`}
 ${include_extra_info ? `
 - features_infrastructure: { uses_websockets, uses_cron, uses_mobile, uses_server, is_library, cloud_run_compatible, requires_build_but_missing_cmd } (all boolean; cloud_run_compatible = true only if stateless HTTP, no long-lived WebSockets, no mobile/lib)
   IMPORTANT: 

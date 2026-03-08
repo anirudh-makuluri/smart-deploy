@@ -5,7 +5,6 @@ import os from "os";
 import path from "path";
 import { spawnSync } from "child_process";
 import { detectMultiService, ServiceDefinition } from "@/lib/multiServiceDetector";
-import { detectDeployConfig } from "@/lib/detectDeployConfig";
 import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import type { DetectedServiceInfo } from "@/app/types";
@@ -15,24 +14,12 @@ export const runtime = "nodejs";
 
 function toDetectedService(s: ServiceDefinition, repoRoot: string, cloneDir: string): DetectedServiceInfo {
 	const pathRel = s.relativePath ?? (path.isAbsolute(s.workdir) ? path.relative(repoRoot, s.workdir).replace(/\\/g, "/") : s.workdir.replace(/\\/g, "/"));
-	const serviceDir = path.isAbsolute(s.workdir) ? s.workdir : path.join(cloneDir, s.workdir);
-	let core_deployment_info: DetectedServiceInfo["core_deployment_info"];
-	try {
-		core_deployment_info = detectDeployConfig(serviceDir, {
-			language: s.language,
-			framework: s.framework,
-			relativeWorkdir: pathRel,
-		});
-	} catch (err) {
-		console.warn("detectDeployConfig for", s.name, err);
-	}
 	return {
 		name: s.name,
 		path: pathRel,
 		language: s.language || "",
 		framework: s.framework,
 		port: s.port,
-		...(core_deployment_info && { core_deployment_info }),
 	};
 }
 
@@ -84,14 +71,11 @@ export async function POST(req: NextRequest) {
 
 			const multiServiceConfig = detectMultiService(cloneDir);
 
-			// If single-service repo, still return one "service" for consistent UI; run rule-based config detection
+			// If single-service repo, still return one "service" for consistent UI
 			const services: DetectedServiceInfo[] =
 				multiServiceConfig.services.length > 0
 					? multiServiceConfig.services.map((s) => toDetectedService(s, cloneDir, cloneDir))
-					: (() => {
-						const core = detectDeployConfig(cloneDir, { relativeWorkdir: ".", language: "node" });
-						return [{ name: "app", path: ".", language: "node", port: 3000, core_deployment_info: core }];
-					})();
+					: [{ name: "app", path: ".", language: "node", port: 3000 }];
 
 			// Persist to DB for this user
 			const userID = (session as { userID?: string })?.userID;
