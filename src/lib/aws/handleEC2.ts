@@ -245,45 +245,52 @@ CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
 }
 
 function buildComposeAndEnv(
+	deployConfig: DeployConfig,
 	services: ServiceDef[],
 	envVars: string,
 	dbConnectionString?: string,
 	customDomain?: string,
 ): { composeYml: string; envBase64: string } {
-	const composeServices: Record<string, unknown> = {};
-	const isMonorepo = services.some(s => s.isMonorepo);
+	let composeYml = "";
 
-	for (const svc of services) {
-		const p = svc.port || 8080;
-		const env: string[] = [`PORT=${p}`, "NODE_ENV=production"];
-		if (dbConnectionString) env.push(`DATABASE_URL=${dbConnectionString}`);
+	if (deployConfig.docker_compose) {
+		composeYml = deployConfig.docker_compose;
+	} else {
+		const composeServices: Record<string, unknown> = {};
+		const isMonorepo = services.some(s => s.isMonorepo);
 
-		// Add inter-service URLs so services can communicate
-		for (const other of services) {
-			if (other.name !== svc.name) {
-				const envKey = `${other.name.toUpperCase().replace(/-/g, "_")}_URL`;
-				env.push(`${envKey}=http://${other.name}:${other.port || 8080}`);
+		for (const svc of services) {
+			const p = svc.port || 8080;
+			const env: string[] = [`PORT=${p}`, "NODE_ENV=production"];
+			if (dbConnectionString) env.push(`DATABASE_URL=${dbConnectionString}`);
+
+			// Add inter-service URLs so services can communicate
+			for (const other of services) {
+				if (other.name !== svc.name) {
+					const envKey = `${other.name.toUpperCase().replace(/-/g, "_")}_URL`;
+					env.push(`${envKey}=http://${other.name}:${other.port || 8080}`);
+				}
+			}
+
+			if (isMonorepo) {
+				// For monorepo: build context is root, Dockerfile is per-service
+				composeServices[svc.name] = {
+					build: { context: ".", dockerfile: `Dockerfile.${svc.name}` },
+					ports: [`${p}:${p}`],
+					environment: env,
+					restart: "unless-stopped",
+				};
+			} else {
+				composeServices[svc.name] = {
+					build: { context: ".", dockerfile: svc.dir === "." ? "Dockerfile" : `${svc.dir}/Dockerfile` },
+					ports: [`${p}:${p}`],
+					environment: env,
+					restart: "unless-stopped",
+				};
 			}
 		}
-
-		if (isMonorepo) {
-			// For monorepo: build context is root, Dockerfile is per-service
-			composeServices[svc.name] = {
-				build: { context: ".", dockerfile: `Dockerfile.${svc.name}` },
-				ports: [`${p}:${p}`],
-				environment: env,
-				restart: "unless-stopped",
-			};
-		} else {
-			composeServices[svc.name] = {
-				build: { context: ".", dockerfile: svc.dir === "." ? "Dockerfile" : `${svc.dir}/Dockerfile` },
-				ports: [`${p}:${p}`],
-				environment: env,
-				restart: "unless-stopped",
-			};
-		}
+		composeYml = JSON.stringify({ version: "3.8", services: composeServices }, null, 2);
 	}
-	const composeYml = JSON.stringify({ version: "3.8", services: composeServices }, null, 2);
 
 	const envEntries = parseEnvVarsAllowCommasInValues(envVars);
 	const host = normalizeDomain(customDomain);
@@ -308,7 +315,7 @@ function generateUserDataScript(
 	customDomain?: string,
 ): string {
 	const authUrl = repoUrl.replace("https://", `https://${token}@`);
-	const { composeYml, envBase64 } = buildComposeAndEnv(services, envVars, dbConnectionString, customDomain);
+	const { composeYml, envBase64 } = buildComposeAndEnv(deployConfig, services, envVars, dbConnectionString, customDomain);
 	let mainPort = "";
 	let wsPort = "";
 	const ports: string[] = [];
@@ -533,8 +540,14 @@ sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\
 cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 NGINXEOF
+sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+NGINXEOF
 cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
-server {
+${deployConfig.nginx_conf || `server {
     listen 80 default_server;
     server_name _;
     location / {
@@ -555,7 +568,7 @@ ${wsPort ? `    location /ws {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 86400;
     }` : ""}
-}
+}`}
 NGINXEOF
 rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true
 
@@ -1141,7 +1154,7 @@ export async function handleEC2(
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
 	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
-	const { composeYml, envBase64 } = buildComposeAndEnv(services, deployConfig.env_vars || "", dbConnectionString, undefined);
+	const { composeYml, envBase64 } = buildComposeAndEnv(deployConfig, services, deployConfig.env_vars || "", dbConnectionString, undefined);
 
 	// ── Redeploy path: reuse existing running instance via SSM ──
 	if (existingInstanceId) {
