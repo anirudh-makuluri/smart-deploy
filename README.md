@@ -1,8 +1,8 @@
 # 🚀 SmartDeploy
 
-**SmartDeploy** is a lightweight DevOps automation platform that lets you connect your GitHub repository, configure deployment settings, and deploy to **AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2)** or **Google Cloud Run** — all in just a few clicks.
+**SmartDeploy** is a lightweight DevOps automation platform that lets you connect your GitHub repository, configure deployment settings, and deploy to **AWS (EC2 with RDS)** or **Google Cloud Run** — all in just a few clicks.
 
-It uses **AI to auto-analyze your codebase**, generate build/run commands, detect frameworks and databases, and provide real-time feedback via WebSockets.
+It uses **AI-powered streaming analysis** to auto-analyze your codebase, generate build/run commands, detect frameworks and databases, and provide real-time progress updates.
 
 ---
 
@@ -10,8 +10,8 @@ It uses **AI to auto-analyze your codebase**, generate build/run commands, detec
 
 - 🔗 **GitHub Integration** — Pick any of your repositories
 - ⚙️ **Custom Config** — Set build/run commands, env vars, workdir, etc.
-- 🤖 **AI-Powered Smart Project Scan** — Analyzes your repo, auto-fills deploy config, and recommends the best platform
-- ☁️ **Multi-Cloud Deployment** — Deploy to AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2) or Google Cloud Run
+- 🤖 **AI-Powered Streaming Scan** — Real-time codebase analysis, auto-filled deploy config, and platform recommendations
+- ☁️ **Multi-Cloud Deployment** — Deploy to AWS (EC2) or Google Cloud Run
 - 🏗️ **Multi-Service Support** — Automatically detects and deploys complex applications with multiple services (frontend/backend, microservices, etc.)
 - 🗄️ **Managed Databases** — Automatically provisions Cloud SQL (GCP) or RDS (AWS) when your app needs a database
 - 📡 **Live Logs** — Real-time deployment status via WebSocket
@@ -66,11 +66,12 @@ Add `GEMINI_API_KEY` to your `.env` (from Google AI Studio).
 ## 🧠 AI Capabilities
 
 - Detects language, framework, database, environment files, and more
-- Auto-generates install/build/run commands
-- Flags issues like missing server or mobile-only code
-- Summarizes project structure and deployability
-- Generates a structured JSON deployment profile
-- Suggests the best deployment target (Amplify, Elastic Beanstalk, ECS Fargate, EC2, Cloud Run) based on your app
+- **Streaming UI** — See the AI's thought process and analysis progress in real-time
+- **Auto-Generation** — Generates install/build/run commands and optimized Dockerfiles
+- **Risk Assessment** — Flags issues like missing server components or security vulnerabilities
+- **Structural Analysis** — Summarizes project architecture and provides a confidence score for deployment
+- **Hadolint Integration** — Lints generated Dockerfiles to ensure best practices
+- **Smart Routing** — Suggests the best deployment target (EC2 or Cloud Run) based on your app's needs
 
 ## 🏗️ Multi-Service Deployment
 
