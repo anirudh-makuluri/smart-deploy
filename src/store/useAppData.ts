@@ -49,11 +49,13 @@ type AppState = {
 	getDetectedRepoCache: (repoUrl: string) => DetectedRepoCacheEntry | undefined;
 	/** Set cached detect-services result for a repo. */
 	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
-	updateDeploymentById: (deployment: DeployConfig) => Promise<void>;
+	updateDeploymentById: (deployment: Partial<DeployConfig> & { repo_name: string; service_name: string }) => Promise<void>;
 	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
 	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error'; message: string }>;
+	activeServiceName: string | null;
+	setActiveServiceName: (name: string | null) => void;
 };
 
 function normalizeRepoUrlForCache(url: string): string {
@@ -174,11 +176,11 @@ export const useAppData = create<AppState>((set, get) => ({
 		}));
 	},
 
-	updateDeploymentById: async (newDeployment: DeployConfig) => {
+	updateDeploymentById: async (partial: Partial<DeployConfig> & { repo_name: string; service_name: string }) => {
 		const response = await fetch('/api/update-deployments', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(newDeployment),
+			body: JSON.stringify(partial),
 		}).then((res) => res.json());
 
 		if (response.status === 'error') {
@@ -188,16 +190,24 @@ export const useAppData = create<AppState>((set, get) => ({
 
 		const deployments = get().deployments;
 		const matchKey = (dep: DeployConfig) =>
-			dep.repo_name === newDeployment.repo_name && dep.service_name === newDeployment.service_name;
+			dep.repo_name === partial.repo_name && dep.service_name === partial.service_name;
+
+		const existing = deployments.find(matchKey);
+		const merged: DeployConfig = {
+			...(existing ?? ({} as DeployConfig)),
+			...partial,
+		};
+
 		let updatedList: DeployConfig[];
-		if (newDeployment.status === 'stopped') {
+		if (merged.status === 'stopped') {
 			updatedList = deployments.filter((dep) => !matchKey(dep));
 		} else {
-			const exists = deployments.some(matchKey);
+			const exists = Boolean(existing);
 			updatedList = exists
-				? deployments.map((dep) => (matchKey(dep) ? newDeployment : dep))
-				: [...deployments, newDeployment];
+				? deployments.map((dep) => (matchKey(dep) ? merged : dep))
+				: [...deployments, merged];
 		}
+
 		set({ deployments: sortDeployments(updatedList) });
 	},
 
@@ -227,6 +237,8 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 		return { status: response.status ?? 'error', message: response.message ?? '' };
 	},
+	activeServiceName: null,
+	setActiveServiceName: (name) => set({ activeServiceName: name }),
 }));
 
 // Selectors: subscribe to only what you need to reduce re-renders

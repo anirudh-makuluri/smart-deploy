@@ -9,20 +9,22 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 function normalizeUrl(url: string): string {
 	return url.replace(/\.git$/, "").toLowerCase().trim();
 }
 
 type DashboardMainProps = {
-	onNewDeploy: () => void;
 	activeView: "overview" | "deployments";
 };
 
-export default function DashboardMain({ onNewDeploy, activeView }: DashboardMainProps) {
+export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const { data: session } = useSession();
 	const { deployments, repoList, repoServices, isLoading, updateDeploymentById, removeDeployment, removeDeployments, refetchDeployments } = useAppData();
 	const [bulkOperation, setBulkOperation] = React.useState<{ label: string } | null>(null);
+	const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = React.useState(false);
+	const [pendingDeploys, setPendingDeploys] = React.useState<typeof deployments>([]);
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
@@ -68,14 +70,13 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 		return base;
 	});
 
-	async function bulkDelete(deploys: typeof deployments) {
-		if (!deploys.length) return;
-		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
-
+	async function handleConfirmBulkDelete() {
+		if (!pendingDeploys.length) return;
+		setShowBulkDeleteConfirm(false);
 		setBulkOperation({ label: "Deleting deployments…" });
 		const deletedKeys: { repoName: string; serviceName: string }[] = [];
 		try {
-			for (const dep of deploys) {
+			for (const dep of pendingDeploys) {
 				try {
 					const res = await fetch("/api/delete-deployment", {
 						method: "POST",
@@ -102,7 +103,14 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 			toast.success("Finished deleting deployments for this repo.");
 		} finally {
 			setBulkOperation(null);
+			setPendingDeploys([]);
 		}
+	}
+
+	async function bulkDelete(deploys: typeof deployments) {
+		if (!deploys.length) return;
+		setPendingDeploys(deploys);
+		setShowBulkDeleteConfirm(true);
 	}
 
 	async function bulkPauseResume(deploys: typeof deployments, action: "pause" | "resume") {
@@ -157,12 +165,6 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 							{activeView === "overview" ? "Overview" : "Deployments"}
 						</h1>
 					</div>
-					<Button
-						onClick={onNewDeploy}
-						className="landing-build-blue hidden hover:opacity-95 text-primary-foreground"
-					>
-						+ Deploy
-					</Button>
 				</div>
 			</div>
 			<div className="flex-1 min-h-0 overflow-y-auto p-6">
@@ -257,6 +259,16 @@ export default function DashboardMain({ onNewDeploy, activeView }: DashboardMain
 					</div>
 				</div>
 			</div>
+
+			<ConfirmDialog
+				open={showBulkDeleteConfirm}
+				onOpenChange={setShowBulkDeleteConfirm}
+				onConfirm={handleConfirmBulkDelete}
+				title="Delete All Deployments?"
+				description={`This will permanently delete ${pendingDeploys.length} deployments. This action cannot be undone and all associated cloud resources will be terminated.`}
+				confirmText="Delete All"
+				variant="destructive"
+			/>
 		</main>
 	);
 }

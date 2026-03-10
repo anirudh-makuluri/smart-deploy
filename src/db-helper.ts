@@ -12,6 +12,7 @@ type RowDeployment = {
 	last_deployment: string | null;
 	revision: number | null;
 	data: Record<string, unknown>;
+	scan_results: Record<string, unknown> | null;
 };
 
 function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
@@ -26,6 +27,7 @@ function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string
 		last_deployment: last_deployment ?? undefined,
 		revision: revision ?? 1,
 		...data,
+		scan_results: row.scan_results ? (row.scan_results as any) : undefined,
 	} as DeployConfig & { ownerID: string };
 }
 
@@ -80,23 +82,20 @@ export const dbHelper = {
 				first_deployment,
 				last_deployment,
 				revision,
+				scan_results,
 				...rest
 			} = deployConfig as DeployConfig & { ownerID?: string };
 			const dataJson = { ...rest } as Record<string, unknown>;
 
-			console.log(repo_name, service_name)
 
 			const { data: existing } = await supabase
 				.from("deployments")
-				.select("revision, data")
+				.select("revision, data, status, scan_results")
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name)
 				.order("last_deployment", { ascending: false })
 				.limit(1)
 				.maybeSingle();
-
-			console.log("existing", existing);
-
 			if (!existing) {
 				await supabase.from("deployments").insert({
 					id: uuidv4(),
@@ -108,6 +107,7 @@ export const dbHelper = {
 					last_deployment: new Date().toISOString(),
 					revision: 1,
 					data: dataJson,
+					scan_results: scan_results || null,
 				});
 				return { success: "New deployment created and added to user" };
 			}
@@ -115,13 +115,22 @@ export const dbHelper = {
 			const nextRevision = (existing.revision ?? 0) + 1;
 			const lastDeployment = new Date().toISOString();
 			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
+
+			// Preserve existing status/scan_results unless explicitly provided
+			const hasStatus = Object.prototype.hasOwnProperty.call(deployConfig, "status");
+			const nextStatus = hasStatus ? deployConfig.status ?? null : existing.status;
+
+			const hasScanResults = typeof scan_results !== "undefined";
+			const nextScanResults = hasScanResults ? (scan_results || null) : existing.scan_results;
+
 			await supabase
 				.from("deployments")
 				.update({
-					status: deployConfig.status ?? "didnt_deploy",
+					status: nextStatus,
 					last_deployment: lastDeployment,
 					revision: nextRevision,
 					data: mergedData,
+					scan_results: nextScanResults,
 				})
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name);

@@ -1,10 +1,11 @@
 import * as React from "react";
 
-type MenuItem = { id: "overview" | "env" | "logs" | "history"; label: string };
+type MenuItem = { id: "overview" | "setup" | "scan" | "logs" | "history"; label: string };
 
 const MENU_ITEMS: MenuItem[] = [
 	{ id: "overview", label: "Overview" },
-	{ id: "env", label: "Environment" },
+	{ id: "setup", label: "Setup" },
+	{ id: "scan", label: "Scan" },
 	{ id: "logs", label: "Logs" },
 	{ id: "history", label: "Deployment History" },
 ];
@@ -30,11 +31,10 @@ export default function DeployWorkspaceMenu({
 						<button
 							key={item.id}
 							onClick={() => onChange(item.id)}
-							className={`py-4 border-b-2 transition-colors cursor-pointer ${
-								activeSection === item.id
+							className={`py-4 border-b-2 transition-colors cursor-pointer ${activeSection === item.id
 									? "border-primary text-foreground"
 									: "border-transparent text-muted-foreground hover:text-foreground"
-							}`}
+								}`}
 						>
 							{item.label}
 						</button>

@@ -3,7 +3,7 @@ import { DeployConfig, SDArtifactsResponse, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe } from "lucide-react";
+import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download } from "lucide-react";
 import { toast } from "sonner";
 
 type PostScanResultsProps = {
@@ -58,6 +58,37 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 		toast.success("File changes saved successfully");
 	};
 
+	const handleDelete = () => {
+		if (!onUpdateResults) return;
+
+		const updatedResults = { ...results };
+		let nextTab = "";
+
+		if (activeTab === "compose") {
+			updatedResults.docker_compose = "";
+		} else if (activeTab === "nginx") {
+			updatedResults.nginx_conf = "";
+		} else {
+			if (updatedResults.dockerfiles) {
+				delete updatedResults.dockerfiles[activeTab];
+			}
+		}
+
+		// Find next available tab
+		const remainingDockerfiles = Object.keys(updatedResults.dockerfiles || {});
+		if (remainingDockerfiles.length > 0) {
+			nextTab = remainingDockerfiles[0];
+		} else if (updatedResults.docker_compose) {
+			nextTab = "compose";
+		} else if (updatedResults.nginx_conf) {
+			nextTab = "nginx";
+		}
+
+		onUpdateResults(updatedResults);
+		setActiveTab(nextTab);
+		toast.success("File deleted successfully");
+	};
+
 	const copyToClipboard = (text: string) => {
 		navigator.clipboard.writeText(text);
 		toast.success("Copied to clipboard");
@@ -87,9 +118,13 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 					</p>
 				</div>
 				<div className="flex items-center gap-3">
-					<Button variant="outline" className="h-10 px-4 border-white/5 bg-white/[0.02] text-white hover:bg-white/[0.05] hover:border-white/10 transition-all active:scale-95">
-						<Share2 className="size-4 mr-2 text-muted-foreground" />
-						Share Report
+					<Button variant="ghost" onClick={onCancel} className="text-xs font-bold text-muted-foreground hover:text-white transition-colors uppercase tracking-widest px-4 h-10">
+						Reject Analysis
+					</Button>
+					<div className="w-px h-4 bg-white/10" />
+					<Button variant="outline" className="h-10 px-4 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-all active:scale-95 uppercase tracking-widest font-bold text-[10px]">
+						<Download className="size-3.5 mr-2" />
+						Full JSON Export
 					</Button>
 					<Button onClick={onStartDeployment} className="h-10 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-[0_0_30px_rgba(37,244,106,0.2)] transition-all active:scale-95 flex items-center gap-2">
 						<Rocket className="size-4" />
@@ -270,10 +305,16 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 									Push Changes
 								</Button>
 							) : (
-								<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
-									<Edit2 className="size-3.5 mr-2" />
-									Modify File
-								</Button>
+								<div className="flex items-center gap-2">
+									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
+										<Edit2 className="size-3.5 mr-2" />
+										Modify File
+									</Button>
+									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg" onClick={handleDelete}>
+										<Trash2 className="size-3.5 mr-2" />
+										Delete
+									</Button>
+								</div>
 							)}
 							<div className="w-px h-4 bg-white/10 mx-1" />
 							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => copyToClipboard(
@@ -305,23 +346,27 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 									</button>
 								);
 							})}
-							<div className="w-px h-4 bg-white/10 mx-2" />
-							<button
-								onClick={() => setActiveTab("compose")}
-								className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'compose' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
-							>
-								{activeTab === 'compose' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
-								<Layers className="size-3.5" />
-								docker-compose.yml
-							</button>
-							<button
-								onClick={() => setActiveTab("nginx")}
-								className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'nginx' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
-							>
-								{activeTab === 'nginx' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
-								<Globe className="size-3.5" />
-								nginx.conf
-							</button>
+							{(results.docker_compose || results.nginx_conf) && <div className="w-px h-4 bg-white/10 mx-2" />}
+							{results.docker_compose && (
+								<button
+									onClick={() => setActiveTab("compose")}
+									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'compose' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
+								>
+									{activeTab === 'compose' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+									<Layers className="size-3.5" />
+									docker-compose.yml
+								</button>
+							)}
+							{results.nginx_conf && (
+								<button
+									onClick={() => setActiveTab("nginx")}
+									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'nginx' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
+								>
+									{activeTab === 'nginx' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+									<Globe className="size-3.5" />
+									nginx.conf
+								</button>
+							)}
 						</div>
 
 						{/* Code Content */}
@@ -392,12 +437,10 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 					</div>
 				</div>
 
-				<div className="flex items-center gap-6">
-					<button onClick={onCancel} className="text-xs font-bold text-muted-foreground hover:text-white transition-colors uppercase tracking-widest">Reject Analysis</button>
-					<div className="w-px h-4 bg-white/5" />
-					<button className="text-xs font-bold text-primary hover:text-primary-foreground hover:bg-primary px-4 py-2 rounded-lg transition-all border border-primary/20 uppercase tracking-widest">
-						Full JSON Export
-					</button>
+
+				<div className="hidden md:flex items-center gap-2 text-muted-foreground/40 italic text-[10px]">
+					<Lock className="size-3" />
+					<span>Encrypted & Shared to {deployment.cloudProvider?.toUpperCase() || "Cloud"}</span>
 				</div>
 			</div>
 		</div >

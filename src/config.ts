@@ -1,3 +1,5 @@
+import "server-only";
+
 const config = {
 	// NextAuth
 	NEXTAUTH_URL: process.env.NEXTAUTH_URL || "http://localhost:3000",

@@ -6,8 +6,8 @@ import {
 	formatTimestamp,
 	formatDeploymentTargetName,
 	getDeploymentDisplayUrl,
+	isDeploymentDisabled,
 } from "@/lib/utils";
-import { isDeploymentDisabled } from "@/lib/deploymentTargetFromMetadata";
 import DeployOptions from "@/components/DeployOptions";
 
 type DeployOverviewProps = {

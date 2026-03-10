@@ -19,7 +19,8 @@ create table if not exists public.deployments (
   first_deployment timestamptz,
   last_deployment timestamptz,
   revision int default 1,
-  data jsonb not null default '{}'
+  data jsonb not null default '{}',
+  scan_results jsonb
 );
 
 create index if not exists idx_deployments_owner on public.deployments(owner_id);

@@ -1,4 +1,4 @@
-import { AIGenProjectMetadata, DeployConfig, DeploymentTarget } from "@/app/types";
+import { DeployConfig, DeploymentTarget, SDArtifactsResponse } from "@/app/types";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -101,7 +101,7 @@ export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string
 
 export function parseEnvVarsToDisplay(envVarsString: string = "") {
 	const result = envVarsString
-		.split(",")
+		.split(/\r?\n/)
 		.map(pair => pair.trim())
 		.filter(pair => pair.includes("="))
 		.map(pair => {
@@ -112,12 +112,13 @@ export function parseEnvVarsToDisplay(envVarsString: string = "") {
 	return result;
 }
 
+/** Legacy helper, converted to use newlines for consistency. */
 export function parseEnvVarsToStore(envString: string): string {
 	return envString
-		.split("\n")
+		.split(/\r?\n/)
 		.map(line => line.trim())
 		.filter(line => line && !line.startsWith("#"))
-		.join(",");
+		.join("\n");
 }
 
 /** Parse newline-separated .env-style content (e.g. paste or uploaded file) into key/value entries. */
@@ -125,6 +126,7 @@ export function parseEnvLinesToEntries(text: string): { name: string; value: str
 	return text
 		.split(/\r?\n/)
 		.map((line) => line.trim())
+		.filter((line) => line && !line.startsWith("#"))
 		.map((line) => {
 			const eq = line.indexOf("=");
 			if (eq === -1) return { name: line, value: "" };
@@ -173,7 +175,7 @@ export function formatLogTimestamp(isoTimestamp: string) {
 }
 
 
-export function extractDeployConfigFromAI(responseObj: { response: string }): AIGenProjectMetadata | null {
+export function extractDeployConfigFromAI(responseObj: { response: string }): SDArtifactsResponse | null {
 	try {
 		const cleaned = responseObj.response.replace(/\/\/.*$/gm, "").trim();
 
@@ -187,7 +189,7 @@ export function extractDeployConfigFromAI(responseObj: { response: string }): AI
 	}
 }
 
-export function sanitizeAndParseAIResponse(raw: any): AIGenProjectMetadata | null {
+export function sanitizeAndParseAIResponse(raw: any): SDArtifactsResponse | null {
 	try {
 		let jsonStr = "";
 
@@ -228,3 +230,58 @@ export function configSnapshotFromDeployConfig(config: DeployConfig | null): Rec
 	return { ...config } as Record<string, unknown>;
 }
 
+
+export function normalizeRepoUrl(url: string): string {
+	return url.replace(/\.git$/, "").toLowerCase();
+}
+
+export function getDeploymentForService(
+	deployments: DeployConfig[],
+	repoUrl: string,
+	serviceName: string,
+	repoName: string
+): DeployConfig | undefined {
+	const matches: DeployConfig[] = [];
+
+	for (const d of deployments) {
+		if (d.repo_name !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+
+		const dbServiceName = d.service_name || "";
+		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
+		const isRepoLevel = dbServiceName === "." || dbServiceName.toLowerCase() === repoName.toLowerCase();
+
+		if (isExactHit || isRepoLevel) {
+			matches.push(d);
+		}
+	}
+
+	if (matches.length === 0) return undefined;
+
+	const statusRank = (status?: string) => {
+		if (status === "running") return 3;
+		if (status === "paused" || status === "stopped") return 2;
+		if (status === "didnt_deploy") return 1;
+		return 0;
+	};
+
+	return matches.sort((a, b) => {
+		const statusRankA = statusRank(a.status);
+		const statusRankB = statusRank(b.status);
+		const statusDelta = statusRankB - statusRankA;
+		if (statusDelta !== 0) return statusDelta;
+		const aTime = new Date(a.last_deployment ?? 0).getTime();
+		const bTime = new Date(b.last_deployment ?? 0).getTime();
+		return bTime - aTime;
+	})[0];
+}
+
+export function isDeploymentDisabled(deployment: DeployConfig): boolean {
+	if (!deployment) return true;
+
+	const scanResults = deployment.scan_results;
+	const hasInfrastructure =
+		(!!(scanResults?.dockerfiles && Object.keys(scanResults.dockerfiles).length > 0)) ||
+		!!scanResults?.has_existing_dockerfiles;
+
+	return !hasInfrastructure;
+}

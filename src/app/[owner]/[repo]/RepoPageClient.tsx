@@ -8,19 +8,16 @@ import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/store/useAppData";
 import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
-import NewDeploySheet from "@/components/NewDeploySheet";
 import { getActiveDeployment } from "@/custom-hooks/useDeployLogs";
 import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import { toast } from "sonner";
+import DeployWorkspace from "@/components/DeployWorkspace";
+import Header from "@/components/Header";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import RepoServicesList from "@/components/RepoServicesList";
+import { normalizeRepoUrl } from "@/lib/utils";
 
-type RepoPageClientProps = {
-	owner: string;
-	repoName: string;
-};
-
-function normalizeRepoUrl(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase();
-}
+const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
 function buildMinimalRepo(owner: string, repoName: string): repoType {
 	const fullName = `${owner}/${repoName}`;
@@ -49,48 +46,11 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 	};
 }
 
+type RepoPageClientProps = {
+	owner: string;
+	repoName: string;
+};
 
-function getDeploymentForService(
-	deployments: DeployConfig[],
-	repoUrl: string,
-	serviceName: string,
-	repoName: string
-): DeployConfig | undefined {
-	const matches: DeployConfig[] = [];
-
-	for (const d of deployments) {
-		if (d.repo_name !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
-
-		const dbServiceName = d.service_name || "";
-		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
-		const isRepoLevel = dbServiceName === "." || dbServiceName.toLowerCase() === repoName.toLowerCase();
-
-		if (isExactHit || isRepoLevel) {
-			matches.push(d);
-		}
-	}
-
-	if (matches.length === 0) return undefined;
-
-	const statusRank = (status?: string) => {
-		if (status === "running") return 3;
-		if (status === "paused" || status === "stopped") return 2;
-		if (status === "didnt_deploy") return 1;
-		return 0;
-	};
-
-	return matches.sort((a, b) => {
-		const statusDelta = statusRank(b.status) - statusRank(a.status);
-		if (statusDelta !== 0) return statusDelta;
-		const aTime = new Date(a.last_deployment ?? 0).getTime();
-		const bTime = new Date(b.last_deployment ?? 0).getTime();
-		return bTime - aTime;
-	})[0];
-}
-
-function normalizeRepoUrlForMatch(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase();
-}
 
 export default function RepoPageClient({ owner, repoName }: RepoPageClientProps) {
 	const router = useRouter();
@@ -99,8 +59,9 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const [services, setServices] = React.useState<DetectedServiceInfo[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
-	const [sheetOpen, setSheetOpen] = React.useState(false);
-	const [selectedService, setSelectedService] = React.useState<DetectedServiceInfo | null>(null);
+	const [activeService, setActiveService] = React.useState<DetectedServiceInfo | null>(null);
+	const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
+	const { activeServiceName: storeActiveService, setActiveServiceName } = useAppData();
 
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
@@ -113,7 +74,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		});
 		return fromStore ?? minimalRepo;
 	}, [repoList, repoUrl, owner, repoName, minimalRepo]);
-	
+
 	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
 
 	const { openLogsModal } = useActiveDeployment();
@@ -146,6 +107,16 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		const id = setInterval(tick, 2000);
 		return () => clearInterval(id);
 	}, [repoName]);
+
+	React.useEffect(() => {
+		if (storeActiveService === null && activeService !== null) {
+			setActiveService(null);
+		}
+	}, [storeActiveService, activeService]);
+
+	React.useEffect(() => {
+		setActiveServiceName(null);
+	}, []);
 
 	React.useEffect(() => {
 		const cached = getDetectedRepoCache(repoUrl);
@@ -222,26 +193,15 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		}
 	}, [resolvedRepo.name, fetchRepoDeployments]);
 
-	function openSheetForService(svc: DetectedServiceInfo) {
-		setSelectedService(svc);
-		setSheetOpen(true);
+	function openWorkspaceForService(svc: DetectedServiceInfo) {
+		setActiveService(svc);
+		setActiveServiceName(svc.name);
 	}
 
-	function openSheetForAll() {
-		setSelectedService(null);
-		setSheetOpen(true);
-	}
-
-	function closeSheet() {
-		setSheetOpen(false);
-		setSelectedService(null);
-		refetchAll();
-	}
-
-	async function handleDeleteAllDeployments() {
+	async function handleConfirmDeleteAll() {
 		if (repoDeployments.length === 0) return;
-		if (!window.confirm("Delete all deployments for this repository? This cannot be undone.")) return;
 		setIsDeleting(true);
+		setShowDeleteAllConfirm(false);
 		const deletedKeys: { repoName: string; serviceName: string }[] = [];
 		try {
 			for (const dep of repoDeployments) {
@@ -274,6 +234,14 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		}
 	}
 
+	async function handleDeleteAllDeployments() {
+		if (repoDeployments.length === 0) {
+			toast.error("No deployments found for this repo.");
+			return;
+		}
+		setShowDeleteAllConfirm(true);
+	}
+
 	return (
 		<div className="dot-grid-bg min-h-svh flex flex-col text-foreground">
 			{isDeleting && (
@@ -282,18 +250,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
 				</div>
 			)}
-			<header className="shrink-0 border-b border-border bg-background/90">
-				<div className="px-6 py-3 flex flex-row justify-between items-center">
-					<SmartDeployLogo href="/home" showText size="md" />
-					<div className="flex items-center gap-2">
-						<Link href="/home">
-							<Button variant="outline" size="sm">
-								Dashboard
-							</Button>
-						</Link>
-					</div>
-				</div>
-			</header>
+			<Header />
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
 				{activeDeploy && (
@@ -307,121 +264,38 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 						<span className="text-primary">Click to view logs</span>
 					</button>
 				)}
-				<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-					<div>
-						<h1 className="text-xl font-semibold text-foreground">
-							{owner} / {repoName}
-						</h1>
-						<p className="text-sm text-muted-foreground mt-0.5">
-							{services.length} service{services.length !== 1 ? "s" : ""}
-						</p>
-					</div>
-					{!loading && !error && services.length > 0 && (
-						<div className="flex items-center gap-2">
-							<Button onClick={openSheetForAll} className="shrink-0">
-								Deploy all on one instance
-							</Button>
-							{repoDeployments.length > 0 && (
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={handleDeleteAllDeployments}
-								>
-									Delete all deployments
-								</Button>
-							)}
-						</div>
-					)}
-				</div>
 
-				{loading && (
-					<div className="text-muted-foreground py-8 text-center">Loading services…</div>
-				)}
-				{error && (
-					<div className="rounded-xl border border-destructive/50 bg-destructive/10 text-destructive px-4 py-3">
-						{error}
-					</div>
-				)}
-				{!loading && !error && services.length === 0 && (
-					<div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center text-muted-foreground">
-						No deployable services detected. Add a service or check the repository structure.
-					</div>
-				)}
-				{!loading && !error && services.length > 0 && (
-					<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-						{services.map((svc) => {
-							const deployment = getDeploymentForService(
-								repoDeployments,
-								repoUrl,
-								svc.name,
-								resolvedRepo.name
-							);
-							const status = deployment?.status;
-							const isOnline = status === "running";
-							const isDraft = (status === "didnt_deploy") || !deployment;
-							const isFailed = status === "failed";
-							const canNavigateToService = !!deployment && !isDraft;
-
-							const handleCardClick = () => {
-								if (canNavigateToService) {
-									router.push(`/services/${encodeURIComponent(deployment!.service_name)}?repoName=${encodeURIComponent(deployment!.repo_name)}`);
-								} else {
-									openSheetForService(svc);
-								}
-							};
-
-							return (
-								<button
-									key={svc.name}
-									type="button"
-									onClick={handleCardClick}
-									className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
-										}`}
-								>
-									<div className="flex items-center gap-3">
-										<Github className="size-6 shrink-0 text-muted-foreground" />
-										<span className="font-semibold text-foreground truncate">
-											@{repoName}/{svc.name}
-										</span>
-									</div>
-									<div className="mt-3 flex items-center gap-2">
-										{isDraft && (
-											<span className="text-sm text-muted-foreground">
-												Draft (Not deployed)
-											</span>
-										)}
-										{isFailed && (
-											<>
-												<span className="text-sm text-destructive flex items-center gap-1">
-													Failed
-												</span>
-												<span className="flex items-center gap-0.5 text-destructive/80">
-													<AlertTriangle className="size-4" />
-												</span>
-											</>
-										)}
-										{isOnline && (
-											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
-												<span className="size-2 rounded-full bg-green-500" />
-												Online
-											</span>
-										)}
-									</div>
-								</button>
-							);
-						})}
-					</div>
+				{activeService ? (
+					<DeployWorkspace
+						repoName={repoName}
+						serviceName={activeService.name}
+					/>
+				) : (
+					<RepoServicesList
+						owner={owner}
+						repoName={repoName}
+						repoUrl={repoUrl}
+						services={services}
+						loading={loading}
+						error={error}
+						repoDeployments={repoDeployments}
+						resolvedRepo={resolvedRepo}
+						setActiveService={setActiveService}
+						handleDeleteAllDeployments={handleDeleteAllDeployments}
+						openWorkspaceForService={openWorkspaceForService}
+					/>
 				)}
 			</main>
 
-			{sheetOpen && (
-				<NewDeploySheet
-					open={sheetOpen}
-					onClose={closeSheet}
-					repo={resolvedRepo}
-					selectedService={selectedService ?? undefined}
-				/>
-			)}
+			<ConfirmDialog
+				open={showDeleteAllConfirm}
+				onOpenChange={setShowDeleteAllConfirm}
+				onConfirm={handleConfirmDeleteAll}
+				title="Delete All Deployments?"
+				description={`This will permanently delete all ${repoDeployments.length} deployments associated with this repository. This action cannot be undone and will stop all running services.`}
+				confirmText="Delete All"
+				variant="destructive"
+			/>
 		</div>
 	);
 }

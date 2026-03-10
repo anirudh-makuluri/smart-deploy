@@ -76,8 +76,9 @@ export async function handleDeploy(
 			send(`✅ Checked out commit ${commitSha.substring(0, 7)}`, 'clone');
 		}
 
-		const appDir = deployConfig.services && deployConfig.services.length > 0
-			? path.join(cloneDir, deployConfig.services[0].build_context || ".")
+		const scanResults = deployConfig.scan_results;
+		const appDir = scanResults?.services && scanResults.services.length > 0
+			? path.join(cloneDir, scanResults.services[0].build_context || ".")
 			: cloneDir;
 
 		send("✅ Clone repository completed", 'clone');
@@ -94,16 +95,16 @@ export async function handleDeploy(
 
 		// Construct multiServiceConfig from AI results if available
 		const multiServiceConfig: MultiServiceConfig = {
-			isMultiService: (deployConfig.services?.length || 0) > 1,
-			services: (deployConfig.services || []).map(s => ({
+			isMultiService: (scanResults?.services?.length || 0) > 1,
+			services: (scanResults?.services || []).map(s => ({
 				name: s.name,
 				workdir: path.join(cloneDir, s.build_context || "."),
 				dockerfile: s.dockerfile_path,
 				port: s.port,
 				build_context: path.join(cloneDir, s.build_context || ".")
 			})),
-			hasDockerCompose: !!deployConfig.docker_compose,
-			isMonorepo: (deployConfig.services?.length || 0) > 1, // Simple heuristic for now
+			hasDockerCompose: !!scanResults?.docker_compose,
+			isMonorepo: (scanResults?.services?.length || 0) > 1, // Simple heuristic for now
 		};
 
 		const dbConfig = null; // AI-driven DB provisioning not yet structured in SDArtifactsResponse
@@ -523,7 +524,8 @@ async function handleGCPDeploy(
 	const dockerfilePath = path.join(appDir, "Dockerfile");
 
 	if (!fs.existsSync(dockerfilePath)) {
-		const dockerfileContent = deployConfig.dockerfiles?.["Dockerfile"] || (deployConfig.services?.[0]?.dockerfile_path ? deployConfig.dockerfiles?.[deployConfig.services[0].dockerfile_path] : null);
+		const scanResults = deployConfig.scan_results;
+		const dockerfileContent = scanResults?.dockerfiles?.["Dockerfile"] || (scanResults?.services?.[0]?.dockerfile_path ? scanResults?.dockerfiles?.[scanResults.services[0].dockerfile_path] : null);
 
 		if (dockerfileContent) {
 			send(`Using AI-generated Dockerfile`, 'clone');
@@ -548,7 +550,7 @@ async function handleGCPDeploy(
 	// Build environment variables
 	const envVarsList: string[] = [];
 	if (deployConfig.env_vars) {
-		envVarsList.push(deployConfig.env_vars);
+		envVarsList.push(deployConfig.env_vars.replace(/\r?\n/g, ","));
 	}
 	if (dbConnectionString) {
 		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);

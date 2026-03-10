@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, buildEnvVarsString, parseEnvVarsToStore } from "@/lib/utils";
@@ -15,17 +17,13 @@ import {
 } from "@/components/ui/form"
 import { Alert, AlertDescription } from "./ui/alert"
 
-import { RotateCw, Layers, Terminal, FileCode, Folder, Github, Plus, Trash2, Globe, CheckCircle2, AlertTriangle } from "lucide-react";
+import { RotateCw, Layers, Folder, Github, Globe, CheckCircle2, AlertTriangle, Settings2, Sparkles, GitBranch, CircleDot } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { AIGenProjectMetadata, DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
-import ScanProgress from "@/components/ScanProgress";
-import PostScanResults from "@/components/PostScanResults";
+import { DeployConfig } from "@/app/types";
 import EnvVarSheet from "@/components/EnvVarSheet";
-import { Settings2 } from "lucide-react";
+import config from "@/config.client";
 
 export type FormSchemaType = z.infer<typeof formSchema>
-
-export type CombinedSubmitType = FormSchemaType & AIGenProjectMetadata;
 
 export const formSchema = z.object({
 	branch: z.string().min(1, { message: "Branch is required" }),
@@ -33,14 +31,24 @@ export const formSchema = z.object({
 	custom_url: z.string().optional(),
 })
 
-export default function ConfigTabs(
-	{ onSubmit, onConfigChange, deployment, branches: branchesProp, repoFullName }:
-		{
-			repoFullName: string,
-			onSubmit: (data: FormSchemaType & Partial<AIGenProjectMetadata> & { commitSha?: string }) => void,
-			onConfigChange: (partial: Partial<DeployConfig>) => void,
-			deployment: DeployConfig, branches?: string[]
-		}) {
+type ConfigTabsProps = {
+	onConfigChange: (partial: Partial<DeployConfig>) => void;
+	deployment: DeployConfig;
+	branches?: string[];
+	repoFullName: string;
+	onStartScan?: () => void;
+};
+
+const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "anirudh-makuluri.xyz";
+
+export default function ConfigTabs({
+	onConfigChange,
+	deployment,
+	branches: branchesProp,
+	repoFullName,
+	onStartScan
+}: ConfigTabsProps) {
+
 
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment.env_vars ?? "")
@@ -48,40 +56,58 @@ export default function ConfigTabs(
 	const [isEnvSheetOpen, setIsEnvSheetOpen] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
-	const [scanMode, setScanMode] = useState<"form" | "scanning" | "results">("form");
-	const [scanResults, setScanResults] = useState<SDArtifactsResponse | null>(null);
-	const [scanStartTime, setScanStartTime] = useState<number>(0);
-	const [scanDuration, setScanDuration] = useState<number>(0);
+
 	const onConfigChangeRef = React.useRef(onConfigChange);
 	onConfigChangeRef.current = onConfigChange;
 
+	const initialSubdomain = React.useMemo(() => {
+		let raw = (deployment as any).custom_url || "";
+		if (!raw) return "";
+		// Strip protocol
+		raw = raw.replace(/^https?:\/\//, "");
+		// Strip suffix
+		if (raw.endsWith(`.${DOMAIN_SUFFIX}`)) {
+			return raw.slice(0, -(DOMAIN_SUFFIX.length + 1));
+		}
+		// Fallback to first part
+		return raw.split(".")[0];
+	}, [deployment, DOMAIN_SUFFIX]);
 
 	const form = useForm<FormSchemaType>({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			branch: deployment.branch,
 			env_vars: deployment.env_vars ?? "",
-			custom_url: deployment.custom_url ?? "",
+			custom_url: initialSubdomain,
 		},
 	})
 
-	const handleInfraChange = (updatedResults: SDArtifactsResponse) => {
-		setScanResults(updatedResults);
+	// Auto-save logic
+	const watchedBranch = form.watch("branch");
 
-		const values = form.getValues();
+	const isMounted = React.useRef(false);
+	useEffect(() => {
+		if (!isMounted.current) {
+			isMounted.current = true;
+			return;
+		}
+		if (watchedBranch !== deployment.branch) {
+			onConfigChange({ branch: watchedBranch });
+		}
+	}, [watchedBranch, deployment.branch, onConfigChange]);
+
+	useEffect(() => {
 		const envString = buildEnvVarsString(envEntries);
+		if (envString === deployment.env_vars) return;
 
-		onConfigChangeRef.current({
-			branch: values.branch,
-			custom_url: values.custom_url,
-			env_vars: parseEnvVarsToStore(envString),
-			...updatedResults
-		});
-	};
+		const timeoutId = setTimeout(() => {
+			onConfigChange({ env_vars: envString });
+		}, 500);
 
-	const verifySubdomain = async (subdomainInput: string) => {
-		if (!subdomainInput) return;
-		const subdomain = subdomainInput.replace(/^https?:\/\//, "").split(".")[0];
+		return () => clearTimeout(timeoutId);
+	}, [envEntries, deployment.env_vars, onConfigChange]);
+
+	const verifySubdomain = async (subdomain: string) => {
 		if (!subdomain) return;
 
 		setCustomUrlVerifying(true);
@@ -98,10 +124,11 @@ export default function ConfigTabs(
 			const data = await res.json();
 
 			if (data.available) {
+				const availableSubdomain = data.customUrl.replace(/^https?:\/\//, "").split(".")[0];
 				if (data.isOwned) {
 					setCustomUrlStatus({
 						type: 'owned',
-						message: `This is your current URL: ${data.customUrl}`
+						message: `Current: ${data.customUrl}`
 					});
 				} else {
 					setCustomUrlStatus({
@@ -109,7 +136,7 @@ export default function ConfigTabs(
 						message: `Available: ${data.customUrl}`
 					});
 				}
-				form.setValue("custom_url", data.customUrl);
+				form.setValue("custom_url", availableSubdomain);
 			} else {
 				setCustomUrlStatus({
 					type: 'error',
@@ -128,274 +155,227 @@ export default function ConfigTabs(
 	};
 
 	useEffect(() => {
-		if (!deployment.custom_url) {
+		const currentSub = form.getValues("custom_url");
+		if (!currentSub) {
 			const serviceSub = (deployment.service_name && deployment.service_name !== ".") ? `-${deployment.service_name}` : "";
 			const defaultSubdomain = `${deployment.repo_name}${serviceSub}`;
+			form.setValue("custom_url", defaultSubdomain);
 			verifySubdomain(defaultSubdomain);
+		} else {
+			verifySubdomain(currentSub);
 		}
 	}, []);
 
-	function handleAIBtn() {
-		setScanStartTime(Date.now());
-		setScanMode("scanning");
-	}
-
-	if (scanMode === "scanning") {
-		return (
-			<ScanProgress
-				repoFullName={repoFullName}
-				branch={form.getValues("branch")}
-				onComplete={(data) => {
-					console.log("ConfigTabs: onComplete called with data:", data);
-					console.log("ConfigTabs: scanStartTime was:", scanStartTime);
-					setScanDuration(Date.now() - scanStartTime);
-					setScanResults(data);
-					setScanMode("results");
-
-					// Immediate save after scan
-					if (deployment?.id) {
-						console.log("ConfigTabs: Auto-saving config for deployment:", deployment.id);
-						onConfigChangeRef.current?.({
-							id: deployment.id,
-							...form.getValues(),
-							env_vars: parseEnvVarsToStore(buildEnvVarsString(envEntries)),
-							deploymentTarget: "ec2",
-							...data
-						});
-					}
-				}}
-				onCancel={() => setScanMode("form")}
-			/>
-		);
-	}
-
-	if (scanMode === "results" && scanResults) {
-		return (
-			<PostScanResults
-				results={scanResults}
-				onUpdateResults={handleInfraChange}
-				scanTime={scanDuration}
-				deployment={deployment}
-				onStartDeployment={() => {
-					const values = form.getValues();
-					const envString = buildEnvVarsString(envEntries);
-					onSubmit({
-						...values,
-						env_vars: envString,
-						deploymentTarget: "ec2", // Default for now
-						...scanResults
-					} as any);
-				}}
-				onCancel={() => setScanMode("form")}
-			/>
-		);
-	}
+	const hasScanResults = !!deployment.scan_results;
 
 	return (
-		<>
-			<Form {...form}>
-				<form onSubmit={form.handleSubmit((data) => {
-					const envString = buildEnvVarsString(envEntries);
-					onSubmit({
-						...data,
-						env_vars: envString,
-					} as any);
-				})} className="flex flex-col gap-6">
+		<Form {...form}>
+			<div className="flex flex-col gap-10 max-w-2xl mx-auto">
 
-					{/* PROJECT SOURCE */}
-					<div className="space-y-3 pt-2">
-						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] mb-4">
+				{/* PROJECT SOURCE */}
+				<div className="space-y-4">
+					<div className="flex flex-col gap-1 w-full md:w-48 shrink-0">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
 							<Folder className="size-3.5" />
 							Project Source
 						</div>
-
-						<div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-center gap-4">
-							<div className="bg-primary/10 p-2.5 rounded-lg shrink-0">
-								<Github className="size-6 text-primary" />
-							</div>
-							<div className="flex flex-col">
-								<span className="font-semibold text-foreground text-sm">{deployment.service_name != "." ? deployment.service_name + "@" : ""}{deployment.repo_name}</span>
-								<span className="text-xs text-muted-foreground/60 italic">{deployment.url}</span>
-							</div>
-						</div>
-
-						<div className="space-y-5 mt-6">
-							<div className="space-y-2">
-								<label className="text-xs font-semibold text-muted-foreground/80">Deployment Branch</label>
-								<FormField
-									control={form.control}
-									name="branch"
-									render={({ field }) => (
-										<FormItem>
-											<FormControl>
-												<Select
-													onValueChange={field.onChange}
-													defaultValue={field.value}
-												>
-													<SelectTrigger className="w-full h-11 bg-white/[0.03] border-white/5 text-foreground rounded-lg focus:ring-primary/20">
-														<SelectValue placeholder="Select a branch" />
-													</SelectTrigger>
-													<SelectContent className="bg-[#121019] border-white/10">
-														{(branchesProp || ["main"]).map((branch) => (
-															<SelectItem key={branch} value={branch}>
-																{branch}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-											</FormControl>
-										</FormItem>
-									)}
-								/>
-							</div>
-
-
-						</div>
+						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">Repository and service identifiers</p>
 					</div>
 
-					{/* CUSTOM URL */}
-					<div className="space-y-4 pt-4 border-t border-white/5">
-						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
+					<div className="flex flex-col gap-4">
+						<div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6 flex items-center gap-4 group hover:border-white/10 transition-colors">
+							<div className="bg-primary/10 p-3 rounded-xl shrink-0 group-hover:scale-110 transition-transform">
+								<CircleDot className="size-6 text-primary" />
+							</div>
+							<div className="flex flex-col overflow-hidden">
+								<span className="font-bold text-foreground text-sm truncate">{deployment.service_name != "." ? deployment.service_name + "@" : ""}{deployment.repo_name}</span>
+								<a
+									href={`https://github.com/${repoFullName}`}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-[10px] text-muted-foreground/40 font-mono truncate hover:text-primary transition-colors flex items-center gap-1"
+								>
+									https://github.com/{repoFullName}
+									<Globe className="size-2.5" />
+								</a>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* DEPLOYMENT BRANCH */}
+				<div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pt-10 border-t border-white/5">
+					<div className="flex flex-col gap-1 w-full md:w-48 shrink-0">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+							<GitBranch className="size-3.5" />
+							Deployment Branch
+						</div>
+						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">The branch to use for automatic builds</p>
+					</div>
+					<div className="w-full max-w-sm">
+						<FormField
+							control={form.control}
+							name="branch"
+							render={({ field }) => (
+								<FormItem>
+									<FormControl>
+										<Select
+											onValueChange={field.onChange}
+											defaultValue={field.value}
+										>
+											<SelectTrigger className="w-full h-11 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4">
+												<div className="flex items-center gap-2.5 w-full">
+													<GitBranch className="size-3.5 text-muted-foreground/40 shrink-0" />
+													<div className="text-sm font-medium">
+														<SelectValue placeholder="Select a branch" />
+													</div>
+												</div>
+											</SelectTrigger>
+											<SelectContent className="bg-[#0A0A0F] border-white/10">
+												{(branchesProp || ["main"]).map((branch) => (
+													<SelectItem key={branch} value={branch}>
+														{branch}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</FormControl>
+								</FormItem>
+							)}
+						/>
+					</div>
+				</div>
+
+				{/* CUSTOM URL */}
+				<div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pt-10 border-t border-white/5">
+					<div className="flex flex-col gap-1 w-full md:w-48 shrink-0">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
 							<Globe className="size-3.5" />
 							Custom Domain
 						</div>
-						<div className="space-y-3 pl-1">
-							<FormField
-								control={form.control}
-								name="custom_url"
-								render={({ field }) => (
-									<FormItem>
-										<FormControl>
-											<div className="flex rounded-lg overflow-hidden border border-white/5 bg-white/[0.03] transition-all focus-within:ring-1 focus-within:ring-primary/20">
-												<Input
-													{...field}
-													placeholder="my-app"
-													className="border-0 bg-transparent h-11 rounded-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground/30"
-													onBlur={(e) => {
-														field.onBlur();
-														if (e.target.value) {
-															verifySubdomain(e.target.value);
-														}
-													}}
-													onChange={(e) => {
-														field.onChange(e);
-														setCustomUrlStatus({ type: null });
-													}}
-												/>
-											</div>
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-
-							{customUrlVerifying && (
-								<div className="flex items-center gap-2 text-xs text-muted-foreground/60 animate-pulse">
-									<RotateCw className="size-3 animate-spin" />
-									Verifying domain availability...
-								</div>
-							)}
-
-							{customUrlStatus.type && !customUrlVerifying && (
-								<Alert className={`py-2 px-3 ${customUrlStatus.type === 'error' ? 'bg-destructive/10 border-destructive/20 text-destructive' :
-									customUrlStatus.type === 'owned' ? 'bg-primary/10 border-primary/20 text-primary' :
-										'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-									}`}>
-									{customUrlStatus.type === 'error' ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
-									<AlertDescription className="text-xs font-medium break-all">
-										{customUrlStatus.message}
-									</AlertDescription>
-								</Alert>
-							)}
-						</div>
+						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">Public URL for accessing your application</p>
 					</div>
+					<div className="w-full max-w-sm space-y-3">
+						<FormField
+							control={form.control}
+							name="custom_url"
+							render={({ field }) => (
+								<FormItem>
+									<FormControl>
+										<div className="relative group ">
+											<div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/30 font-mono text-[10px] group-focus-within:text-primary/50 transition-colors pointer-events-none">https://</div>
+											<Input
+												{...field}
+												placeholder="my-cool-app"
+												className="pl-14 pr-32 h-11 bg-white/[0.02] border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
+												onBlur={(e) => {
+													field.onBlur();
+													const val = e.target.value.trim().toLowerCase();
+													if (val) {
+														verifySubdomain(val);
+														const fullUrl = `https://${val}.${DOMAIN_SUFFIX}`;
+														if (fullUrl !== (deployment as any).custom_url) {
+															onConfigChange({ custom_url: fullUrl } as any);
+														}
+													}
+												}}
+												onChange={(e) => {
+													const val = e.target.value;
+													// Only keep the first part of what they paste/type if it looks like a full domain
+													const sanitized = val.replace(/^https?:\/\//, "").split(".")[0];
+													field.onChange(sanitized);
+													setCustomUrlStatus({ type: null });
+												}}
+											/>
+											<div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
+												<span className="text-muted-foreground/20 font-mono text-[10px]">.{DOMAIN_SUFFIX}</span>
+												{customUrlVerifying && <RotateCw className="size-3 animate-spin text-primary" />}
+												{!customUrlVerifying && customUrlStatus.type === 'success' && <CheckCircle2 className="size-3 text-emerald-500" />}
+												{!customUrlVerifying && customUrlStatus.type === 'error' && <AlertTriangle className="size-3 text-destructive" />}
+											</div>
+										</div>
+									</FormControl>
+								</FormItem>
+							)}
+						/>
 
-					{/* ENVIRONMENT VARIABLES */}
-					<div className="space-y-4 pt-4 border-t border-white/5">
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
-								<Layers className="size-3.5" />
-								Environment Variables
-							</div>
+						{customUrlStatus.type && !customUrlVerifying && (
+							<Alert className={`py-2 px-3 rounded-lg border-none ${customUrlStatus.type === 'error' ? 'bg-destructive/10 text-destructive' :
+								customUrlStatus.type === 'owned' ? 'bg-primary/10 text-primary' :
+									'bg-emerald-500/10 text-emerald-500'
+								}`}>
+								<AlertDescription className="text-[10px] font-bold tracking-tight">
+									{customUrlStatus.message}
+								</AlertDescription>
+							</Alert>
+						)}
+					</div>
+				</div>
+
+				<div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pt-10 border-t border-white/5">
+					<div className="flex flex-col gap-1 w-full md:w-48 shrink-0">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+							<Layers className="size-3.5" />
+							Environment Variables
 						</div>
-
-						<div className="p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-4">
-							<div className="flex flex-col">
-								<span className="text-sm font-semibold text-foreground">
-									{envEntries.length || 0} Variables Configured
+						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">Secure credentials and runtime configuration</p>
+					</div>
+					<div className="w-full max-w-sm">
+						<div className="p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-4 group hover:border-white/10 transition-colors">
+							<div className="flex flex-col gap-0.5">
+								<span className="text-sm font-bold text-foreground flex items-center gap-2">
+									{envEntries.length || 0} Secret Keys
+									<span className="px-1.5 py-0.5 rounded-md bg-white/5 text-[10px] text-muted-foreground/60">Configured</span>
 								</span>
-								<span className="text-xs text-muted-foreground/60 italic">
-									Manage secrets, API keys, and settings
+								<span className="text-[10px] text-muted-foreground/40 font-medium">
+									API keys & credentials
 								</span>
 							</div>
 							<Button
 								type="button"
 								variant="outline"
-								size="sm"
-								className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg flex items-center gap-2 group"
+								className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-[10px]"
 								onClick={() => setIsEnvSheetOpen(true)}
 							>
-								<Settings2 className="size-4 group-hover:rotate-12 transition-transform" />
-								Manage Variables
+								<Settings2 className="size-3.5" />
+								Edit
 							</Button>
 						</div>
-
-						<EnvVarSheet
-							open={isEnvSheetOpen}
-							onOpenChange={setIsEnvSheetOpen}
-							entries={envEntries}
-							onEntriesChange={setEnvEntries}
-						/>
 					</div>
+				</div>
 
-					{/* SMART PROJECT SCAN BUTTON */}
-					<div className="py-2">
+				<EnvVarSheet
+					open={isEnvSheetOpen}
+					onOpenChange={setIsEnvSheetOpen}
+					entries={envEntries}
+					onEntriesChange={setEnvEntries}
+				/>
+
+				{/* SMART SCAN PROMPT */}
+				{!hasScanResults && (
+					<div className="p-8 rounded-3xl border border-dashed border-white/10 bg-gradient-to-br from-primary/5 via-transparent to-transparent flex flex-col items-center text-center gap-6">
+						<div className="size-16 rounded-2xl bg-primary/20 flex items-center justify-center">
+							<Sparkles className="size-8 text-primary" />
+						</div>
+						<div className="space-y-2">
+							<h3 className="text-xl font-bold text-foreground">Awaiting Blueprint</h3>
+							<p className="text-sm text-muted-foreground max-w-sm mx-auto">
+								Run a Smart Scan to automatically detect your tech stack, generate optimized Dockerfiles, and audit infrastructure requirements.
+							</p>
+						</div>
 						<Button
 							type="button"
-							onClick={handleAIBtn}
-							className="w-full h-11 text-sm font-bold bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center gap-2 shadow-lg shadow-primary/20 transition-all rounded-lg"
+							onClick={onStartScan}
+							className="h-12 px-10 rounded-2xl font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-2xl shadow-primary/20 flex items-center gap-2 group"
 						>
-							Smart Project Scan
+							<Sparkles className="size-5 group-hover:animate-spin" />
+							Blueprint Application
 						</Button>
 					</div>
+				)}
 
-					{/* BUILD & RUNTIME COMMANDS */}
-					<div className="space-y-6 mt-6 transition-all duration-500 opacity-20 pointer-events-none grayscale">
-						<div className="space-y-3">
-							<div className="flex items-center gap-3">
-								<span className="text-[9px] font-bold text-primary px-1.5 py-0.5 border border-primary/30 rounded bg-primary/5 uppercase tracking-tighter whitespace-nowrap">[ Scan Required ]</span>
-								<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
-									<Terminal className="size-3.5" />
-									Build & Runtime Commands
-								</div>
-							</div>
-						</div>
 
-						<div className="space-y-3">
-							<div className="flex items-center gap-3">
-								<span className="text-[9px] font-bold text-primary px-1.5 py-0.5 border border-primary/30 rounded bg-primary/5 uppercase tracking-tighter whitespace-nowrap">[ Scan Required ]</span>
-								<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em]">
-									<FileCode className="size-3.5" />
-									Infrastructure Files
-								</div>
-							</div>
-							<div className="flex gap-3">
-								{[
-									{ label: 'Dockerfile' },
-									{ label: 'Compose' },
-									{ label: 'Nginx' }
-								].map((file) => (
-									<div
-										key={file.label}
-										className={`flex-1 h-11 rounded-lg border flex items-center justify-center text-[10px] font-extrabold uppercase tracking-[0.2em] transition-all border-white/5 bg-white/[0.02] text-muted-foreground`}
-									>
-										{file.label}
-									</div>
-								))}
-							</div>
-						</div>
-					</div>
-				</form>
-			</Form>
-		</>
+			</div>
+		</Form >
 	)
 }

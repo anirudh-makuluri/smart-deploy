@@ -35,6 +35,8 @@ export default function EnvVarSheet({
 	onEntriesChange,
 }: EnvVarSheetProps) {
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
+	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
+
 
 	const handleAddVariable = () => {
 		onEntriesChange([...entries, { name: "", value: "" }]);
@@ -195,8 +197,10 @@ export default function EnvVarSheet({
 												<Input
 													value={entry.value}
 													onChange={(e) => handleUpdateVariable(index, "value", e.target.value)}
+													onFocus={() => setFocusedIndex(index)}
+													onBlur={() => setFocusedIndex(null)}
 													placeholder="VALUE"
-													type="password"
+													type={focusedIndex === index ? "text" : "password"}
 													className="bg-white/[0.03] border-white/5 h-9 text-xs font-mono focus-visible:ring-primary/20"
 												/>
 												<Button

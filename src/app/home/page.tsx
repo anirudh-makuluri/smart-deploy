@@ -4,29 +4,25 @@ import * as React from "react";
 import DashboardMain from "@/components/DashboardMain";
 import DashboardSideBar from "@/components/DashboardSideBar";
 import Header from "@/components/Header";
-import NewDeploySheet from "@/components/NewDeploySheet";
 import { useAppDataQuery } from "@/hooks/useAppDataQuery";
 import { useAppData } from "@/store/useAppData";
 import type { repoType } from "@/app/types";
+import { useRouter } from "next/navigation";
 
 export default function HomePage() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
-	const { repoList, deployments } = useAppData();
-	const [isDeploySheetOpen, setIsDeploySheetOpen] = React.useState(false);
-	const [selectedRepo, setSelectedRepo] = React.useState<repoType | null>(null);
+	const { repoList, setActiveServiceName } = useAppData();
+	const router = useRouter();
 	const [activeView, setActiveView] = React.useState<"overview" | "deployments">("overview");
 
-	function openDeploySheet(repo?: repoType) {
-		if (!repo && repoList.length === 0) {
-			return;
-		}
-		setSelectedRepo(repo ?? repoList[0] ?? null);
-		setIsDeploySheetOpen(true);
-	}
+	React.useEffect(() => {
+		setActiveServiceName(null);
+	}, [setActiveServiceName]);
 
-	function closeDeploySheet() {
-		setIsDeploySheetOpen(false);
-		setSelectedRepo(null);
+
+	function handleRepoSelect(repo?: repoType) {
+		if (!repo) return;
+		router.push(`/${repo.owner.login}/${repo.name}`);
 	}
 
 	return (
@@ -34,20 +30,13 @@ export default function HomePage() {
 			<Header />
 			<div className="flex flex-1 min-h-0 flex-row w-full overflow-hidden">
 				<DashboardSideBar
-					onOpenDeploySheet={openDeploySheet}
+					onOpenDeploySheet={handleRepoSelect}
 					activeView={activeView}
 					onViewChange={setActiveView}
 				/>
 				<div className="w-px shrink-0 bg-border/60" aria-hidden />
-				<DashboardMain onNewDeploy={() => openDeploySheet()} activeView={activeView} />
+				<DashboardMain activeView={activeView} />
 			</div>
-			{selectedRepo && (
-				<NewDeploySheet
-					open={isDeploySheetOpen}
-					onClose={closeDeploySheet}
-					repo={selectedRepo}
-				/>
-			)}
 		</div>
 	);
 }

@@ -76,23 +76,6 @@ export type DeployConfig = {
 	first_deployment?: string;
 	last_deployment?: string;
 	revision?: number;
-	docker_compose?: string;
-	nginx_conf?: string;
-	dockerfiles?: Record<string, string>;
-	stack_summary?: string;
-	services?: {
-		name: string;
-		build_context: string;
-		port: number;
-		dockerfile_path: string;
-		language?: string;
-		framework?: string;
-	}[];
-	has_existing_dockerfiles?: boolean;
-	has_existing_compose?: boolean;
-	risks?: string[];
-	confidence?: number;
-	hadolint_results?: Record<string, string>;
 	token_usage?: {
 		input_tokens: number;
 		output_tokens: number;
@@ -103,6 +86,7 @@ export type DeployConfig = {
 	awsRegion?: string;
 	ec2?: EC2DeployDetails;
 	cloudRun?: CloudRunDeployDetails;
+	scan_results?: SDArtifactsResponse;
 }
 
 export type DeployStep = {
@@ -153,7 +137,6 @@ export type ServiceCompatibility = {
 	cloud_run?: boolean;
 };
 
-export type AIGenProjectMetadata = SDArtifactsResponse;
 
 /** One deployment attempt: success or failure, with logs for history and "Why did it fail?". */
 export type DeploymentHistoryEntry = {
@@ -179,6 +162,7 @@ export type DeploymentHistoryEntry = {
 };
 
 export type SDArtifactsResponse = {
+	commit_sha?: string;
 	stack_summary: string;
 	services: {
 		name: string;

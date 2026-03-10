@@ -60,7 +60,7 @@ export type EC2Result = {
 function parseEnvVarsAllowCommasInValues(envVarsString: string): { key: string; value: string }[] {
 	const trimmed = envVarsString.trim();
 	if (!trimmed) return [];
-	const segments = trimmed.split(/,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map(s => s.trim()).filter(Boolean);
+	const segments = trimmed.split(/\r?\n|,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map(s => s.trim()).filter(Boolean);
 	return segments
 		.map(segment => {
 			const eqIdx = segment.indexOf("=");
@@ -102,14 +102,15 @@ function generateDockerfileContent(
 	serviceDir: string = "."
 ): string {
 	// Use AI-generated Dockerfile if available in the record
+	const scanResults = deployConfig.scan_results;
 	const dockerfilePath = serviceDir === "." ? "Dockerfile" : `${serviceDir}/Dockerfile`;
-	const aiDockerfile = deployConfig.dockerfiles?.[dockerfilePath] || deployConfig.dockerfiles?.["Dockerfile"];
+	const aiDockerfile = scanResults?.dockerfiles?.[dockerfilePath] || scanResults?.dockerfiles?.["Dockerfile"];
 
 	if (aiDockerfile) {
 		return aiDockerfile;
 	}
 
-	const svc = deployConfig.services?.find(s => normalizePathForMatch(s.dockerfile_path || s.build_context) === normalizePathForMatch(serviceDir)) || deployConfig.services?.[0];
+	const svc = scanResults?.services?.find(s => normalizePathForMatch(s.dockerfile_path || s.build_context) === normalizePathForMatch(serviceDir)) || scanResults?.services?.[0];
 	const language = (svc?.language || "node").toLowerCase();
 	const userWorkdir = svc?.build_context;
 	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
@@ -252,9 +253,10 @@ function buildComposeAndEnv(
 	customDomain?: string,
 ): { composeYml: string; envBase64: string } {
 	let composeYml = "";
+	const scanResults = deployConfig.scan_results;
 
-	if (deployConfig.docker_compose) {
-		composeYml = deployConfig.docker_compose;
+	if (scanResults?.docker_compose) {
+		composeYml = scanResults.docker_compose;
 	} else {
 		const composeServices: Record<string, unknown> = {};
 		const isMonorepo = services.some(s => s.isMonorepo);
@@ -547,7 +549,7 @@ cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 NGINXEOF
 cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
-${deployConfig.nginx_conf || `server {
+${deployConfig.scan_results?.nginx_conf || `server {
     listen 80 default_server;
     server_name _;
     location / {
@@ -645,7 +647,7 @@ async function ensureNetworking(
 	}
 
 	const ports = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
-	if (deployConfig.services?.[0]?.port) ports.add(deployConfig.services[0].port);
+	if (deployConfig.scan_results?.services?.[0]?.port) ports.add(deployConfig.scan_results.services[0].port);
 	for (const svc of services) if (typeof svc.port === "number" && !Number.isNaN(svc.port)) ports.add(svc.port);
 	if (multiServiceConfig.isMultiService) {
 		for (const svc of multiServiceConfig.services) if (typeof svc.port === "number") ports.add(svc.port);
@@ -1107,7 +1109,7 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			language: s.language,
 		}));
 
-		const mainService = deployConfig.services?.[0];
+		const mainService = deployConfig.scan_results?.services?.[0];
 		const requestedWorkdir = normalizePathForMatch(mainService?.build_context);
 		if (requestedWorkdir && requestedWorkdir !== ".") {
 			const byWorkdir = allServices.find((svc) => {
@@ -1131,7 +1133,7 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 
 		return allServices;
 	}
-	return [{ name: repoName, dir: ".", port: deployConfig.services?.[0]?.port || 8080 }];
+	return [{ name: repoName, dir: ".", port: deployConfig.scan_results?.services?.[0]?.port || 8080 }];
 }
 
 // ─── Main entry point ───────────────────────────────────────────────────────
