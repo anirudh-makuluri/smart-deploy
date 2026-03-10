@@ -8,8 +8,6 @@ import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/store/useAppData";
 import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
-import { getActiveDeployment } from "@/custom-hooks/useDeployLogs";
-import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
@@ -76,37 +74,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [repoList, repoUrl, owner, repoName, minimalRepo]);
 
 	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
-
-	const { openLogsModal } = useActiveDeployment();
-	const [activeDeploy, setActiveDeploy] = React.useState<{
-		repoName: string;
-		serviceName: string;
-		userID?: string;
-	} | null>(() => {
-		const a = getActiveDeployment();
-		if (!a) return null;
-		// Only show if this active deployment belongs to this repo
-		if (a.repoName === repoName) return a;
-		return null;
-	});
-
-	React.useEffect(() => {
-		const tick = () => {
-			const a = getActiveDeployment();
-			if (!a) {
-				setActiveDeploy(null);
-				return;
-			}
-			if (a.repoName === repoName) {
-				setActiveDeploy(a);
-			} else {
-				setActiveDeploy(null);
-			}
-		};
-		tick();
-		const id = setInterval(tick, 2000);
-		return () => clearInterval(id);
-	}, [repoName]);
 
 	React.useEffect(() => {
 		if (storeActiveService === null && activeService !== null) {
@@ -253,18 +220,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			<Header />
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
-				{activeDeploy && (
-					<button
-						type="button"
-						onClick={() => openLogsModal(activeDeploy.repoName, activeDeploy.serviceName, activeDeploy.userID)}
-						className="mb-4 flex w-full cursor-pointer items-center gap-2 rounded-xl border border-primary/40 bg-primary/10 py-3 px-4 text-left text-sm font-medium text-foreground transition-colors hover:bg-primary/15"
-					>
-						<Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-						<span>A deployment is in progress for this repo.</span>
-						<span className="text-primary">Click to view logs</span>
-					</button>
-				)}
-
 				{activeService ? (
 					<DeployWorkspace
 						repoName={repoName}

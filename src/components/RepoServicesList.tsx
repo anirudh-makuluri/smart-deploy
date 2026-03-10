@@ -46,7 +46,10 @@ export default function RepoServicesList({
 				</div>
 				{!loading && !error && services.length > 0 && (
 					<div className="flex items-center gap-2">
-						<Button onClick={() => setActiveService({ name: ".", path: ".", language: "unknown" })} className="shrink-0">
+						<Button
+							onClick={() => openWorkspaceForService({ name: ".", path: ".", language: "unknown" })}
+							className="shrink-0"
+						>
 							Deploy all on one instance
 						</Button>
 						{repoDeployments.length > 0 && (

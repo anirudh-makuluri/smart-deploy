@@ -82,12 +82,26 @@ export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 									return (
 										<div
 											key={i}
-											className="grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40"
+											className="group grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40 cursor-pointer"
+											onClick={() => setSelectedLog(log)}
 										>
 											<span className="text-primary">{type}</span>
 											<span className="truncate">{formattedTime}</span>
-											<span className="truncate text-foreground">{message || "-"}</span>
-											{/* <Button type="button" onClick={() => setSelectedLog(log)}>OPEN</Button> */}
+											<span className="flex items-center gap-2 truncate text-foreground">
+												<span className="flex-1 truncate">{message || "-"}</span>
+												<Button
+													type="button"
+													variant="ghost"
+													size="xs"
+													className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2 shrink-0"
+													onClick={(e) => {
+														e.stopPropagation();
+														setSelectedLog(log);
+													}}
+												>
+													Show full log
+												</Button>
+											</span>
 										</div>
 									);
 								})}

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { getActiveDeployment, clearActiveDeployment, getWebSocketUrl } from "@/custom-hooks/useDeployLogs";
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
 import { Button } from "@/components/ui/button";
@@ -26,80 +25,6 @@ const ActiveDeploymentContext = React.createContext<{
 
 export function useActiveDeployment() {
 	return React.useContext(ActiveDeploymentContext);
-}
-
-function ActiveDeploymentNotification() {
-	const { openLogsModal } = useActiveDeployment();
-	const [active, setActive] = React.useState<{
-		repoName: string;
-		serviceName: string;
-		userID?: string;
-	} | null>(() => getActiveDeployment());
-
-	// Poll sessionStorage so we hide the notification once it's cleared (e.g. by useDeployLogs on deploy_complete)
-	React.useEffect(() => {
-		const tick = () => setActive(getActiveDeployment());
-		const id = setInterval(tick, 2000);
-		return () => clearInterval(id);
-	}, []);
-
-	// When notification is visible but user may have refreshed, proactively check deployment status
-	// so we clear sessionStorage when the deploy has finished (server already sent deploy_complete to no one)
-	React.useEffect(() => {
-		if (!active) return;
-		const ws = new WebSocket(getWebSocketUrl());
-		const timeout = window.setTimeout(() => {
-			ws.close();
-		}, 15000);
-		ws.onopen = () => {
-			ws.send(
-				JSON.stringify({
-					type: "get_deploy_logs",
-					payload: { repoName: active.repoName, serviceName: active.serviceName, userID: active.userID },
-				})
-			);
-		};
-		ws.onmessage = (e) => {
-			try {
-				const data = JSON.parse(e.data as string);
-				if (data.type === "deploy_logs_snapshot" && data.payload?.status) {
-					if (data.payload.status === "success" || data.payload.status === "error") {
-						clearActiveDeployment();
-						setActive(null);
-						window.clearTimeout(timeout);
-						ws.close();
-					}
-				}
-			} catch {
-				// ignore
-			}
-		};
-		ws.onerror = () => {
-			window.clearTimeout(timeout);
-			ws.close();
-		};
-		ws.onclose = () => {
-			window.clearTimeout(timeout);
-		};
-		return () => {
-			window.clearTimeout(timeout);
-			ws.close();
-		};
-	}, [active?.repoName, active?.serviceName, active?.userID]);
-
-	if (!active) return null;
-
-	return (
-		<button
-			type="button"
-			onClick={() => openLogsModal(active.repoName, active.serviceName, active.userID)}
-			className="fixed top-0 left-0 right-0 z-100 flex cursor-pointer items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground text-sm font-medium shadow-md hover:bg-primary/90 transition-colors"
-		>
-			<Loader2 className="size-4 animate-spin shrink-0" />
-			<span>Deployment in progress</span>
-			<span className="opacity-85">— Click to view logs</span>
-		</button>
-	);
 }
 
 function DeployLogsModalContent({
@@ -217,7 +142,6 @@ export default function ActiveDeploymentProvider({
 	return (
 		<ActiveDeploymentContext.Provider value={ctx}>
 			{children}
-			<ActiveDeploymentNotification />
 			<DeployLogsModal state={logsModal} onClose={closeLogsModal} />
 		</ActiveDeploymentContext.Provider>
 	);
