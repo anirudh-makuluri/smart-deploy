@@ -20,6 +20,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { AIGenProjectMetadata, DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
 import ScanProgress from "@/components/ScanProgress";
 import PostScanResults from "@/components/PostScanResults";
+import EnvVarSheet from "@/components/EnvVarSheet";
+import { Settings2 } from "lucide-react";
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
@@ -43,6 +45,7 @@ export default function ConfigTabs(
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment.env_vars ?? "")
 	);
+	const [isEnvSheetOpen, setIsEnvSheetOpen] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
 	const [scanMode, setScanMode] = useState<"form" | "scanning" | "results">("form");
@@ -313,81 +316,35 @@ export default function ConfigTabs(
 								<Layers className="size-3.5" />
 								Environment Variables
 							</div>
+						</div>
+
+						<div className="p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-4">
+							<div className="flex flex-col">
+								<span className="text-sm font-semibold text-foreground">
+									{envEntries.length || 0} Variables Configured
+								</span>
+								<span className="text-xs text-muted-foreground/60 italic">
+									Manage secrets, API keys, and settings
+								</span>
+							</div>
 							<Button
 								type="button"
-								variant="ghost"
+								variant="outline"
 								size="sm"
-								className="h-7 text-xs px-2 text-primary hover:text-primary hover:bg-primary/10"
-								onClick={() => setEnvEntries([...envEntries, { name: "", value: "" }])}
+								className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg flex items-center gap-2 group"
+								onClick={() => setIsEnvSheetOpen(true)}
 							>
-								<Plus className="size-3 mr-1" />
-								Add Variable
+								<Settings2 className="size-4 group-hover:rotate-12 transition-transform" />
+								Manage Variables
 							</Button>
 						</div>
 
-						<div className="space-y-3">
-							<div className="bg-[#121019] border border-white/5 rounded-xl overflow-hidden shadow-2xl">
-								{/* Header */}
-								<div className="grid grid-cols-[1fr,1.5fr,auto] gap-px bg-white/5 border-b border-white/5">
-									<div className="px-4 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Key</div>
-									<div className="px-4 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Value</div>
-									<div className="w-[50px]"></div>
-								</div>
-
-								{/* Body */}
-								<div className="divide-y divide-white/5">
-									{envEntries.map((entry, index) => (
-										<div key={index} className="grid grid-cols-[1fr,1.5fr,auto] gap-px bg-transparent transition-colors hover:bg-white/[0.02]">
-											<div className="px-2 py-1.5 flex items-center">
-												<Input
-													value={entry.name}
-													onChange={(e) => {
-														const newEntries = [...envEntries];
-														newEntries[index].name = e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '');
-														setEnvEntries(newEntries);
-													}}
-													placeholder="API_KEY"
-													className="h-8 bg-transparent border-0 focus-visible:ring-1 focus-visible:ring-primary/30 text-xs text-foreground placeholder:text-muted-foreground/30 px-2 font-mono"
-												/>
-											</div>
-											<div className="px-2 py-1.5 flex items-center border-l border-white/5">
-												<Input
-													value={entry.value}
-													onChange={(e) => {
-														const newEntries = [...envEntries];
-														newEntries[index].value = e.target.value;
-														setEnvEntries(newEntries);
-													}}
-													type="password"
-													placeholder="sk_live_..."
-													className="h-8 bg-transparent border-0 focus-visible:ring-1 focus-visible:ring-primary/30 text-xs text-foreground placeholder:text-muted-foreground/30 px-2 font-mono"
-												/>
-											</div>
-											<div className="px-2 py-1.5 flex items-center justify-center border-l border-white/5 w-[50px]">
-												<Button
-													type="button"
-													variant="ghost"
-													size="icon"
-													className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md"
-													onClick={() => {
-														const newEntries = envEntries.filter((_, i) => i !== index);
-														setEnvEntries(newEntries);
-													}}
-												>
-													<Trash2 className="size-3.5" />
-												</Button>
-											</div>
-										</div>
-									))}
-
-									{envEntries.length === 0 && (
-										<div className="px-4 py-8 text-center text-sm text-muted-foreground/60 border-l border-white/5">
-											No environment variables configured.
-										</div>
-									)}
-								</div>
-							</div>
-						</div>
+						<EnvVarSheet
+							open={isEnvSheetOpen}
+							onOpenChange={setIsEnvSheetOpen}
+							entries={envEntries}
+							onEntriesChange={setEnvEntries}
+						/>
 					</div>
 
 					{/* SMART PROJECT SCAN BUTTON */}
