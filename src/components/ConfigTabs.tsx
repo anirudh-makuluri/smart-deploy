@@ -126,7 +126,9 @@ export default function ConfigTabs(
 
 	useEffect(() => {
 		if (!deployment.custom_url) {
-			verifySubdomain(deployment.service_name);
+			const serviceSub = (deployment.service_name && deployment.service_name !== ".") ? `-${deployment.service_name}` : "";
+			const defaultSubdomain = `${deployment.repo_name}${serviceSub}`;
+			verifySubdomain(defaultSubdomain);
 		}
 	}, []);
 
@@ -295,12 +297,10 @@ export default function ConfigTabs(
 									customUrlStatus.type === 'owned' ? 'bg-primary/10 border-primary/20 text-primary' :
 										'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
 									}`}>
-									<div className="flex items-center gap-2">
-										{customUrlStatus.type === 'error' ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
-										<AlertDescription className="text-xs font-medium m-0">
-											{customUrlStatus.message}
-										</AlertDescription>
-									</div>
+									{customUrlStatus.type === 'error' ? <AlertTriangle className="size-4" /> : <CheckCircle2 className="size-4" />}
+									<AlertDescription className="text-xs font-medium break-all">
+										{customUrlStatus.message}
+									</AlertDescription>
 								</Alert>
 							)}
 						</div>
