@@ -21,12 +21,12 @@ import {
 import {
 	ensureSSMInstanceProfile,
 	getInstanceState,
+	buildFirstDeployScript,
 	buildRedeployScript,
 	runRedeployViaSsm,
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
-import { generateMonorepoDockerfile } from "../monorepoDockerfileGenerator";
 
 import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
@@ -94,206 +94,11 @@ function normalizeDomain(input?: string): string {
 	}
 }
 
-/**
- * Generates Dockerfile content based on deployConfig
- */
-function generateDockerfileContent(
-	deployConfig: DeployConfig,
-	serviceDir: string = "."
-): string {
-	// Use AI-generated Dockerfile if available in the record
-	const scanResults = deployConfig.scan_results;
-	const dockerfilePath = serviceDir === "." ? "Dockerfile" : `${serviceDir}/Dockerfile`;
-	const aiDockerfile = scanResults?.dockerfiles?.[dockerfilePath] || scanResults?.dockerfiles?.["Dockerfile"];
-
-	if (aiDockerfile) {
-		return aiDockerfile;
-	}
-
-	const svc = scanResults?.services?.find(s => normalizePathForMatch(s.dockerfile_path || s.build_context) === normalizePathForMatch(serviceDir)) || scanResults?.services?.[0];
-	const language = (svc?.language || "node").toLowerCase();
-	const userWorkdir = svc?.build_context;
-	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
-	const port = svc?.port || 8080;
-	const installCmd: string = ""; // AI scan handles this now
-	const buildCmd: string = "";
-	const runCmd: string = "";
-
-	let dockerfileContent = "";
-
-	switch (language) {
-		case "node":
-		case "javascript":
-		case "typescript":
-			dockerfileContent = `
-FROM node:20-alpine
-WORKDIR /app
-COPY . .
-RUN npm install -g pnpm
-RUN ${installCmd || "npm install"}
-WORKDIR ${workdir}
-${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
-ENV PORT=${port}
-ENV HOSTNAME="0.0.0.0"
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
-			`.trim();
-			break;
-
-		case "python":
-			dockerfileContent = `
-FROM python:3.11-slim
-WORKDIR ${workdir}
-COPY requirements.txt* ./
-RUN ${installCmd || "pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || true"}
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : ""}
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["python", "app.py"])}
-			`.trim();
-			break;
-
-		case "go":
-		case "golang":
-			dockerfileContent = `
-FROM golang:1.21-alpine AS builder
-WORKDIR ${workdir}
-COPY go.* ./
-RUN ${installCmd || "go mod download"}
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : "RUN CGO_ENABLED=0 go build -o main ."}
-
-FROM alpine:latest
-WORKDIR /app
-RUN apk --no-cache add ca-certificates
-COPY --from=builder ${workdir}/main .
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./main"])}
-			`.trim();
-			break;
-
-		case "java":
-			dockerfileContent = `
-FROM openjdk:17-alpine
-WORKDIR ${workdir}
-COPY . .
-RUN ${installCmd || "./mvnw install || mvn install || true"}
-${buildCmd ? `RUN ${buildCmd}` : "RUN ./mvnw package || mvn package || true"}
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["java", "-jar", "target/app.jar"])}
-			`.trim();
-			break;
-
-		case "rust":
-			dockerfileContent = `
-FROM rust:1.70-alpine AS builder
-WORKDIR ${workdir}
-COPY Cargo.* ./
-RUN cargo fetch
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : "RUN cargo build --release"}
-
-FROM alpine:latest
-WORKDIR /app
-RUN apk --no-cache add ca-certificates
-COPY --from=builder ${workdir}/target/release/app .
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./app"])}
-			`.trim();
-			break;
-
-		case "dotnet":
-		case "csharp":
-			dockerfileContent = `
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR ${workdir}
-COPY *.csproj ./
-RUN ${installCmd || "dotnet restore"}
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : "RUN dotnet build -c Release"}
-RUN dotnet publish -c Release -o /app/publish
-
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/publish .
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["dotnet", "*.dll"])}
-			`.trim();
-			break;
-
-		default:
-			// Default to Node.js
-			dockerfileContent = `
-FROM node:20-alpine
-WORKDIR /app
-COPY . .
-RUN npm install -g pnpm
-RUN ${installCmd || "npm install"}
-WORKDIR ${workdir}
-${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
-			`.trim();
-	}
-
-	return dockerfileContent;
-}
-
-function buildComposeAndEnv(
-	deployConfig: DeployConfig,
-	services: ServiceDef[],
+function buildEnvBase64(
 	envVars: string,
 	dbConnectionString?: string,
 	customDomain?: string,
-): { composeYml: string; envBase64: string } {
-	let composeYml = "";
-	const scanResults = deployConfig.scan_results;
-
-	if (scanResults?.docker_compose) {
-		composeYml = scanResults.docker_compose;
-	} else {
-		const composeServices: Record<string, unknown> = {};
-		const isMonorepo = services.some(s => s.isMonorepo);
-
-		for (const svc of services) {
-			const p = svc.port || 8080;
-			const env: string[] = [`PORT=${p}`, "NODE_ENV=production"];
-			if (dbConnectionString) env.push(`DATABASE_URL=${dbConnectionString}`);
-
-			// Add inter-service URLs so services can communicate
-			for (const other of services) {
-				if (other.name !== svc.name) {
-					const envKey = `${other.name.toUpperCase().replace(/-/g, "_")}_URL`;
-					env.push(`${envKey}=http://${other.name}:${other.port || 8080}`);
-				}
-			}
-
-			if (isMonorepo) {
-				// For monorepo: build context is root, Dockerfile is per-service
-				composeServices[svc.name] = {
-					build: { context: ".", dockerfile: `Dockerfile.${svc.name}` },
-					ports: [`${p}:${p}`],
-					environment: env,
-					restart: "unless-stopped",
-				};
-			} else {
-				composeServices[svc.name] = {
-					build: { context: ".", dockerfile: svc.dir === "." ? "Dockerfile" : `${svc.dir}/Dockerfile` },
-					ports: [`${p}:${p}`],
-					environment: env,
-					restart: "unless-stopped",
-				};
-			}
-		}
-		composeYml = JSON.stringify({ version: "3.8", services: composeServices }, null, 2);
-	}
-
+): { envBase64: string } {
 	const envEntries = parseEnvVarsAllowCommasInValues(envVars);
 	const host = normalizeDomain(customDomain);
 	if (host) {
@@ -302,258 +107,98 @@ function buildComposeAndEnv(
 	}
 	if (dbConnectionString) envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
 	const raw = buildEnvFileContent(envEntries);
-	return { composeYml, envBase64: raw ? Buffer.from(raw, "utf8").toString("base64") : "" };
+	return { envBase64: raw ? Buffer.from(raw, "utf8").toString("base64") : "" };
+}
+
+/**
+ * Rewrites nginx config so upstreams work when nginx runs on the host.
+ * Scan results often use Docker Compose service names (e.g. "web:3000", "backend:8080")
+ * which only resolve inside the compose network. Host nginx must use 127.0.0.1:port
+ * to reach published container ports. Replaces hostname:port with 127.0.0.1:port.
+ */
+function rewriteNginxConfForHost(nginxConf: string): string {
+	return nginxConf.replace(/\b([a-zA-Z][a-zA-Z0-9_-]*):(\d+)\b/g, "127.0.0.1:$2");
 }
 
 function generateUserDataScript(
-	deployConfig: DeployConfig,
 	repoUrl: string,
 	branch: string,
 	token: string,
-	services: ServiceDef[],
-	envVars: string,
-	dbConnectionString?: string,
+	envBase64: string,
+	mainPort: string,
+	wsPort: string,
+	nginxConf: string,
 	commitSha?: string,
-	customDomain?: string,
 ): string {
 	const authUrl = repoUrl.replace("https://", `https://${token}@`);
-	const { composeYml, envBase64 } = buildComposeAndEnv(deployConfig, services, envVars, dbConnectionString, customDomain);
-	let mainPort = "";
-	let wsPort = "";
-	const ports: string[] = [];
-	const serviceDirs = services.map(s => s.dir === "." ? "." : `./${s.dir}`).join(" ");
-
-	// Generate Dockerfile content for each service
-	const dockerfileContents: Record<string, string> = {};
-	const isMonorepo = services.some(s => s.isMonorepo);
-
-	for (const svc of services) {
-		if (isMonorepo && svc.relativePath) {
-			// For monorepo services, generate a monorepo-aware Dockerfile
-			// that builds from the repo root with access to shared packages
-			const multiConfig: import("../multiServiceDetector").MultiServiceConfig = {
-				isMultiService: true,
-				services: services.map(s => ({
-					name: s.name,
-					workdir: s.relativePath || s.dir,
-					language: s.language,
-					port: s.port,
-					framework: s.framework,
-					relativePath: s.relativePath,
-				})),
-				hasDockerCompose: false,
-				isMonorepo: true,
-				packageManager: "pnpm", // default, will be detected at runtime
-			};
-			const serviceDef: import("../multiServiceDetector").ServiceDefinition = {
-				name: svc.name,
-				workdir: svc.relativePath || svc.dir,
-				language: svc.language,
-				port: svc.port,
-				framework: svc.framework,
-				relativePath: svc.relativePath,
-			};
-			dockerfileContents[svc.dir] = generateMonorepoDockerfile(serviceDef, multiConfig, ".");
-		} else {
-			dockerfileContents[svc.dir] = generateDockerfileContent(deployConfig, svc.dir);
-		}
-	}
-
-	for (const svc of services) {
-		const p = svc.port || 8080;
-		ports.push(String(p));
-		if (svc.name.toLowerCase().includes("websocket")) wsPort = String(p);
-		else if (!mainPort) mainPort = String(p);
-	}
+	const nginxConfForHost = nginxConf ? rewriteNginxConfForHost(nginxConf) : "";
 
 	return `#!/bin/bash
-# Use set -e but trap errors to ensure we always output completion signal
 set -e
 trap 'EXIT_CODE=$?; echo "Script error at line $LINENO, exit code $EXIT_CODE"; exit $EXIT_CODE' ERR
 
-# Clean up cloud-init logs and temp files immediately to free space
-# (cloud-init may have failed due to disk space, leaving temp files behind)
 rm -rf /var/lib/cloud/data/tmp_* 2>/dev/null || true
 rm -rf /var/lib/cloud/instances/*/sem/* 2>/dev/null || true
-find /tmp -type f -mtime +0 -delete 2>/dev/null || true
 
-# Log disk space at start
 echo "=== Initial disk space ==="
 df -h /
-echo "=========================="
 
-# Install essential packages first (skip full update to save space)
-yum install -y docker git
-
-# Install and enable SSM agent so instance registers with Systems Manager (for redeploy via SSM)
+yum install -y docker git nginx
 dnf install -y amazon-ssm-agent 2>/dev/null || yum install -y amazon-ssm-agent 2>/dev/null || true
 systemctl enable --now amazon-ssm-agent 2>/dev/null || true
 
-# Clean up yum cache immediately to free space
 yum clean all
 rm -rf /var/cache/yum/*
 
-# Check disk space before creating swap
 AVAILABLE=$(df / | tail -1 | awk '{print $4}')
 AVAILABLE_MB=$((AVAILABLE / 1024))
-echo "Available disk space: $AVAILABLE_MB MB"
-
-# Create swap file only if we have enough space (use 1GB instead of 2GB to be safer)
 if [ $AVAILABLE_MB -gt 1200 ]; then
-    echo "Creating 1GB swap file..."
     dd if=/dev/zero of=/swapfile bs=1M count=1024
     chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
-else
-    echo "Warning: Insufficient space for swap file (need ~1200MB, have $AVAILABLE_MB MB)"
 fi
 
-# Start Docker and configure
 systemctl start docker && systemctl enable docker
-
-# Configure Docker to clean up unused resources automatically
 cat > /etc/docker/daemon.json << 'DOCKEREOF'
-{
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  }
-}
+{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}
 DOCKEREOF
 systemctl restart docker
 
-# Install docker-compose
-curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose
-
-# Install docker buildx
+curl -sL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose
 mkdir -p /usr/libexec/docker/cli-plugins /root/.docker/cli-plugins
 curl -sSL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-amd64" -o /usr/libexec/docker/cli-plugins/docker-buildx
 chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
 cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx
 
-# Clean up any existing Docker images/containers to free space
-docker system prune -af --volumes 2>/dev/null || true
-
-echo "=== Disk space before clone ==="
-df -h /
-echo "==============================="
-
-# Clone repository
 cd /home/ec2-user
 git clone -b ${branch} ${authUrl} app
 cd app
 ${commitSha ? `git checkout ${commitSha}` : ""}
-
-# We removed the cd into workdir step here. 
-# Docker context will now be executed from the root of the repository
-# even for single services.
-
-# Clean up git history to save space (keep only current commit)
 git gc --aggressive --prune=now || true
 
 ${envBase64 ? `echo '${envBase64}' | base64 -d > .env` : "touch .env"}
 
-# Check if repo has its own docker-compose.yml
-if [ -f docker-compose.yml ]; then
-    echo "Using existing docker-compose.yml from repository"
-    # Validate docker-compose.yml syntax
-    if ! docker-compose config > /dev/null 2>&1; then
-        echo "ERROR: Invalid docker-compose.yml syntax"
-        docker-compose config
-        exit 1
-    fi
-    echo "docker-compose.yml syntax is valid"
+systemctl start nginx && systemctl enable nginx
+
+if [ -n "${nginxConfForHost ? "yes" : ""}" ]; then
+    echo "Using nginx_conf from scan_results (rewritten for host upstreams)"
+    cat > /etc/nginx/nginx.conf << 'NGINXEOF'
+${nginxConfForHost}
+NGINXEOF
 else
-    echo "No docker-compose.yml found. Creating Dockerfiles and docker-compose.yml..."
-    
-    # Create Dockerfiles if they don't exist
-    echo "Creating Dockerfiles..."
-    ${services.map(svc => {
-		const dir = svc.dir === "." ? "." : svc.dir;
-		const isMonoSvc = isMonorepo && svc.relativePath;
-		// For monorepo: Dockerfile at root as Dockerfile.<name>; otherwise in svc dir
-		const dockerfilePath = isMonoSvc ? `Dockerfile.${svc.name}` : (dir === "." ? "Dockerfile" : `${dir}/Dockerfile`);
-		const dockerfileContent = dockerfileContents[svc.dir];
-		// Escape for bash heredoc - need to escape $ and backticks
-		const escapedContent = dockerfileContent
-			.replace(/\\/g, '\\\\')
-			.replace(/\$/g, '\\$')
-			.replace(/`/g, '\\`');
-		return `
-if [ ! -f ${dockerfilePath} ]; then
-    echo "Creating Dockerfile at ${dockerfilePath}..."
-    ${!isMonoSvc && dir !== "." ? `mkdir -p ${dir}` : "# Dockerfile at repo root for monorepo service"}
-    cat > ${dockerfilePath} << 'DOCKERFILEEOF'
-${escapedContent}
-DOCKERFILEEOF
-    echo "Dockerfile created at ${dockerfilePath}"
-else
-    echo "Dockerfile already exists at ${dockerfilePath}, skipping creation"
-fi
-`;
-	}).join("\n")}
-    
-    # Create docker-compose.yml
-    echo "Creating docker-compose.yml..."
-    cat > docker-compose.yml << 'COMPOSEEOF'
-${composeYml}
-COMPOSEEOF
-    echo "docker-compose.yml created"
-fi
-
-echo "=== Disk space before build ==="
-df -h /
-echo "==============================="
-
-# Build and start containers (critical step - if this fails, deployment failed)
-echo "Building and starting containers..."
-if ! docker-compose up -d --build 2>&1 | tee /tmp/docker-build.log; then
-    echo "ERROR: docker-compose up failed"
-    echo "=== Docker-compose configuration ==="
-    docker-compose config || true
-    echo "=== Build log ==="
-    cat /tmp/docker-build.log || true
-    echo "=== Available Dockerfiles ==="
-    find . -name "Dockerfile" -type f || echo "No Dockerfiles found"
-    echo "=== Directory structure ==="
-    ls -la
-    echo "=== Service directories ==="
-    ls -la */ 2>/dev/null || echo "No subdirectories found"
-    exit 1
-fi
-
-# Clean up Docker build cache and unused images after build
-docker system prune -af --volumes 2>/dev/null || true
-
-echo "=== Disk space after build ==="
-df -h /
-echo "=============================="
-
-# Install and configure nginx
-yum install -y nginx && systemctl start nginx && systemctl enable nginx
-
-# Clean up yum cache again after nginx install
-yum clean all
-
-sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
-cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
+    echo "Using default nginx reverse proxy config"
+    sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
+    sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+    sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+    cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
 map $http_upgrade $connection_upgrade { default upgrade; '' close; }
 NGINXEOF
-sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
-sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
-cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
-map $http_upgrade $connection_upgrade { default upgrade; '' close; }
-NGINXEOF
-cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
-${deployConfig.scan_results?.nginx_conf || `server {
+    cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
+server {
     listen 80 default_server;
     server_name _;
     location / {
-        proxy_pass http://127.0.0.1:${mainPort || 8080};
+        proxy_pass http://127.0.0.1:${mainPort || "8080"};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -570,35 +215,14 @@ ${wsPort ? `    location /ws {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 86400;
     }` : ""}
-}`}
+}
 NGINXEOF
-rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true
-
-# Test and reload nginx (critical step)
-if ! nginx -t; then
-    echo "ERROR: nginx configuration test failed"
-    cat /etc/nginx/conf.d/app.conf || true
-    exit 1
+    rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true
 fi
 
-if ! systemctl reload nginx; then
-    echo "ERROR: nginx reload failed"
-    systemctl status nginx || true
-    exit 1
-fi
+nginx -t && systemctl reload nginx
 
-echo "=== Final disk space ==="
-df -h /
-echo "========================"
-
-# Verify containers are running
-if docker-compose ps | grep -q "Up"; then
-    echo "====================================== Deployment complete! ======================================"
-else
-    echo "WARNING: Some containers may not be running"
-    docker-compose ps || true
-    echo "====================================== Deployment complete! ======================================"
-fi
+echo "====================================== Deployment complete! ======================================"
 `;
 }
 
@@ -646,7 +270,7 @@ async function ensureNetworking(
 		securityGroupId = await ensureSecurityGroup(`${repoName}-ec2-sg`, vpcId, `Security group for ${repoName} EC2 instance`, ws);
 	}
 
-	const ports = new Set<number>([22, 80, 443, 8080, 3000, 5000]);
+	const ports = new Set<number>([22, 80, 443]);
 	if (deployConfig.scan_results?.services?.[0]?.port) ports.add(deployConfig.scan_results.services[0].port);
 	for (const svc of services) if (typeof svc.port === "number" && !Number.isNaN(svc.port)) ports.add(svc.port);
 	if (multiServiceConfig.isMultiService) {
@@ -670,16 +294,17 @@ async function redeployInstance(params: {
 	services: ServiceDef[];
 	repoName: string;
 	token: string;
-	composeYml: string;
 	envBase64: string;
+	mainPort: string;
 	net: NetworkingResult;
 	amiId: string;
 	certificateArn: string;
 	ws: any;
 	send: SendFn;
 }): Promise<EC2Result> {
-	const { deployConfig, existingInstanceId, region, services, repoName, token, composeYml, envBase64, net, amiId, certificateArn, ws, send } = params;
+	const { deployConfig, existingInstanceId, region, services, repoName, token, envBase64, mainPort, net, amiId, certificateArn, ws, send } = params;
 
+	const scanResults = deployConfig.scan_results;
 	send("Reusing existing instance (SSM redeploy)...", "deploy");
 	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
 	const script = buildRedeployScript({
@@ -688,9 +313,9 @@ async function redeployInstance(params: {
 		token,
 		commitSha: deployConfig.commitSha,
 		envFileContentBase64: envBase64,
-		dockerComposeYml: composeYml,
-		deployConfig,
-		services: services.map(s => ({ dir: s.dir, port: s.port })),
+		dockerCompose: scanResults?.docker_compose || "",
+		dockerfiles: scanResults?.dockerfiles || {},
+		mainPort,
 	});
 	let ssmResult: { success: boolean };
 	try {
@@ -732,7 +357,10 @@ async function redeployInstance(params: {
 	return { success: true, baseUrl, serviceUrls, instanceId: existingInstanceId, publicIp, ...net, subnetId: net.subnetIds[0], amiId };
 }
 
-/** Launches a brand-new EC2 instance, waits for user-data to finish, and detects a healthy port. */
+/** Launches a brand-new EC2 instance, waits for user-data (OS prep) to finish,
+ *  then deploys containers via SSM and detects a healthy port.
+ *  On failure (SSM deploy or port detection), returns success: false but still
+ *  includes instanceId/publicIp so the caller can persist them for reuse on next deploy. */
 async function launchNewInstance(params: {
 	deployConfig: DeployConfig;
 	instanceName: string;
@@ -740,32 +368,33 @@ async function launchNewInstance(params: {
 	services: ServiceDef[];
 	token: string;
 	dbConnectionString: string | undefined;
+	envBase64: string;
+	mainPort: string;
+	wsPort: string;
 	net: NetworkingResult;
 	amiId: string;
 	ws: any;
 	send: SendFn;
-}): Promise<{ instanceId: string; publicIp: string; detectedPort: number }> {
-	const { deployConfig, instanceName, region, services, token, dbConnectionString, net, amiId, ws, send } = params;
+}): Promise<{ instanceId: string; publicIp: string; detectedPort: number | null; success: boolean }> {
+	const { deployConfig, instanceName, region, services, token, envBase64, mainPort, wsPort, net, amiId, ws, send } = params;
 	const keyName = "smartdeploy";
 
 	await ensureSSMInstanceProfile(region, ws);
 	await ensureKeyPair(keyName, region, ws);
 
 	const userData = generateUserDataScript(
-		deployConfig,
 		deployConfig.url,
 		deployConfig.branch || "main",
 		token,
-		services,
-		deployConfig.env_vars || "",
-		dbConnectionString,
+		envBase64,
+		mainPort,
+		wsPort,
+		deployConfig.scan_results?.nginx_conf || "",
 		deployConfig.commitSha,
-		undefined,
 	);
-	const b64 = Buffer.from(userData).toString("base64");
-	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.b64`);
-	fs.writeFileSync(tmpFile, b64, "utf8");
-	const fileUri = "fileb://" + path.resolve(tmpFile).replace(/\\/g, "/");
+	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.sh`);
+	fs.writeFileSync(tmpFile, userData, "utf8");
+	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
 
 	let instanceId: string;
 	try {
@@ -801,15 +430,34 @@ async function launchNewInstance(params: {
 	send(`Instance public IP: ${publicIp}`, "deploy");
 
 	await waitForUserData(instanceId, region, ws, send);
+
+	// Now deploy containers via SSM (Dockerfiles, compose, build/run)
+	send("Waiting for SSM agent to be ready...", "deploy");
+	await ensureInstanceSsmReady(instanceId, region, ws, send);
+
+	const scanResults = deployConfig.scan_results;
+	const firstDeployScript = buildFirstDeployScript({
+		envFileContentBase64: envBase64,
+		dockerCompose: scanResults?.docker_compose || "",
+		dockerfiles: scanResults?.dockerfiles || {},
+		mainPort,
+	});
+
+	send("Deploying containers via SSM...", "deploy");
+	const ssmResult = await runRedeployViaSsm({ instanceId, region, script: firstDeployScript, send });
+	if (!ssmResult.success) {
+		send("Container deployment failed via SSM. Instance will be reused on next deploy.", "deploy");
+		return { instanceId, publicIp, detectedPort: null, success: false };
+	}
+
 	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
 
 	if (!detectedPort) {
-		send("❌ Instance failed to respond on any known ports.", "deploy");
-		// try { await terminateInstance(instanceId, region, ws); } catch { /* ignore */ }
-		throw new Error("Instance failed to respond on any known ports");
+		send("Instance failed to respond on any known ports. Instance will be reused on next deploy.", "deploy");
+		return { instanceId, publicIp, detectedPort: null, success: false };
 	}
 
-	return { instanceId, publicIp, detectedPort };
+	return { instanceId, publicIp, detectedPort, success: true };
 }
 
 /** Configures the shared ALB for a new instance (target group, listener rules, host routing). */
@@ -1050,7 +698,7 @@ async function detectRespondingPort(publicIp: string, services: ServiceDef[], ws
 	try {
 		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
-		const candidates = Array.from(new Set([80, 8080, 3000, 5000, ...services.map(s => s.port).filter(Boolean)]));
+		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
 		send("Waiting for application to be ready (this may take a minute)...", "deploy");
 		for (let attempt = 1; attempt <= 12; attempt++) {
 			for (const port of candidates) {
@@ -1156,7 +804,16 @@ export async function handleEC2(
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
 	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
-	const { composeYml, envBase64 } = buildComposeAndEnv(deployConfig, services, deployConfig.env_vars || "", dbConnectionString, undefined);
+	const { envBase64 } = buildEnvBase64(deployConfig.env_vars || "", dbConnectionString, undefined);
+
+	let mainPort = "";
+	let wsPort = "";
+	for (const svc of services) {
+		const p = svc.port || 8080;
+		if (svc.name.toLowerCase().includes("websocket")) wsPort = String(p);
+		else if (!mainPort) mainPort = String(p);
+	}
+	if (!mainPort) mainPort = "8080";
 
 	// ── Redeploy path: reuse existing running instance via SSM ──
 	if (existingInstanceId) {
@@ -1164,17 +821,34 @@ export async function handleEC2(
 		if (state === "running") {
 			return redeployInstance({
 				deployConfig, existingInstanceId, region, services, repoName, token,
-				composeYml, envBase64, net, amiId, certificateArn, ws, send,
+				envBase64, mainPort, net, amiId, certificateArn, ws, send,
 			});
 		}
 	}
 
 	// ── Fresh deploy path: launch new instance ──
 	const instanceName = generateResourceName(repoName, "ec2");
-	const { instanceId, publicIp, detectedPort } = await launchNewInstance({
-		deployConfig, instanceName, region, services, token, dbConnectionString,
-		net, amiId, ws, send,
+	const launchResult = await launchNewInstance({
+		deployConfig, instanceName, region, services, token, dbConnectionString: undefined,
+		envBase64, mainPort, wsPort, net, amiId, ws, send,
 	});
+
+	const { instanceId, publicIp, detectedPort, success: launchSuccess } = launchResult;
+
+	// If instance was launched but deploy failed (SSM or port), return failure with instance details so they get persisted for reuse
+	if (!launchSuccess || detectedPort == null) {
+		return {
+			success: false,
+			baseUrl: "",
+			serviceUrls: new Map(),
+			instanceId,
+			publicIp,
+			vpcId: net.vpcId,
+			subnetId: net.subnetIds[0],
+			securityGroupId: net.securityGroupId,
+			amiId,
+		};
+	}
 
 	const customHost = normalizeDomain(deployConfig.custom_url);
 	const scheme = certificateArn ? "https" : "http";

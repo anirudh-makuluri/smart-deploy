@@ -161,93 +161,102 @@ export async function getInstanceState(
 }
 
 /**
- * Generates Dockerfile content based on deployConfig (shared with handleEC2.ts logic)
+ * Generates bash commands to write Dockerfiles from scan_results.dockerfiles
+ * into the cloned repo (only if the file doesn't already exist).
  */
-function generateDockerfileContentForRedeploy(
-	deployConfig: any,
-	serviceDir: string = "."
-): string {
-	const dockerfilePath = serviceDir === "." ? "Dockerfile" : `${serviceDir}/Dockerfile`;
-	const aiDockerfile = deployConfig.dockerfiles?.[dockerfilePath] || deployConfig.dockerfiles?.["Dockerfile"];
-
-	if (aiDockerfile) {
-		return aiDockerfile;
-	}
-
-	const svc = deployConfig.services?.find((s: any) => s.build_context === serviceDir) || deployConfig.services?.[0];
-	const language = (svc?.language || "node").toLowerCase();
-	const userWorkdir = svc?.build_context;
-	const workdir = userWorkdir && userWorkdir !== "." ? `/app/${userWorkdir}`.replace(/\/\//g, "/") : (serviceDir === "." ? "/app" : `/app/${serviceDir}`);
-	const port = svc?.port || 8080;
-	const installCmd: string = "";
-	const buildCmd: string = "";
-	const runCmd: string = "";
-
-	switch (language) {
-		case "node":
-		case "javascript":
-		case "typescript":
+function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
+	return Object.entries(dockerfiles)
+		.map(([filePath, content]) => {
+			const safePath = filePath.replace(/^\.\//, "");
 			return `
-FROM node:20-alpine
-WORKDIR /app
-COPY . .
-RUN npm install -g pnpm
-RUN ${installCmd || "npm install"}
-WORKDIR ${workdir}
-${buildCmd ? `RUN ${buildCmd}` : "RUN npm run build --if-present || true"}
-ENV PORT=${port}
-ENV HOSTNAME="0.0.0.0"
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["npm", "start"])}
-			`.trim();
-		case "python":
-			return `
-FROM python:3.11-slim
-WORKDIR ${workdir}
-COPY requirements.txt* ./
-RUN ${installCmd || "pip install --no-cache-dir -r requirements.txt || pip install --no-cache-dir -r requirements.txt || true"}
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : ""}
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["python", "app.py"])}
-			`.trim();
-		case "go":
-		case "golang":
-			return `
-FROM golang:1.21-alpine AS builder
-WORKDIR ${workdir}
-COPY go.* ./
-RUN ${installCmd || "go mod download"}
-COPY . .
-${buildCmd ? `RUN ${buildCmd}` : "RUN CGO_ENABLED=0 go build -o main ."}
-
-FROM alpine:latest
-WORKDIR /app
-RUN apk --no-cache add ca-certificates
-COPY --from=builder ${workdir}/main .
-ENV PORT=${port}
-EXPOSE ${port}
-CMD ${JSON.stringify(runCmd ? runCmd.split(" ") : ["./main"])}
-			`.trim();
-		default:
-			return `
-FROM node:20-alpine
-WORKDIR /app
-COPY . .
-RUN npm install -g pnpm
-RUN npm install
-WORKDIR ${workdir}
-ENV PORT=${port}
-ENV HOSTNAME="0.0.0.0"
-EXPOSE ${port}
-CMD ["npm", "start"]
-			`.trim();
-	}
+if [ ! -f "${safePath}" ]; then
+    echo "Writing Dockerfile from scan_results to ${safePath}..."
+    mkdir -p "$(dirname "${safePath}")"
+    cat > "${safePath}" << 'DOCKERFILEEOF'
+${content}
+DOCKERFILEEOF
+fi`;
+		})
+		.join("\n");
 }
 
 /**
- * Builds the bash script run on the instance for redeploy (git pull + docker-compose up).
+ * Generates bash commands to write docker-compose.yml from scan_results.docker_compose
+ * (only if the repo doesn't already have one).
+ */
+function buildComposeWriteScript(dockerCompose: string): string {
+	if (!dockerCompose) return "";
+	return `
+if [ ! -f docker-compose.yml ] && [ ! -f docker-compose.yaml ] && [ ! -f compose.yml ] && [ ! -f compose.yaml ]; then
+    echo "Writing docker-compose.yml from scan_results..."
+    cat > docker-compose.yml << 'COMPOSEEOF'
+${dockerCompose}
+COMPOSEEOF
+fi`;
+}
+
+/**
+ * Generates bash commands to build and run Docker containers.
+ * Uses docker-compose if a compose file exists; otherwise falls back to
+ * single-service docker build + docker run.
+ */
+function buildDockerRunScript(mainPort: string): string {
+	return `
+if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] || [ -f compose.yml ] || [ -f compose.yaml ]; then
+    echo "Building and starting containers with docker-compose..."
+    docker-compose up -d --build
+else
+    echo "No docker-compose found. Building single-service Docker image..."
+    if [ ! -f Dockerfile ]; then
+        echo "ERROR: No Dockerfile found in repository root."
+        exit 1
+    fi
+    docker build -t smartdeploy-app .
+    docker rm -f smartdeploy-app 2>/dev/null || true
+    docker run -d --name smartdeploy-app --env-file .env -p ${mainPort || "8080"}:${mainPort || "8080"} --restart unless-stopped smartdeploy-app
+fi
+
+docker system prune -af --volumes 2>/dev/null || true
+`;
+}
+
+/**
+ * Builds the bash script for the FIRST deploy of containers via SSM.
+ * Called after user-data has finished (packages installed, repo cloned, SSM ready).
+ * Writes Dockerfiles + docker-compose.yml from scan_results if missing, then builds/runs.
+ */
+export function buildFirstDeployScript(params: {
+	envFileContentBase64: string;
+	dockerCompose: string;
+	dockerfiles: Record<string, string>;
+	mainPort: string;
+}): string {
+	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort } = params;
+
+	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
+	const composeScript = buildComposeWriteScript(dockerCompose);
+	const runScript = buildDockerRunScript(mainPort);
+
+	return `set -e
+echo "=== SSM first deploy: writing artifacts and building ==="
+
+cd /home/ec2-user/app
+
+${envFileContentBase64 ? `echo '${envFileContentBase64}' | base64 -d > .env` : ""}
+
+${dockerfileScript}
+
+${composeScript}
+
+${runScript}
+
+echo "====================================== Deployment script complete! ======================================"
+`;
+}
+
+/**
+ * Builds the bash script run on the instance for redeploy (git pull + rebuild).
+ * Uses scan_results to write Dockerfiles and docker-compose.yml if missing.
  */
 export function buildRedeployScript(params: {
 	repoUrl: string;
@@ -255,9 +264,9 @@ export function buildRedeployScript(params: {
 	token: string;
 	commitSha?: string;
 	envFileContentBase64: string;
-	dockerComposeYml: string;
-	deployConfig?: any;
-	services?: Array<{ dir: string; port: number }>;
+	dockerCompose: string;
+	dockerfiles: Record<string, string>;
+	mainPort: string;
 }): string {
 	const {
 		repoUrl,
@@ -265,80 +274,41 @@ export function buildRedeployScript(params: {
 		token,
 		commitSha,
 		envFileContentBase64,
-		dockerComposeYml,
-		deployConfig,
-		services = [],
+		dockerCompose,
+		dockerfiles,
+		mainPort,
 	} = params;
 	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
-	const composeEscaped = dockerComposeYml.replace(/'/g, "'\\''");
 
-	// Generate Dockerfile creation commands if deployConfig is provided
-	let dockerfileCreationScript = "";
-	if (deployConfig) {
-		for (const svc of services) {
-			const dir = svc.dir === "." ? "." : svc.dir;
-			const dockerfilePath = dir === "." ? "Dockerfile" : `${dir}/Dockerfile`;
-			const dockerfileContent = generateDockerfileContentForRedeploy(deployConfig, svc.dir);
-			const escapedContent = dockerfileContent.replace(/\$/g, '\\$').replace(/`/g, '\\`');
-			dockerfileCreationScript += `
-if [ ! -f ${dockerfilePath} ]; then
-    echo "Creating Dockerfile at ${dockerfilePath}..."
-    mkdir -p ${dir === "." ? "." : dir}
-    cat > ${dockerfilePath} << 'DOCKERFILEEOF'
-${escapedContent}
-DOCKERFILEEOF
-    echo "Dockerfile created at ${dockerfilePath}"
-fi
-`;
-		}
-	}
+	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
+	const composeScript = buildComposeWriteScript(dockerCompose);
+	const runScript = buildDockerRunScript(mainPort);
 
 	return `set -e
 echo "=== Disk space before redeploy ==="
 df -h /
-echo "=================================="
 
 cd /home/ec2-user/app
 
-# Clean up Docker resources before redeploy to free space
-docker-compose down 2>/dev/null || true
+docker-compose down 2>/dev/null || docker rm -f smartdeploy-app 2>/dev/null || true
 docker system prune -af --volumes 2>/dev/null || true
-
-# Clean up git to free space
 git gc --aggressive --prune=now 2>/dev/null || true
-
-echo "=== Disk space after cleanup ==="
-df -h /
-echo "================================"
 
 git remote set-url origin '${authenticatedUrl}'
 git fetch origin
 git checkout ${branch}
 git reset --hard origin/${branch}
 ${commitSha ? `git checkout ${commitSha}` : ""}
-
-# Clean up git again after fetch
 git gc --aggressive --prune=now 2>/dev/null || true
 
-echo '${envFileContentBase64}' | base64 -d > .env
-cat > docker-compose.yml << 'COMPOSEEOF'
-${composeEscaped}
-COMPOSEEOF
+${envFileContentBase64 ? `echo '${envFileContentBase64}' | base64 -d > .env` : ""}
 
-${dockerfileCreationScript}
+${dockerfileScript}
 
-echo "=== Disk space before build ==="
-df -h /
-echo "==============================="
+${composeScript}
 
-docker-compose up -d --build
+${runScript}
 
-# Clean up Docker build cache after build
-docker system prune -af --volumes 2>/dev/null || true
-
-echo "=== Disk space after build ==="
-df -h /
-echo "=============================="
 echo "====================================== Redeploy complete! ======================================"
 `;
 }

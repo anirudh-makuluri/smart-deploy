@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Loader2, HelpCircle, CheckCircle2, XCircle, Clock, GitCommit, User, Calendar } from "lucide-react";
+import { Loader2, HelpCircle, CheckCircle2, XCircle, Clock, GitCommit, User, Calendar, RefreshCw } from "lucide-react";
 import { DeployStep } from "@/app/types";
 
 export type DeployStatus = "not-started" | "running" | "success" | "error";
@@ -22,6 +22,9 @@ type DeployLogsViewProps = {
 	deployingCommitInfo?: CommitInfo | null;
 	steps?: DeployStep[];
 	configSnapshot?: any;
+	repoUrl?: string;
+	commitSha?: string;
+	onStartImproveScan?: (payload: { repoUrl: string; commitSha?: string; feedback: string }) => void;
 };
 
 export default function DeployLogsView({
@@ -33,6 +36,9 @@ export default function DeployLogsView({
 	deployingCommitInfo,
 	steps,
 	configSnapshot,
+	repoUrl,
+	commitSha,
+	onStartImproveScan,
 }: DeployLogsViewProps) {
 	const logsContainerRef = useRef<HTMLDivElement>(null);
 	const [analyzing, setAnalyzing] = React.useState(false);
@@ -60,6 +66,11 @@ export default function DeployLogsView({
 			setAnalyzing(false);
 		}
 	};
+
+	function handleImproveScanResults() {
+		if (!analysisResult || !repoUrl || !onStartImproveScan) return;
+		onStartImproveScan({ repoUrl, commitSha, feedback: analysisResult });
+	}
 
 	// Auto-scroll to bottom when new logs arrive
 	useEffect(() => {
@@ -183,11 +194,26 @@ export default function DeployLogsView({
 								)}
 							</Button>
 							{analysisResult && (
-								<Alert className="mt-3 border-destructive/30 bg-background/50 text-foreground text-left transition-all">
-									<AlertDescription className="text-sm pb-0 whitespace-pre-wrap leading-relaxed">
-										{analysisResult}
-									</AlertDescription>
-								</Alert>
+								<>
+									<Alert className="mt-3 border-destructive/30 bg-background/50 text-foreground text-left transition-all">
+										<AlertDescription className="text-sm pb-0 whitespace-pre-wrap leading-relaxed">
+											{analysisResult}
+										</AlertDescription>
+									</Alert>
+									{repoUrl && onStartImproveScan && (
+										<div className="mt-3 flex justify-end">
+											<Button
+												variant="outline"
+												size="sm"
+												className="border-primary/30 bg-background/50 text-foreground hover:bg-primary/20 font-semibold"
+												onClick={handleImproveScanResults}
+											>
+												<RefreshCw className="size-4 mr-2" />
+												Improve Scan Results
+											</Button>
+										</div>
+									)}
+								</>
 							)}
 						</div>
 					)}

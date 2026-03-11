@@ -408,9 +408,9 @@ async function handleAWSDeploy(
 		send(`⚠️ Warning: Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}. Proceeding with instance IP.`, 'done');
 	}
 
-	// Mark final step as success
+	// Mark final step by outcome
 	const doneStep = deploySteps.find(s => s.id === 'done');
-	if (doneStep) doneStep.status = 'success';
+	if (doneStep) doneStep.status = success ? 'success' : 'error';
 
 	// Calculate deployment duration
 	const durationMs = Date.now() - deployStartTime;

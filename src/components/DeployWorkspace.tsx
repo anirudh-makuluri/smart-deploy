@@ -16,6 +16,7 @@ import { useAppData } from "@/store/useAppData";
 import { isEqual } from "lodash";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
 import ScanProgress from "@/components/ScanProgress";
+import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
 import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -54,6 +55,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 	const [scanStartTime, setScanStartTime] = React.useState<number>(0);
 	const [scanDuration, setScanDuration] = React.useState<number>(0);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
+	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 
 	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
 	const repoNameForLogs = deployment?.repo_name ?? repoName;
@@ -305,9 +307,34 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 		setActiveSection("scan");
 	}
 
+	function onStartImproveScan(payload: FeedbackProgressPayload) {
+		setImproveScanPayload(payload);
+		setActiveSection("scan");
+	}
+
 	function renderActiveSection() {
 		switch (activeSection) {
 			case "scan":
+				if (improveScanPayload) {
+					return (
+						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
+							<FeedbackProgress
+								payload={improveScanPayload}
+								onComplete={(data) => {
+									setScanResults(data);
+									setScanMode("results");
+									onScanComplete(data);
+									setImproveScanPayload(null);
+									toast.success("Scan results updated");
+								}}
+								onCancel={() => {
+									setImproveScanPayload(null);
+									setScanMode(hasScanResults ? "results" : "idle");
+								}}
+							/>
+						</div>
+					);
+				}
 				if (scanMode === "scanning") {
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
@@ -338,6 +365,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 								deployment={resolvedDeployment!}
 								onStartDeployment={() => handleRedeploy()}
 								onCancel={handleRejectScan}
+								onStartImproveScan={onStartImproveScan}
 							/>
 						</div>
 					);
@@ -403,6 +431,9 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 							deployingCommitInfo={deployingCommitInfo}
 							steps={steps}
 							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (resolvedDeployment ? configSnapshotFromDeployConfig(resolvedDeployment) : {})}
+							repoUrl={resolvedDeployment?.url}
+							commitSha={resolvedDeployment?.scan_results?.commit_sha ?? resolvedDeployment?.commitSha}
+							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>
 				);

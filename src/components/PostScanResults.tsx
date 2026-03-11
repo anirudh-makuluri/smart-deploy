@@ -3,7 +3,17 @@ import { DeployConfig, SDArtifactsResponse, repoType } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download } from "lucide-react";
+import {
+	AlertDialog,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 type PostScanResultsProps = {
@@ -13,9 +23,10 @@ type PostScanResultsProps = {
 	onStartDeployment: () => void;
 	onCancel: () => void;
 	onUpdateResults?: (results: SDArtifactsResponse) => void;
+	onStartImproveScan?: (payload: { repoUrl: string; commitSha?: string; feedback: string }) => void;
 };
 
-export default function PostScanResults({ results, scanTime, deployment, onStartDeployment, onCancel, onUpdateResults }: PostScanResultsProps) {
+export default function PostScanResults({ results, scanTime, deployment, onStartDeployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
 	const dockerfileNames = useMemo(() => {
 		if (!results.dockerfiles) return [];
 		return Object.keys(results.dockerfiles);
@@ -24,6 +35,8 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 	const [activeTab, setActiveTab] = useState<string>(dockerfileNames.length > 0 ? dockerfileNames[0] : "");
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState("");
+	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
+	const [userFeedback, setUserFeedback] = useState("");
 
 	useEffect(() => {
 		setIsEditing(false);
@@ -94,6 +107,33 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 		toast.success("Copied to clipboard");
 	};
 
+	function buildTemplateFeedback(r: SDArtifactsResponse): string {
+		const confidence = Math.round((r.confidence ?? 0) * 100);
+		const hadolintCount = Object.values(r.hadolint_results || {}).reduce((acc, curr) => acc + (curr ? curr.split("\\n").length : 0), 0);
+		const riskCount = (r.risks && r.risks.length) || 0;
+		const serviceNames = (r.services || []).map((s) => s.name).join(", ") || "none";
+		const parts = [
+			`Current scan: ${confidence}% confidence, ${hadolintCount} hadolint issue(s), ${riskCount} risk(s).`,
+			`Services: ${serviceNames}.`,
+			r.stack_summary ? `Stack: ${r.stack_summary}` : "",
+			"Please improve Dockerfiles, nginx, and compose where needed.",
+		].filter(Boolean);
+		return parts.join(" ");
+	}
+
+	function handleImproveScanResults() {
+		if (!deployment?.url || !onStartImproveScan) return;
+		const template = buildTemplateFeedback(results);
+		const feedback = userFeedback.trim() ? `${template}\n\nAdditional feedback: ${userFeedback.trim()}` : template;
+		onStartImproveScan({
+			repoUrl: deployment.url,
+			commitSha: results.commit_sha || deployment.commitSha,
+			feedback,
+		});
+		setImproveDialogOpen(false);
+		setUserFeedback("");
+	}
+
 	const hasRisks = results.risks && results.risks.length > 0;
 	// Calculate total hadolint warnings across services
 	const hadolintCount = Object.values(results.hadolint_results || {}).reduce((acc, curr) => acc + (curr ? curr.split('\\n').length : 0), 0);
@@ -121,6 +161,16 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 					<Button variant="ghost" onClick={onCancel} className="text-xs font-bold text-muted-foreground hover:text-white transition-colors uppercase tracking-widest px-4 h-10">
 						Reject Analysis
 					</Button>
+					{onStartImproveScan && (
+						<Button
+							variant="outline"
+							onClick={() => setImproveDialogOpen(true)}
+							className="h-10 px-4 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-all active:scale-95 uppercase tracking-widest font-bold text-[10px]"
+						>
+							<RefreshCw className="size-3.5 mr-2" />
+							Improve Scan Results
+						</Button>
+					)}
 					<div className="w-px h-4 bg-white/10" />
 					<Button variant="outline" className="h-10 px-4 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 hover:border-primary/30 transition-all active:scale-95 uppercase tracking-widest font-bold text-[10px]">
 						<Download className="size-3.5 mr-2" />
@@ -133,6 +183,44 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 				</div>
 			</div>
 
+			<AlertDialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
+				<AlertDialogContent className="bg-[#0a0a0f] border-white/5 max-w-md shadow-2xl backdrop-blur-xl">
+					<AlertDialogHeader>
+						<AlertDialogTitle className="text-xl font-bold text-white tracking-tight">
+							Improve Scan Results
+						</AlertDialogTitle>
+						<AlertDialogDescription className="text-muted-foreground/80 text-sm leading-relaxed text-left">
+							We&apos;ll send the current scan summary (confidence, lint issues, risks) to generate improved Dockerfiles, nginx, and compose. Optionally add details below.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<div className="py-3">
+						<label htmlFor="improve-feedback" className="text-xs font-medium text-muted-foreground block mb-2">
+							Anything specific to improve? (optional)
+						</label>
+						<Textarea
+							id="improve-feedback"
+							placeholder="e.g. Fix /api routing in nginx, add health checks..."
+							value={userFeedback}
+							onChange={(e) => setUserFeedback(e.target.value)}
+							className="min-h-24 resize-y bg-white/5 border-white/10 text-foreground placeholder:text-muted-foreground/50"
+						/>
+					</div>
+					<AlertDialogFooter className="mt-4 gap-3 flex flex-row items-center justify-end">
+						<AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-white h-10 px-4 rounded-lg font-medium m-0">
+							Cancel
+						</AlertDialogCancel>
+						<Button
+							onClick={() => handleImproveScanResults()}
+							disabled={!onStartImproveScan}
+							className="h-10 px-6 rounded-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg flex items-center gap-2"
+						>
+							<RefreshCw className="size-4" />
+							Improve
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
 			{/* Metrics Grid */}
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
 				{/* Confidence Card */}
@@ -143,7 +231,7 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 							<div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20">
 								<ShieldCheck className="size-5 text-primary" />
 							</div>
-							<Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary text-[10px] font-bold">STABLE</Badge>
+							<Badge variant="outline" className={(results.confidence > 0.9 ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-amber-500/5 border-amber-500/20 text-amber-500') + " text-[10px] font-bold"}>{results.confidence > 0.9 ? 'STABLE' : 'UNSTABLE'}</Badge>
 						</div>
 						<div>
 							<div className="flex items-baseline gap-2 mb-1">
@@ -175,7 +263,7 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 						</div>
 						<div>
 							<div className="flex items-baseline gap-2 mb-1">
-								<h3 className="text-5xl font-black tracking-tighter text-white">{hadolintCount > 0 ? hadolintCount : '00'}</h3>
+								<h3 className="text-5xl font-black tracking-tighter text-white">{hadolintCount > 0 ? hadolintCount : '0'}</h3>
 								<span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Lint Issues</span>
 							</div>
 							<p className="text-xs text-muted-foreground/60 leading-relaxed">
