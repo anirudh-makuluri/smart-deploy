@@ -224,6 +224,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					<DeployWorkspace
 						repoName={repoName}
 						serviceName={activeService.name}
+						repoUrl={repoUrl}
 					/>
 				) : (
 					<RepoServicesList

@@ -11,7 +11,7 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
-import { parseEnvVarsToStore, configSnapshotFromDeployConfig } from "@/lib/utils";
+import { parseEnvVarsToStore, configSnapshotFromDeployConfig, normalizeRepoUrl } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { isEqual } from "lodash";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
@@ -24,9 +24,11 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 type DeployWorkspaceProps = {
 	serviceName?: string;
 	repoName?: string;
+	/** GitHub HTTPS URL for this repo; required for correct scan/config when there is no deployment row yet */
+	repoUrl?: string;
 };
 
-export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspaceProps) {
+export default function DeployWorkspace({ serviceName, repoName, repoUrl }: DeployWorkspaceProps) {
 	const { deployments, updateDeploymentById, repoList, isLoading } = useAppData();
 	const { data: session } = useSession();
 	const deploymentFromRepoService = (repoName && serviceName)
@@ -38,9 +40,26 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 	const deployment = deploymentFromRepoService ?? deploymentFromServiceName;
 
 	const repo = React.useMemo(() => {
-		if (!deployment) return undefined;
-		return repoList.find((rep) => rep.id === deployment.id || rep.html_url === deployment.url);
-	}, [repoList, deployment]);
+		if (deployment) {
+			const fromDep = repoList.find((rep) => rep.id === deployment.id || rep.html_url === deployment.url);
+			if (fromDep) return fromDep;
+		}
+		const normalizedTarget = repoUrl ? normalizeRepoUrl(repoUrl) : null;
+		if (normalizedTarget) {
+			const byUrl = repoList.find((rep) => normalizeRepoUrl(rep.html_url) === normalizedTarget);
+			if (byUrl) return byUrl;
+		}
+		if (repoName) {
+			return repoList.find(
+				(rep) =>
+					rep.name === repoName ||
+					rep.full_name?.split("/").pop()?.toLowerCase() === repoName.toLowerCase()
+			);
+		}
+		return undefined;
+	}, [repoList, deployment, repoName, repoUrl]);
+
+	const effectiveRepoUrl = (deployment?.url || repoUrl || "").trim();
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const [activeSection, setActiveSection] = React.useState<MenuSection>(deployment && deployment.status !== "didnt_deploy" ? "overview" : "setup");
@@ -57,7 +76,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 
-	const serviceNameForLogs = deployment?.service_name ?? repo?.name ?? serviceName;
+	const serviceNameForLogs = deployment?.service_name ?? serviceName ?? repo?.name;
 	const repoNameForLogs = deployment?.repo_name ?? repoName;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, repoNameForLogs);
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
@@ -113,9 +132,9 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 	}, [deployStatus, deployment?.id]);
 
 	const resolvedRepo: repoType = repo ?? (() => {
-		const fallbackName = deployment?.service_name ?? serviceName ?? "service";
+		const fallbackName = repoName ?? deployment?.service_name ?? serviceName ?? "service";
 		const defaultBranch = deployment?.branch ?? "main";
-		const url = deployment?.url ?? "";
+		const url = effectiveRepoUrl;
 		const ownerFromUrl = url.match(/github\.com[/]([^/]+)/)?.[1] ?? "unknown";
 		const repoNameFromUrl = url.split("/").filter(Boolean).pop()?.replace(/\.git$/, "") ?? fallbackName;
 		const fullName = `${ownerFromUrl}/${repoNameFromUrl}`;
@@ -340,7 +359,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
 								repoFullName={resolvedRepo.full_name}
-								branch={deployment?.branch || "main"}
+								branch={deployment?.branch ?? resolvedRepo.default_branch ?? "main"}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
 									setScanResults(data);
@@ -498,7 +517,7 @@ export default function DeployWorkspace({ serviceName, repoName }: DeployWorkspa
 		}
 	}
 
-	if (!repo && !deployment && !isLoading) {
+	if (!isLoading && !deployment && !repo && !effectiveRepoUrl) {
 		return (
 			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
 				<p className="text-muted-foreground">Service not found</p>
