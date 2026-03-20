@@ -232,7 +232,7 @@ export function configSnapshotFromDeployConfig(config: DeployConfig | null): Rec
 
 
 export function normalizeRepoUrl(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase();
+	return url?.replace(/\.git$/, "").toLowerCase();
 }
 
 export function getDeploymentForService(

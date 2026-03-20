@@ -1,13 +1,8 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Github, AlertTriangle, Loader2 } from "lucide-react";
-import { SmartDeployLogo } from "@/components/SmartDeployLogo";
-import { Button } from "@/components/ui/button";
 import { useAppData } from "@/store/useAppData";
-import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
+import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
@@ -55,15 +50,25 @@ type RepoPageClientProps = {
 
 
 export default function RepoPageClient({ owner, repoName }: RepoPageClientProps) {
-	const router = useRouter();
-	const { repoList, deployments, repoServices, refetchAll, refetchRepoServices, getDetectedRepoCache, setDetectedRepoCache, removeDeployments, refetchDeployments, fetchRepoDeployments } = useAppData();
+	const {
+		repoList,
+		deployments,
+		repoServices,
+		refetchRepoServices,
+		getDetectedRepoCache,
+		setDetectedRepoCache,
+		removeDeployments,
+		refetchDeployments,
+		fetchRepoDeployments,
+		activeServiceName: storeActiveService,
+		setActiveServiceName,
+	} = useAppData();
+
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [services, setServices] = React.useState<DetectedServiceInfo[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
-	const [activeService, setActiveService] = React.useState<DetectedServiceInfo | null>(null);
 	const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
-	const { activeServiceName: storeActiveService, setActiveServiceName } = useAppData();
 
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
@@ -78,6 +83,10 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const resolvedRepo = React.useMemo<repoType>(() => {
 		return fromStoreRepo ?? minimalRepo;
 	}, [fromStoreRepo, minimalRepo]);
+	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
+		if (!storeActiveService) return null;
+		return services.find((svc) => svc.name === storeActiveService) ?? null;
+	}, [services, storeActiveService]);
 
 	React.useEffect(() => {
 		if (fromStoreRepo) return;
@@ -119,16 +128,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [fromStoreRepo, owner, repoName, normalizedRepoTarget, minimalRepo]);
 
 	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
-
-	React.useEffect(() => {
-		if (storeActiveService === null && activeService !== null) {
-			setActiveService(null);
-		}
-	}, [storeActiveService, activeService]);
-
-	React.useEffect(() => {
-		setActiveServiceName(null);
-	}, []);
 
 	React.useEffect(() => {
 		const cached = getDetectedRepoCache(repoUrl);
@@ -200,13 +199,13 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	// Fetch deployments explicitly for this repo on mount if needed
 	React.useEffect(() => {
+		setActiveServiceName(null);
 		if (resolvedRepo.name) {
 			fetchRepoDeployments(resolvedRepo.name);
 		}
-	}, [resolvedRepo.name, fetchRepoDeployments]);
+	}, [repoUrl, resolvedRepo.name, fetchRepoDeployments, setActiveServiceName]);
 
 	function openWorkspaceForService(svc: DetectedServiceInfo) {
-		setActiveService(svc);
 		setActiveServiceName(svc.name);
 	}
 
@@ -281,7 +280,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 						error={error}
 						repoDeployments={repoDeployments}
 						resolvedRepo={resolvedRepo}
-						setActiveService={setActiveService}
+						setActiveService={openWorkspaceForService}
 						handleDeleteAllDeployments={handleDeleteAllDeployments}
 						openWorkspaceForService={openWorkspaceForService}
 					/>

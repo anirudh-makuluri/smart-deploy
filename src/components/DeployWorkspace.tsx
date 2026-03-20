@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import { DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
 import { parseEnvVarsToStore, configSnapshotFromDeployConfig, normalizeRepoUrl } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
-import { isEqual } from "lodash";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
 import ScanProgress from "@/components/ScanProgress";
 import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
