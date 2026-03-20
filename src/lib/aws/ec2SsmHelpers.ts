@@ -169,7 +169,20 @@ export async function getInstanceState(
  * we normalize all generated Dockerfiles to be written at repo root with stable names.
  */
 function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
-	return Object.entries(dockerfiles)
+	const entries = Object.entries(dockerfiles || {});
+
+	// Single Dockerfile case: write plain repo-root `Dockerfile` (no `normalizedName` suffix).
+	if (entries.length === 1) {
+		const [, content] = entries[0];
+		return `
+echo "Writing Dockerfile from scan_results to Dockerfile (root)..."
+cat > "Dockerfile" << 'DOCKERFILEEOF'
+${content}
+DOCKERFILEEOF
+`;
+	}
+
+	return entries
 		.map(([filePath, content]) => {
 			const safePath = filePath.replace(/^\.\//, "");
 			const normalizedName =
