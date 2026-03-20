@@ -108,6 +108,7 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 					break;
 				case "deploy_logs_snapshot": {
 					const snap = payload as { steps?: DeployStep[]; status?: DeployStatus; error?: string | null };
+					const hasNoStoredLogsError = snap.error === "No logs found for this deployment";
 					if (Array.isArray(snap.steps) && snap.steps.length > 0) {
 						setSteps(snap.steps);
 						const entries: { timestamp?: string; message?: string }[] = [];
@@ -121,11 +122,13 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 						});
 						setDeployLogEntries(entries);
 					}
-					if (snap.status) {
+					if (snap.status && !hasNoStoredLogsError) {
 						setDeployStatus(snap.status);
 						if (snap.status === "running") wasDeployingRef.current = true;
+					} else if (hasNoStoredLogsError) {
+						setDeployStatus("not-started");
 					}
-					if (snap.error != null) setDeployError(snap.error); else setDeployError(null);
+					if (snap.error != null && !hasNoStoredLogsError) setDeployError(snap.error); else setDeployError(null);
 					if (snap.status === "success" || snap.status === "error") clearActiveDeployment();
 					break;
 				}

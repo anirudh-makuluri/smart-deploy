@@ -81,7 +81,10 @@ wss.on("connection", (ws) => {
 						}
 						deployLogsStore.addSubscriber(userID, repoName, serviceName, ws);
 					} else if (ws?.readyState === 1) {
-						ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { steps: [], status: "error", error: "No logs found for this deployment", time } }));
+						ws.send(JSON.stringify({
+							type: "deploy_logs_snapshot",
+							payload: { steps: [], status: "not-started", error: null, time },
+						}));
 					}
 					break;
 				}
