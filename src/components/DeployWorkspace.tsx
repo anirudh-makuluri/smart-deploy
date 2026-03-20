@@ -11,7 +11,7 @@ import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
-import { parseEnvVarsToStore, configSnapshotFromDeployConfig, normalizeRepoUrl } from "@/lib/utils";
+import { configSnapshotFromDeployConfig } from "@/lib/utils";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
 import ScanProgress from "@/components/ScanProgress";
@@ -20,51 +20,41 @@ import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-type DeployWorkspaceProps = {
-	serviceName?: string;
-	repoName?: string;
-	/** GitHub HTTPS URL for this repo; required for correct scan/config when there is no deployment row yet */
-	repoUrl?: string;
-};
-
-export default function DeployWorkspace({ serviceName, repoName, repoUrl }: DeployWorkspaceProps) {
-	const { deployments, updateDeploymentById, repoList, isLoading } = useAppData();
+export default function DeployWorkspace() {
+	const deployments = useAppData((s) => s.deployments);
+	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
+	const activeRepo = useAppData((s) => s.activeRepo);
+	const serviceName = useAppData((s) => s.activeServiceName);
+	const isLoading = useAppData((s) => s.isLoading);
 	const { data: session } = useSession();
-	const deploymentFromRepoService = (repoName && serviceName)
-		? deployments.find((dep) => dep.repo_name === repoName && dep.service_name === serviceName)
-		: undefined;
-	const deploymentFromServiceName = serviceName
-		? deployments.find((dep) => dep.service_name === serviceName)
-		: undefined;
-	const deployment = deploymentFromRepoService ?? deploymentFromServiceName;
+	const repo = activeRepo;
+	const deployment = React.useMemo(() => {
+		if (!repo?.name || !serviceName) return undefined;
+		return deployments.find(
+			(dep) => dep.repo_name === repo.name && dep.service_name === serviceName
+		);
+	}, [deployments, repo?.name, serviceName]);
 
-	const repo = React.useMemo(() => {
-		if (deployment) {
-			const fromDep = repoList.find((rep) => rep.id === deployment.id || rep.html_url === deployment.url);
-			if (fromDep) return fromDep;
-		}
-		const normalizedTarget = repoUrl ? normalizeRepoUrl(repoUrl) : null;
-		if (normalizedTarget) {
-			const byUrl = repoList.find((rep) => normalizeRepoUrl(rep.html_url) === normalizedTarget);
-			if (byUrl) return byUrl;
-		}
-		if (repoName) {
-			return repoList.find(
-				(rep) =>
-					rep.name === repoName ||
-					rep.full_name?.split("/").pop()?.toLowerCase() === repoName.toLowerCase()
-			);
-		}
-		return undefined;
-	}, [repoList, deployment, repoName, repoUrl]);
+	const workingDeployment = React.useMemo<DeployConfig | null>(() => {
+		if (!repo?.name || !serviceName) return null;
+		const base: DeployConfig = {
+			id: deployment?.id ?? "",
+			repo_name: repo.name,
+			service_name: serviceName,
+			url: deployment?.url ?? repo.html_url ?? "",
+			branch: deployment?.branch ?? (repo.default_branch || "main"),
+			status: deployment?.status ?? "didnt_deploy",
+		};
+		const merged = { ...base, ...(deployment as Partial<DeployConfig> | undefined) } as DeployConfig;
+		merged.url = merged.url ?? base.url ?? "";
+		return merged;
+	}, [deployment, repo, serviceName]);
 
-	const effectiveRepoUrl = (deployment?.url || repoUrl || "").trim();
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const [activeSection, setActiveSection] = React.useState<MenuSection>(deployment && deployment.status !== "didnt_deploy" ? "overview" : "setup");
 	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
-	const [editMode, setEditMode] = React.useState(false);
 	const [elapsedTime, setElapsedTime] = React.useState(0);
 
 	// Scan state
@@ -76,7 +66,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 
 	const serviceNameForLogs = deployment?.service_name ?? serviceName ?? repo?.name;
-	const repoNameForLogs = deployment?.repo_name ?? repoName;
+	const repoNameForLogs = repo?.name ?? deployment?.repo_name;
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, repoNameForLogs);
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
 	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" :
@@ -130,93 +120,32 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 		}
 	}, [deployStatus, deployment?.id]);
 
-	const resolvedRepo: repoType = repo ?? (() => {
-		const fallbackName = repoName ?? deployment?.service_name ?? serviceName ?? "service";
-		const defaultBranch = deployment?.branch ?? "main";
-		const url = effectiveRepoUrl;
-		const ownerFromUrl = url.match(/github\.com[/]([^/]+)/)?.[1] ?? "unknown";
-		const repoNameFromUrl = url.split("/").filter(Boolean).pop()?.replace(/\.git$/, "") ?? fallbackName;
-		const fullName = `${ownerFromUrl}/${repoNameFromUrl}`;
-		const now = new Date(0).toISOString();
-		return {
-			id: deployment?.id ?? "",
-			name: repoNameFromUrl,
-			full_name: fullName,
-			html_url: url,
-			language: "",
-			languages_url: "",
-			created_at: now,
-			updated_at: now,
-			pushed_at: now,
-			default_branch: defaultBranch,
-			private: false,
-			description: null,
-			visibility: "public",
-			license: null,
-			forks_count: 0,
-			watchers_count: 0,
-			open_issues_count: 0,
-			owner: { login: ownerFromUrl },
-			latest_commit: null,
-			branches: [
-				{ name: defaultBranch, commit_sha: deployment?.commitSha ?? "", protected: false },
-			],
-		};
-	})();
-
-	const resolvedRepoName = deployment?.repo_name ?? repoName ?? resolvedRepo.name;
-	const resolvedServiceName = deployment?.service_name ?? serviceName ?? "";
-	// Ensure required fields are always present even if the persisted deployment row is partial.
-	const resolvedDeploymentBase: DeployConfig = {
-		id: deployment?.id ?? "",
-		repo_name: resolvedRepoName,
-		service_name: resolvedServiceName,
-		url: resolvedRepo.html_url ?? "",
-		branch: resolvedRepo.default_branch || "main",
-		status: "didnt_deploy",
-	};
-
-	const resolvedDeployment = ({
-		...resolvedDeploymentBase,
-		...(deployment as Partial<DeployConfig> | undefined),
-	} as DeployConfig);
-
-	// Backend expects `url` to always be a string.
-	resolvedDeployment.url = resolvedDeployment.url ?? resolvedDeploymentBase.url ?? "";
-
-	// Fetch deployment history once when page loads
-	React.useEffect(() => {
-		if (!resolvedRepoName || !resolvedServiceName || deploymentHistory !== null) return;
-
+	const fetchDeploymentHistory = React.useCallback(async () => {
+		if (!repo?.name || !serviceName) return;
 		setIsLoadingHistory(true);
-		fetch(`/api/deployment-history?repoName=${encodeURIComponent(resolvedRepoName)}&serviceName=${encodeURIComponent(resolvedServiceName)}`)
-			.then((res) => res.json())
-			.then((data) => {
-				if (data.status === "success" && Array.isArray(data.history)) {
-					setDeploymentHistory(data.history);
-				}
-			})
-			.catch((err) => {
-				console.error("Failed to fetch deployment history:", err);
-			})
-			.finally(() => setIsLoadingHistory(false));
-	}, [resolvedRepoName, resolvedServiceName, deploymentHistory]);
-
-	// Refetch history after deployment completes
-	React.useEffect(() => {
-		if ((deployStatus === "success" || deployStatus === "error") && resolvedRepoName && resolvedServiceName) {
-			fetch(`/api/deployment-history?repoName=${encodeURIComponent(resolvedRepoName)}&serviceName=${encodeURIComponent(resolvedServiceName)}`)
-				.then((res) => res.json())
-				.then((data) => {
-					if (data.status === "success" && Array.isArray(data.history)) {
-						setDeploymentHistory(data.history);
-					}
-				})
-				.catch((err) => {
-					console.error("Failed to refetch deployment history:", err);
-				});
+		try {
+			const res = await fetch(`/api/deployment-history?repoName=${encodeURIComponent(repo.name)}&serviceName=${encodeURIComponent(serviceName)}`);
+			const data = await res.json();
+			if (data.status === "success" && Array.isArray(data.history)) {
+				setDeploymentHistory(data.history);
+			}
+		} catch (err) {
+			console.error("Failed to fetch deployment history:", err);
+		} finally {
+			setIsLoadingHistory(false);
 		}
-	}, [deployStatus, resolvedRepoName, resolvedServiceName]);
+	}, [repo?.name, serviceName]);
+
+	React.useEffect(() => {
+		const shouldRefresh =
+			deploymentHistory === null || deployStatus === "success" || deployStatus === "error";
+		if (!shouldRefresh) return;
+		fetchDeploymentHistory();
+	}, [deploymentHistory, deployStatus, fetchDeploymentHistory]);
+
+	React.useEffect(() => {
+		setDeploymentHistory(null);
+	}, [repo?.name, serviceName]);
 
 	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
 		const now = new Date().toISOString();
@@ -230,11 +159,11 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 	}
 
 	async function onScanComplete(results: SDArtifactsResponse) {
-		if (!session?.user) return;
+		if (!session?.user || !repo?.name || !serviceName) return;
 
 		await updateDeploymentById({
-			repo_name: resolvedRepoName,
-			service_name: resolvedServiceName,
+			repo_name: repo.name,
+			service_name: serviceName,
 			scan_results: results,
 		});
 		setScanResults(results);
@@ -243,7 +172,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 	}
 
 	async function handleConfirmRejectScan() {
-		if (!resolvedDeployment) return;
+		if (!workingDeployment) return;
 
 		// 1. Clear backend cache
 		try {
@@ -251,8 +180,8 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 				method: "DELETE",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					repo_url: resolvedDeployment.url,
-					commit_sha: resolvedDeployment.scan_results?.commit_sha || resolvedDeployment.commitSha,
+					repo_url: workingDeployment.url,
+					commit_sha: workingDeployment.scan_results?.commit_sha || workingDeployment.commitSha,
 				}),
 			});
 		} catch (err) {
@@ -261,7 +190,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 
 		// 2. Clear frontend state and DB
 		const cleared: DeployConfig = {
-			...resolvedDeployment,
+			...workingDeployment,
 			scan_results: undefined,
 		};
 
@@ -276,24 +205,30 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 		setShowRejectConfirm(true);
 	}
 
-	const hasScanResults = !!(deployment?.scan_results || scanResults);
-	const isDraft = !deployment || deployment.status === "didnt_deploy";
+	const hasScanResults = React.useMemo(
+		() => Boolean(deployment?.scan_results || scanResults),
+		[deployment?.scan_results, scanResults]
+	);
+	const isDraft = React.useMemo(
+		() => !deployment || deployment.status === "didnt_deploy",
+		[deployment]
+	);
 
-	async function handleRedeploy(commitSha?: string) {
+	async function handleDeploy(commitSha?: string) {
 		const token = session?.accessToken;
-		if (!token || !resolvedDeployment) {
-			return console.log("Unauthenticated or no deployment");
+		if (!token || !workingDeployment || !repo) {
+			return console.log("Unauthenticated or missing deploy context");
 		}
 
 		const payload: DeployConfig = {
-			...resolvedDeployment,
+			...workingDeployment,
 			...(commitSha && { commitSha }),
 		};
 
 		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
 		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
-		const owner = resolvedRepo.owner?.login ?? ownerFromUrl;
-		const repoName = resolvedRepo.name ?? repoNameFromUrl;
+		const owner = repo.owner?.login ?? ownerFromUrl;
+		const repoName = repo.name ?? repoNameFromUrl;
 
 		if (owner && repoName) {
 			fetch("/api/commits/latest", {
@@ -367,8 +302,8 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
-								repoFullName={resolvedRepo.full_name}
-								branch={deployment?.branch ?? resolvedRepo.default_branch ?? "main"}
+								repoFullName={repo?.full_name ?? ""}
+								branch={deployment?.branch ?? repo?.default_branch ?? "main"}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
 									setScanResults(data);
@@ -390,8 +325,8 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 									onScanComplete(updated);
 								}}
 								scanTime={scanDuration}
-								deployment={resolvedDeployment!}
-								onStartDeployment={() => handleRedeploy()}
+								deployment={workingDeployment!}
+								onStartDeployment={() => handleDeploy()}
 								onCancel={handleRejectScan}
 								onStartImproveScan={onStartImproveScan}
 							/>
@@ -437,10 +372,10 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 			case "history":
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{resolvedDeployment && (
+						{workingDeployment && (
 							<DeploymentHistory
-								repoName={resolvedDeployment.repo_name}
-								serviceName={resolvedDeployment.service_name}
+								repoName={workingDeployment.repo_name}
+								serviceName={workingDeployment.service_name}
 								prefetchedData={deploymentHistory}
 								isPrefetching={isLoadingHistory}
 							/>
@@ -458,9 +393,9 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 							deployError={deployError}
 							deployingCommitInfo={deployingCommitInfo}
 							steps={steps}
-							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (resolvedDeployment ? configSnapshotFromDeployConfig(resolvedDeployment) : {})}
-							repoUrl={resolvedDeployment?.url}
-							commitSha={resolvedDeployment?.scan_results?.commit_sha ?? resolvedDeployment?.commitSha}
+							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (workingDeployment ? configSnapshotFromDeployConfig(workingDeployment) : {})}
+							repoUrl={workingDeployment?.url}
+							commitSha={workingDeployment?.scan_results?.commit_sha ?? workingDeployment?.commitSha}
 							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>
@@ -468,18 +403,20 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 			case "setup":
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						<ConfigTabs
-							repoFullName={resolvedRepo.full_name}
-							onConfigChange={(partial) => {
+						{workingDeployment && (
+							<ConfigTabs
+								repoFullName={repo?.full_name ?? ""}
+								onConfigChange={(partial) => {
 									updateDeploymentById({
-										repo_name: resolvedDeployment.repo_name,
-										service_name: resolvedDeployment.service_name,
+										repo_name: workingDeployment.repo_name,
+										service_name: workingDeployment.service_name,
 										...partial,
 									});
-							}}
-							deployment={resolvedDeployment}
-							onStartScan={startScan}
-						/>
+								}}
+								deployment={workingDeployment}
+								onStartScan={startScan}
+							/>
+						)}
 					</div>
 				);
 			case "overview":
@@ -512,13 +449,13 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 				}
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{resolvedDeployment && (
+						{workingDeployment && (
 							<DeployOverview
-								deployment={resolvedDeployment}
+								deployment={workingDeployment}
 								isDeploying={isDeploying}
-								onRedeploy={handleRedeploy}
-								onEditConfiguration={() => { setActiveSection("setup"); setEditMode(true); }}
-								repo={resolvedRepo}
+								onRedeploy={handleDeploy}
+								onEditConfiguration={() => { setActiveSection("setup"); }}
+								repo={repo as repoType}
 							/>
 						)}
 					</div>
@@ -526,7 +463,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 		}
 	}
 
-	if (!isLoading && !deployment && !repo && !effectiveRepoUrl) {
+	if (!isLoading && !repo) {
 		return (
 			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
 				<p className="text-muted-foreground">Service not found</p>
@@ -541,9 +478,9 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 				<div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
 					<div className="flex items-center gap-4 overflow-hidden">
 						<div className="flex items-center gap-2 text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-							<span className="text-muted-foreground/60">{resolvedRepoName}</span>
+							<span className="text-muted-foreground/60">{repo?.name ?? ""}</span>
 							<span className="text-border">/</span>
-							<span className="text-foreground">{resolvedServiceName}</span>
+							<span className="text-foreground">{serviceName ?? ""}</span>
 						</div>
 						{!isDraft && (
 							<div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-bold tracking-widest uppercase text-emerald-400">
@@ -557,7 +494,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 						<div className="relative group">
 							<Button
 								disabled={!hasScanResults || isDeploying}
-								onClick={() => handleRedeploy()}
+								onClick={() => handleDeploy()}
 								className="h-9 px-6 font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden"
 								title={!hasScanResults ? "Run smart scan first" : ""}
 							>

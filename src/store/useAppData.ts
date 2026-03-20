@@ -25,6 +25,7 @@ const sortDeployments = (list: DeployConfig[]) =>
 type AppState = {
 	repoList: repoType[];
 	deployments: DeployConfig[];
+	activeRepo: repoType | null;
 	/** Detected services per repo (from detect-services, persisted in DB). */
 	repoServices: RepoServicesRecord[];
 	/** In-memory cache of detect-services result per repo URL (avoids refetch on every visit). */
@@ -55,6 +56,7 @@ type AppState = {
 	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error'; message: string }>;
 	activeServiceName: string | null;
+	setActiveRepo: (repo: repoType | null) => void;
 	setActiveServiceName: (name: string | null) => void;
 };
 
@@ -65,10 +67,12 @@ function normalizeRepoUrlForCache(url: string): string {
 export const useAppData = create<AppState>((set, get) => ({
 	repoList: [],
 	deployments: [],
+	activeRepo: null,
 	repoServices: [],
 	detectedRepoCache: {},
 	isLoading: true,
 	hasFetched: false,
+	activeServiceName: null,
 
 	unAuthenticated: () => {
 		set({ isLoading: false, hasFetched: false });
@@ -237,7 +241,7 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 		return { status: response.status ?? 'error', message: response.message ?? '' };
 	},
-	activeServiceName: null,
+	setActiveRepo: (repo) => set({ activeRepo: repo }),
 	setActiveServiceName: (name) => set({ activeServiceName: name }),
 }));
 

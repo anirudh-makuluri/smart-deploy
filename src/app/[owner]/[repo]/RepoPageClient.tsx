@@ -62,6 +62,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		fetchRepoDeployments,
 		activeServiceName: storeActiveService,
 		setActiveServiceName,
+		setActiveRepo,
 	} = useAppData();
 
 	const [isDeleting, setIsDeleting] = React.useState(false);
@@ -200,12 +201,21 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	// Fetch deployments explicitly for this repo on mount if needed
 	React.useEffect(() => {
 		setActiveServiceName(null);
+		setActiveRepo(resolvedRepo);
 		if (resolvedRepo.name) {
 			fetchRepoDeployments(resolvedRepo.name);
 		}
-	}, [repoUrl, resolvedRepo.name, fetchRepoDeployments, setActiveServiceName]);
+	}, [repoUrl, resolvedRepo, fetchRepoDeployments, setActiveServiceName, setActiveRepo]);
+
+	React.useEffect(() => {
+		return () => {
+			setActiveServiceName(null);
+			setActiveRepo(null);
+		};
+	}, [setActiveRepo, setActiveServiceName]);
 
 	function openWorkspaceForService(svc: DetectedServiceInfo) {
+		setActiveRepo(resolvedRepo);
 		setActiveServiceName(svc.name);
 	}
 
@@ -265,11 +275,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 			<main className="flex-1 min-h-0 overflow-auto p-6">
 				{activeService ? (
-					<DeployWorkspace
-						repoName={repoName}
-						serviceName={activeService.name}
-						repoUrl={repoUrl}
-					/>
+					<DeployWorkspace />
 				) : (
 					<RepoServicesList
 						owner={owner}
