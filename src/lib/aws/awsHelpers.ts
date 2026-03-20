@@ -267,14 +267,101 @@ export async function getDefaultVpcId(ws: any): Promise<string> {
  * Gets subnet IDs for a VPC
  */
 export async function getSubnetIds(vpcId: string, ws: any): Promise<string[]> {
-	const output = await runAWSCommand([
+	const send = createWebSocketLogger(ws);
+	const listSubnets = async (): Promise<Array<{ SubnetId?: string; AvailabilityZone?: string }>> => {
+		const output = await runAWSCommand([
+			"ec2", "describe-subnets",
+			"--filters", `Name=vpc-id,Values=${vpcId}`,
+			"--query", "Subnets[*].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}",
+			"--output", "json"
+		], ws, 'setup');
+		try {
+			const parsed = JSON.parse(output);
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	};
+
+	const toDistinctAzSubnetIds = (subnets: Array<{ SubnetId?: string; AvailabilityZone?: string }>): string[] => {
+		const byAz = new Map<string, string>();
+		for (const subnet of subnets) {
+			const id = subnet.SubnetId?.trim();
+			const az = subnet.AvailabilityZone?.trim();
+			if (!id || !az || byAz.has(az)) continue;
+			byAz.set(az, id);
+		}
+		return Array.from(byAz.values());
+	};
+
+	let subnets = await listSubnets();
+	let subnetIds = toDistinctAzSubnetIds(subnets);
+	if (subnetIds.length >= 2) {
+		return subnetIds;
+	}
+
+	const isDefaultVpcOutput = await runAWSCommand([
+		"ec2", "describe-vpcs",
+		"--vpc-ids", vpcId,
+		"--query", "Vpcs[0].IsDefault",
+		"--output", "text"
+	], ws, "setup");
+	const isDefaultVpc = isDefaultVpcOutput.trim().toLowerCase() === "true";
+
+	if (!isDefaultVpc) {
+		send(`Only ${subnetIds.length} subnet AZ found in VPC ${vpcId}. Using existing subnets (cannot auto-create in non-default VPC).`, "setup");
+		const fallback = subnets
+			.map((s) => s.SubnetId?.trim())
+			.filter((id): id is string => Boolean(id));
+		return fallback;
+	}
+
+	const availableAzOutput = await runAWSCommand([
+		"ec2", "describe-availability-zones",
+		"--filters", "Name=state,Values=available",
+		"--query", "AvailabilityZones[*].ZoneName",
+		"--output", "text"
+	], ws, "setup");
+	const azs = availableAzOutput.trim().split(/\s+/).filter(Boolean);
+	const existingAzs = new Set(
+		subnets
+			.map((s) => s.AvailabilityZone?.trim())
+			.filter((az): az is string => Boolean(az))
+	);
+
+	for (const az of azs) {
+		if (subnetIds.length >= 2) break;
+		if (existingAzs.has(az)) continue;
+		try {
+			send(`Creating default subnet in ${az} for ALB multi-AZ support...`, "setup");
+			await runAWSCommand([
+				"ec2", "create-default-subnet",
+				"--availability-zone", az,
+				"--output", "text"
+			], ws, "setup");
+			existingAzs.add(az);
+		} catch {
+			// subnet may already exist or AZ may be restricted; continue
+		}
+		subnets = await listSubnets();
+		subnetIds = toDistinctAzSubnetIds(subnets);
+	}
+
+	if (subnetIds.length < 2) {
+		send(`Could not ensure two AZ subnets in VPC ${vpcId}. Continuing with available subnet(s).`, "setup");
+	}
+
+	if (subnetIds.length > 0) {
+		return subnetIds;
+	}
+
+	const fallbackOutput = await runAWSCommand([
 		"ec2", "describe-subnets",
 		"--filters", `Name=vpc-id,Values=${vpcId}`,
 		"--query", "Subnets[*].SubnetId",
 		"--output", "text"
-	], ws, 'setup');
-
-	return output.trim().split(/\s+/).filter(Boolean);
+	], ws, "setup");
+	return fallbackOutput.trim().split(/\s+/).filter(Boolean);
 }
 
 /**
