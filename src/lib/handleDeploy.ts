@@ -20,6 +20,7 @@ import { createRDSInstance } from "./aws/handleRDS";
 // GCP imports (for Cloud SQL)
 import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
+import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 
 /**
  * Main deployment handler - routes to AWS (default) or GCP
@@ -56,7 +57,7 @@ export async function handleDeploy(
 
 	try {
 		// Clone repository first (common step)
-		const authenticatedRepoUrl = repoUrl.replace("https://", `https://${token}@`);
+		const authenticatedRepoUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 		const branch = deployConfig.branch?.trim() || "main";
 		const commitSha = deployConfig.commitSha?.trim();
 		deployConfig.deploymentTarget = "ec2";

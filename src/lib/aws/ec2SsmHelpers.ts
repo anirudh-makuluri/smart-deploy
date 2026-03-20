@@ -9,6 +9,7 @@ import {
 	SendCommandCommand,
 	GetCommandInvocationCommand,
 } from "@aws-sdk/client-ssm";
+import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
 
 const SSM_ROLE_NAME = "smartdeploy-ec2-ssm-role";
 export const SSM_PROFILE_NAME = "smartdeploy-ec2-ssm-profile";
@@ -315,7 +316,7 @@ export function buildRedeployScript(params: {
 		dockerfiles,
 		mainPort,
 	} = params;
-	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
+	const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);

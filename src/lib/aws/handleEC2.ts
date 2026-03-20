@@ -27,6 +27,7 @@ import {
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
+import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
 
 import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
@@ -130,7 +131,7 @@ function generateUserDataScript(
 	nginxConf: string,
 	commitSha?: string,
 ): string {
-	const authUrl = repoUrl.replace("https://", `https://${token}@`);
+	const authUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 	const nginxConfForHost = nginxConf ? rewriteNginxConfForHost(nginxConf) : "";
 
 	return `#!/bin/bash

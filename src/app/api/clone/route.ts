@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
+import { githubAuthenticatedCloneUrl } from "@/lib/githubGitAuth";
 
 const execAsync = promisify(exec);
 
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
 	// Create temp dir
 	const repoDir = path.join(process.cwd(), "clones", repoName);
 
-	const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
+	const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 
 	try {
 		await execAsync(`git clone ${authenticatedUrl} ${repoDir}`);

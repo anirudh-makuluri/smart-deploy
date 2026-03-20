@@ -3,11 +3,15 @@ import { getServerSession } from "next-auth";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { spawnSync } from "child_process";
 import { detectMultiService, ServiceDefinition } from "@/lib/multiServiceDetector";
 import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import type { DetectedServiceInfo } from "@/app/types";
+import {
+	GithubApiError,
+	parseGithubOwnerRepo,
+	prepareGithubRepoWorkspace,
+} from "@/lib/githubRepoArchive";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +25,11 @@ function toDetectedService(s: ServiceDefinition, repoRoot: string, cloneDir: str
 		framework: s.framework,
 		port: s.port,
 	};
+}
+
+function redactTokenInText(text: string, token: string): string {
+	if (!token) return text;
+	return text.split(token).join("[REDACTED]");
 }
 
 export async function POST(req: NextRequest) {
@@ -39,7 +48,6 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ error: "Missing url" }, { status: 400 });
 		}
 
-		// Normalize to https GitHub URL for clone
 		let repoUrl = url.replace(/\.git$/, "");
 		if (!repoUrl.startsWith("http")) {
 			repoUrl = repoUrl.includes("/") ? `https://github.com/${repoUrl}` : "";
@@ -48,45 +56,30 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ error: "Invalid repository URL" }, { status: 400 });
 		}
 
-		const repoName = repoUrl.split("/").filter(Boolean).pop() || "repo";
+		const parsed = parseGithubOwnerRepo(repoUrl);
+		if (!parsed) {
+			return NextResponse.json({ error: "Could not parse GitHub owner/repo from URL" }, { status: 400 });
+		}
+
+		const { owner, repo } = parsed;
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "detect-services-"));
-		const cloneDir = path.join(tmpDir, repoName);
-		const authenticatedUrl = repoUrl.replace("https://", `https://${token}@`);
 
 		try {
-			const result = spawnSync("git", ["clone", "--depth", "1", "-b", branch, authenticatedUrl, cloneDir], {
-				stdio: "pipe",
-				encoding: "utf-8",
-				shell: process.platform === "win32",
-			});
+			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(owner, repo, branch, token, tmpDir);
 
-			if (result.status !== 0) {
-				const stderr = result.stderr || result.error?.message || "";
-				// Don't leak token in error
-				return NextResponse.json(
-					{ error: "Clone failed", details: stderr.replace(new RegExp(token, "g"), "[REDACTED]") },
-					{ status: 502 }
-				);
-			}
+			const multiServiceConfig = detectMultiService(repoRoot);
 
-			const multiServiceConfig = detectMultiService(cloneDir);
-
-			// If single-service repo, still return one "service" for consistent UI
 			const services: DetectedServiceInfo[] =
 				multiServiceConfig.services.length > 0
-					? multiServiceConfig.services.map((s) => toDetectedService(s, cloneDir, cloneDir))
+					? multiServiceConfig.services.map((s) => toDetectedService(s, repoRoot, repoRoot))
 					: [{ name: "app", path: ".", language: "node", port: 3000 }];
 
-			// Persist to DB for this user
 			const userID = (session as { userID?: string })?.userID;
 			if (userID) {
-				const parts = repoUrl.replace(/\.git$/, "").split("/").filter(Boolean);
-				const repoNameFromUrl = parts.pop() || "repo";
-				const repoOwnerFromUrl = parts.pop() || "unknown";
 				await dbHelper.upsertRepoServices(userID, repoUrl, {
-					branch,
-					repo_owner: repoOwnerFromUrl,
-					repo_name: repoNameFromUrl,
+					branch: effectiveBranch,
+					repo_owner: owner,
+					repo_name: repo,
 					services,
 					is_monorepo: multiServiceConfig.isMonorepo ?? false,
 				});
@@ -98,6 +91,16 @@ export async function POST(req: NextRequest) {
 				services,
 				packageManager: multiServiceConfig.packageManager ?? undefined,
 			});
+		} catch (inner: unknown) {
+			if (inner instanceof GithubApiError) {
+				const details = redactTokenInText(inner.message, token);
+				const status = inner.status === 404 ? 404 : 502;
+				return NextResponse.json(
+					{ error: "Failed to fetch repository from GitHub", details },
+					{ status }
+				);
+			}
+			throw inner;
 		} finally {
 			try {
 				fs.rmSync(tmpDir, { recursive: true, force: true });
