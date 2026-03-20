@@ -18,19 +18,23 @@ import { normalizeRepoUrl } from "@/lib/utils";
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
 function buildMinimalRepo(owner: string, repoName: string): repoType {
-	const fullName = `${owner}/${repoName}`;
+	const normalizedOwner = owner.trim();
+	const normalizedRepoName = repoName.trim();
+	const fullName = `${normalizedOwner}/${normalizedRepoName}`;
 	const htmlUrl = `https://github.com/${fullName}`;
+	const defaultBranch = "main";
+	const nowIso = new Date().toISOString();
 	return {
 		id: htmlUrl,
-		name: repoName,
+		name: normalizedRepoName,
 		full_name: fullName,
 		html_url: htmlUrl,
-		language: "",
-		languages_url: "",
-		created_at: "",
-		updated_at: "",
-		pushed_at: "",
-		default_branch: "main",
+		language: "Unknown",
+		languages_url: `https://api.github.com/repos/${fullName}/languages`,
+		created_at: nowIso,
+		updated_at: nowIso,
+		pushed_at: nowIso,
+		default_branch: defaultBranch,
 		private: false,
 		description: null,
 		visibility: "public",
@@ -38,9 +42,9 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 		forks_count: 0,
 		watchers_count: 0,
 		open_issues_count: 0,
-		owner: { login: owner },
+		owner: { login: normalizedOwner },
 		latest_commit: null,
-		branches: [{ name: "main", commit_sha: "", protected: false }],
+		branches: [{ name: defaultBranch, commit_sha: "", protected: false }],
 	};
 }
 
@@ -63,15 +67,56 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
-	const resolvedRepo = React.useMemo<repoType>(() => {
-		const normalizedTarget = normalizeRepoUrlForMatch(repoUrl);
-		const fromStore = repoList.find((r) => {
+	const normalizedRepoTarget = React.useMemo(() => normalizeRepoUrlForMatch(repoUrl), [repoUrl]);
+	const fromStoreRepo = React.useMemo<repoType | undefined>(() => {
+		return repoList.find((r) => {
 			const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
-			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedTarget;
+			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
 			return sameFullName || sameUrl;
 		});
-		return fromStore ?? minimalRepo;
-	}, [repoList, repoUrl, owner, repoName, minimalRepo]);
+	}, [repoList, owner, repoName, normalizedRepoTarget]);
+	const resolvedRepo = React.useMemo<repoType>(() => {
+		return fromStoreRepo ?? minimalRepo;
+	}, [fromStoreRepo, minimalRepo]);
+
+	React.useEffect(() => {
+		if (fromStoreRepo) return;
+		let cancelled = false;
+		void (async () => {
+			try {
+				const response = await fetch(
+					`/api/repos/resolve?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repoName)}`
+				);
+				const data = await response.json();
+				const fetchedRepo = response.ok ? (data.repo as repoType | undefined) : undefined;
+				const repoToInsert = fetchedRepo ?? minimalRepo;
+				if (cancelled) return;
+				useAppData.setState((state) => {
+					const exists = state.repoList.some((r) => {
+						const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
+						const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
+						return sameFullName || sameUrl;
+					});
+					if (exists) return state;
+					return { repoList: [...state.repoList, repoToInsert] };
+				});
+			} catch {
+				if (cancelled) return;
+				useAppData.setState((state) => {
+					const exists = state.repoList.some((r) => {
+						const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
+						const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
+						return sameFullName || sameUrl;
+					});
+					if (exists) return state;
+					return { repoList: [...state.repoList, minimalRepo] };
+				});
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [fromStoreRepo, owner, repoName, normalizedRepoTarget, minimalRepo]);
 
 	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
 
