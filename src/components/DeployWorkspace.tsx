@@ -167,14 +167,23 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 
 	const resolvedRepoName = deployment?.repo_name ?? repoName ?? resolvedRepo.name;
 	const resolvedServiceName = deployment?.service_name ?? serviceName ?? "";
-	const resolvedDeployment = (deployment as DeployConfig | undefined) ?? {
-		id: "",
+	// Ensure required fields are always present even if the persisted deployment row is partial.
+	const resolvedDeploymentBase: DeployConfig = {
+		id: deployment?.id ?? "",
 		repo_name: resolvedRepoName,
 		service_name: resolvedServiceName,
-		url: resolvedRepo.html_url,
+		url: resolvedRepo.html_url ?? "",
 		branch: resolvedRepo.default_branch || "main",
 		status: "didnt_deploy",
-	} as DeployConfig;
+	};
+
+	const resolvedDeployment = ({
+		...resolvedDeploymentBase,
+		...(deployment as Partial<DeployConfig> | undefined),
+	} as DeployConfig);
+
+	// Backend expects `url` to always be a string.
+	resolvedDeployment.url = resolvedDeployment.url ?? resolvedDeploymentBase.url ?? "";
 
 	// Fetch deployment history once when page loads
 	React.useEffect(() => {
@@ -272,7 +281,8 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 	const isDraft = !deployment || deployment.status === "didnt_deploy";
 
 	async function handleRedeploy(commitSha?: string) {
-		if (!session?.accessToken || !resolvedDeployment) {
+		const token = session?.accessToken;
+		if (!token || !resolvedDeployment) {
 			return console.log("Unauthenticated or no deployment");
 		}
 
@@ -315,7 +325,7 @@ export default function DeployWorkspace({ serviceName, repoName, repoUrl }: Depl
 		}
 
 		setIsDeploying(true);
-		sendDeployConfig(payload, session?.accessToken, session?.userID);
+		sendDeployConfig(payload, token!, session?.userID);
 		setActiveSection("logs");
 	}
 
