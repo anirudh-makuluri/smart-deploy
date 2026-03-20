@@ -28,6 +28,7 @@ import {
 	SSM_PROFILE_NAME,
 } from "./ec2SsmHelpers";
 import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
+import { resolveEc2InstanceType } from "./ec2InstanceTypes";
 
 import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
@@ -399,14 +400,15 @@ async function launchNewInstance(params: {
 
 	let instanceId: string;
 	try {
-		send(`Launching EC2 instance: ${instanceName}...`, "deploy");
+		const instanceType = resolveEc2InstanceType(deployConfig.awsEc2InstanceType);
+		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
 		const rootVolumeGiB = Math.max(30, amiMinRootVolumeGiB);
 		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=${rootVolumeGiB},VolumeType=gp3,DeleteOnTermination=true}`;
 		const out = await runAWSCommand([
 			"ec2", "run-instances",
 			"--image-id", amiId,
-			"--instance-type", "t3.micro",
+			"--instance-type", instanceType,
 			"--key-name", keyName,
 			"--security-group-ids", net.securityGroupId,
 			"--subnet-id", net.subnetIds[0],

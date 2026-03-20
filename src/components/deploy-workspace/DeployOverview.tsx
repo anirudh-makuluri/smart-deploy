@@ -9,6 +9,7 @@ import {
 	isDeploymentDisabled,
 } from "@/lib/utils";
 import DeployOptions from "@/components/DeployOptions";
+import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -31,6 +32,13 @@ export default function DeployOverview({
 }: DeployOverviewProps) {
 	const displayUrl = getDeploymentDisplayUrl(deployment);
 	const deployDisabled = isDeploymentDisabled(deployment);
+	const showEc2InstanceType =
+		deployment.deploymentTarget === "ec2" || !!deployment.ec2?.instanceId;
+	const ec2TypeDisplay =
+		deployment.awsEc2InstanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+	const ec2PriceEstimate = showEc2InstanceType
+		? formatApproxEc2PriceCompact(ec2TypeDisplay)
+		: null;
 
 	return (
 		<div className="space-y-6">
@@ -107,6 +115,20 @@ export default function DeployOverview({
 										{deployment.deploymentTarget
 											? formatDeploymentTargetName(deployment.deploymentTarget)
 											: "Pending"}
+									</span>
+								</div>
+							)}
+							{showEc2InstanceType && (
+								<div className="flex items-center justify-between px-4 py-3">
+									<span>EC2 instance type</span>
+									<span className="font-mono text-xs text-foreground">{ec2TypeDisplay}</span>
+								</div>
+							)}
+							{ec2PriceEstimate && (
+								<div className="flex items-center justify-between px-4 py-3">
+									<span>On-demand estimate (Linux, us-west-2)</span>
+									<span className="text-right text-xs text-muted-foreground max-w-[14rem]">
+										{ec2PriceEstimate}
 									</span>
 								</div>
 							)}

@@ -92,7 +92,7 @@ export default function ServiceLogs({ logs }: { logs: LogEntry[] }) {
 												<Button
 													type="button"
 													variant="ghost"
-													size="xs"
+													size="sm"
 													className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2 shrink-0"
 													onClick={(e) => {
 														e.stopPropagation();

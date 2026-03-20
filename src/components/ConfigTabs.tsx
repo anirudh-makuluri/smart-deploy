@@ -17,11 +17,16 @@ import {
 } from "@/components/ui/form"
 import { Alert, AlertDescription } from "./ui/alert"
 
-import { RotateCw, Layers, Folder, Github, Globe, CheckCircle2, AlertTriangle, Settings2, Sparkles, GitBranch, CircleDot } from "lucide-react";
+import { RotateCw, Layers, Folder, Github, Globe, CheckCircle2, AlertTriangle, Settings2, Sparkles, GitBranch, CircleDot, Cpu } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { DeployConfig } from "@/app/types";
 import EnvVarSheet from "@/components/EnvVarSheet";
 import config from "@/config.client";
+import {
+	DEFAULT_EC2_INSTANCE_TYPE,
+	EC2_INSTANCE_TYPE_PRESETS,
+	formatApproxEc2PriceCompact,
+} from "@/lib/aws/ec2InstanceTypes";
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
@@ -168,6 +173,15 @@ export default function ConfigTabs({
 
 	const hasScanResults = !!deployment.scan_results;
 
+	const ec2InstanceOptions = React.useMemo(() => {
+		const v = deployment.awsEc2InstanceType?.trim();
+		const list: string[] = [...EC2_INSTANCE_TYPE_PRESETS];
+		if (v && !list.some((x) => x === v)) list.unshift(v);
+		return list;
+	}, [deployment.awsEc2InstanceType]);
+
+	const ec2InstanceValue = deployment.awsEc2InstanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+
 	return (
 		<Form {...form}>
 			<div className="flex flex-col gap-10 max-w-2xl mx-auto">
@@ -243,6 +257,54 @@ export default function ConfigTabs({
 								</FormItem>
 							)}
 						/>
+					</div>
+				</div>
+
+				{/* EC2 INSTANCE TYPE */}
+				<div className="flex flex-col md:flex-row md:items-start justify-between gap-6 pt-10 border-t border-white/5">
+					<div className="flex flex-col gap-1 w-full md:w-48 shrink-0">
+						<div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+							<Cpu className="size-3.5" />
+							EC2 instance type
+						</div>
+						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">
+							Size for new EC2 instances. Redeploying to an existing instance does not resize it—change type in AWS or replace the instance.
+						</p>
+						<p className="text-[10px] text-muted-foreground/30 leading-relaxed mt-1">
+							Prices are approximate on-demand Linux in <span className="text-muted-foreground/50">us-west-2</span> (EBS &amp; transfer extra; other regions differ).
+						</p>
+					</div>
+					<div className="w-full max-w-sm space-y-2">
+						<Select
+							value={ec2InstanceValue}
+							onValueChange={(value) => onConfigChange({ awsEc2InstanceType: value })}
+						>
+							<SelectTrigger className="w-full h-auto min-h-11 py-2 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4 whitespace-normal *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:items-start *:data-[slot=select-value]:text-left [&_[data-slot=select-value]]:w-full">
+								<div className="flex items-start gap-2.5 w-full min-w-0 text-left">
+									<Cpu className="size-3.5 text-muted-foreground/40 shrink-0 mt-0.5" />
+									<SelectValue placeholder="Instance type" />
+								</div>
+							</SelectTrigger>
+							<SelectContent className="bg-[#0A0A0F] border-white/10 max-h-80">
+								{ec2InstanceOptions.map((t) => {
+									const priceLine = formatApproxEc2PriceCompact(t);
+									return (
+										<SelectItem key={t} value={t} className="py-2">
+											<div className="flex flex-col gap-0.5 text-left">
+												<span className="font-medium">{t}</span>
+												{priceLine ? (
+													<span className="text-[10px] text-muted-foreground/80 font-normal">{priceLine}</span>
+												) : (
+													<span className="text-[10px] text-muted-foreground/50 font-normal">
+														Estimate unavailable — see AWS pricing
+													</span>
+												)}
+											</div>
+										</SelectItem>
+									);
+								})}
+							</SelectContent>
+						</Select>
 					</div>
 				</div>
 

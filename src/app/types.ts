@@ -84,6 +84,8 @@ export type DeployConfig = {
 	cloudProvider?: CloudProvider;
 	deploymentTarget?: DeploymentTarget;
 	awsRegion?: string;
+	/** EC2 instance type for new instances (e.g. t3.small). Defaults to t3.micro. */
+	awsEc2InstanceType?: string;
 	ec2?: EC2DeployDetails;
 	cloudRun?: CloudRunDeployDetails;
 	scan_results?: SDArtifactsResponse;
