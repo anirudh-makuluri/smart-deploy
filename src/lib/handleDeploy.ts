@@ -257,7 +257,7 @@ function sendDeployComplete(
 ) {
 	// Save to database before sending WebSocket message
 	console.log("Saving deployment result to database...");
-	console.log("Deployment details:", { deployConfig, deployUrl, success, deploymentTarget, vercelDns, serviceDetails, durationMs });
+	// console.log("Deployment details:", { deployConfig, deployUrl, success, deploymentTarget, vercelDns, serviceDetails, durationMs });
 
 	saveDeploymentToDB(
 		deployConfig,

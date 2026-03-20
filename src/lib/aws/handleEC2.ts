@@ -818,6 +818,7 @@ export async function handleEC2(
 	// ── Redeploy path: reuse existing running instance via SSM ──
 	if (existingInstanceId) {
 		const state = await getInstanceState(existingInstanceId, region, ws);
+		console.log("state", state);
 		if (state === "running") {
 			return redeployInstance({
 				deployConfig, existingInstanceId, region, services, repoName, token,

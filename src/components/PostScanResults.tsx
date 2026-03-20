@@ -176,10 +176,6 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 						<Download className="size-3.5 mr-2" />
 						Full JSON Export
 					</Button>
-					<Button onClick={onStartDeployment} className="h-10 px-6 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-[0_0_30px_rgba(37,244,106,0.2)] transition-all active:scale-95 flex items-center gap-2">
-						<Rocket className="size-4" />
-						Start Deployment
-					</Button>
 				</div>
 			</div>
 

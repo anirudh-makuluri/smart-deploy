@@ -162,37 +162,49 @@ export async function getInstanceState(
 
 /**
  * Generates bash commands to write Dockerfiles from scan_results.dockerfiles
- * into the cloned repo (only if the file doesn't already exist).
+ * into the cloned repo.
+ *
+ * Note: To prevent path mismatches on EC2 (compose references vs generated keys),
+ * we normalize all generated Dockerfiles to be written at repo root with stable names.
  */
 function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
 	return Object.entries(dockerfiles)
 		.map(([filePath, content]) => {
 			const safePath = filePath.replace(/^\.\//, "");
+			const normalizedName =
+				safePath.includes("apps/web/") ? "Dockerfile.web"
+					: safePath.includes("apps/backend/") ? "Dockerfile.backend"
+						: (safePath.split("/").pop() || safePath);
 			return `
-if [ ! -f "${safePath}" ]; then
-    echo "Writing Dockerfile from scan_results to ${safePath}..."
-    mkdir -p "$(dirname "${safePath}")"
-    cat > "${safePath}" << 'DOCKERFILEEOF'
+echo "Writing Dockerfile from scan_results to Dockerfile.${normalizedName} (root)..."
+cat > "Dockerfile.${normalizedName}" << 'DOCKERFILEEOF'
 ${content}
 DOCKERFILEEOF
-fi`;
+`;
 		})
 		.join("\n");
 }
 
 /**
  * Generates bash commands to write docker-compose.yml from scan_results.docker_compose
- * (only if the repo doesn't already have one).
+ * into the cloned repo.
  */
 function buildComposeWriteScript(dockerCompose: string): string {
 	if (!dockerCompose) return "";
 	return `
-if [ ! -f docker-compose.yml ] && [ ! -f docker-compose.yaml ] && [ ! -f compose.yml ] && [ ! -f compose.yaml ]; then
-    echo "Writing docker-compose.yml from scan_results..."
-    cat > docker-compose.yml << 'COMPOSEEOF'
+echo "Writing docker-compose.yml from scan_results..."
+cat > docker-compose.yml << 'COMPOSEEOF'
 ${dockerCompose}
 COMPOSEEOF
-fi`;
+
+# Normalize dockerfile references to root-level Dockerfiles we write above.
+# Supports both nested paths and already-normalized names.
+echo "Normalizing docker-compose.yml dockerfile: paths..."
+sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)apps/web/Dockerfile[[:space:]]*$#\\1Dockerfile.web#' docker-compose.yml 2>/dev/null || true
+sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)apps/backend/Dockerfile[[:space:]]*$#\\1Dockerfile.backend#' docker-compose.yml 2>/dev/null || true
+sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)Dockerfile\\.web[[:space:]]*$#\\1Dockerfile.web#' docker-compose.yml 2>/dev/null || true
+sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)Dockerfile\\.backend[[:space:]]*$#\\1Dockerfile.backend#' docker-compose.yml 2>/dev/null || true
+`;
 }
 
 /**
@@ -204,6 +216,31 @@ function buildDockerRunScript(mainPort: string): string {
 	return `
 if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] || [ -f compose.yml ] || [ -f compose.yaml ]; then
     echo "Building and starting containers with docker-compose..."
+    COMPOSE_FILE=""
+    if [ -f docker-compose.yml ]; then COMPOSE_FILE="docker-compose.yml"; fi
+    if [ -z "$COMPOSE_FILE" ] && [ -f docker-compose.yaml ]; then COMPOSE_FILE="docker-compose.yaml"; fi
+    if [ -z "$COMPOSE_FILE" ] && [ -f compose.yml ]; then COMPOSE_FILE="compose.yml"; fi
+    if [ -z "$COMPOSE_FILE" ] && [ -f compose.yaml ]; then COMPOSE_FILE="compose.yaml"; fi
+
+    echo "Using compose file: $COMPOSE_FILE"
+
+    echo "Validating dockerfile paths referenced by compose..."
+    DOCKERFILES=$(awk '/^[[:space:]]*dockerfile:[[:space:]]*/{print $2}' "$COMPOSE_FILE" | tr -d '\r' | sort -u)
+    if [ -n "$DOCKERFILES" ]; then
+        for df in $DOCKERFILES; do
+            if [ ! -f "$df" ]; then
+                echo "ERROR: dockerfile path referenced by compose does not exist: $df"
+                echo "Repo root: $(pwd)"
+                echo "Top-level listing:"
+                ls -la
+                echo "apps/ listing (if exists):"
+                ls -la apps 2>/dev/null || true
+                exit 1
+            fi
+        done
+    else
+        echo "No explicit dockerfile: entries found in compose."
+    fi
     docker-compose up -d --build
 else
     echo "No docker-compose found. Building single-service Docker image..."
