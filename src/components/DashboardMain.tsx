@@ -4,12 +4,8 @@ import * as React from "react";
 import Link from "next/link";
 import DeploymentHistoryTable from "./DeploymentHistoryTable";
 import { useAppData } from "@/store/useAppData";
-import { Boxes, Github, ChevronRight, EllipsisVertical, PauseCircle, PlayCircle, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Boxes, Github } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { countDeployedServicesForRepo } from "@/lib/utils";
 
 function normalizeUrl(url: string): string {
@@ -22,10 +18,7 @@ type DashboardMainProps = {
 
 export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const { data: session } = useSession();
-	const { deployments, repoList, repoServices, isLoading, updateDeploymentById, removeDeployment, removeDeployments, refetchDeployments } = useAppData();
-	const [bulkOperation, setBulkOperation] = React.useState<{ label: string } | null>(null);
-	const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = React.useState(false);
-	const [pendingDeploys, setPendingDeploys] = React.useState<typeof deployments>([]);
+	const { deployments, repoServices, isLoading } = useAppData();
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
@@ -49,9 +42,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 			owner: record.repo_owner,
 			name: record.repo_name,
 			subtitle,
-			hasCrashed: isCrashed,
 			hasFailed,
-			deployments: repoDeployments,
 		};
 		if (totalServices > 0) {
 			return {
@@ -62,91 +53,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		return base;
 	});
 
-	async function handleConfirmBulkDelete() {
-		if (!pendingDeploys.length) return;
-		setShowBulkDeleteConfirm(false);
-		setBulkOperation({ label: "Deleting deployments…" });
-		const deletedKeys: { repoName: string; serviceName: string }[] = [];
-		try {
-			for (const dep of pendingDeploys) {
-				try {
-					const res = await fetch("/api/delete-deployment", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							repoName: dep.repo_name,
-							serviceName: dep.service_name,
-						}),
-					});
-					const data = await res.json();
-					if (data.status === "success") {
-						deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
-					} else {
-						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
-					}
-				} catch (err: any) {
-					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
-				}
-			}
-			if (deletedKeys.length) {
-				removeDeployments(deletedKeys);
-				await refetchDeployments();
-			}
-			toast.success("Finished deleting deployments for this repo.");
-		} finally {
-			setBulkOperation(null);
-			setPendingDeploys([]);
-		}
-	}
-
-	async function bulkDelete(deploys: typeof deployments) {
-		if (!deploys.length) return;
-		setPendingDeploys(deploys);
-		setShowBulkDeleteConfirm(true);
-	}
-
-	async function bulkPauseResume(deploys: typeof deployments, action: "pause" | "resume") {
-		const target = action === "pause" ? deploys.filter((d) => d.status === "running") : deploys.filter((d) => d.status === "paused");
-		if (!target.length) return;
-
-		const loadingId = toast.loading(action === "pause" ? "Pausing deployments…" : "Resuming deployments…");
-		try {
-			for (const dep of target) {
-				try {
-					const res = await fetch("/api/deployment-control", {
-						method: "PUT",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							repoName: dep.repo_name,
-							serviceName: dep.service_name,
-							action,
-						}),
-					});
-					const data = await res.json();
-					if (data.status === "success") {
-						const nextStatus = action === "pause" ? "paused" : "running";
-						void updateDeploymentById({ ...dep, status: nextStatus });
-					} else {
-						toast.error(data.error || data.message || `Failed to ${action} ${dep.service_name}`);
-					}
-				} catch (err: any) {
-					toast.error(err?.message || `Failed to ${action} ${dep.service_name}`);
-				}
-			}
-			toast.success(action === "pause" ? "Deployments paused." : "Deployments resumed.");
-		} finally {
-			setBulkOperation(null);
-		}
-	}
-
 	return (
 		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
-			{bulkOperation && (
-				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
-					<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-					<span className="text-sm font-medium text-foreground">{bulkOperation.label}</span>
-				</div>
-			)}
 			<div className="p-6 border-b border-border/60">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div>
@@ -181,58 +89,26 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 							</div>
 						) : (
 							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoCards.map(({ owner, name, subtitle, hasCrashed, hasFailed, deployments: repoDeployments }) => (
+								{repoCards.map(({ owner, name, subtitle, hasFailed }) => (
 									<div
 										key={`${owner}/${name}`}
 										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${hasFailed ? "border-destructive/50" : "border-border"
 											}`}
 									>
-										<div className="flex items-start justify-between gap-3">
-											<Link
-												href={`/${owner}/${name}`}
-												className="flex items-center gap-3 min-w-0"
-											>
-												<Github className="size-6 shrink-0 text-muted-foreground" />
-												<div className="min-w-0">
-													<p className="font-semibold text-foreground truncate">
-														{owner} / {name}
-													</p>
-													<p className="text-sm text-muted-foreground">
-														{subtitle}
-													</p>
-												</div>
-											</Link>
-											{repoDeployments.length > 0 && (
-												<DropdownMenu>
-													<DropdownMenuTrigger className="p-1.5 rounded-lg border border-transparent hover:bg-secondary hover:border-border text-muted-foreground hover:text-foreground transition-colors">
-														<EllipsisVertical className="size-4" />
-													</DropdownMenuTrigger>
-													<DropdownMenuContent align="end" className="border-border bg-card">
-														<DropdownMenuItem
-															onClick={() => bulkPauseResume(repoDeployments, "pause")}
-															className="text-foreground focus:bg-secondary focus:text-foreground"
-														>
-															<PauseCircle className="size-4" />
-															Pause all
-														</DropdownMenuItem>
-														<DropdownMenuItem
-															onClick={() => bulkPauseResume(repoDeployments, "resume")}
-															className="text-foreground focus:bg-secondary focus:text-foreground"
-														>
-															<PlayCircle className="size-4" />
-															Resume all
-														</DropdownMenuItem>
-														<DropdownMenuItem
-															onClick={() => bulkDelete(repoDeployments)}
-															variant="destructive"
-														>
-															<Trash2 className="size-4" />
-															Delete all deployments
-														</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu>
-											)}
-										</div>
+										<Link
+											href={`/${owner}/${name}`}
+											className="flex items-center gap-3 min-w-0"
+										>
+											<Github className="size-6 shrink-0 text-muted-foreground" />
+											<div className="min-w-0">
+												<p className="font-semibold text-foreground truncate">
+													{owner} / {name}
+												</p>
+												<p className="text-sm text-muted-foreground">
+													{subtitle}
+												</p>
+											</div>
+										</Link>
 									</div>
 								))}
 							</div>
@@ -251,17 +127,6 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 					</div>
 				</div>
 			</div>
-
-			<ConfirmDialog
-				open={showBulkDeleteConfirm}
-				onOpenChange={setShowBulkDeleteConfirm}
-				onConfirm={handleConfirmBulkDelete}
-				title="Delete All Deployments?"
-				description={`This will permanently delete ${pendingDeploys.length} deployments. This action cannot be undone and all associated cloud resources will be terminated.`}
-				confirmText="Delete All"
-				variant="destructive"
-			/>
 		</main>
 	);
 }
-
