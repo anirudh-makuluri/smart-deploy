@@ -11,6 +11,7 @@ import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
 import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
+import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
 
 // AWS imports
 import { setupAWSCredentials } from "./aws";
@@ -209,6 +210,29 @@ async function saveDeploymentToDB(
 			console.error("Failed to update deployment:", updateResponse.error);
 		} else {
 			console.log("Deployment saved to DB:", updateResponse.success);
+
+				// Kick off screenshot generation in the background so deploy completion isn't delayed.
+				if (success) {
+					const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
+					if (screenshotTargetUrl.trim()) {
+						void (async () => {
+							try {
+								const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({
+									url: screenshotTargetUrl,
+									ownerID: userID!,
+									repoName: deployConfig.repo_name,
+									serviceName: deployConfig.service_name,
+								});
+
+								await dbHelper.patchDeploymentData(deployConfig.repo_name, deployConfig.service_name, userID!, {
+									screenshot_url: screenshotPublicUrl,
+								});
+							} catch (err) {
+								console.error("Screenshot generation failed:", err);
+							}
+						})();
+					}
+				}
 		}
 
 		// Record deployment history using repo_name + service_name

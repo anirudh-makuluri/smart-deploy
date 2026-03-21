@@ -400,6 +400,42 @@ export const dbHelper = {
 		}
 	},
 
+	/**
+	 * Patch only the JSON `data` column for the latest deployment row.
+	 * This avoids bumping revision/status when we add derived assets (screenshots, etc.).
+	 */
+	patchDeploymentData: async function (
+		repoName: string,
+		serviceName: string,
+		userID: string,
+		patch: Record<string, unknown>
+	) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: row, error: fetchError } = await supabase
+				.from("deployments")
+				.select("id, data")
+				.eq("owner_id", userID)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+
+			if (fetchError) return { error: fetchError.message };
+			if (!row) return { error: "Deployment not found" };
+
+			const nextData = { ...(row.data as Record<string, unknown>), ...patch };
+			const { error: updateError } = await supabase.from("deployments").update({ data: nextData }).eq("id", row.id);
+
+			if (updateError) return { error: updateError.message };
+			return { success: true };
+		} catch (err: unknown) {
+			const message = err instanceof Error ? err.message : String(err);
+			return { error: message };
+		}
+	},
+
 	/** Upsert detected services for a repo (after running detect-services). */
 	upsertRepoServices: async function (
 		userID: string,

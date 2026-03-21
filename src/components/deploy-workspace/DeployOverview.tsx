@@ -35,6 +35,8 @@ export default function DeployOverview({
 	const effectiveStatus =
 		deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy");
 	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
+	const screenshotUrl = deployment.screenshot_url;
+	const liveUrl = displayUrl ?? (deployment.custom_url || deployment.deployUrl);
 	const deployDisabled = isDeploymentDisabled(deployment);
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" || !!deployment.ec2?.instanceId;
@@ -94,7 +96,15 @@ export default function DeployOverview({
 							<span>Front page preview</span>
 							<span className="text-muted-foreground/70">Live topology</span>
 						</div>
-						{displayUrl ? (
+						{screenshotUrl ? (
+							<div className="relative h-80 md:h-96">
+								<img
+									src={screenshotUrl}
+									alt={`Screenshot of ${deployment.service_name}`}
+									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
+								/>
+							</div>
+						) : displayUrl ? (
 							<div className="relative h-80 md:h-96">
 								<iframe
 									src={displayUrl}
@@ -138,14 +148,14 @@ export default function DeployOverview({
 							)}
 							<div className="flex items-center justify-between px-4 py-3">
 								<span>Live URL</span>
-								{displayUrl ? (
+								{liveUrl ? (
 									<a
-										href={displayUrl}
+										href={liveUrl}
 										target="_blank"
 										rel="noopener noreferrer"
 										className="text-primary hover:underline"
 									>
-										{displayUrl}
+										{liveUrl}
 									</a>
 								) : (
 									<span className="text-muted-foreground/70">Not available</span>

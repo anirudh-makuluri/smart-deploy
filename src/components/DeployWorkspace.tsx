@@ -26,6 +26,7 @@ export default function DeployWorkspace() {
 	const activeRepo = useAppData((s) => s.activeRepo);
 	const serviceName = useAppData((s) => s.activeServiceName);
 	const isLoading = useAppData((s) => s.isLoading);
+	const fetchRepoDeployments = useAppData((s) => s.fetchRepoDeployments);
 	const { data: session } = useSession();
 	const repo = activeRepo;
 	const deployment = React.useMemo(() => {
@@ -54,10 +55,13 @@ export default function DeployWorkspace() {
 	const effectiveDeploymentStatus =
 		deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy");
 
+	const screenshotUrl = deployment?.screenshot_url;
+	const [didRequestScreenshot, setDidRequestScreenshot] = React.useState(false);
+
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const [activeSection, setActiveSection] = React.useState<MenuSection>(effectiveDeploymentStatus !== "didnt_deploy" ? "overview" : "setup");
-	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
+	const [deploymentHistory, setDeploymentHistory] = React.useState<unknown[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
 	const [elapsedTime, setElapsedTime] = React.useState(0);
 
@@ -96,6 +100,40 @@ export default function DeployWorkspace() {
 
 		return () => clearInterval(interval);
 	}, [showDeployLogs, deployStatus]);
+
+	// If the service is running but we don't have a screenshot yet, generate one on-demand.
+	React.useEffect(() => {
+		if (!repo?.name || !serviceName) return;
+		if (didRequestScreenshot) return;
+		if (effectiveDeploymentStatus !== "running") return;
+		if (screenshotUrl) return;
+		// If there isn't a stored live URL, screenshot capture won't know what to render.
+		if (!hasStoredLiveUrl) return;
+
+		setDidRequestScreenshot(true);
+
+		(async () => {
+			try {
+				const res = await fetch("/api/deployment-preview-screenshot", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ repoName: repo.name, serviceName }),
+				});
+				const data = await res.json();
+				if (!res.ok) {
+					console.error("Screenshot generation failed:", data?.error || data);
+					return;
+				}
+
+				// Refresh deployments so the new screenshot_url shows up.
+				await fetchRepoDeployments(repo.name);
+			} catch (err) {
+				console.error("Screenshot generation request error:", err);
+			} finally {
+				// Keep didRequestScreenshot true; user can redeploy if they want a different screenshot.
+			}
+		})();
+	}, [repo?.name, serviceName, didRequestScreenshot, effectiveDeploymentStatus, screenshotUrl, hasStoredLiveUrl, fetchRepoDeployments]);
 
 	const formatTime = (seconds: number) => {
 		const hrs = Math.floor(seconds / 3600);

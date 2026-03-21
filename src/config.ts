@@ -35,6 +35,9 @@ const config = {
 	SUPABASE_URL: process.env.SUPABASE_URL || "",
 	SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
 
+	// Supabase Storage bucket for deployed app screenshots
+	DEPLOYMENT_SCREENSHOT_BUCKET: process.env.DEPLOYMENT_SCREENSHOT_BUCKET || "deployment-screenshots",
+
 	// Firebase Configuration (deprecated – migration to Supabase)
 	FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || "",
 	FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN || "",

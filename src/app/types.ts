@@ -71,6 +71,8 @@ export type DeployConfig = {
 	env_vars?: string;
 	deployUrl?: string;
 	custom_url?: string;
+	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage). */
+	screenshot_url?: string;
 	service_name: string;
 	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
 	first_deployment?: string;
