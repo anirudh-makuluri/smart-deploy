@@ -11,6 +11,7 @@ import {
 } from "@aws-sdk/client-ssm";
 import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
+import { canonicalDockerfileDeployPath } from "../dockerfileDeployPath";
 
 const SSM_ROLE_NAME = "smartdeploy-ec2-ssm-role";
 export const SSM_PROFILE_NAME = "smartdeploy-ec2-ssm-profile";
@@ -175,37 +176,63 @@ export async function getInstanceState(
 	return undefined;
 }
 
+/** Reject path traversal in Dockerfile keys from scan_results. */
+function isSafeDockerfileRelPath(p: string): boolean {
+	if (!p || p.includes("..")) return false;
+	if (path.isAbsolute(p)) return false;
+	return true;
+}
+
+/**
+ * Align docker-compose `dockerfile:` values with canonicalDockerfileDeployPath so validation and builds match written files.
+ */
+function normalizeDockerfilePathsInCompose(compose: string): string {
+	return compose.replace(/^([ \t]*dockerfile:\s*)([^\n]*)$/gim, (full, prefix: string, rhs: string) => {
+		const hashIdx = rhs.indexOf("#");
+		const valuePart = hashIdx >= 0 ? rhs.slice(0, hashIdx) : rhs;
+		const comment = hashIdx >= 0 ? rhs.slice(hashIdx) : "";
+		const trimmedRhs = valuePart.trimEnd();
+		if (!trimmedRhs) return full;
+		const qDouble = trimmedRhs.startsWith('"') && trimmedRhs.endsWith('"');
+		const qSingle = trimmedRhs.startsWith("'") && trimmedRhs.endsWith("'");
+		const inner = (qDouble || qSingle ? trimmedRhs.slice(1, -1) : trimmedRhs).trim();
+		if (inner.includes("..")) return full;
+		if (path.isAbsolute(inner)) return full;
+		const normalized = canonicalDockerfileDeployPath(inner.replace(/^\.\//, ""));
+		if (normalized === inner) return full;
+		if (qDouble) return `${prefix}"${normalized}"${comment}`;
+		if (qSingle) return `${prefix}'${normalized}'${comment}`;
+		return `${prefix}${normalized}${comment}`;
+	});
+}
+
 /**
  * Generates bash commands to write Dockerfiles from scan_results.dockerfiles
- * into the cloned repo.
- *
- * Note: To prevent path mismatches on EC2 (compose references vs generated keys),
- * we normalize all generated Dockerfiles to be written at repo root with stable names.
+ * into the cloned repo at the paths given by each key (e.g. client/Dockerfile, apps/web/Dockerfile).
+ * Keys that name a directory only (e.g. "client") are written to client/Dockerfile.
  */
 function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
-	const entries = Object.entries(dockerfiles || {});
+	const entries = Object.entries(dockerfiles || {})
+		.map(([filePath, content]) => {
+			const raw = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
+			const safePath = canonicalDockerfileDeployPath(raw);
+			return [safePath, content] as [string, string];
+		})
+		.filter(([safePath]) => isSafeDockerfileRelPath(safePath));
 
-	// Single Dockerfile case: write plain repo-root `Dockerfile` (no `normalizedName` suffix).
-	if (entries.length === 1) {
-		const [, content] = entries[0];
-		return `
-echo "Writing Dockerfile from scan_results to Dockerfile (root)..."
-cat > "Dockerfile" << 'DOCKERFILEEOF'
-${content}
-DOCKERFILEEOF
-`;
-	}
+	if (entries.length === 0) return "";
 
 	return entries
-		.map(([filePath, content]) => {
-			const safePath = filePath.replace(/^\.\//, "");
-			const normalizedName =
-				safePath.includes("apps/web/") ? "Dockerfile.web"
-					: safePath.includes("apps/backend/") ? "Dockerfile.backend"
-						: (safePath.split("/").pop() || safePath);
+		.map(([safePath, content]) => {
+			const lastSlash = safePath.lastIndexOf("/");
+			const dir = lastSlash >= 0 ? safePath.slice(0, lastSlash) : "";
+			const mkdirLine =
+				dir.length > 0
+					? `mkdir -p "${dir.replace(/"/g, '\\"')}"\n`
+					: "";
 			return `
-echo "Writing Dockerfile from scan_results to Dockerfile.${normalizedName} (root)..."
-cat > "Dockerfile.${normalizedName}" << 'DOCKERFILEEOF'
+echo "Writing Dockerfile from scan_results to ${safePath}..."
+${mkdirLine}cat > "${safePath.replace(/"/g, '\\"')}" << 'DOCKERFILEEOF'
 ${content}
 DOCKERFILEEOF
 `;
@@ -219,19 +246,12 @@ DOCKERFILEEOF
  */
 function buildComposeWriteScript(dockerCompose: string): string {
 	if (!dockerCompose) return "";
+	const normalizedCompose = normalizeDockerfilePathsInCompose(dockerCompose);
 	return `
 echo "Writing docker-compose.yml from scan_results..."
 cat > docker-compose.yml << 'COMPOSEEOF'
-${dockerCompose}
+${normalizedCompose}
 COMPOSEEOF
-
-# Normalize dockerfile references to root-level Dockerfiles we write above.
-# Supports both nested paths and already-normalized names.
-echo "Normalizing docker-compose.yml dockerfile: paths..."
-sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)apps/web/Dockerfile[[:space:]]*$#\\1Dockerfile.web#' docker-compose.yml 2>/dev/null || true
-sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)apps/backend/Dockerfile[[:space:]]*$#\\1Dockerfile.backend#' docker-compose.yml 2>/dev/null || true
-sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)Dockerfile\\.web[[:space:]]*$#\\1Dockerfile.web#' docker-compose.yml 2>/dev/null || true
-sed -i 's#^\\([[:space:]]*dockerfile:[[:space:]]*\\)Dockerfile\\.backend[[:space:]]*$#\\1Dockerfile.backend#' docker-compose.yml 2>/dev/null || true
 `;
 }
 

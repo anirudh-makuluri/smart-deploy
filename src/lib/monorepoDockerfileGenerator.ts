@@ -2,6 +2,17 @@ import fs from "fs";
 import path from "path";
 import { ServiceDefinition, MultiServiceConfig } from "./multiServiceDetector";
 
+/** Relative path from monorepo root to the service Dockerfile (posix, for compose / docker -f). */
+export function monorepoDockerfileRelPath(service: ServiceDefinition): string {
+	const rel = (service.relativePath || service.name).replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+	return `${rel}/Dockerfile`;
+}
+
+export function monorepoDockerfileAbsPath(monorepoRoot: string, service: ServiceDefinition): string {
+	const relParts = (service.relativePath || service.name).split(/[/\\]+/).filter(Boolean);
+	return path.join(monorepoRoot, ...relParts, "Dockerfile");
+}
+
 /**
  * Generates a proper Dockerfile for a monorepo service.
  * 
@@ -190,7 +201,7 @@ export function generateMonorepoDockerCompose(
 		composeServices[service.name] = {
 			build: {
 				context: ".",
-				dockerfile: `Dockerfile.${service.name}`,
+				dockerfile: monorepoDockerfileRelPath(service),
 			},
 			ports: [`${p}:${p}`],
 			environment: env,
@@ -202,8 +213,8 @@ export function generateMonorepoDockerCompose(
 }
 
 /**
- * Writes Dockerfiles for all monorepo services.
- * Creates Dockerfile.<service-name> files at the monorepo root.
+ * Writes Dockerfiles for all monorepo services under each service directory (e.g. apps/web/Dockerfile).
+ * Compose stays at the monorepo root with build.context "." and dockerfile pointing at that path.
  */
 export function writeMonorepoDockerfiles(
 	services: ServiceDefinition[],
@@ -211,12 +222,13 @@ export function writeMonorepoDockerfiles(
 	monorepoRoot: string,
 ): void {
 	for (const service of services) {
-		const dockerfileName = `Dockerfile.${service.name}`;
-		const dockerfilePath = path.join(monorepoRoot, dockerfileName);
+		const dockerfilePath = monorepoDockerfileAbsPath(monorepoRoot, service);
+		const relForLog = monorepoDockerfileRelPath(service);
 
 		// Don't overwrite existing Dockerfiles
 		if (fs.existsSync(dockerfilePath)) {
-			console.log(`Dockerfile already exists: ${dockerfileName}`);
+			console.log(`Dockerfile already exists: ${relForLog}`);
+			service.dockerfile = monorepoDockerfileRelPath(service);
 			continue;
 		}
 
@@ -227,13 +239,18 @@ export function writeMonorepoDockerfiles(
 		);
 		if (fs.existsSync(serviceDockerfile)) {
 			console.log(`Service ${service.name} has its own Dockerfile, skipping generation`);
-			service.dockerfile = "Dockerfile";
+			service.dockerfile = monorepoDockerfileRelPath(service);
 			continue;
+		}
+
+		const serviceDir = path.dirname(dockerfilePath);
+		if (!fs.existsSync(serviceDir)) {
+			fs.mkdirSync(serviceDir, { recursive: true });
 		}
 
 		const content = generateMonorepoDockerfile(service, multiServiceConfig, monorepoRoot);
 		fs.writeFileSync(dockerfilePath, content);
-		service.dockerfile = dockerfileName;
-		console.log(`Generated ${dockerfileName} for service ${service.name}`);
+		service.dockerfile = monorepoDockerfileRelPath(service);
+		console.log(`Generated ${relForLog} for service ${service.name}`);
 	}
 }

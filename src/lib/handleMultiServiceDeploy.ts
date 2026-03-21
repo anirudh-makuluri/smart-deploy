@@ -8,7 +8,12 @@ import { detectMultiService, ServiceDefinition } from "./multiServiceDetector";
 import { detectDatabase } from "./databaseDetector";
 import { createCloudSQLInstance, connectCloudRunToCloudSQL, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { createWebSocketLogger } from "./websocketLogger";
-import { generateMonorepoDockerfile, writeMonorepoDockerfiles } from "./monorepoDockerfileGenerator";
+import {
+	generateMonorepoDockerfile,
+	monorepoDockerfileAbsPath,
+	monorepoDockerfileRelPath,
+	writeMonorepoDockerfiles,
+} from "./monorepoDockerfileGenerator";
 
 /**
  * Generates Dockerfile content for a service
@@ -133,7 +138,7 @@ async function deployService(
 	const buildContext = service.build_context || service.workdir;
 
 	if (service.dockerfile && service.dockerfile !== "Dockerfile") {
-		// For custom Dockerfile names (e.g. monorepo Dockerfile.<name>), create a cloudbuild.yaml
+		// For alternate Dockerfile paths (e.g. monorepo apps/web/Dockerfile with context at repo root)
 		const cloudbuildConfig = {
 			steps: [{
 				name: "gcr.io/cloud-builders/docker",
@@ -336,19 +341,22 @@ export async function handleMultiServiceDeploy(
 			: path.join(appDir, service.workdir);
 
 		if (multiServiceConfig.isMonorepo) {
-			// For monorepo: Dockerfile is at repo root as Dockerfile.<name>
-			const monoDockerfilePath = path.join(cloneDir, `Dockerfile.${service.name}`);
+			const monoDockerfilePath = monorepoDockerfileAbsPath(cloneDir, service);
 			if (!fs.existsSync(monoDockerfilePath)) {
 				send(`✍️ Generating monorepo Dockerfile for ${service.name}...`, `service-${i}`);
 				const content = generateMonorepoDockerfile(service, multiServiceConfig, cloneDir);
+				const serviceDir = path.dirname(monoDockerfilePath);
+				if (!fs.existsSync(serviceDir)) {
+					fs.mkdirSync(serviceDir, { recursive: true });
+				}
 				fs.writeFileSync(monoDockerfilePath, content);
 			} else {
 				send(`✅ Found existing Dockerfile for ${service.name}`, `service-${i}`);
 			}
-			// For monorepo, build context is the repo root
+			// For monorepo, build context is the repo root; Dockerfile lives under the service folder
 			service.workdir = serviceWorkdir;
 			service.build_context = cloneDir;
-			service.dockerfile = `Dockerfile.${service.name}`;
+			service.dockerfile = monorepoDockerfileRelPath(service);
 		} else {
 			// Check if service has a Dockerfile
 			const dockerfilePath = service.dockerfile

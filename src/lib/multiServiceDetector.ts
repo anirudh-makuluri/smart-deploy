@@ -29,6 +29,21 @@ export interface MultiServiceConfig {
 	monorepoRoot?: string;
 }
 
+/** Infer dockerfile path when compose omits build.dockerfile (legacy root Dockerfile.<name> or service-dir Dockerfile). */
+function inferDockerfileFromCompose(appDir: string, serviceName: string, buildContextRaw: string | undefined): string | undefined {
+	const rootLegacy = path.join(appDir, `Dockerfile.${serviceName}`);
+	if (fs.existsSync(rootLegacy)) return `Dockerfile.${serviceName}`;
+
+	const ctx = (buildContextRaw || ".").replace(/^\.\//, "").trim();
+	if (ctx && ctx !== ".") {
+		const nested = path.join(appDir, ctx, "Dockerfile");
+		if (fs.existsSync(nested)) {
+			return path.posix.join(ctx.replace(/\\/g, "/"), "Dockerfile");
+		}
+	}
+	return undefined;
+}
+
 /**
  * Detects if a docker-compose.yml file exists and parses it
  */
@@ -65,14 +80,18 @@ export function detectDockerCompose(appDir: string): MultiServiceConfig | null {
 							continue;
 						}
 
+						const contextFromCompose = config.build?.context;
+						const workdir = contextFromCompose || appDir;
 						const service: ServiceDefinition = {
 							name: serviceName,
-							workdir: config.build?.context || appDir,
-							dockerfile: config.build?.dockerfile || (fs.existsSync(path.join(appDir, `Dockerfile.${serviceName}`)) ? `Dockerfile.${serviceName}` : undefined),
+							workdir,
+							dockerfile:
+								config.build?.dockerfile ||
+								inferDockerfileFromCompose(appDir, serviceName, contextFromCompose),
 							port: extractPort(config),
 							env_vars: config.environment || {},
 							depends_on: config.depends_on || [],
-							build_context: config.build?.context || appDir
+							build_context: contextFromCompose || appDir
 						};
 
 						// Detect language if no dockerfile specified

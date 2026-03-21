@@ -13,8 +13,14 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw, FolderGit2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+	canonicalDockerfileDeployPath,
+	isValidRepoRelativeDockerfilePath,
+	syncDockerfilePathInCompose,
+} from "@/lib/dockerfileDeployPath";
 
 type PostScanResultsProps = {
 	results: SDArtifactsResponse;
@@ -29,12 +35,15 @@ type PostScanResultsProps = {
 export default function PostScanResults({ results, scanTime, deployment, onStartDeployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
 	const dockerfileNames = useMemo(() => {
 		if (!results.dockerfiles) return [];
-		return Object.keys(results.dockerfiles);
-	}, [results]);
+		return Object.keys(results.dockerfiles).sort((a, b) =>
+			canonicalDockerfileDeployPath(a).localeCompare(canonicalDockerfileDeployPath(b), undefined, { sensitivity: "base" }),
+		);
+	}, [results.dockerfiles]);
 
 	const [activeTab, setActiveTab] = useState<string>(dockerfileNames.length > 0 ? dockerfileNames[0] : "");
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState("");
+	const [deployPathDraft, setDeployPathDraft] = useState("");
 	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
 	const [userFeedback, setUserFeedback] = useState("");
 
@@ -42,6 +51,18 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 		setIsEditing(false);
 		setEditContent("");
 	}, [activeTab]);
+
+	useEffect(() => {
+		if (dockerfileNames.length > 0 && activeTab !== "compose" && activeTab !== "nginx" && !dockerfileNames.includes(activeTab)) {
+			setActiveTab(dockerfileNames[0]);
+		}
+	}, [dockerfileNames, activeTab]);
+
+	useEffect(() => {
+		if (activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.includes(activeTab)) {
+			setDeployPathDraft(canonicalDockerfileDeployPath(activeTab));
+		}
+	}, [activeTab, dockerfileNames]);
 
 	const handleEdit = () => {
 		let content = "";
@@ -105,6 +126,65 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 	const copyToClipboard = (text: string) => {
 		navigator.clipboard.writeText(text);
 		toast.success("Copied to clipboard");
+	};
+
+	const handleUpdateDeployPath = () => {
+		if (!onUpdateResults) return;
+		if (activeTab === "compose" || activeTab === "nginx") return;
+
+		const raw = deployPathDraft.trim();
+		if (!isValidRepoRelativeDockerfilePath(raw)) {
+			toast.error("Invalid path: use a repo-relative path (e.g. client/Dockerfile). No .. or absolute paths.");
+			return;
+		}
+
+		const newKey = canonicalDockerfileDeployPath(raw);
+		const oldKey = activeTab;
+		if (newKey === oldKey) {
+			toast.message("Deploy path already matches this Dockerfile.");
+			return;
+		}
+
+		const content = results.dockerfiles?.[oldKey];
+		if (content === undefined) return;
+
+		if (results.dockerfiles?.[newKey] !== undefined) {
+			toast.error(`Another Dockerfile already uses ${newKey}. Remove or rename it first.`);
+			return;
+		}
+
+		const updated: SDArtifactsResponse = {
+			...results,
+			dockerfiles: { ...results.dockerfiles },
+		};
+
+		delete updated.dockerfiles![oldKey];
+		updated.dockerfiles![newKey] = content;
+
+		if (results.hadolint_results?.[oldKey]) {
+			updated.hadolint_results = { ...results.hadolint_results };
+			const h = updated.hadolint_results[oldKey];
+			delete updated.hadolint_results[oldKey];
+			updated.hadolint_results[newKey] = h;
+		}
+
+		if (results.services?.length) {
+			const oldCanon = canonicalDockerfileDeployPath(oldKey);
+			updated.services = results.services.map((s) => {
+				if (s.dockerfile_path === oldKey || canonicalDockerfileDeployPath(s.dockerfile_path) === oldCanon) {
+					return { ...s, dockerfile_path: newKey };
+				}
+				return s;
+			});
+		}
+
+		if (results.docker_compose) {
+			updated.docker_compose = syncDockerfilePathInCompose(results.docker_compose, oldKey, newKey);
+		}
+
+		onUpdateResults(updated);
+		setActiveTab(newKey);
+		toast.success("Deploy path updated; this path is used when writing files on the server.");
 	};
 
 	function buildTemplateFeedback(r: SDArtifactsResponse): string {
@@ -412,21 +492,56 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 						</div>
 					</div>
 
+					{activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.includes(activeTab) && (
+						<div className="flex flex-wrap items-end gap-3 mb-4 px-1">
+							<div className="flex-1 min-w-[min(100%,220px)]">
+								<label htmlFor="deploy-dockerfile-path" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 mb-1.5">
+									<FolderGit2 className="size-3 opacity-70" />
+									Deploy path (repo-relative)
+								</label>
+								<Input
+									id="deploy-dockerfile-path"
+									value={deployPathDraft}
+									onChange={(e) => setDeployPathDraft(e.target.value)}
+									className="font-mono text-xs h-9 bg-white/[0.04] border-white/10 text-white/90 placeholder:text-muted-foreground/40"
+									placeholder="client/Dockerfile"
+									spellCheck={false}
+									autoComplete="off"
+								/>
+								<p className="text-[10px] text-muted-foreground/50 mt-1.5 leading-snug">
+									This path is the object key in scan results and on EC2 (e.g. <span className="font-mono text-white/60">client/Dockerfile</span>). Folder-only names get <span className="font-mono text-white/60">/Dockerfile</span> appended on deploy unless you include a Dockerfile filename.
+								</p>
+							</div>
+							<Button
+								type="button"
+								size="sm"
+								variant="secondary"
+								className="h-9 shrink-0 bg-white/10 hover:bg-white/15 text-white border-white/10"
+								onClick={handleUpdateDeployPath}
+								disabled={!onUpdateResults}
+							>
+								Update path
+							</Button>
+						</div>
+					)}
+
 					<Card className="flex-1 flex flex-col bg-[#050505] border-white/5 shadow-2xl rounded-2xl overflow-hidden min-h-0">
 						{/* IDE Tabs */}
 						<div className="flex items-center bg-[#0a0a0a] border-b border-white/5 h-11 px-2.5 gap-1 overflow-x-auto no-scrollbar shrink-0">
-							{dockerfileNames.map(name => {
-								const displayName = name.toLowerCase() === 'dockerfile' ? 'Dockerfile' : (name.length > 15 ? `${name.substring(0, 12)}...` : name);
+							{dockerfileNames.map((name) => {
+								const tabLabel = canonicalDockerfileDeployPath(name);
 								const isActive = activeTab === name;
 								return (
 									<button
 										key={name}
+										type="button"
+										title={tabLabel}
 										onClick={() => setActiveTab(name)}
-										className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold tracking-tight rounded-md transition-all whitespace-nowrap ${isActive ? 'bg-white/5 text-primary shadow-sm' : 'text-muted-foreground/60 hover:text-white hover:bg-white/[0.03]'}`}
+										className={`relative flex items-center gap-2 px-3 h-8 text-[11px] font-mono font-semibold tracking-tight rounded-md transition-all whitespace-nowrap max-w-[min(100%,280px)] truncate ${isActive ? 'bg-white/5 text-primary shadow-sm' : 'text-muted-foreground/60 hover:text-white hover:bg-white/[0.03]'}`}
 									>
-										{isActive && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
-										<div className={`size-1.5 rounded-full ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(37,244,106,1)]' : 'bg-white/20'}`} />
-										{displayName}
+										{isActive && <div className="absolute bottom-1 left-3 right-3 h-0.5 bg-primary rounded-full" />}
+										<div className={`size-1.5 rounded-full shrink-0 ${isActive ? 'bg-primary shadow-[0_0_8px_rgba(37,244,106,1)]' : 'bg-white/20'}`} />
+										<span className="truncate">{tabLabel}</span>
 									</button>
 								);
 							})}
