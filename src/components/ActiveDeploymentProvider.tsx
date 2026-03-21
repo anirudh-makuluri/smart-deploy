@@ -85,6 +85,8 @@ function DeployLogsModalContent({
 					serviceLogs={serviceLogs}
 					deployStatus={effectiveStatus}
 					deployError={effectiveError}
+					repoNameForLogs={repoName}
+					serviceNameForLogs={serviceName}
 				/>
 			</div>
 			<div className="mt-4 flex justify-end">

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ type DeployLogsViewProps = {
 	repoUrl?: string;
 	commitSha?: string;
 	onStartImproveScan?: (payload: { repoUrl: string; commitSha?: string; feedback: string }) => void;
+	repoNameForLogs?: string;
+	serviceNameForLogs?: string;
 };
 
 export default function DeployLogsView({
@@ -39,6 +41,8 @@ export default function DeployLogsView({
 	repoUrl,
 	commitSha,
 	onStartImproveScan,
+	repoNameForLogs,
+	serviceNameForLogs,
 }: DeployLogsViewProps) {
 	const logsContainerRef = useRef<HTMLDivElement>(null);
 	const [analyzing, setAnalyzing] = React.useState(false);
@@ -72,58 +76,81 @@ export default function DeployLogsView({
 		onStartImproveScan({ repoUrl, commitSha, feedback: analysisResult });
 	}
 
-	// Auto-scroll to bottom when new logs arrive
-	useEffect(() => {
-		if (logsContainerRef.current) {
-			const scrollElement = logsContainerRef.current.querySelector("[data-logs-scroll]");
-			if (scrollElement) {
-				setTimeout(() => {
-					scrollElement.scrollTop = scrollElement.scrollHeight;
-				}, 0);
-			}
-		}
-	}, [deployLogEntries, serviceLogs]);
+	// Requirement:
+	// - While deploying: show deployment (step) logs.
+	// - After deployment completes (success/error) and on page refresh: show service logs (history + live).
+	const logsToRender = deployStatus === "running" ? deployLogEntries : serviceLogs;
+	const showDeploymentHeader = showDeployLogs;
 
-	const completedSteps = steps?.filter(s => s.status === "success").length || 0;
-	const totalSteps = steps?.length || 1;
-	const progress = (completedSteps / totalSteps) * 100;
+	const completedSteps = showDeploymentHeader ? (steps?.filter(s => s.status === "success").length || 0) : 0;
+	const totalSteps = showDeploymentHeader ? (steps?.length || 1) : 1;
+	const progress = showDeploymentHeader ? (completedSteps / totalSteps) * 100 : 0;
+
+	const headerTitle = showDeploymentHeader
+		? deployStatus === "running"
+			? "Deployment in Progress"
+			: deployStatus === "success"
+				? "Deployment Successful"
+				: deployStatus === "error"
+					? "Deployment Failed"
+					: "Awaiting Deployment"
+		: "Service Logs";
+
+	const headerSubtitle = showDeploymentHeader
+		? deployStatus === "running"
+			? `Step ${completedSteps + 1} of ${totalSteps}`
+			: deployStatus === "success"
+				? "All steps completed successfully"
+				: deployStatus === "error"
+					? "An error occurred during deployment"
+					: "Ready to deploy"
+		: "Historical + live service output";
 
 	return (
 		<div className="space-y-6">
 			{/* Live Status Header */}
-			<div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6 shadow-xl backdrop-blur-sm overflow-hidden relative group">
-				<div className="absolute top-0 left-0 w-full h-[2px] bg-white/5">
-					<div
-						className={`h-full transition-all duration-1000 ease-out ${deployStatus === "error" ? "bg-destructive" : "bg-primary"
-							}`}
-						style={{ width: `${progress}%` }}
-					/>
-				</div>
+			<div className="rounded-2xl border border-white/5 bg-white/2 p-6 shadow-xl backdrop-blur-sm overflow-hidden relative group">
+				{showDeploymentHeader && (
+					<div className="absolute top-0 left-0 w-full h-[2px] bg-white/5">
+						<div
+							className={`h-full transition-all duration-1000 ease-out ${deployStatus === "error" ? "bg-destructive" : "bg-primary"}`}
+							style={{ width: `${progress}%` }}
+						/>
+					</div>
+				)}
 
 				<div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
 					<div className="space-y-4 flex-1">
 						<div className="flex items-center gap-3">
-							<div className={`p-2 rounded-xl ${deployStatus === "running" ? "bg-primary/10 text-primary animate-pulse" :
-									deployStatus === "success" ? "bg-emerald-500/10 text-emerald-500" :
-										deployStatus === "error" ? "bg-destructive/10 text-destructive" :
-											"bg-muted text-muted-foreground"
-								}`}>
-								{deployStatus === "running" && <Loader2 className="size-6 animate-spin" />}
-								{deployStatus === "success" && <CheckCircle2 className="size-6" />}
-								{deployStatus === "error" && <XCircle className="size-6" />}
-								{deployStatus === "not-started" && <Clock className="size-6" />}
-							</div>
+								<div
+									className={`p-2 rounded-xl ${
+										!showDeploymentHeader
+											? "bg-muted text-muted-foreground"
+											: deployStatus === "running"
+												? "bg-primary/10 text-primary animate-pulse"
+												: deployStatus === "success"
+													? "bg-emerald-500/10 text-emerald-500"
+													: deployStatus === "error"
+														? "bg-destructive/10 text-destructive"
+														: "bg-muted text-muted-foreground"
+									}`}
+								>
+									{showDeploymentHeader ? (
+										<>
+											{deployStatus === "running" && <Loader2 className="size-6 animate-spin" />}
+											{deployStatus === "success" && <CheckCircle2 className="size-6" />}
+											{deployStatus === "error" && <XCircle className="size-6" />}
+											{deployStatus === "not-started" && <Clock className="size-6" />}
+										</>
+									) : (
+										<Clock className="size-6" />
+									)}
+								</div>
 							<div>
 								<h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-									{deployStatus === "running" ? "Deployment in Progress" :
-										deployStatus === "success" ? "Deployment Successful" :
-											deployStatus === "error" ? "Deployment Failed" : "Awaiting Deployment"}
+										{headerTitle}
 								</h3>
-								<p className="text-sm text-muted-foreground/60 flex items-center gap-2">
-									{deployStatus === "running" ? `Step ${completedSteps + 1} of ${totalSteps}` :
-										deployStatus === "success" ? "All steps completed successfully" :
-											deployStatus === "error" ? "An error occurred during deployment" : "Ready to deploy"}
-								</p>
+									<p className="text-sm text-muted-foreground/60 flex items-center gap-2">{headerSubtitle}</p>
 							</div>
 						</div>
 
@@ -146,19 +173,25 @@ export default function DeployLogsView({
 					</div>
 
 					<div className="flex flex-col items-end gap-3 shrink-0">
-						<div className="flex items-center gap-2">
-							{steps?.map((step, i) => (
-								<div
-									key={step.id}
-									className={`size-2 rounded-full transition-all duration-300 ${step.status === "success" ? "bg-emerald-500" :
-											step.status === "in_progress" ? "bg-primary animate-pulse scale-125" :
-												step.status === "error" ? "bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]" :
-													"bg-white/10"
+						{showDeploymentHeader && steps && (
+							<div className="flex items-center gap-2">
+								{steps.map((step) => (
+									<div
+										key={step.id}
+										className={`size-2 rounded-full transition-all duration-300 ${
+											step.status === "success"
+												? "bg-emerald-500"
+												: step.status === "in_progress"
+													? "bg-primary animate-pulse scale-125"
+													: step.status === "error"
+														? "bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+														: "bg-white/10"
 										}`}
-									title={step.label}
-								/>
-							))}
-						</div>
+										title={step.label}
+									/>
+								))}
+							</div>
+						)}
 						{deployStatus === "running" && (
 							<span className="text-[10px] font-bold text-primary uppercase tracking-widest animate-pulse">Live</span>
 						)}
@@ -221,7 +254,14 @@ export default function DeployLogsView({
 			)}
 
 			<div ref={logsContainerRef} className="rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
-				<ServiceLogs logs={[...deployLogEntries]} />
+				<ServiceLogs
+					{...((
+						{
+							logs: logsToRender,
+							repoName: repoNameForLogs,
+							serviceName: serviceNameForLogs,
+						} as unknown) as any)}
+				/>
 			</div>
 		</div>
 	);

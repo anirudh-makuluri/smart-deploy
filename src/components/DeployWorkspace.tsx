@@ -436,6 +436,8 @@ export default function DeployWorkspace() {
 							deployError={deployError}
 							deployingCommitInfo={deployingCommitInfo}
 							steps={steps}
+							repoNameForLogs={repoNameForLogs}
+							serviceNameForLogs={serviceNameForLogs}
 							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (workingDeployment ? configSnapshotFromDeployConfig(workingDeployment) : {})}
 							repoUrl={workingDeployment?.url}
 							commitSha={workingDeployment?.scan_results?.commit_sha ?? workingDeployment?.commitSha}
