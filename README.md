@@ -7,7 +7,7 @@
 ## Features
 
 - **GitHub sign-in** — NextAuth with GitHub and Google OAuth; OAuth token used to clone private repos you can access.
-- **Repo scan & config** — AI-assisted analysis (`/api/llm`) suggests stack, commands, and Dockerfile content; optional **SSE streaming** scan proxies to a separate analyzer on `localhost:8080` (see below).
+- **Repo scan & config** — AI-assisted analysis (`/api/llm`) suggests stack, commands, and Dockerfile content; optional **SSE streaming** scan is proxied to **[sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)** on `localhost:8080` (see Architecture).
 - **Two cloud paths** — **AWS**: EC2-based Docker deploy (VPC, optional ALB/custom domain hooks). **GCP**: Cloud Run via `gcloud` (Cloud Build, `us-central1` for the CLI deploy path in code).
 - **Multi-service on GCP** — Multiple services from scan results / compose-style detection can deploy to Cloud Run; **Cloud SQL** can be provisioned when `detectDatabase` finds a supported DB configuration in that flow.
 - **Live deploy logs** — WebSocket worker (`npm run ws`, default port `4001`) streams steps and logs to the UI.
@@ -23,7 +23,7 @@
 |--------|------|
 | **Next.js app** | UI, REST routes, NextAuth, calls to Gemini/local LLM, proxies streaming scan to `:8080` when used. |
 | **WebSocket server** | `src/websocket-server.ts` — runs deploy jobs, talks to Docker and cloud CLIs/SDKs. Start with `npm run ws` (or the `websocket` service in `docker-compose.yml`). |
-| **Optional analyzer** | `src/app/api/scan/stream/route.ts` forwards to `http://localhost:8080/analyze/stream`. That service is **not** in this repo’s `docker-compose.yml`; without it, use the non-streaming LLM flow for analysis. |
+| **[sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)** (optional) | FastAPI analyzer (LangGraph + Amazon Bedrock): streaming scan, feedback, and cache APIs on **port 8080**. Not in this repo’s Compose file — install and run per [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)’ README. SmartDeploy proxies to it from `src/app/api/scan/stream`, `feedback`, `feedback/stream`, and `cache`. Without it, use the non-streaming LLM flow. |
 
 ---
 
@@ -44,6 +44,7 @@
 - **Docker** — required on the machine that runs the WebSocket worker for builds and deploys.
 - **GCP path**: `gcloud` CLI installed and usable by the worker, plus `GCP_PROJECT_ID` and `GCP_SERVICE_ACCOUNT_KEY` in `.env`.
 - **AWS path**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and region — see [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) for permission shape (note: the doc mentions some services broadly; the app’s AWS **deploy** path is **EC2-centric**).
+- **Streaming scan in the UI**: [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts) running on **port 8080** (see that repo’s README for Python deps, Supabase cache schema, and Bedrock env vars).
 
 ---
 
@@ -119,8 +120,9 @@ For connection-string formats and behavior, prefer reading `src/lib/handleDataba
 
 - **One-shot analysis**: `POST /api/llm` returns JSON-oriented deployment hints using Gemini (then optional local LLM fallback).
 - **Failure hints**: `POST /api/llm/analyze-failure` summarizes failed deploy logs.
-- **Streaming scan UI**: Calls `/api/scan/stream`, which expects an analyzer at **`http://localhost:8080`**. Run that service separately or rely on the LLM route for analysis.
-- Scan result types can include **Hadolint-style Dockerfile feedback** in the UI when the scan payload includes `hadolint_results` (typically from the external analyzer).
+- **sd-artifacts integration**: `/api/scan/stream` → `POST /analyze/stream`; `/api/feedback` and `/api/feedback/stream` → `POST /feedback` and `/feedback/stream`; `/api/cache` → `DELETE /cache`. These routes use **`http://localhost:8080`** in code today (match sd-artifacts’ `PORT`).
+- Start sd-artifacts locally per its README (`python app.py`, `PORT=8080`) or rely on the LLM route for analysis without streaming.
+- Scan results can include **Hadolint-style Dockerfile feedback** when the payload includes `hadolint_results` (from sd-artifacts’ verification step).
 
 ---
 
@@ -140,6 +142,7 @@ Low-RAM instances need **swap** for `next build`. See **[docs/T3_MICRO.md](docs/
 
 | Doc | Topic |
 |-----|--------|
+| [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts) (external) | Streaming repo analysis, Bedrock/LangGraph pipeline, `/analyze/stream`, cache API |
 | [docs/GITHUB_APP_SETUP.md](docs/GITHUB_APP_SETUP.md) | GitHub App, webhooks, auto-deploy, worker secret |
 | [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) | AWS IAM permissions for deploy |
 | [docs/T3_MICRO.md](docs/T3_MICRO.md) | Swap and EC2 sizing for builds |
