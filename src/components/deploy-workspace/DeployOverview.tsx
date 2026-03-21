@@ -1,5 +1,4 @@
-import * as React from "react";
-import { ExternalLink, Settings } from "lucide-react";
+import { ExternalLink, Link2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeployConfig, repoType } from "@/app/types";
 import {
@@ -14,17 +13,95 @@ import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aw
 type DeployOverviewProps = {
 	deployment: DeployConfig;
 	region?: string;
-	successRate?: number;
 	isDeploying?: boolean;
 	onRedeploy?: (commitSha?: string) => void;
 	onEditConfiguration?: () => void;
 	repo?: repoType;
 };
 
+const IPV4_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+function hrefForEndpoint(raw: string): string | undefined {
+	const t = raw.trim();
+	if (!t) return undefined;
+	if (/^https?:\/\//i.test(t)) return t;
+	if (IPV4_RE.test(t)) return `http://${t}`;
+	return undefined;
+}
+
+function EndpointRow({ label, value }: { label: string; value: string | undefined }) {
+	const v = value?.trim();
+	if (!v) {
+		return (
+			<div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+				<span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+				<span className="text-sm text-muted-foreground/70">—</span>
+			</div>
+		);
+	}
+	const href = hrefForEndpoint(v);
+	return (
+		<div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+			<span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+			{href ? (
+				<a
+					href={href}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="min-w-0 break-all text-right text-sm font-medium text-primary hover:underline sm:text-left"
+				>
+					<span className="inline-flex items-start justify-end gap-1 sm:justify-start">
+						<span className="min-w-0">{v}</span>
+						<ExternalLink className="mt-0.5 size-3.5 shrink-0 opacity-70" aria-hidden />
+					</span>
+				</a>
+			) : (
+				<span className="break-all text-sm text-foreground">{v}</span>
+			)}
+		</div>
+	);
+}
+
+function DeploymentTargetSummary({
+	deployDisabled,
+	deploymentTarget,
+	showEc2InstanceType,
+	ec2TypeDisplay,
+}: {
+	deployDisabled: boolean;
+	deploymentTarget: DeployConfig["deploymentTarget"];
+	showEc2InstanceType: boolean;
+	ec2TypeDisplay: string;
+}) {
+	const showService = !deployDisabled;
+	if (!showService && !showEc2InstanceType) return null;
+
+	return (
+		<div className="rounded-xl border border-border bg-card p-4">
+			<p className="text-xs uppercase tracking-wider text-muted-foreground">Platform</p>
+			<dl className="mt-3 space-y-3 text-sm">
+				{showService && (
+					<div>
+						<dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Deployed service</dt>
+						<dd className="mt-0.5 font-medium text-foreground">
+							{deploymentTarget ? formatDeploymentTargetName(deploymentTarget) : "Pending"}
+						</dd>
+					</div>
+				)}
+				{showEc2InstanceType && (
+					<div>
+						<dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Instance type</dt>
+						<dd className="mt-0.5 font-mono text-xs text-foreground">{ec2TypeDisplay}</dd>
+					</div>
+				)}
+			</dl>
+		</div>
+	);
+}
+
 export default function DeployOverview({
 	deployment,
 	region = "us-west-2",
-	successRate = 98.8,
 	isDeploying = false,
 	onRedeploy,
 	onEditConfiguration,
@@ -36,7 +113,9 @@ export default function DeployOverview({
 		deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy");
 	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshot_url;
-	const liveUrl = displayUrl ?? (deployment.custom_url || deployment.deployUrl);
+	const customUrlRaw = deployment.custom_url?.trim();
+	const instanceIpRaw = deployment.ec2?.publicIp?.trim();
+	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
 	const deployDisabled = isDeploymentDisabled(deployment);
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" || !!deployment.ec2?.instanceId;
@@ -45,6 +124,8 @@ export default function DeployOverview({
 	const ec2PriceEstimate = showEc2InstanceType
 		? formatApproxEc2PriceCompact(ec2TypeDisplay)
 		: null;
+
+	const regionDisplay = (deployment.awsRegion || region).trim() || region;
 
 	return (
 		<div className="space-y-6">
@@ -122,56 +203,39 @@ export default function DeployOverview({
 
 					<div className="rounded-xl border border-border bg-card">
 						<div className="grid grid-cols-1 divide-y divide-border text-sm text-muted-foreground">
-							{!deployDisabled && (
-								<div className="flex items-center justify-between px-4 py-3">
-									<span>Deployed Service</span>
-									<span className="text-foreground">
-										{deployment.deploymentTarget
-											? formatDeploymentTargetName(deployment.deploymentTarget)
-											: "Pending"}
-									</span>
-								</div>
-							)}
-							{showEc2InstanceType && (
-								<div className="flex items-center justify-between px-4 py-3">
-									<span>EC2 instance type</span>
-									<span className="font-mono text-xs text-foreground">{ec2TypeDisplay}</span>
-								</div>
-							)}
 							{ec2PriceEstimate && (
 								<div className="flex items-center justify-between px-4 py-3">
-									<span>On-demand estimate (Linux, us-west-2)</span>
+									<span>On-demand estimate (Linux, {regionDisplay})</span>
 										<span className="text-right text-xs text-muted-foreground max-w-56">
 										{ec2PriceEstimate}
 									</span>
 								</div>
 							)}
-							<div className="flex items-center justify-between px-4 py-3">
-								<span>Live URL</span>
-								{liveUrl ? (
-									<a
-										href={liveUrl}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="text-primary hover:underline"
-									>
-										{liveUrl}
-									</a>
+							<div className="space-y-3 px-4 py-3">
+								<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									<Link2 className="size-3.5 opacity-70" aria-hidden />
+									<span>Live URLs & access</span>
+								</div>
+								{hasAnyEndpoint ? (
+									<div className="space-y-3 border-t border-border/60 pt-3">
+										<EndpointRow label="Custom URL" value={customUrlRaw} />
+										<EndpointRow label="Instance IP" value={instanceIpRaw} />
+									</div>
 								) : (
-									<span className="text-muted-foreground/70">Not available</span>
+									<p className="border-t border-border/60 pt-3 text-sm text-muted-foreground/70">Not available</p>
 								)}
-							</div>
-							<div className="flex items-center justify-between px-4 py-3">
-								<span>Revision</span>
-								<span className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground">
-									{deployment.revision ?? 1}
-								</span>
 							</div>
 						</div>
 					</div>
 				</div>
 
 				<div className="space-y-4">
+					<DeploymentTargetSummary
+						deployDisabled={deployDisabled}
+						deploymentTarget={deployment.deploymentTarget}
+						showEc2InstanceType={showEc2InstanceType}
+						ec2TypeDisplay={ec2TypeDisplay}
+					/>
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Last Deployment</p>
 						<p className="mt-2 text-lg font-semibold text-foreground">
@@ -184,29 +248,7 @@ export default function DeployOverview({
 					</div>
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Region</p>
-						<p className="mt-2 text-sm font-semibold text-foreground">{region}</p>
-					</div>
-					<div className="rounded-xl border border-border bg-card p-4">
-						<div className="flex items-center justify-between">
-							<p className="text-xs uppercase tracking-wider text-muted-foreground">Success Rate</p>
-							<p className="text-xs font-semibold text-primary">{successRate.toFixed(1)}%</p>
-						</div>
-						<div className="mt-3 grid grid-cols-7 gap-1">
-							{[40, 55, 35, 60, 48, 72, 80].map((value, index) => (
-								<div key={index} className="flex h-10 items-end">
-									<div
-										style={{ height: `${value}%` }}
-										className={`w-full rounded-sm ${
-											index > 4 ? "bg-primary" : "bg-emerald-950/60"
-										}`}
-									/>
-								</div>
-							))}
-						</div>
-						<div className="mt-2 flex justify-between text-xs text-muted-foreground/70">
-							<span>7 days ago</span>
-							<span>Today</span>
-						</div>
+						<p className="mt-2 font-mono text-sm font-semibold text-foreground">{regionDisplay}</p>
 					</div>
 				</div>
 			</div>
