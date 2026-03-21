@@ -30,7 +30,11 @@ export default function DeployOverview({
 	onEditConfiguration,
 	repo,
 }: DeployOverviewProps) {
-	const displayUrl = getDeploymentDisplayUrl(deployment);
+	const hasStoredLiveUrl = Boolean(deployment.deployUrl || deployment.custom_url);
+	// If a DB row says "running" but we don't have a stored live URL, treat it as not deployed.
+	const effectiveStatus =
+		deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy");
+	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
 	const deployDisabled = isDeploymentDisabled(deployment);
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" || !!deployment.ec2?.instanceId;
@@ -47,7 +51,7 @@ export default function DeployOverview({
 					<p className="text-2xl font-semibold text-foreground">{deployment.service_name}</p>
 					<span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
 						<span className="h-2 w-2 rounded-full bg-primary" />
-						{deployment.status ?? "running"}
+						{effectiveStatus}
 					</span>
 				</div>
 				<div className="flex items-center gap-2">
@@ -127,7 +131,7 @@ export default function DeployOverview({
 							{ec2PriceEstimate && (
 								<div className="flex items-center justify-between px-4 py-3">
 									<span>On-demand estimate (Linux, us-west-2)</span>
-									<span className="text-right text-xs text-muted-foreground max-w-[14rem]">
+										<span className="text-right text-xs text-muted-foreground max-w-56">
 										{ec2PriceEstimate}
 									</span>
 								</div>

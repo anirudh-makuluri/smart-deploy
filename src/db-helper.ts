@@ -22,7 +22,8 @@ function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string
 		repo_name,
 		service_name,
 		ownerID: owner_id,
-		status: (status as DeployConfig["status"]) ?? "running",
+		// If status is missing/null in the DB we treat the service as not deployed yet.
+		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
 		first_deployment: first_deployment ?? undefined,
 		last_deployment: last_deployment ?? undefined,
 		revision: revision ?? 1,
@@ -102,7 +103,9 @@ export const dbHelper = {
 					repo_name: repo_name,
 					service_name: service_name,
 					owner_id: userID,
-					status: deployConfig.status ?? "running",
+					// If the caller didn't provide a status (e.g. scan-only persistence),
+					// do not mark it as running.
+					status: deployConfig.status ?? "didnt_deploy",
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,

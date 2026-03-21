@@ -88,8 +88,12 @@ export default function RepoServicesList({
 							resolvedRepo.name
 						);
 						const status = deployment?.status;
-						const isOnline = status === "running";
-						const isDraft = (status === "didnt_deploy") || !deployment;
+						const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
+						// Never show "Online" based on "running" alone; require an actual stored live URL.
+						const effectiveStatus =
+							status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (status ?? "didnt_deploy");
+						const isOnline = effectiveStatus === "running";
+						const isDraft = effectiveStatus === "didnt_deploy" || !deployment;
 						const isFailed = status === "failed";
 
 						const handleCardClick = () => {

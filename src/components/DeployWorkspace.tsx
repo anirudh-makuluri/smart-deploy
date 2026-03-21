@@ -50,9 +50,13 @@ export default function DeployWorkspace() {
 		return merged;
 	}, [deployment, repo, serviceName]);
 
+	const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
+	const effectiveDeploymentStatus =
+		deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy");
+
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
-	const [activeSection, setActiveSection] = React.useState<MenuSection>(deployment && deployment.status !== "didnt_deploy" ? "overview" : "setup");
+	const [activeSection, setActiveSection] = React.useState<MenuSection>(effectiveDeploymentStatus !== "didnt_deploy" ? "overview" : "setup");
 	const [deploymentHistory, setDeploymentHistory] = React.useState<any[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
 	const [elapsedTime, setElapsedTime] = React.useState(0);
@@ -209,9 +213,10 @@ export default function DeployWorkspace() {
 		() => Boolean(deployment?.scan_results || scanResults),
 		[deployment?.scan_results, scanResults]
 	);
+
 	const isDraft = React.useMemo(
-		() => !deployment || deployment.status === "didnt_deploy",
-		[deployment]
+		() => !deployment || effectiveDeploymentStatus === "didnt_deploy",
+		[deployment, effectiveDeploymentStatus]
 	);
 
 	async function handleDeploy(commitSha?: string) {
