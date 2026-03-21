@@ -12,6 +12,7 @@ import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
 import { configSnapshotFromDeployConfig } from "@/lib/utils";
+import { branchNamesFromRepo, resolveWorkspaceBranch } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
 import ScanProgress from "@/components/ScanProgress";
@@ -43,13 +44,33 @@ export default function DeployWorkspace() {
 			repo_name: repo.name,
 			service_name: serviceName,
 			url: deployment?.url ?? repo.html_url ?? "",
-			branch: deployment?.branch ?? (repo.default_branch || "main"),
+			branch: "",
 			status: deployment?.status ?? "didnt_deploy",
 		};
 		const merged = { ...base, ...(deployment as Partial<DeployConfig> | undefined) } as DeployConfig;
 		merged.url = merged.url ?? base.url ?? "";
+		// Spread from DB overwrites branch with stale values (e.g. "main"); reconcile against remote branches last.
+		merged.branch = resolveWorkspaceBranch(repo, merged.branch);
 		return merged;
 	}, [deployment, repo, serviceName]);
+
+	// Persist corrected branch when DB had a name that does not exist on the remote (e.g. legacy "main").
+	React.useEffect(() => {
+		if (!repo?.name || !serviceName || !deployment) return;
+		const names = branchNamesFromRepo(repo);
+		if (names.length === 0) return;
+		const stored = deployment.branch?.trim() ?? "";
+		if (!stored) return;
+		if (names.includes(stored)) return;
+		const next = resolveWorkspaceBranch(repo, deployment.branch);
+		if (next && next !== stored) {
+			void updateDeploymentById({
+				repo_name: repo.name,
+				service_name: serviceName,
+				branch: next,
+			});
+		}
+	}, [repo, serviceName, deployment, updateDeploymentById]);
 
 	const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
 	const effectiveDeploymentStatus =
@@ -63,6 +84,9 @@ export default function DeployWorkspace() {
 	const [activeSection, setActiveSection] = React.useState<MenuSection>(effectiveDeploymentStatus !== "didnt_deploy" ? "overview" : "setup");
 	const [deploymentHistory, setDeploymentHistory] = React.useState<unknown[] | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
+	const prevDeployStatusForHistoryRef = React.useRef<
+		"not-started" | "running" | "success" | "error" | undefined
+	>(undefined);
 	const [elapsedTime, setElapsedTime] = React.useState(0);
 
 	// Scan state
@@ -179,14 +203,25 @@ export default function DeployWorkspace() {
 	}, [repo?.name, serviceName]);
 
 	React.useEffect(() => {
-		const shouldRefresh =
-			deploymentHistory === null || deployStatus === "success" || deployStatus === "error";
-		if (!shouldRefresh) return;
-		fetchDeploymentHistory();
-	}, [deploymentHistory, deployStatus, fetchDeploymentHistory]);
+		if (!repo?.name || !serviceName) return;
+
+		const prevStatus = prevDeployStatusForHistoryRef.current;
+		const finishedDeployAttempt =
+			prevStatus === "running" &&
+			(deployStatus === "success" || deployStatus === "error");
+
+		if (deploymentHistory === null) {
+			fetchDeploymentHistory();
+		} else if (finishedDeployAttempt) {
+			fetchDeploymentHistory();
+		}
+
+		prevDeployStatusForHistoryRef.current = deployStatus;
+	}, [deploymentHistory, deployStatus, fetchDeploymentHistory, repo?.name, serviceName]);
 
 	React.useEffect(() => {
 		setDeploymentHistory(null);
+		prevDeployStatusForHistoryRef.current = undefined;
 	}, [repo?.name, serviceName]);
 
 	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
@@ -346,7 +381,7 @@ export default function DeployWorkspace() {
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
 								repoFullName={repo?.full_name ?? ""}
-								branch={deployment?.branch ?? repo?.default_branch ?? "main"}
+								branch={workingDeployment?.branch ?? ""}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
 									setScanResults(data);
@@ -451,6 +486,7 @@ export default function DeployWorkspace() {
 						{workingDeployment && (
 							<ConfigTabs
 								repoFullName={repo?.full_name ?? ""}
+								branches={branchNamesFromRepo(repo ?? null)}
 								onConfigChange={(partial) => {
 									updateDeploymentById({
 										repo_name: workingDeployment.repo_name,

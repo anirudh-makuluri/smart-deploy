@@ -311,7 +311,7 @@ async function redeployInstance(params: {
 	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
 	const script = buildRedeployScript({
 		repoUrl: deployConfig.url,
-		branch: deployConfig.branch || "main",
+		branch: deployConfig.branch?.trim() || "",
 		token,
 		commitSha: deployConfig.commitSha,
 		envFileContentBase64: envBase64,
@@ -386,7 +386,7 @@ async function launchNewInstance(params: {
 
 	const userData = generateUserDataScript(
 		deployConfig.url,
-		deployConfig.branch || "main",
+		deployConfig.branch?.trim() || "",
 		token,
 		envBase64,
 		mainPort,

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useAppData } from "@/store/useAppData";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
+import { resolveInitialRepoBranch } from "@/lib/repoBranch";
 import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
@@ -12,12 +13,29 @@ import { normalizeRepoUrl } from "@/lib/utils";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
+function repoMatchesPage(r: repoType, owner: string, repoName: string, normalizedRepoTarget: string): boolean {
+	const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
+	const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
+	return sameFullName || sameUrl;
+}
+
+function sortReposList(list: repoType[]): repoType[] {
+	return [...list].sort((a, b) => {
+		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
+		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
+		return dateB - dateA;
+	});
+}
+
+function repoMetadataLooksComplete(r: repoType | undefined): boolean {
+	return Boolean(r?.default_branch?.trim());
+}
+
 function buildMinimalRepo(owner: string, repoName: string): repoType {
 	const normalizedOwner = owner.trim();
 	const normalizedRepoName = repoName.trim();
 	const fullName = `${normalizedOwner}/${normalizedRepoName}`;
 	const htmlUrl = `https://github.com/${fullName}`;
-	const defaultBranch = "main";
 	const nowIso = new Date().toISOString();
 	return {
 		id: htmlUrl,
@@ -29,7 +47,7 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 		created_at: nowIso,
 		updated_at: nowIso,
 		pushed_at: nowIso,
-		default_branch: defaultBranch,
+		default_branch: "",
 		private: false,
 		description: null,
 		visibility: "public",
@@ -39,7 +57,7 @@ function buildMinimalRepo(owner: string, repoName: string): repoType {
 		open_issues_count: 0,
 		owner: { login: normalizedOwner },
 		latest_commit: null,
-		branches: [{ name: defaultBranch, commit_sha: "", protected: false }],
+		branches: [],
 	};
 }
 
@@ -90,7 +108,8 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [services, storeActiveService]);
 
 	React.useEffect(() => {
-		if (fromStoreRepo) return;
+		if (repoMetadataLooksComplete(fromStoreRepo)) return;
+
 		let cancelled = false;
 		void (async () => {
 			try {
@@ -99,27 +118,36 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 				);
 				const data = await response.json();
 				const fetchedRepo = response.ok ? (data.repo as repoType | undefined) : undefined;
-				const repoToInsert = fetchedRepo ?? minimalRepo;
 				if (cancelled) return;
-				useAppData.setState((state) => {
-					const exists = state.repoList.some((r) => {
-						const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
-						const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
-						return sameFullName || sameUrl;
+
+				if (fetchedRepo) {
+					useAppData.setState((state) => {
+						const idx = state.repoList.findIndex((r) =>
+							repoMatchesPage(r, owner, repoName, normalizedRepoTarget)
+						);
+						if (idx >= 0) {
+							const next = [...state.repoList];
+							next[idx] = fetchedRepo;
+							return { repoList: sortReposList(next) };
+						}
+						return { repoList: sortReposList([...state.repoList, fetchedRepo]) };
 					});
-					if (exists) return state;
-					return { repoList: [...state.repoList, repoToInsert] };
+					return;
+				}
+
+				useAppData.setState((state) => {
+					if (state.repoList.some((r) => repoMatchesPage(r, owner, repoName, normalizedRepoTarget))) {
+						return state;
+					}
+					return { repoList: sortReposList([...state.repoList, minimalRepo]) };
 				});
 			} catch {
 				if (cancelled) return;
 				useAppData.setState((state) => {
-					const exists = state.repoList.some((r) => {
-						const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
-						const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
-						return sameFullName || sameUrl;
-					});
-					if (exists) return state;
-					return { repoList: [...state.repoList, minimalRepo] };
+					if (state.repoList.some((r) => repoMatchesPage(r, owner, repoName, normalizedRepoTarget))) {
+						return state;
+					}
+					return { repoList: sortReposList([...state.repoList, minimalRepo]) };
 				});
 			}
 		})();
@@ -128,7 +156,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		};
 	}, [fromStoreRepo, owner, repoName, normalizedRepoTarget, minimalRepo]);
 
-	const activeBranch = resolvedRepo.default_branch || resolvedRepo.branches?.[0]?.name || "main";
+	const activeBranch = resolveInitialRepoBranch(resolvedRepo) || "";
 
 	React.useEffect(() => {
 		const cached = getDetectedRepoCache(repoUrl);

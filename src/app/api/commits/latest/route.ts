@@ -18,7 +18,27 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ error: "Owner and repo are required" }, { status: 400 });
 		}
 
-		const branchToUse = branch || "main";
+		let branchToUse = typeof branch === "string" ? branch.trim() : "";
+		if (!branchToUse) {
+			const metaRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+				headers: {
+					Authorization: `token ${token}`,
+					Accept: "application/vnd.github+json",
+				},
+			});
+			if (!metaRes.ok) {
+				const err = await metaRes.json().catch(() => ({}));
+				return NextResponse.json(
+					{ error: (err as { message?: string })?.message || "Failed to load repository" },
+					{ status: metaRes.status }
+				);
+			}
+			const meta = (await metaRes.json()) as { default_branch?: string };
+			branchToUse = meta.default_branch?.trim() ?? "";
+		}
+		if (!branchToUse) {
+			return NextResponse.json({ error: "Could not resolve a branch for this repository" }, { status: 400 });
+		}
 
 		// Fetch latest commit info on specified branch
 		const commitRes = await fetch(

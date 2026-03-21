@@ -11,7 +11,22 @@ export async function getCommitMessageFromGitHub(
 	const match = repoUrl.replace(/\.git$/, "").match(/github\.com[/]([^/]+)[/]([^/]+)/);
 	if (!match) return undefined;
 	const [, owner, repo] = match;
-	const ref = (commitSha || branch || "main").trim();
+	let ref = (commitSha || branch || "").trim();
+	if (!ref) {
+		try {
+			const metaRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+				headers: {
+					Authorization: `token ${token}`,
+					Accept: "application/vnd.github+json",
+				},
+			});
+			if (!metaRes.ok) return undefined;
+			const meta = (await metaRes.json()) as { default_branch?: string };
+			ref = meta.default_branch?.trim() ?? "";
+		} catch {
+			return undefined;
+		}
+	}
 	if (!ref) return undefined;
 	try {
 		const res = await fetch(

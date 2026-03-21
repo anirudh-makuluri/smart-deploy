@@ -182,6 +182,19 @@ export default function ConfigTabs({
 
 	const ec2InstanceValue = deployment.awsEc2InstanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
 
+	const branchSelectOptions = React.useMemo(() => {
+		const fromRepo = (branchesProp ?? []).filter(Boolean);
+		const current = deployment.branch?.trim();
+		if (current && !fromRepo.includes(current)) {
+			return [current, ...fromRepo];
+		}
+		return fromRepo.length > 0 ? fromRepo : current ? [current] : [];
+	}, [branchesProp, deployment.branch]);
+
+	React.useEffect(() => {
+		form.setValue("branch", deployment.branch ?? "", { shouldDirty: false });
+	}, [deployment.branch, deployment.repo_name, deployment.service_name, form.setValue]);
+
 	return (
 		<Form {...form}>
 			<div className="flex flex-col gap-10 max-w-2xl mx-auto">
@@ -233,26 +246,27 @@ export default function ConfigTabs({
 							render={({ field }) => (
 								<FormItem>
 									<FormControl>
-										<Select
-											onValueChange={field.onChange}
-											defaultValue={field.value}
-										>
-											<SelectTrigger className="w-full h-11 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4">
-												<div className="flex items-center gap-2.5 w-full">
-													<GitBranch className="size-3.5 text-muted-foreground/40 shrink-0" />
-													<div className="text-sm font-medium">
-														<SelectValue placeholder="Select a branch" />
+										{branchSelectOptions.length === 0 ? (
+											<p className="text-sm text-muted-foreground py-2.5 px-1">Loading branches…</p>
+										) : (
+											<Select value={field.value} onValueChange={field.onChange}>
+												<SelectTrigger className="w-full h-11 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4">
+													<div className="flex items-center gap-2.5 w-full">
+														<GitBranch className="size-3.5 text-muted-foreground/40 shrink-0" />
+														<div className="text-sm font-medium">
+															<SelectValue placeholder="Select a branch" />
+														</div>
 													</div>
-												</div>
-											</SelectTrigger>
-											<SelectContent className="bg-[#0A0A0F] border-white/10">
-												{(branchesProp || ["main"]).map((branch) => (
-													<SelectItem key={branch} value={branch}>
-														{branch}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
+												</SelectTrigger>
+												<SelectContent className="bg-[#0A0A0F] border-white/10">
+													{branchSelectOptions.map((branchName) => (
+														<SelectItem key={branchName} value={branchName}>
+															{branchName}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										)}
 									</FormControl>
 								</FormItem>
 							)}

@@ -22,6 +22,7 @@ import { createRDSInstance } from "./aws/handleRDS";
 import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
+import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
 
 /**
  * Main deployment handler - routes to AWS (default) or GCP
@@ -59,7 +60,25 @@ export async function handleDeploy(
 	try {
 		// Clone repository first (common step)
 		const authenticatedRepoUrl = githubAuthenticatedCloneUrl(repoUrl, token);
-		const branch = deployConfig.branch?.trim() || "main";
+		let branch = deployConfig.branch?.trim() ?? "";
+		if (!branch) {
+			const parsed = parseGithubOwnerRepo(repoUrl);
+			if (parsed) {
+				try {
+					const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, token);
+					branch = default_branch;
+					deployConfig.branch = default_branch;
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					send(`Could not resolve default branch from GitHub: ${msg}`, "clone");
+					throw new Error("Missing deployment branch and could not resolve repository default");
+				}
+			}
+		}
+		if (!branch) {
+			send("Set a deployment branch in workspace settings before deploying.", "clone");
+			throw new Error("Missing deployment branch");
+		}
 		const commitSha = deployConfig.commitSha?.trim();
 		deployConfig.deploymentTarget = "ec2";
 

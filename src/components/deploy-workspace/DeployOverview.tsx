@@ -7,6 +7,7 @@ import {
 	getDeploymentDisplayUrl,
 	isDeploymentDisabled,
 } from "@/lib/utils";
+import { resolveWorkspaceBranch } from "@/lib/repoBranch";
 import DeployOptions from "@/components/DeployOptions";
 import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
 
@@ -153,7 +154,7 @@ export default function DeployOverview({
 							onDeploy={onRedeploy}
 							disabled={isDeploying || deployDisabled}
 							repo={repo}
-							branch={deployment.branch || "main"}
+							branch={resolveWorkspaceBranch(repo, deployment.branch) || ""}
 						/>
 					)}
 					{displayUrl && (

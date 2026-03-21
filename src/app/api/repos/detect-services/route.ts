@@ -8,6 +8,7 @@ import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import type { DetectedServiceInfo } from "@/app/types";
 import {
+	fetchRepoMetadata,
 	GithubApiError,
 	parseGithubOwnerRepo,
 	prepareGithubRepoWorkspace,
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
 		const body = await req.json();
 		const url = typeof body.url === "string" ? body.url.trim() : "";
-		const branch = typeof body.branch === "string" ? body.branch.trim() || "main" : "main";
+		let branch = typeof body.branch === "string" ? body.branch.trim() : "";
 
 		if (!url) {
 			return NextResponse.json({ error: "Missing url" }, { status: 400 });
@@ -65,6 +66,10 @@ export async function POST(req: NextRequest) {
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "detect-services-"));
 
 		try {
+			if (!branch) {
+				const { default_branch } = await fetchRepoMetadata(owner, repo, token);
+				branch = default_branch;
+			}
 			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(owner, repo, branch, token, tmpDir);
 
 			const multiServiceConfig = detectMultiService(repoRoot);
