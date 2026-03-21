@@ -1,194 +1,146 @@
-# 🚀 SmartDeploy
+# SmartDeploy
 
-**SmartDeploy** is a lightweight DevOps automation platform that lets you connect your GitHub repository, configure deployment settings, and deploy to **AWS (EC2 with RDS)** or **Google Cloud Run** — all in just a few clicks.
-
-It uses **AI-powered streaming analysis** to auto-analyze your codebase, generate build/run commands, detect frameworks and databases, and provide real-time progress updates.
+**SmartDeploy** is a DevOps-style dashboard built with Next.js. Connect a GitHub account, scan a repository, tune build/run settings and environment variables, and deploy to **AWS (Docker on EC2)** or **Google Cloud Run**. A small **WebSocket worker** runs the long-lived deploy pipeline (clone, Docker, cloud APIs) so the UI can stream logs in real time.
 
 ---
 
-## ✨ Features
+## Features
 
-- 🔗 **GitHub Integration** — Pick any of your repositories
-- ⚙️ **Custom Config** — Set build/run commands, env vars, workdir, etc.
-- 🤖 **AI-Powered Streaming Scan** — Real-time codebase analysis, auto-filled deploy config, and platform recommendations
-- ☁️ **Multi-Cloud Deployment** — Deploy to AWS (EC2) or Google Cloud Run
-- 🏗️ **Multi-Service Support** — Automatically detects and deploys complex applications with multiple services (frontend/backend, microservices, etc.)
-- 🗄️ **Managed Databases** — Automatically provisions Cloud SQL (GCP) or RDS (AWS) when your app needs a database
-- 📡 **Live Logs** — Real-time deployment status via WebSocket
-- 🔁 **Redeploy & Edit** — Modify config and redeploy anytime
-- 🛑 **Control** — Pause, resume, or stop deployed services
-- 🌐 **Deployment domain** — All visit links use `https://{service-name}.{your-domain}` (e.g. `*.anirudh-makuluri.xyz`) via `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`
-- 💻 **Self-Hosted Dashboard** — Run SmartDeploy itself on a tiny EC2 `t3.micro` (with swap) in your own AWS account
+- **GitHub sign-in** — NextAuth with GitHub and Google OAuth; OAuth token used to clone private repos you can access.
+- **Repo scan & config** — AI-assisted analysis (`/api/llm`) suggests stack, commands, and Dockerfile content; optional **SSE streaming** scan proxies to a separate analyzer on `localhost:8080` (see below).
+- **Two cloud paths** — **AWS**: EC2-based Docker deploy (VPC, optional ALB/custom domain hooks). **GCP**: Cloud Run via `gcloud` (Cloud Build, `us-central1` for the CLI deploy path in code).
+- **Multi-service on GCP** — Multiple services from scan results / compose-style detection can deploy to Cloud Run; **Cloud SQL** can be provisioned when `detectDatabase` finds a supported DB configuration in that flow.
+- **Live deploy logs** — WebSocket worker (`npm run ws`, default port `4001`) streams steps and logs to the UI.
+- **Deployment control** — Start/stop (pause/resume) **AWS EC2** instances for saved deployments via the deployment control API.
+- **Custom hostnames** — Visit links use `https://{service-name}.{NEXT_PUBLIC_DEPLOYMENT_DOMAIN}`; optional **Vercel DNS** API integration to create CNAMEs automatically.
+- **Self-hosted** — Docker Compose (`app` + `websocket`) and EC2 scripts under `scripts/` (including swap for small instances).
 
 ---
 
-## 🧪 Tech Stack
+## Architecture
 
-- **Frontend / API**: Next.js (App Router), TailwindCSS, shadcn/ui
-- **Backend Data**: Supabase (PostgreSQL)
-- **Cloud**: AWS (Amplify, Elastic Beanstalk, ECS Fargate, EC2), Google Cloud Run, Docker
-- **Auth**: NextAuth with GitHub & Google OAuth
-- **AI**: Google Gemini API (AI Studio)
+| Piece | Role |
+|--------|------|
+| **Next.js app** | UI, REST routes, NextAuth, calls to Gemini/local LLM, proxies streaming scan to `:8080` when used. |
+| **WebSocket server** | `src/websocket-server.ts` — runs deploy jobs, talks to Docker and cloud CLIs/SDKs. Start with `npm run ws` (or the `websocket` service in `docker-compose.yml`). |
+| **Optional analyzer** | `src/app/api/scan/stream/route.ts` forwards to `http://localhost:8080/analyze/stream`. That service is **not** in this repo’s `docker-compose.yml`; without it, use the non-streaming LLM flow for analysis. |
 
 ---
 
-## 🧰 Running Locally
+## Tech stack
 
-### 1. Clone the Repository
+- **App**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Radix/shadcn-style UI, TanStack Query, Zustand.
+- **Data**: Supabase (PostgreSQL) for users, deployments, history, cached repo metadata — run `supabase/schema.sql` in the Supabase SQL editor.
+- **Auth**: NextAuth.js — GitHub + Google providers.
+- **AI**: Google **Gemini** (`gemini-2.5-flash`) when `GEMINI_API_KEY` is set; optional **local LLM** via `LOCAL_LLM_BASE_URL` / `LOCAL_LLM_MODEL` (Ollama-compatible JSON API). *(AWS Bedrock helpers exist in code but are not wired into the live LLM route.)*
+- **Cloud**: AWS SDK (EC2, RDS, ELB, SSM, S3, IAM, STS), Google Cloud Run / Cloud Build / logging (via `gcloud` and libraries where used).
+- **Tests**: Vitest (`npm test`), Playwright e2e (`npm run test:e2e`).
+
+---
+
+## Prerequisites
+
+- **Node.js 20+** (matches `Dockerfile` base image).
+- **Docker** — required on the machine that runs the WebSocket worker for builds and deploys.
+- **GCP path**: `gcloud` CLI installed and usable by the worker, plus `GCP_PROJECT_ID` and `GCP_SERVICE_ACCOUNT_KEY` in `.env`.
+- **AWS path**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and region — see [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) for permission shape (note: the doc mentions some services broadly; the app’s AWS **deploy** path is **EC2-centric**).
+
+---
+
+## Running locally
+
+### 1. Clone
 
 ```bash
-git clone https://github.com/anirudh-makuluri/smartdeploy.git
-cd smartdeploy
+git clone https://github.com/anirudh-makuluri/smart-deploy.git
+cd smart-deploy
 ```
 
-### 2. Install Dependencies
+### 2. Install
+
 ```bash
 npm install
 ```
 
-### 3. Set Up Environment Variables
-Create a **.env** with the help of **.env.example** in the root directory.
+### 3. Environment
 
-**Database (Supabase):** Create a project at [supabase.com](https://supabase.com), then run the SQL in `supabase/schema.sql` in the SQL Editor. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API) to `.env`.
+Copy **`.env.example`** to **`.env`** and fill in at least:
 
-### 4. Run the Development Server
+- **NextAuth**: `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, GitHub and/or Google OAuth IDs/secrets.
+- **Supabase**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (after applying `supabase/schema.sql`).
+- **WebSocket**: `NEXT_PUBLIC_WS_URL` (e.g. `ws://localhost:4001` for local dev).
+- **AI (optional but recommended)**: `GEMINI_API_KEY` and/or `LOCAL_LLM_BASE_URL` (+ `LOCAL_LLM_MODEL` if needed).
+- **Cloud**: AWS and/or GCP variables depending on which provider you use.
+
+For **auto-deploy on push** (GitHub App → worker), see [docs/GITHUB_APP_SETUP.md](docs/GITHUB_APP_SETUP.md) (`GITHUB_APP_*`, `DEPLOY_WORKER_URL`, `DEPLOY_WORKER_SECRET`).
+
+### 4. Start app + worker
+
 ```bash
 npm run start-all
 ```
 
-### 5. Enable AI features (Gemini)
-Add `GEMINI_API_KEY` to your `.env` (from Google AI Studio).
+This runs `next dev` and the WebSocket server together (`concurrently`). Alternatively run `npm run dev` and `npm run ws` in two terminals.
 
-📦 Docker Desktop must be running to build and push images.
+### 5. Production-like stack (Docker)
 
----
-
-## 🧠 AI Capabilities
-
-- Detects language, framework, database, environment files, and more
-- **Streaming UI** — See the AI's thought process and analysis progress in real-time
-- **Auto-Generation** — Generates install/build/run commands and optimized Dockerfiles
-- **Risk Assessment** — Flags issues like missing server components or security vulnerabilities
-- **Structural Analysis** — Summarizes project architecture and provides a confidence score for deployment
-- **Hadolint Integration** — Lints generated Dockerfiles to ensure best practices
-- **Smart Routing** — Suggests the best deployment target (EC2 or Cloud Run) based on your app's needs
-
-## 🏗️ Multi-Service Deployment
-
-SmartDeploy can automatically detect and deploy complex applications with multiple services:
-
-### Detection Methods
-
-1. **Docker Compose Detection**: If your repository contains a `docker-compose.yml` file, SmartDeploy will:
-   - Parse the compose file to identify all services
-   - Extract build contexts, Dockerfiles, ports, and environment variables
-   - Deploy each service separately to Cloud Run
-   - Set up inter-service communication via environment variables
-
-2. **Algorithmic Detection**: For repositories without docker-compose, SmartDeploy uses pattern matching to detect:
-   - Multiple service directories (e.g., `ui/`, `api/`, `frontend/`, `backend/`)
-   - Multiple Dockerfiles in different directories
-   - Different programming languages in different directories
-
-### Supported Patterns
-
-- **Frontend/Backend**: Detects `ui/` + `api/` or `frontend/` + `backend/` patterns
-- **Microservices**: Detects multiple service directories
-- **Full-Stack Apps**: Automatically identifies and deploys separate frontend and backend services
-
-### Example: Code-Craft Application
-
-For a repository like [code-craft](https://github.com/anirudh-makuluri/code-craft) with:
-- `ui/` directory (Next.js frontend)
-- `api/` directory (.NET backend)
-
-SmartDeploy will:
-1. Detect both services automatically
-2. Generate appropriate Dockerfiles for each service
-3. Deploy the frontend and backend as separate Cloud Run services
-4. Configure environment variables for inter-service communication
-5. Provide URLs for each deployed service
-
-### Supported Languages
-
-- Node.js (Next.js, Express, etc.)
-- Python (Django, FastAPI, etc.)
-- Go
-- Java (Spring Boot, etc.)
-- Rust
-- .NET (C#)
-- PHP
-
-Each service is deployed independently with its own Dockerfile, build process, and Cloud Run service.
-
-### Database Support (Cloud SQL & RDS)
-
-SmartDeploy automatically detects and provisions databases for your applications:
-
-#### Automatic Database Detection
-
-The system detects database requirements from:
-- **.NET Applications**: `appsettings.json`, `appsettings.Development.json` connection strings
-- **Environment Files**: `.env` files with database configuration
-- **Docker Compose**: Database services in `docker-compose.yml`
-
-#### Supported Databases
-
-- **MSSQL/SQL Server**: Automatically creates a managed SQL Server instance (Cloud SQL on GCP, RDS on AWS)
-- **PostgreSQL**: Creates managed PostgreSQL instances (Cloud SQL on GCP, RDS on AWS)
-- **MySQL**: Creates managed MySQL instances (Cloud SQL on GCP, RDS on AWS)
-
-#### How It Works
-
-1. **Detection**: Scans your codebase for database connection strings and configurations
-2. **Provisioning**: Creates a managed database instance in your cloud account (Cloud SQL on GCP, RDS on AWS)
-3. **Connection**: Configures your services (Cloud Run, ECS/EC2, etc.) to connect securely
-4. **Environment Variables**: Automatically injects connection strings into your services
-
-#### Example: Code-Craft with MSSQL
-
-For code-craft with a local MSSQL database:
-
-1. SmartDeploy detects the MSSQL connection string from `appsettings.json`
-2. Creates a Cloud SQL for SQL Server instance
-3. Creates the database specified in your connection string
-4. Updates your .NET API service with the Cloud SQL connection string
-5. Connects the Cloud Run service to Cloud SQL via Unix socket
-
-**Connection String Format:**
-```
-Server=/cloudsql/PROJECT_ID:REGION:INSTANCE_NAME;Database=YOUR_DB;User Id=USER;Password=PASSWORD;
+```bash
+docker compose up --build
 ```
 
-#### Important Notes
-
-- **Managed DB Costs**: Cloud SQL and RDS instances incur charges. On GCP, the system creates a `db-f1-micro` instance by default; on AWS, it uses `db.t3.micro` for RDS (both can be upgraded)
-- **Database Migration**: You may need to run migrations after deployment to set up your database schema
-- **Credentials**: Database passwords are auto-generated and provided via environment variables
-- **Region**: GCP databases are created in `us-central1` to match Cloud Run services; AWS RDS uses your selected region (defaults to `AWS_REGION` in config)
+Ensure `.env` is complete; the worker container expects access to **Docker** (see `docker-compose.yml` — `websocket` mounts `docker.sock`).
 
 ---
 
-## 🌐 Deployment domain (*.anirudh-makuluri.xyz)
+## Scripts
 
-All **Visit** / **Open link** URLs use your domain: `https://{service-name}.{NEXT_PUBLIC_DEPLOYMENT_DOMAIN}` (e.g. `myapp.anirudh-makuluri.xyz`). The subdomain is derived from the deployment’s **service name** (sanitized for DNS). There is no per-deployment domain option.
-
-### Automatic Vercel DNS
-
-If you manage your domain in **Vercel**, you can have SmartDeploy **automatically add the CNAME** for each deployment so the subdomain points to the deployment URL (Amplify, Cloud Run, EC2, etc.):
-
-1. **Set the domain** in `.env`: `NEXT_PUBLIC_DEPLOYMENT_DOMAIN=anirudh-makuluri.xyz` and `VERCEL_DOMAIN=anirudh-makuluri.xyz` (or omit `VERCEL_DOMAIN` to use the same value).
-2. **Add `VERCEL_TOKEN`** in `.env`: create a token at [Vercel Account → Tokens](https://vercel.com/account/tokens). The domain must already be added to your Vercel project/account.
-3. **(Optional)** For team accounts, set `VERCEL_TEAM_ID=team_xxx`.
-
-After a successful deploy, the app calls the Vercel API to create (or update) a CNAME record: subdomain → deployment URL hostname. The UI shows “Added to Vercel DNS. Your site will be at https://myapp.anirudh-makuluri.xyz once DNS propagates.” If the API call fails (e.g. token missing or domain not on Vercel), the manual “In Vercel DNS: CNAME this subdomain → {target}” hint is shown so you can add the record yourself.
-
-### Manual DNS
-
-If you don’t use the Vercel API, point **each subdomain** at your DNS provider: add a **CNAME** record (e.g. `myapp`) → the **target** shown in the UI (e.g. `xxx.amplifyapp.com`). Then in your cloud provider (Amplify, Cloud Run, etc.), add the custom domain for that deployment for HTTPS.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Next.js dev server |
+| `npm run build` / `npm start` | Production build / server |
+| `npm run ws` | WebSocket deploy worker |
+| `npm run start-all` | Dev + worker |
+| `npm run lint` | ESLint |
+| `npm test` | Vitest unit tests |
+| `npm run test:e2e` | Playwright (starts dev server via config) |
 
 ---
 
-## Self-hosting on EC2 (t3.micro)
+## Managed databases
 
-To run SmartDeploy on a t3.micro (1 GB RAM), add swap so the Docker build can complete. See **[docs/T3_MICRO.md](docs/T3_MICRO.md)** for setup: run `sudo ./scripts/setup-swap.sh` once, then deploy or update as usual.
+- **GCP (multi-service Cloud Run path)**: If the multi-service deploy detects a database via `detectDatabase`, the worker can create **Cloud SQL** and wire connection strings into deploy steps.
+- **AWS**: The deploy pipeline includes an **RDS** step when a DB config is present; in the current **single-service EC2** entry in `handleDeploy`, DB config is not populated, so automatic RDS from that path is **not** active until wired — the **RDS helpers** remain in the codebase for future or custom integration.
+
+For connection-string formats and behavior, prefer reading `src/lib/handleDatabaseDeploy.ts`, `src/lib/aws/handleRDS.ts`, and `src/lib/databaseDetector.ts`.
+
+---
+
+## AI & scan UX
+
+- **One-shot analysis**: `POST /api/llm` returns JSON-oriented deployment hints using Gemini (then optional local LLM fallback).
+- **Failure hints**: `POST /api/llm/analyze-failure` summarizes failed deploy logs.
+- **Streaming scan UI**: Calls `/api/scan/stream`, which expects an analyzer at **`http://localhost:8080`**. Run that service separately or rely on the LLM route for analysis.
+- Scan result types can include **Hadolint-style Dockerfile feedback** in the UI when the scan payload includes `hadolint_results` (typically from the external analyzer).
+
+---
+
+## Custom domains & Vercel DNS
+
+“Visit” URLs use `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`. If `VERCEL_TOKEN` (and domain settings) are set, the app can create/update **CNAME** records via Vercel’s API. Otherwise add DNS manually at your provider. Targets are the actual deploy endpoints (e.g. Cloud Run URLs, EC2/ALB hostnames), not legacy Amplify-specific flows.
+
+---
+
+## Self-hosting on small EC2 (e.g. t3.micro)
+
+Low-RAM instances need **swap** for `next build`. See **[docs/T3_MICRO.md](docs/T3_MICRO.md)** (`scripts/setup-swap.sh`, `scripts/deploy.sh`, `scripts/update.sh`).
+
+---
+
+## Documentation
+
+| Doc | Topic |
+|-----|--------|
+| [docs/GITHUB_APP_SETUP.md](docs/GITHUB_APP_SETUP.md) | GitHub App, webhooks, auto-deploy, worker secret |
+| [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) | AWS IAM permissions for deploy |
+| [docs/T3_MICRO.md](docs/T3_MICRO.md) | Swap and EC2 sizing for builds |
+| [scripts/README-SSL.md](scripts/README-SSL.md) | SSL-related scripts (if used in your setup) |
