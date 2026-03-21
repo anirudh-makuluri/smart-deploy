@@ -957,6 +957,46 @@ export async function registerInstanceToTargetGroup(
 	], ws, "deploy");
 }
 
+/**
+ * When ACM is configured, the HTTP listener's default action must redirect to HTTPS.
+ * Host-based *forward* rules on port 80 match before the default and would still serve plain HTTP — remove them
+ * so app traffic uses TLS on 443 (host rules belong on the HTTPS listener only).
+ */
+async function stripForwardRulesFromListener(listenerArn: string, region: string, ws: any): Promise<void> {
+	const send = createWebSocketLogger(ws);
+	let rulesRaw: string;
+	try {
+		rulesRaw = await runAWSCommand(
+			["elbv2", "describe-rules", "--listener-arn", listenerArn, "--output", "json", "--region", region],
+			ws,
+			"deploy"
+		);
+	} catch {
+		return;
+	}
+	let rules: Array<{ RuleArn?: string; Priority?: string; IsDefault?: boolean; Actions?: Array<{ Type?: string }> }> = [];
+	try {
+		rules = JSON.parse(rulesRaw).Rules || [];
+	} catch {
+		return;
+	}
+	let removed = 0;
+	for (const rule of rules) {
+		if (rule.IsDefault || rule.Priority === "default") continue;
+		const hasForward = (rule.Actions || []).some((a) => a.Type === "forward");
+		if (!hasForward || !rule.RuleArn) continue;
+		try {
+			await runAWSCommand(["elbv2", "delete-rule", "--rule-arn", rule.RuleArn, "--region", region], ws, "deploy");
+			removed++;
+		} catch {
+			// already deleted or race
+		}
+	}
+	if (removed > 0) {
+		send(`Removed ${removed} legacy HTTP forward rule(s); app routes now use HTTPS (443) only.`, "deploy");
+	}
+}
+
 export async function ensureSharedAlb(
 	params: {
 		vpcId: string;
@@ -982,6 +1022,10 @@ export async function ensureSharedAlb(
 	const httpsListenerArn = certificateArn
 		? await ensureHttpsListener(albArn, certificateArn, params.region, params.ws)
 		: undefined;
+
+	if (certificateArn) {
+		await stripForwardRulesFromListener(httpListenerArn, params.region, params.ws);
+	}
 
 	return { albArn, dnsName, albSgId, httpListenerArn, httpsListenerArn };
 }

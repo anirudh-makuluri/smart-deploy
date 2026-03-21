@@ -480,7 +480,15 @@ async function configureAlb(params: {
 
 	send("Configuring shared ALB routing...", "deploy");
 	const alb = await ensureSharedAlb({ vpcId: net.vpcId, subnetIds: net.subnetIds.slice(0, 2), region, ws, certificateArn });
-	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
+	// With ACM: host rules must attach to HTTPS (443); HTTP (80) is redirect-only. Without ACM, rules use HTTP only.
+	const listenerArn = certificateArn ? alb.httpsListenerArn : alb.httpListenerArn;
+	if (!listenerArn) {
+		throw new Error(
+			certificateArn
+				? "ALB HTTPS listener missing. Check EC2_ACM_CERTIFICATE_ARN is valid and in the same region as the load balancer."
+				: "ALB HTTP listener missing."
+		);
+	}
 	const customHost = normalizeDomain(deployConfig.custom_url);
 
 	await allowAlbToReachService(net.securityGroupId, alb.albSgId, 80, ws);
