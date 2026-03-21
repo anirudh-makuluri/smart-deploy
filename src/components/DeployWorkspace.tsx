@@ -10,8 +10,8 @@ import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/Depl
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
-import { DeployConfig, repoType, SDArtifactsResponse } from "@/app/types";
-import { configSnapshotFromDeployConfig } from "@/lib/utils";
+import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import { configSnapshotFromDeployConfig, normalizeRepoUrl } from "@/lib/utils";
 import { branchNamesFromRepo, resolveWorkspaceBranch } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
@@ -21,6 +21,12 @@ import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
+function repoRelativeServicePath(path: string | undefined): string | undefined {
+	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
+	if (!p || p === ".") return undefined;
+	return p;
+}
+
 export default function DeployWorkspace() {
 	const deployments = useAppData((s) => s.deployments);
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
@@ -28,6 +34,8 @@ export default function DeployWorkspace() {
 	const serviceName = useAppData((s) => s.activeServiceName);
 	const isLoading = useAppData((s) => s.isLoading);
 	const fetchRepoDeployments = useAppData((s) => s.fetchRepoDeployments);
+	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
+	const repoServices = useAppData((s) => s.repoServices);
 	const { data: session } = useSession();
 	const repo = activeRepo;
 	const deployment = React.useMemo(() => {
@@ -53,6 +61,20 @@ export default function DeployWorkspace() {
 		merged.branch = resolveWorkspaceBranch(repo, merged.branch);
 		return merged;
 	}, [deployment, repo, serviceName]);
+
+	/** Monorepo package root for the active service; sent to /analyze as package_path. */
+	const analyzeServicePath = React.useMemo(() => {
+		if (!repo?.html_url || !serviceName || serviceName === ".") return undefined;
+		const fromList = (list: DetectedServiceInfo[] | undefined) => {
+			const svc = list?.find((s) => s.name === serviceName);
+			return repoRelativeServicePath(svc?.path);
+		};
+		const cached = fromList(getDetectedRepoCache(repo.html_url)?.services);
+		if (cached) return cached;
+		const norm = normalizeRepoUrl(repo.html_url);
+		const record = repoServices.find((r) => normalizeRepoUrl(r.repo_url) === norm);
+		return fromList(record?.services);
+	}, [repo?.html_url, serviceName, getDetectedRepoCache, repoServices]);
 
 	// Persist corrected branch when DB had a name that does not exist on the remote (e.g. legacy "main").
 	React.useEffect(() => {
@@ -381,7 +403,7 @@ export default function DeployWorkspace() {
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
 								repoFullName={repo?.full_name ?? ""}
-								branch={workingDeployment?.branch ?? ""}
+								packagePath={analyzeServicePath}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
 									setScanResults(data);

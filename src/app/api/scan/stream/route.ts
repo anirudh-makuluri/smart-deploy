@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { full_name, branch, target_workdir } = body;
+	const { full_name, package_path } = body;
 
 	if (!full_name) {
 		return NextResponse.json({ error: "Missing full_name" }, { status: 400 });
@@ -28,8 +28,7 @@ export async function POST(req: Request) {
 	const payload = {
 		repo_url: `https://github.com/${full_name}`,
 		github_token: token,
-		...(branch && { branch }),
-		...(target_workdir && { target_workdir })
+		...(package_path && { package_path }),
 	};
 
 	try {

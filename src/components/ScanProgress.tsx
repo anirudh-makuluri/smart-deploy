@@ -13,8 +13,8 @@ type StreamEvent = {
 
 type ScanProgressProps = {
 	repoFullName: string;
-	branch: string;
-	targetWorkdir?: string;
+	/** Repo-relative package root for this service (monorepo); forwarded as package_path. */
+	packagePath?: string;
 	onComplete: (data: SDArtifactsResponse) => void;
 	onCancel: () => void;
 };
@@ -28,7 +28,7 @@ const NODES = [
 	{ id: "verifier", label: "Verifier", desc: "Final health check validation" },
 ];
 
-export default function ScanProgress({ repoFullName, branch, targetWorkdir, onComplete, onCancel }: ScanProgressProps) {
+export default function ScanProgress({ repoFullName, packagePath, onComplete, onCancel }: ScanProgressProps) {
 	const [activeNode, setActiveNode] = useState<string>("scanner");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -53,8 +53,7 @@ export default function ScanProgress({ repoFullName, branch, targetWorkdir, onCo
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						full_name: repoFullName,
-						branch,
-						target_workdir: targetWorkdir
+						...(packagePath && { package_path: packagePath }),
 					}),
 					signal: abortControllerRef.current?.signal,
 				});
@@ -177,7 +176,7 @@ export default function ScanProgress({ repoFullName, branch, targetWorkdir, onCo
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoFullName, branch, targetWorkdir]);
+	}, [repoFullName, packagePath]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">
