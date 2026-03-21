@@ -13,7 +13,10 @@ type DashboardSideBarProps = {
 export default function DashboardSideBar({ activeView, onViewChange }: DashboardSideBarProps) {
 	const { data: session } = useSession();
 	const { repoList, deployments } = useAppData();
-	const activeDeployments = deployments.filter((d) => d.status !== "didnt_deploy").length;
+	const activeDeployments = deployments.filter((d) => {
+		const hasStoredLiveUrl = Boolean((d.custom_url ?? "").trim() || (d.deployUrl ?? "").trim());
+		return d.status === "running" && hasStoredLiveUrl;
+	}).length;
 	const unhealthyDeployments = deployments.filter((d) => d.status === "failed" || d.status === "stopped" || d.status === "paused").length;
 	// Accent is fixed to blue for now; picker hidden.
 	useEffect(() => {

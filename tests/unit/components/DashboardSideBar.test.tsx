@@ -24,7 +24,7 @@ describe("DashboardSideBar", () => {
 		appState = {
 			repoList: [{ id: 1 }, { id: 2 }, { id: 3 }],
 			deployments: [
-				{ status: "running" },
+				{ status: "running", deployUrl: "https://repo-one.example.com" },
 				{ status: "failed" },
 				{ status: "didnt_deploy" },
 				{ status: "paused" },
@@ -43,8 +43,9 @@ describe("DashboardSideBar", () => {
 		expect(screen.getByText("Active")).toBeInTheDocument();
 		expect(screen.getByText("Issues")).toBeInTheDocument();
 
-		// repos + active both evaluate to 3 for this fixture
-		expect(screen.getAllByText("3").length).toBeGreaterThanOrEqual(2);
+		// repos=3, active=1, issues=2 for this fixture
+		expect(screen.getByText("3")).toBeInTheDocument();
+		expect(screen.getByText("1")).toBeInTheDocument();
 		// issues = failed + paused
 		expect(screen.getByText("2")).toBeInTheDocument();
 	});
