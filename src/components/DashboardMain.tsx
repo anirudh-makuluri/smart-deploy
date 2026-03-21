@@ -10,6 +10,7 @@ import { useSession } from "next-auth/react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { countDeployedServicesForRepo } from "@/lib/utils";
 
 function normalizeUrl(url: string): string {
 	return url.replace(/\.git$/, "").toLowerCase().trim();
@@ -33,16 +34,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
 		const hasFailed = repoDeployments.some((d) => d.status === "failed");
-		const hasRepoLevelDeployment = activeRepoDeployments.some(
-			(d) => d.service_name === record.repo_name
-		);
-		const deployedServicesCount = hasRepoLevelDeployment
-			? totalServices
-			: activeRepoDeployments.filter((d) => {
-				const svcName = d.service_name?.trim();
-				if (!svcName) return false;
-				return svcName.startsWith(`${record.repo_name}-`);
-			}).length;
+		const deployedServicesCount = countDeployedServicesForRepo(record, repoDeployments);
 		const isDeployed = deployedServicesCount > 0;
 		const isCrashed = activeRepoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
 

@@ -1,4 +1,4 @@
-import { DeployConfig, DeploymentTarget, SDArtifactsResponse } from "@/app/types";
+import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -273,6 +273,24 @@ export function getDeploymentForService(
 		const bTime = new Date(b.last_deployment ?? 0).getTime();
 		return bTime - aTime;
 	})[0];
+}
+
+export function countDeployedServicesForRepo(
+	repoRecord: Pick<RepoServicesRecord, "repo_url" | "repo_name" | "services">,
+	deployments: DeployConfig[]
+): number {
+	const services = repoRecord.services ?? [];
+	if (services.length === 0) return 0;
+
+	return services.reduce((count, svc) => {
+		const deployment = getDeploymentForService(
+			deployments,
+			repoRecord.repo_url,
+			svc.name,
+			repoRecord.repo_name
+		);
+		return deployment && deployment.status !== "didnt_deploy" ? count + 1 : count;
+	}, 0);
 }
 
 export function isDeploymentDisabled(deployment: DeployConfig): boolean {
