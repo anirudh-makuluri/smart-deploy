@@ -580,8 +580,8 @@ async function getAmiMinimumRootVolumeGiB(amiId: string, region: string, ws: any
 
 async function terminateInstance(instanceId: string, region: string, ws: any): Promise<void> {
 	const send = createWebSocketLogger(ws);
-	const state = (await runAWSCommand(["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].State.Name", "--output", "text", "--region", region], ws, "deploy")).trim();
-	if (state && state !== "None" && state !== "terminated") {
+	const state = await getInstanceState(instanceId, region, ws);
+	if (state && state !== "terminated") {
 		send(`Terminating instance ${instanceId} (${state})...`, "deploy");
 		await runAWSCommand(["ec2", "terminate-instances", "--instance-ids", instanceId, "--region", region], ws, "deploy");
 	}
@@ -828,13 +828,32 @@ export async function handleEC2(
 
 	// ── Redeploy path: reuse existing running instance via SSM ──
 	if (existingInstanceId) {
-		const state = await getInstanceState(existingInstanceId, region, ws);
-		console.log("state", state);
+		let state = await getInstanceState(existingInstanceId, region, ws);
+		if (state === "pending") {
+			send("Existing instance is still starting; waiting until it is running...", "deploy");
+			await runAWSCommand(
+				["ec2", "wait", "instance-running", "--instance-ids", existingInstanceId, "--region", region],
+				ws,
+				"deploy"
+			);
+			state = await getInstanceState(existingInstanceId, region, ws);
+		}
 		if (state === "running") {
 			return redeployInstance({
 				deployConfig, existingInstanceId, region, services, repoName, token,
 				envBase64, mainPort, net, amiId, certificateArn, ws, send,
 			});
+		}
+		if (state) {
+			send(
+				`Saved instance ${existingInstanceId} is "${state}" (not running). Launching a new instance instead.`,
+				"deploy"
+			);
+		} else {
+			send(
+				`Could not find instance ${existingInstanceId} in region ${region}. Launching a new instance — if the instance still exists, set the deployment AWS region to match.`,
+				"deploy"
+			);
 		}
 	}
 

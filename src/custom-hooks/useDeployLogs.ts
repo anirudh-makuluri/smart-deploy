@@ -142,24 +142,29 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 						setVercelDnsError(null);
 					} else {
 						setDeployError(null);
-						if (payload.deployUrl && deployConfigRef.current) {
+						if (deployConfigRef.current) {
+							const cur = deployConfigRef.current;
+							const deployUrlFromPayload =
+								typeof payload.deployUrl === "string" && payload.deployUrl.trim() !== ""
+									? payload.deployUrl.trim()
+									: undefined;
 							const updated = {
-								...deployConfigRef.current,
-								deployUrl: payload.deployUrl,
+								...cur,
+								...(deployUrlFromPayload != null && { deployUrl: deployUrlFromPayload }),
 								status: "running" as const,
 								deploymentTarget:
-									payload.deploymentTarget ??
-									deployConfigRef.current.deploymentTarget,
+									payload.deploymentTarget ?? cur.deploymentTarget,
 								...(payload.ec2 != null && { ec2: payload.ec2 }),
 							};
+							const compareUrl = deployUrlFromPayload ?? cur.deployUrl ?? "";
 							// Use backend-provided customUrl when Vercel DNS was added there
 							updated.custom_url =
 								typeof payload.customUrl === "string" && payload.customUrl.trim()
 									? payload.customUrl.trim()
 									: (() => {
-										const displayUrl = getDeploymentDisplayUrl(updated);
-										return displayUrl && displayUrl !== payload.deployUrl ? displayUrl : undefined;
-									})();
+											const displayUrl = getDeploymentDisplayUrl(updated);
+											return displayUrl && displayUrl !== compareUrl ? displayUrl : undefined;
+										})();
 							deployConfigRef.current = updated;
 						}
 						setSteps((prev) =>

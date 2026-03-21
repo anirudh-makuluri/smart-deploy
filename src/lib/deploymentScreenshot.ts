@@ -78,7 +78,8 @@ export async function captureDeploymentScreenshotAndUpload(opts: {
 		)}/${Date.now()}.png`;
 
 		const supabase = getSupabaseServer();
-		const uploadBody = typeof Blob !== "undefined" ? new Blob([pngBuffer], { type: "image/png" }) : pngBuffer;
+		// Use Buffer directly to avoid TS BlobPart incompatibilities in Node typings.
+		const uploadBody = pngBuffer;
 
 		const { error: uploadError } = await supabase.storage
 			.from(bucket)

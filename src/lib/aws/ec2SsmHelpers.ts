@@ -9,6 +9,7 @@ import {
 	SendCommandCommand,
 	GetCommandInvocationCommand,
 } from "@aws-sdk/client-ssm";
+import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
 
 const SSM_ROLE_NAME = "smartdeploy-ec2-ssm-role";
@@ -135,30 +136,43 @@ export async function ensureSSMInstanceProfile(
 }
 
 /**
- * Returns the current state of an EC2 instance (e.g. "running", "stopped", "terminated").
+ * Returns the current EC2 instance state (e.g. "running", "stopped") or undefined if not found.
+ * Uses the AWS SDK instead of CLI text output so we never mis-read AWS CLI's literal "None"
+ * (printed when JMESPath returns null for empty Reservations).
  */
 export async function getInstanceState(
 	instanceId: string,
 	region: string,
-	ws: any
-): Promise<string> {
-	const output = await runAWSCommand(
-		[
-			"ec2",
-			"describe-instances",
-			"--instance-ids",
-			instanceId,
-			"--query",
-			"Reservations[0].Instances[0].State.Name",
-			"--output",
-			"text",
-			"--region",
-			region,
-		],
-		ws,
-		"deploy"
-	);
-	return (output || "").trim();
+	_ws: unknown
+): Promise<string | undefined> {
+	const client = new EC2Client(getClientConfig(region));
+	try {
+		const resp = await client.send(
+			new DescribeInstancesCommand({ InstanceIds: [instanceId] })
+		);
+		for (const reservation of resp.Reservations ?? []) {
+			for (const inst of reservation.Instances ?? []) {
+				if (inst.InstanceId === instanceId) {
+					const name = inst.State?.Name;
+					if (name) return name;
+				}
+			}
+		}
+	} catch (e: unknown) {
+		const err = e as { name?: string; Code?: string };
+		const code = err.name || err.Code;
+		if (
+			code === "InvalidInstanceID.NotFound" ||
+			code === "InvalidInstanceID.Malformed" ||
+			(typeof e === "object" &&
+				e !== null &&
+				String((e as Error).message || "").includes("InvalidInstanceID"))
+		) {
+			return undefined;
+		}
+		throw e;
+	}
+	return undefined;
 }
 
 /**
