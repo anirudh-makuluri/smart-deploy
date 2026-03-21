@@ -19,7 +19,7 @@ type DashboardSideBarProps = {
 
 export default function DashboardSideBar({ onOpenDeploySheet, activeView, onViewChange }: DashboardSideBarProps) {
 	const router = useRouter();
-	const { data: session } = useSession();
+	const { data: session, status: sessionStatus } = useSession();
 	const { repoList, deployments, repoServices, isLoading, setAppData, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [showAddRepo, setShowAddRepo] = useState(false);
@@ -30,6 +30,11 @@ export default function DashboardSideBar({ onOpenDeploySheet, activeView, onView
 		if (typeof window === "undefined") return;
 		document.documentElement.setAttribute("data-accent", "blue");
 	}, []);
+
+	useEffect(() => {
+		if (sessionStatus !== "authenticated") return;
+		void refreshRepoList();
+	}, [sessionStatus, refreshRepoList]);
 
 	// Show all repos; clicking goes to repo page (where user can deploy per service)
 	const reposToShow = repoList;
