@@ -9,6 +9,7 @@ import {
 } from "@/lib/utils";
 import DeployOptions from "@/components/DeployOptions";
 import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
+import AutoDeploySection from "@/components/deploy-workspace/AutoDeploySection";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -17,6 +18,7 @@ type DeployOverviewProps = {
 	onRedeploy?: (commitSha?: string) => void;
 	onEditConfiguration?: () => void;
 	repo?: repoType;
+	onDeploymentPatch?: (partial: Partial<DeployConfig>) => void | Promise<void>;
 };
 
 const IPV4_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
@@ -106,6 +108,7 @@ export default function DeployOverview({
 	onRedeploy,
 	onEditConfiguration,
 	repo,
+	onDeploymentPatch,
 }: DeployOverviewProps) {
 	const hasStoredLiveUrl = Boolean(deployment.deployUrl || deployment.custom_url);
 	// If a DB row says "running" but we don't have a stored live URL, treat it as not deployed.
@@ -250,6 +253,9 @@ export default function DeployOverview({
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Region</p>
 						<p className="mt-2 font-mono text-sm font-semibold text-foreground">{regionDisplay}</p>
 					</div>
+					{onDeploymentPatch && repo ? (
+						<AutoDeploySection deployment={deployment} repo={repo} onPatch={onDeploymentPatch} />
+					) : null}
 				</div>
 			</div>
 		</div>

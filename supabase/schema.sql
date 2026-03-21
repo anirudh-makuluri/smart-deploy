@@ -1,5 +1,7 @@
 -- Run this in the Supabase SQL Editor (Dashboard → SQL Editor) to create tables.
 -- Replace existing Firebase/Firestore usage with these tables.
+-- Note: This schema already includes GitHub App auto-deploy columns/indexes for fresh installs.
+-- Existing databases should still run migrations in supabase/migrations.
 
 -- Users: id = auth provider user id (e.g. GitHub), profile fields
 create table if not exists public.users (
@@ -19,11 +21,19 @@ create table if not exists public.deployments (
   first_deployment timestamptz,
   last_deployment timestamptz,
   revision int default 1,
+  github_full_name text,
+  github_installation_id bigint,
+  auto_deploy_enabled boolean not null default false,
+  auto_deploy_branch text,
+  last_auto_deploy_sha text,
   data jsonb not null default '{}',
   scan_results jsonb
 );
 
 create index if not exists idx_deployments_owner on public.deployments(owner_id);
+create index if not exists idx_deployments_auto_deploy_lookup
+  on public.deployments (github_installation_id, github_full_name)
+  where auto_deploy_enabled = true;
 
 -- Deployment history: stored per user so it survives deployment deletion
 create table if not exists public.deployment_history (

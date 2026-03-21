@@ -1,11 +1,10 @@
-import { DeployConfig, DeployStep } from "./app/types";
+import { DeployConfig } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
-import { handleDeploy } from "./lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
-import * as deployLogsStore from "./lib/deployLogsStore";
+import { runDeploymentJob } from "./lib/runDeploymentJob";
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID?: string }, ws: any) {
 	const {
@@ -14,26 +13,11 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 		userID,
 	}: { deployConfig: DeployConfig; token: string; userID?: string } = payload;
 
-	const repoName = deployConfig.repo_name;
-	const serviceName = deployConfig.service_name;
-	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
-
-	const options = {
-		onStepsChange: (steps: DeployStep[]) => {
-			deployLogsStore.updateSteps(userID, repoName, serviceName, steps);
-		},
-		broadcast: (id: string, msg: string) => {
-			deployLogsStore.broadcastLog(userID, repoName, serviceName, id, msg);
-		},
-	};
-
-	try {
-		await handleDeploy(deployConfig, token, ws, userID, options);
-		deployLogsStore.setStatus(userID, repoName, serviceName, "success");
-	} catch (err: any) {
-		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Deployment failed");
-		throw err;
+	if (!userID) {
+		throw new Error("userID is required for deploy");
 	}
+
+	await runDeploymentJob({ deployConfig, gitAccessToken: token, userID, ws });
 }
 
 export async function serviceLogs(payload: { serviceName?: string; repoName?: string }, ws: any) {

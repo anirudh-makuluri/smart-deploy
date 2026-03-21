@@ -22,7 +22,7 @@ export function createEntry(userID: string | undefined, repoName: string, servic
 		steps: [],
 		status: "running",
 		error: null,
-		subscribedClients: new Set([ws]),
+		subscribedClients: new Set(ws ? [ws] : []),
 	});
 }
 

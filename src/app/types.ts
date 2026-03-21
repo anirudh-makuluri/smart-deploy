@@ -91,6 +91,15 @@ export type DeployConfig = {
 	ec2?: EC2DeployDetails;
 	cloudRun?: CloudRunDeployDetails;
 	scan_results?: SDArtifactsResponse;
+
+	/** `owner/repo` for GitHub webhook matching (normalized lowercase). */
+	github_full_name?: string | null;
+	/** GitHub App installation that may access this repo for clones. */
+	github_installation_id?: number | null;
+	auto_deploy_enabled?: boolean;
+	/** Branch ref to auto-deploy (e.g. `main`). Defaults to `branch` when unset. */
+	auto_deploy_branch?: string | null;
+	last_auto_deploy_sha?: string | null;
 }
 
 export type DeployStep = {

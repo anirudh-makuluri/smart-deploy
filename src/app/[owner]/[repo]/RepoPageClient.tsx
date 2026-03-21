@@ -9,6 +9,7 @@ import Header from "@/components/Header";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import RepoServicesList from "@/components/RepoServicesList";
 import { normalizeRepoUrl } from "@/lib/utils";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
@@ -50,6 +51,8 @@ type RepoPageClientProps = {
 
 
 export default function RepoPageClient({ owner, repoName }: RepoPageClientProps) {
+	const router = useRouter();
+	const searchParams = useSearchParams();
 	const {
 		repoList,
 		deployments,
@@ -206,6 +209,14 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			fetchRepoDeployments(resolvedRepo.name);
 		}
 	}, [repoUrl, resolvedRepo, fetchRepoDeployments, setActiveServiceName, setActiveRepo]);
+
+	React.useEffect(() => {
+		if (searchParams.get("github_app") !== "installed") return;
+		const svc = searchParams.get("service");
+		if (svc) setActiveServiceName(svc);
+		toast.success("GitHub App linked. Enable auto-deploy on push in Overview.");
+		router.replace(`/${owner}/${repoName}`, { scroll: false });
+	}, [searchParams, owner, repoName, router, setActiveServiceName]);
 
 	React.useEffect(() => {
 		return () => {

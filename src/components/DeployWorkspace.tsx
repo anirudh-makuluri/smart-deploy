@@ -5,6 +5,7 @@ import ConfigTabs from "@/components/ConfigTabs";
 import DeploymentHistory from "@/components/DeploymentHistory";
 import DeployWorkspaceMenu, { MenuSection } from "@/components/deploy-workspace/DeployWorkspaceMenu";
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
+import AutoDeploySection from "@/components/deploy-workspace/AutoDeploySection";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 
 import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
@@ -257,6 +258,19 @@ export default function DeployWorkspace() {
 		[deployment, effectiveDeploymentStatus]
 	);
 
+	const patchDeployment = React.useCallback(
+		async (partial: Partial<DeployConfig>) => {
+			if (!workingDeployment) return;
+			await updateDeploymentById({
+				...workingDeployment,
+				...partial,
+				repo_name: workingDeployment.repo_name,
+				service_name: workingDeployment.service_name,
+			});
+		},
+		[workingDeployment, updateDeploymentById]
+	);
+
 	async function handleDeploy(commitSha?: string) {
 		const token = session?.accessToken;
 		if (!token || !workingDeployment || !repo) {
@@ -488,6 +502,11 @@ export default function DeployWorkspace() {
 										Blueprint App
 									</Button>
 								</div>
+								{workingDeployment && repo ? (
+									<div className="mt-10 max-w-lg mx-auto text-left">
+										<AutoDeploySection deployment={workingDeployment} repo={repo as repoType} onPatch={patchDeployment} />
+									</div>
+								) : null}
 							</div>
 						</div>
 					);
@@ -501,6 +520,7 @@ export default function DeployWorkspace() {
 								onRedeploy={handleDeploy}
 								onEditConfiguration={() => { setActiveSection("setup"); }}
 								repo={repo as repoType}
+								onDeploymentPatch={patchDeployment}
 							/>
 						)}
 					</div>

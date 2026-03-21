@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import RepoPageClient from "./RepoPageClient";
 
 type PageProps = {
@@ -6,5 +7,9 @@ type PageProps = {
 
 export default async function RepoPage({ params }: PageProps) {
 	const { owner, repo: repoName } = await params;
-	return <RepoPageClient owner={owner} repoName={repoName} />;
+	return (
+		<Suspense fallback={null}>
+			<RepoPageClient owner={owner} repoName={repoName} />
+		</Suspense>
+	);
 }

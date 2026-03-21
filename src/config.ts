@@ -7,6 +7,20 @@ const config = {
 	GITHUB_ID: process.env.GITHUB_ID || "",
 	GITHUB_SECRET: process.env.GITHUB_SECRET || "",
 
+	// GitHub App (auto-deploy webhooks + installation tokens)
+	GITHUB_APP_ID: process.env.GITHUB_APP_ID || "",
+	GITHUB_APP_PRIVATE_KEY: (process.env.GITHUB_APP_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+	GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || "",
+	GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID || "",
+	GITHUB_APP_CLIENT_SECRET: process.env.GITHUB_APP_CLIENT_SECRET || "",
+
+	// Public slug for https://github.com/apps/<slug>/installations/new
+	NEXT_PUBLIC_GITHUB_APP_SLUG: process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || "",
+
+	// Deploy worker (WebSocket server) — receives verified auto-deploy jobs from Next.js
+	DEPLOY_WORKER_URL: (process.env.DEPLOY_WORKER_URL || "http://127.0.0.1:4001").replace(/\/$/, ""),
+	DEPLOY_WORKER_SECRET: process.env.DEPLOY_WORKER_SECRET || "",
+
 	// Google Cloud Platform
 	GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || "",
 	GCP_SERVICE_ACCOUNT_KEY: process.env.GCP_SERVICE_ACCOUNT_KEY || "",

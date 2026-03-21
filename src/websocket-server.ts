@@ -6,6 +6,8 @@ import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
+import config from "./config";
+import { processAutoDeployJob, type AutoDeployJobPayload } from "./lib/processAutoDeployJob";
 
 async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
@@ -28,10 +30,66 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 	};
 }
 
+function readRequestBody(req: http.IncomingMessage): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		req.on("data", (c: Buffer) => chunks.push(c));
+		req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+		req.on("error", reject);
+	});
+}
+
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer();
 const wss = new WebSocketServer({ server });
 const port = Number(process.env.WS_PORT) || 4001;
+
+server.on("request", (req, res) => {
+	void (async () => {
+		if (req.method !== "POST" || req.url !== "/internal/auto-deploy") {
+			res.statusCode = 404;
+			res.end();
+			return;
+		}
+		const auth = req.headers.authorization || "";
+		const secret = config.DEPLOY_WORKER_SECRET?.trim();
+		if (!secret || auth !== `Bearer ${secret}`) {
+			res.statusCode = 401;
+			res.end("Unauthorized");
+			return;
+		}
+		let raw: string;
+		try {
+			raw = await readRequestBody(req);
+		} catch {
+			res.statusCode = 400;
+			res.end();
+			return;
+		}
+		let body: AutoDeployJobPayload;
+		try {
+			body = JSON.parse(raw) as AutoDeployJobPayload;
+		} catch {
+			res.statusCode = 400;
+			res.end("Invalid JSON");
+			return;
+		}
+		if (
+			typeof body.installationId !== "number" ||
+			typeof body.fullName !== "string" ||
+			typeof body.branch !== "string" ||
+			typeof body.commitSha !== "string"
+		) {
+			res.statusCode = 400;
+			res.end("Invalid payload");
+			return;
+		}
+		res.statusCode = 202;
+		res.setHeader("Content-Type", "application/json");
+		res.end(JSON.stringify({ accepted: true }));
+		processAutoDeployJob(body).catch((e) => console.error("processAutoDeployJob:", e));
+	})();
+});
 
 function sendDeployComplete(ws: any, success: boolean, error?: string) {
 	if (ws?.readyState === 1) {
@@ -125,5 +183,5 @@ process.on("unhandledRejection", (reason) => {
 });
 
 server.listen(port, () => {
-	console.log(`WebSocket server running on ws://localhost:${port}`);
+	console.log(`WebSocket + auto-deploy worker on port ${port} (ws://… and POST /internal/auto-deploy)`);
 });

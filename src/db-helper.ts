@@ -13,10 +13,48 @@ type RowDeployment = {
 	revision: number | null;
 	data: Record<string, unknown>;
 	scan_results: Record<string, unknown> | null;
+	github_full_name?: string | null;
+	github_installation_id?: number | null;
+	auto_deploy_enabled?: boolean | null;
+	auto_deploy_branch?: string | null;
+	last_auto_deploy_sha?: string | null;
 };
+
+function mergeAutoDeployDbColumns(
+	incoming: DeployConfig,
+	existing: Pick<
+		RowDeployment,
+		"github_full_name" | "github_installation_id" | "auto_deploy_enabled" | "auto_deploy_branch" | "last_auto_deploy_sha"
+	> | null
+) {
+	const e = existing ?? {};
+	const ghFull = Object.prototype.hasOwnProperty.call(incoming, "github_full_name")
+		? incoming.github_full_name ?? null
+		: (e.github_full_name ?? null);
+	const inst = Object.prototype.hasOwnProperty.call(incoming, "github_installation_id")
+		? incoming.github_installation_id ?? null
+		: (e.github_installation_id ?? null);
+	const autoEn = Object.prototype.hasOwnProperty.call(incoming, "auto_deploy_enabled")
+		? Boolean(incoming.auto_deploy_enabled)
+		: Boolean(e.auto_deploy_enabled);
+	const autoBr = Object.prototype.hasOwnProperty.call(incoming, "auto_deploy_branch")
+		? incoming.auto_deploy_branch ?? null
+		: (e.auto_deploy_branch ?? null);
+	const lastSha = Object.prototype.hasOwnProperty.call(incoming, "last_auto_deploy_sha")
+		? incoming.last_auto_deploy_sha ?? null
+		: (e.last_auto_deploy_sha ?? null);
+	return {
+		github_full_name: ghFull,
+		github_installation_id: inst,
+		auto_deploy_enabled: autoEn,
+		auto_deploy_branch: autoBr,
+		last_auto_deploy_sha: lastSha,
+	};
+}
 
 function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
 	const { id, repo_name, service_name, owner_id, status, first_deployment, last_deployment, revision, data } = row;
+	const dataObj = (data && typeof data === "object" ? data : {}) as Record<string, unknown>;
 	return {
 		id,
 		repo_name,
@@ -27,8 +65,13 @@ function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string
 		first_deployment: first_deployment ?? undefined,
 		last_deployment: last_deployment ?? undefined,
 		revision: revision ?? 1,
-		...data,
+		...dataObj,
 		scan_results: row.scan_results ? (row.scan_results as any) : undefined,
+		github_full_name: row.github_full_name ?? (dataObj.github_full_name as string | undefined) ?? undefined,
+		github_installation_id: row.github_installation_id ?? (dataObj.github_installation_id as number | undefined) ?? undefined,
+		auto_deploy_enabled: row.auto_deploy_enabled ?? (dataObj.auto_deploy_enabled as boolean | undefined) ?? false,
+		auto_deploy_branch: row.auto_deploy_branch ?? (dataObj.auto_deploy_branch as string | undefined) ?? undefined,
+		last_auto_deploy_sha: row.last_auto_deploy_sha ?? (dataObj.last_auto_deploy_sha as string | undefined) ?? undefined,
 	} as DeployConfig & { ownerID: string };
 }
 
@@ -84,19 +127,29 @@ export const dbHelper = {
 				last_deployment,
 				revision,
 				scan_results,
+				github_full_name: _gfn,
+				github_installation_id: _gii,
+				auto_deploy_enabled: _ade,
+				auto_deploy_branch: _adb,
+				last_auto_deploy_sha: _las,
+				ownerID: _ownerID,
 				...rest
 			} = deployConfig as DeployConfig & { ownerID?: string };
 			const dataJson = { ...rest } as Record<string, unknown>;
-
+			delete dataJson.ownerID;
 
 			const { data: existing } = await supabase
 				.from("deployments")
-				.select("revision, data, status, scan_results")
+				.select(
+					"revision, data, status, scan_results, github_full_name, github_installation_id, auto_deploy_enabled, auto_deploy_branch, last_auto_deploy_sha"
+				)
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name)
 				.order("last_deployment", { ascending: false })
 				.limit(1)
 				.maybeSingle();
+			const autoCols = mergeAutoDeployDbColumns(deployConfig, existing);
+
 			if (!existing) {
 				await supabase.from("deployments").insert({
 					id: uuidv4(),
@@ -111,6 +164,7 @@ export const dbHelper = {
 					revision: 1,
 					data: dataJson,
 					scan_results: scan_results || null,
+					...autoCols,
 				});
 				return { success: "New deployment created and added to user" };
 			}
@@ -134,6 +188,7 @@ export const dbHelper = {
 					revision: nextRevision,
 					data: mergedData,
 					scan_results: nextScanResults,
+					...autoCols,
 				})
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name);
@@ -236,6 +291,44 @@ export const dbHelper = {
 			return { deployment: rowToDeployConfig(row as RowDeployment) };
 		} catch (error) {
 			console.error("getDeployment error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	/** Deployments with auto-deploy on for this GitHub App installation and repository (`owner/repo`, case-insensitive). */
+	getDeploymentsForAutoDeploy: async function (
+		installationId: number,
+		githubFullName: string
+	): Promise<{ error?: string; deployments?: (DeployConfig & { ownerID: string })[] }> {
+		try {
+			const supabase = getSupabaseServer();
+			const normalized = githubFullName.trim().toLowerCase();
+			const { data: rows, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("github_installation_id", installationId)
+				.eq("auto_deploy_enabled", true);
+			if (error) return { error: error.message };
+			const all = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+			const filtered = all.filter((d) => (d.github_full_name || "").trim().toLowerCase() === normalized);
+			return { deployments: filtered };
+		} catch (error) {
+			console.error("getDeploymentsForAutoDeploy error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	updateLastAutoDeploySha: async function (repoName: string, serviceName: string, sha: string) {
+		try {
+			const supabase = getSupabaseServer();
+			const { error } = await supabase
+				.from("deployments")
+				.update({ last_auto_deploy_sha: sha })
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName);
+			if (error) return { error: error.message };
+			return { success: true };
+		} catch (error) {
 			return { error: error instanceof Error ? error.message : String(error) };
 		}
 	},
