@@ -11,7 +11,7 @@ import {
 	AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search, X, Plus, Minus } from "lucide-react";
 
 type LogEntry = { timestamp?: string; message?: string };
 
@@ -39,6 +39,8 @@ function formatTimeOnly(timestamp?: string): string {
 	return `${hours}:${minutes}:${seconds}`;
 }
 
+type LogFilter = "ALL" | "ERROR" | "WARN" | "BUILD" | "DEPLOY";
+
 export default function ServiceLogs({
 	logs,
 	serviceName,
@@ -55,6 +57,55 @@ export default function ServiceLogs({
 	const shouldAutoScrollRef = React.useRef(true);
 	const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
 	const [selectedLog, setSelectedLog] = React.useState<LogEntry | null>(null);
+	const [logFilter, setLogFilter] = React.useState<LogFilter>("ALL");
+
+	type KeywordRule = { mode: "include" | "exclude"; keyword: string };
+
+	const LOG_FILTER_STORAGE_KEY = "sd-log-keyword-filters";
+
+	const [keywordRules, setKeywordRules] = React.useState<KeywordRule[]>(() => {
+		if (typeof window === "undefined") return [];
+		try {
+			const stored = localStorage.getItem(LOG_FILTER_STORAGE_KEY);
+			return stored ? JSON.parse(stored) : [];
+		} catch {
+			return [];
+		}
+	});
+	const [ruleInput, setRuleInput] = React.useState("");
+	const [ruleMode, setRuleMode] = React.useState<"include" | "exclude">("exclude");
+	const [showFilterInput, setShowFilterInput] = React.useState(() => {
+		if (typeof window === "undefined") return false;
+		try {
+			const stored = localStorage.getItem(LOG_FILTER_STORAGE_KEY);
+			const rules: KeywordRule[] = stored ? JSON.parse(stored) : [];
+			return rules.length > 0;
+		} catch {
+			return false;
+		}
+	});
+
+	React.useEffect(() => {
+		try {
+			if (keywordRules.length > 0) {
+				localStorage.setItem(LOG_FILTER_STORAGE_KEY, JSON.stringify(keywordRules));
+			} else {
+				localStorage.removeItem(LOG_FILTER_STORAGE_KEY);
+			}
+		} catch { /* quota or SSR */ }
+	}, [keywordRules]);
+
+	const addKeywordRule = () => {
+		const trimmed = ruleInput.trim();
+		if (!trimmed) return;
+		if (keywordRules.some((r) => r.keyword.toLowerCase() === trimmed.toLowerCase() && r.mode === ruleMode)) return;
+		setKeywordRules((prev) => [...prev, { mode: ruleMode, keyword: trimmed }]);
+		setRuleInput("");
+	};
+
+	const removeKeywordRule = (index: number) => {
+		setKeywordRules((prev) => prev.filter((_, i) => i !== index));
+	};
 
 	// Prepend older history as the user scrolls to the top.
 	const [extraHistory, setExtraHistory] = React.useState<LogEntry[]>([]);
@@ -113,6 +164,59 @@ export default function ServiceLogs({
 
 		return out;
 	}, [extraHistory, logs]);
+
+	const filteredLogs = React.useMemo(() => {
+		const includeRules = keywordRules.filter((r) => r.mode === "include");
+		const excludeRules = keywordRules.filter((r) => r.mode === "exclude");
+
+		return combinedLogs.filter((log) => {
+			const msg = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
+			const msgLower = (msg || "").toLowerCase();
+
+			// Type-level filter
+			if (logFilter !== "ALL") {
+				const type = getLogType(msg || "");
+				if (logFilter === "ERROR" && type !== "ERROR") return false;
+				if (logFilter === "WARN" && type !== "WARN" && type !== "ERROR") return false;
+				if (logFilter === "BUILD" && !(/build|codebuild|docker/i.test(msg))) return false;
+				if (logFilter === "DEPLOY" && !(/deploy|ssm|ecr/i.test(msg))) return false;
+			}
+
+			// Include rules: if any exist, the line must match at least one
+			if (includeRules.length > 0) {
+				const matchesAny = includeRules.some((r) => msgLower.includes(r.keyword.toLowerCase()));
+				if (!matchesAny) return false;
+			}
+
+			// Exclude rules: the line must not match any
+			if (excludeRules.length > 0) {
+				const matchesExclude = excludeRules.some((r) => msgLower.includes(r.keyword.toLowerCase()));
+				if (matchesExclude) return false;
+			}
+
+			return true;
+		});
+	}, [combinedLogs, logFilter, keywordRules]);
+
+	const firstErrorIndex = React.useMemo(() => {
+		return filteredLogs.findIndex((log) => {
+			const msg = typeof log.message === "string" ? log.message : "";
+			return getLogType(msg) === "ERROR";
+		});
+	}, [filteredLogs]);
+
+	const jumpToFirstError = () => {
+		if (firstErrorIndex < 0) return;
+		const viewport = containerRef.current?.querySelector<HTMLDivElement>('[data-slot="scroll-area-viewport"]');
+		if (!viewport) return;
+		const rows = viewport.querySelectorAll("[data-log-row]");
+		const row = rows[firstErrorIndex] as HTMLElement | undefined;
+		if (row) {
+			row.scrollIntoView({ behavior: "smooth", block: "center" });
+			row.classList.add("ring-1", "ring-destructive/50");
+			setTimeout(() => row.classList.remove("ring-1", "ring-destructive/50"), 2000);
+		}
+	};
 
 	// Track whether the user is currently "close enough" to the bottom.
 	// If they scrolled up, we do NOT force-scroll when new logs arrive.
@@ -251,52 +355,182 @@ export default function ServiceLogs({
 						Loading older logs...
 					</div>
 				)}
-				<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card" data-logs-scroll>
-					<div className="min-w-full font-mono text-sm text-muted-foreground">
-						{combinedLogs.length === 0 ? (
-							<p className="mt-10 text-center text-4xl text-muted-foreground/70">😴 No logs yet</p>
-						) : (
-							<>
-								<div className="sticky top-0 z-0 grid grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/60 bg-card px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground/90">
-									<span>Type</span>
-									<span>Time</span>
-									<span>Message</span>
-								</div>
-								{combinedLogs.map((log, i) => {
-									const message = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
-									const type = getLogType(message || "");
-									const formattedTime = formatTimeOnly(log.timestamp);
+			{/* Filter toolbar */}
+			<div className="flex flex-col border-b border-border/40 bg-card/80">
+				<div className="flex items-center gap-2 px-3 py-2">
+					{(["ALL", "ERROR", "WARN", "BUILD", "DEPLOY"] as LogFilter[]).map((f) => (
+						<button
+							key={f}
+							type="button"
+							className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+								logFilter === f
+									? "bg-primary/15 text-primary border border-primary/30"
+									: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+							}`}
+							onClick={() => setLogFilter(f)}
+						>
+							{f === "ALL" ? "All" : f.charAt(0) + f.slice(1).toLowerCase()}
+							{f === "ERROR" && firstErrorIndex >= 0 && (
+								<span className="ml-1 text-destructive">!</span>
+							)}
+						</button>
+					))}
 
-									return (
-										<div
-											key={i}
-											className="group grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40 cursor-pointer"
-											onClick={() => setSelectedLog(log)}
-										>
-											<span className="text-primary">{type}</span>
-											<span className="truncate">{formattedTime}</span>
-											<span className="flex items-center gap-2 truncate text-foreground">
-												<span className="flex-1 truncate">{message || "-"}</span>
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2 shrink-0"
-													onClick={(e) => {
-														e.stopPropagation();
-														setSelectedLog(log);
-													}}
-												>
-													Show full log
-												</Button>
-											</span>
-										</div>
-									);
-								})}
-							</>
+					<div className="ml-auto flex items-center gap-2">
+						{firstErrorIndex >= 0 && (
+							<button
+								type="button"
+								className="px-2.5 py-1 rounded-md text-xs font-medium text-destructive hover:bg-destructive/10 border border-destructive/30 transition-colors"
+								onClick={jumpToFirstError}
+							>
+								Jump to error
+							</button>
+						)}
+						<button
+							type="button"
+							className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+								showFilterInput || keywordRules.length > 0
+									? "bg-primary/15 text-primary border border-primary/30"
+									: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+							}`}
+							onClick={() => setShowFilterInput((v) => !v)}
+						>
+							<Search className="size-3" />
+							Filter
+							{keywordRules.length > 0 && (
+								<span className="ml-1 px-1.5 py-0.5 rounded-full bg-primary/20 text-[10px] font-bold">{keywordRules.length}</span>
+							)}
+						</button>
+					</div>
+				</div>
+
+				{showFilterInput && (
+					<div className="px-3 pb-2 space-y-2">
+						<div className="flex items-center gap-2">
+							<button
+								type="button"
+								className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+									ruleMode === "exclude"
+										? "bg-destructive/15 text-destructive border border-destructive/30"
+										: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+								}`}
+								onClick={() => setRuleMode("exclude")}
+							>
+								<Minus className="size-3" />
+								Exclude
+							</button>
+							<button
+								type="button"
+								className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+									ruleMode === "include"
+										? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
+										: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+								}`}
+								onClick={() => setRuleMode("include")}
+							>
+								<Plus className="size-3" />
+								Include
+							</button>
+							<input
+								type="text"
+								className="flex-1 bg-background/60 border border-border/50 rounded-md px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
+								placeholder={ruleMode === "exclude" ? "Keyword to hide..." : "Keyword to show..."}
+								value={ruleInput}
+								onChange={(e) => setRuleInput(e.target.value)}
+								onKeyDown={(e) => { if (e.key === "Enter") addKeywordRule(); }}
+							/>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="h-7 px-2.5 text-xs"
+								onClick={addKeywordRule}
+								disabled={!ruleInput.trim()}
+							>
+								Add
+							</Button>
+						</div>
+						{keywordRules.length > 0 && (
+							<div className="flex flex-wrap gap-1.5">
+								{keywordRules.map((rule, i) => (
+									<span
+										key={`${rule.mode}-${rule.keyword}-${i}`}
+										className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+											rule.mode === "exclude"
+												? "bg-destructive/10 text-destructive border border-destructive/20"
+												: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+										}`}
+									>
+										{rule.mode === "exclude" ? "−" : "+"} {rule.keyword}
+										<button type="button" className="hover:opacity-70" onClick={() => removeKeywordRule(i)}>
+											<X className="size-3" />
+										</button>
+									</span>
+								))}
+								<button
+									type="button"
+									className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1"
+									onClick={() => setKeywordRules([])}
+								>
+									Clear all
+								</button>
+							</div>
 						)}
 					</div>
-				</ScrollArea>
+				)}
+			</div>
+
+			<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card" data-logs-scroll>
+				<div className="min-w-full font-mono text-sm text-muted-foreground">
+					{filteredLogs.length === 0 ? (
+						<p className="mt-10 text-center text-4xl text-muted-foreground/70">
+							{combinedLogs.length === 0 ? "😴 No logs yet" : "No matching logs"}
+						</p>
+					) : (
+						<>
+							<div className="sticky top-0 z-0 grid grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/60 bg-card px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground/90">
+								<span>Type</span>
+								<span>Time</span>
+								<span>Message</span>
+							</div>
+							{filteredLogs.map((log, i) => {
+								const message = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
+								const type = getLogType(message || "");
+								const formattedTime = formatTimeOnly(log.timestamp);
+
+								return (
+									<div
+										key={i}
+										data-log-row
+										className={`group grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40 cursor-pointer ${
+											type === "ERROR" ? "bg-destructive/5" : ""
+										}`}
+										onClick={() => setSelectedLog(log)}
+									>
+										<span className={type === "ERROR" ? "text-destructive font-semibold" : "text-primary"}>{type}</span>
+										<span className="truncate">{formattedTime}</span>
+										<span className="flex items-center gap-2 truncate text-foreground">
+											<span className="flex-1 truncate">{message || "-"}</span>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2 shrink-0"
+												onClick={(e) => {
+													e.stopPropagation();
+													setSelectedLog(log);
+												}}
+											>
+												Show full log
+											</Button>
+										</span>
+									</div>
+								);
+							})}
+						</>
+					)}
+				</div>
+			</ScrollArea>
 
 				{showScrollToBottom && combinedLogs.length > 0 && (
 					<div className="absolute bottom-3 right-3 z-20">

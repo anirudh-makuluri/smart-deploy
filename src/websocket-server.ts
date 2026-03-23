@@ -21,10 +21,17 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 	}
 
 	const latest = historyResponse.history[0];
+	// Preserve actual failure details from the deploy steps instead of generic message
+	let errorDetail: string | null = null;
+	if (!latest.success) {
+		const errorSteps = (latest.steps ?? []).filter((s: any) => s.status === "error");
+		const errorLogs = errorSteps.flatMap((s: any) => (s.logs || []).filter((l: string) => l.includes("❌") || l.toLowerCase().includes("error") || l.toLowerCase().includes("failed")));
+		errorDetail = errorLogs.length > 0 ? errorLogs.slice(-3).join("\n") : "Deployment failed";
+	}
 	return {
 		steps: latest.steps ?? [],
 		status: (latest.success ? "success" : "error") as "success" | "error",
-		error: latest.success ? null : "Deployment failed",
+		error: errorDetail,
 	};
 }
 

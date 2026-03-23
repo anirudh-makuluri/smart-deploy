@@ -18,6 +18,9 @@ const config = {
 	// EC2 ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP→HTTPS redirect are enabled.
 	EC2_ACM_CERTIFICATE_ARN: process.env.EC2_ACM_CERTIFICATE_ARN || "",
 
+	// CodeBuild pipeline: set to "true" to build Docker images via CodeBuild + ECR instead of on the EC2 instance.
+	USE_CODEBUILD: (process.env.USE_CODEBUILD || "true").toLowerCase() === "true",
+
 	// Lets Encrypt (EC2 + nginx)
 	LETSENCRYPT_EMAIL: process.env.LETSENCRYPT_EMAIL || "",
 

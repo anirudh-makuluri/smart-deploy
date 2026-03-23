@@ -76,10 +76,10 @@ export default function DeployLogsView({
 		onStartImproveScan({ repoUrl, commitSha, feedback: analysisResult });
 	}
 
-	// Requirement:
-	// - While deploying: show deployment (step) logs.
-	// - After deployment completes (success/error) and on page refresh: show service logs (history + live).
-	const logsToRender = deployStatus === "running" ? deployLogEntries : serviceLogs;
+	// While deploying (or viewing completed deploy logs): show deployment (step) logs.
+	// After deployment completes and on page refresh: show service logs (history + live).
+	const showingDeployLogs = deployStatus === "running" || (showDeployLogs && deployLogEntries.length > 0 && (deployStatus === "success" || deployStatus === "error"));
+	const logsToRender = showingDeployLogs ? deployLogEntries : serviceLogs;
 	const showDeploymentHeader = showDeployLogs;
 
 	const completedSteps = showDeploymentHeader ? (steps?.filter(s => s.status === "success").length || 0) : 0;

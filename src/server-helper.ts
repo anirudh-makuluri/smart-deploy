@@ -108,19 +108,15 @@ export async function runCommandLiveWithWebSocket(
 		sendWS(`🔄 Running: ${cmd} ${args.join(" ")}`);
 
 		child.stdout.on("data", (data) => {
-			// Use UTF-8 encoding explicitly to handle Unicode characters
 			const str = data.toString('utf8');
 			output += str;
 			sendWS(str);
-			// On Windows, writing Unicode to the terminal can cause charmap errors
-			process.stdout.write(safeForWindowsConsole(str));
 		});
 
 		child.stderr.on("data", (data) => {
 			const err = data.toString('utf8');
 			stderrOutput += err;
 			sendWS(err);
-			process.stderr.write(safeForWindowsConsole(err));
 		});
 
 		child.on("exit", (code) => {

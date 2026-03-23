@@ -23,6 +23,9 @@ import {
 	getInstanceState,
 	buildFirstDeployScript,
 	buildRedeployScript,
+	buildEcrDeployScript,
+	buildEcrComposeDeployScript,
+	generateEcrUserDataScript,
 	runRedeployViaSsm,
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
@@ -660,8 +663,8 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 					}
 				}
 
-				// Check for success signal
-				if (clean.includes("Deployment complete!")) {
+				// Check for success signal (either legacy user-data or ECR minimal user-data)
+				if (clean.includes("Deployment complete!") || clean.includes("Instance setup complete!")) {
 					if (cloudInitFailureDetected) {
 						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
 					} else {
@@ -904,6 +907,199 @@ export async function handleEC2(
 		for (const svc of services) {
 			serviceUrls.set(svc.name, services.length === 1 ? (customBaseUrl || fallbackBase) : `http://${publicIp}:${svc.port}`);
 		}
+	}
+
+	send("✅ Instance is responding and configured!", "deploy");
+	send(`Application URL: ${baseUrl}`, "done");
+	send(`Instance ID: ${instanceId}`, "done");
+
+	return { success: true, baseUrl, serviceUrls, instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId, sharedAlbDns };
+}
+
+// ─── ECR-based deploy (used by CodeBuild pipeline) ──────────────────────
+
+export async function handleEC2FromEcr(params: {
+	deployConfig: DeployConfig;
+	imageUri: string;
+	imageTag: string;
+	ecrRegistry: string;
+	ecrRepoName: string;
+	multiServiceConfig: MultiServiceConfig;
+	dbConnectionString?: string;
+	ws: any;
+	send: SendFn;
+}): Promise<EC2Result> {
+	const { deployConfig, imageUri, imageTag, ecrRegistry, ecrRepoName, multiServiceConfig, dbConnectionString, ws, send } = params;
+	const region = deployConfig.awsRegion || config.AWS_REGION;
+	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
+	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
+
+	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
+	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
+	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
+	const { envBase64 } = buildEnvBase64(deployConfig.env_vars || "", dbConnectionString, undefined);
+
+	let mainPort = "";
+	for (const svc of services) {
+		const p = svc.port || 8080;
+		if (!mainPort) mainPort = String(p);
+	}
+	if (!mainPort) mainPort = "8080";
+
+	const scanResults = deployConfig.scan_results;
+	const hasCompose = !!scanResults?.docker_compose && (scanResults.services?.length || 0) > 1;
+
+	// Build the SSM deploy script based on compose or single-service
+	const buildDeployScript = (): string => {
+		if (hasCompose) {
+			return buildEcrComposeDeployScript({
+				ecrRegistry,
+				ecrRepoName,
+				imageTag,
+				region,
+				envFileContentBase64: envBase64,
+				composeContent: scanResults!.docker_compose,
+				services: (scanResults!.services || []).map((s) => ({ name: s.name, port: s.port })),
+			});
+		}
+		return buildEcrDeployScript({
+			ecrRegistry,
+			imageUri,
+			region,
+			envFileContentBase64: envBase64,
+			mainPort,
+		});
+	};
+
+	// ── Redeploy path: reuse existing running instance ──
+	if (existingInstanceId) {
+		let state = await getInstanceState(existingInstanceId, region, ws);
+		if (state === "pending") {
+			send("Existing instance is still starting; waiting...", "deploy");
+			await runAWSCommand(
+				["ec2", "wait", "instance-running", "--instance-ids", existingInstanceId, "--region", region],
+				ws, "deploy",
+			);
+			state = await getInstanceState(existingInstanceId, region, ws);
+		}
+		if (state === "running") {
+			send("Deploying ECR image to existing instance...", "deploy");
+			await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
+			const script = buildDeployScript();
+			const ssmResult = await runRedeployViaSsm({ instanceId: existingInstanceId, region, script, send });
+
+			if (!ssmResult.success) {
+				send("❌ ECR deploy failed. Check logs above.", "deploy");
+				return {
+					success: false,
+					baseUrl: deployConfig.deployUrl || deployConfig.ec2?.baseUrl || "",
+					serviceUrls: new Map(),
+					instanceId: existingInstanceId,
+					publicIp: deployConfig.ec2?.publicIp || "",
+					...net, subnetId: net.subnetIds[0], amiId,
+				};
+			}
+
+			const publicIp = deployConfig.ec2?.publicIp?.trim() || (
+				await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
+			).trim();
+
+			const { baseUrl, serviceUrls } = buildServiceUrls(deployConfig, services, repoName, publicIp, certificateArn);
+			send("✅ ECR deploy complete.", "done");
+			send(`Application URL: ${baseUrl}`, "done");
+			return { success: true, baseUrl, serviceUrls, instanceId: existingInstanceId, publicIp, ...net, subnetId: net.subnetIds[0], amiId };
+		}
+		if (state) {
+			send(`Saved instance ${existingInstanceId} is "${state}". Launching new instance.`, "deploy");
+		} else {
+			send(`Could not find instance ${existingInstanceId}. Launching new instance.`, "deploy");
+		}
+	}
+
+	// ── Fresh instance path ──
+	const keyName = "smartdeploy";
+	await ensureSSMInstanceProfile(region, ws);
+	await ensureKeyPair(keyName, region, ws);
+
+	const userData = generateEcrUserDataScript(mainPort, deployConfig.scan_results?.nginx_conf || "");
+	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-ecr-${Date.now()}.sh`);
+	fs.writeFileSync(tmpFile, userData, "utf8");
+	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
+
+	const instanceName = generateResourceName(repoName, "ec2");
+	let instanceId: string;
+	try {
+		const instanceType = resolveEc2InstanceType(deployConfig.awsEc2InstanceType);
+		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
+		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
+		const rootVolumeGiB = Math.max(30, amiMinRootVolumeGiB);
+		const blockDeviceMapping = `DeviceName=/dev/xvda,Ebs={VolumeSize=${rootVolumeGiB},VolumeType=gp3,DeleteOnTermination=true}`;
+		const out = await runAWSCommand([
+			"ec2", "run-instances",
+			"--image-id", amiId,
+			"--instance-type", instanceType,
+			"--key-name", keyName,
+			"--security-group-ids", net.securityGroupId,
+			"--subnet-id", net.subnetIds[0],
+			"--user-data", fileUri,
+			"--iam-instance-profile", `Name=${SSM_PROFILE_NAME}`,
+			"--block-device-mappings", blockDeviceMapping,
+			"--tag-specifications", `ResourceType=instance,Tags=[{Key=Name,Value=${instanceName}},{Key=Project,Value=SmartDeploy}]`,
+			"--query", "Instances[0].InstanceId",
+			"--output", "text",
+			"--region", region,
+		], ws, "deploy");
+		instanceId = out.trim();
+		send(`Instance launched: ${instanceId}`, "deploy");
+	} finally {
+		try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+	}
+
+	send("Waiting for instance to be running...", "deploy");
+	await runAWSCommand(["ec2", "wait", "instance-running", "--instance-ids", instanceId, "--region", region], ws, "deploy");
+
+	const publicIp = (await runAWSCommand(["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")).trim();
+	send(`Instance public IP: ${publicIp}`, "deploy");
+
+	// Wait for user-data (package install only) — look for "Instance setup complete!"
+	await waitForUserData(instanceId, region, ws, send);
+
+	send("Waiting for SSM agent...", "deploy");
+	await ensureInstanceSsmReady(instanceId, region, ws, send);
+
+	send("Deploying ECR image via SSM...", "deploy");
+	const script = buildDeployScript();
+	const ssmResult = await runRedeployViaSsm({ instanceId, region, script, send });
+	if (!ssmResult.success) {
+		send("❌ Container deployment from ECR failed. Instance will be reused on next deploy.", "deploy");
+		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
+	}
+
+	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
+	if (!detectedPort) {
+		send("Instance failed to respond on any known ports. Instance will be reused on next deploy.", "deploy");
+		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
+	}
+
+	const customHost = normalizeDomain(deployConfig.custom_url);
+	const scheme = certificateArn ? "https" : "http";
+	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
+	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);
+	let serviceUrls = new Map<string, string>();
+	let sharedAlbDns: string | undefined;
+
+	try {
+		const alb = await configureAlb({
+			deployConfig, instanceId, existingInstanceId, services, repoName, net, region, certificateArn, ws, send,
+		});
+		sharedAlbDns = alb.sharedAlbDns;
+		serviceUrls = alb.serviceUrls;
+		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+	} catch (e: any) {
+		send(`⚠️ ALB configuration skipped: ${e.message}`, "deploy");
+		const fallbackBase = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;
+		for (const svc of services) serviceUrls.set(svc.name, services.length === 1 ? (customBaseUrl || fallbackBase) : `http://${publicIp}:${svc.port}`);
 	}
 
 	send("✅ Instance is responding and configured!", "deploy");

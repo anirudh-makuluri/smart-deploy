@@ -125,16 +125,30 @@ export default function DeployWorkspace() {
 
 	const onDeployFinished = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
-			if (p.success || !p.ec2?.instanceId?.trim() || !repo?.name || !serviceName) return;
-			void updateDeploymentById({
-				repo_name: repo.name,
-				service_name: serviceName,
-				ec2: p.ec2,
-				...(p.deploymentTarget && {
-					deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
-				}),
-				status: "failed",
-			});
+			if (p.success) {
+				const url = p.customUrl || p.deployUrl;
+				toast.success("Deployment successful", {
+					description: url ? `Live at ${url}` : "Your application is now running.",
+					duration: 8000,
+				});
+			} else {
+				toast.error("Deployment failed", {
+					description: p.error || "Check the deploy logs for details.",
+					duration: 10000,
+				});
+			}
+
+			if (!p.success && p.ec2?.instanceId?.trim() && repo?.name && serviceName) {
+				void updateDeploymentById({
+					repo_name: repo.name,
+					service_name: serviceName,
+					ec2: p.ec2,
+					...(p.deploymentTarget && {
+						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
+					}),
+					status: "failed",
+				});
+			}
 		},
 		[repo?.name, serviceName, updateDeploymentById]
 	);

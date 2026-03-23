@@ -654,6 +654,171 @@ export async function ensureInstanceSsmReady(
 	);
 }
 
+// ─── ECR-based deploy scripts (used by CodeBuild pipeline) ──────────────
+
+/**
+ * Generates the SSM script for deploying from a pre-built ECR image
+ * (single service, no docker-compose).
+ */
+export function buildEcrDeployScript(params: {
+	ecrRegistry: string;
+	imageUri: string;
+	region: string;
+	envFileContentBase64: string;
+	mainPort: string;
+}): string {
+	const { ecrRegistry, imageUri, region, envFileContentBase64, mainPort } = params;
+	return `set -e
+echo "=== Deploying from ECR ==="
+
+aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecrRegistry}
+
+mkdir -p /home/ec2-user/app
+cd /home/ec2-user/app
+
+docker-compose down 2>/dev/null || docker rm -f smartdeploy-app 2>/dev/null || true
+docker system prune -af --volumes 2>/dev/null || true
+
+${envFileContentBase64 ? `echo '${envFileContentBase64}' | base64 -d > .env` : "touch .env"}
+
+echo "Pulling image: ${imageUri}"
+docker pull ${imageUri}
+
+docker run -d --name smartdeploy-app \\
+  --env-file .env \\
+  -p ${mainPort || "8080"}:${mainPort || "8080"} \\
+  --restart unless-stopped \\
+  ${imageUri}
+
+echo "====================================== Deploy from ECR complete! ======================================"
+`;
+}
+
+/**
+ * Generates the SSM script for deploying from ECR with docker-compose.
+ * Replaces build directives with ECR image references.
+ */
+export function buildEcrComposeDeployScript(params: {
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	region: string;
+	envFileContentBase64: string;
+	composeContent: string;
+	services: { name: string; port: number }[];
+}): string {
+	const { ecrRegistry, ecrRepoName, imageTag, region, envFileContentBase64, composeContent, services } = params;
+
+	// Generate a modified compose file that uses ECR images instead of build directives
+	let modifiedCompose = composeContent;
+	for (const svc of services) {
+		const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
+		// Replace build: sections with image: references
+		modifiedCompose = modifiedCompose.replace(
+			new RegExp(`(\\b${svc.name}:[\\s\\S]*?)build:\\s*[^\\n]+`, "m"),
+			`$1image: ${svcUri}`,
+		);
+	}
+	const composeB64 = Buffer.from(modifiedCompose, "utf8").toString("base64");
+
+	return `set -e
+echo "=== Deploying from ECR (compose) ==="
+
+aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecrRegistry}
+
+mkdir -p /home/ec2-user/app
+cd /home/ec2-user/app
+
+docker-compose down 2>/dev/null || true
+docker system prune -af --volumes 2>/dev/null || true
+
+${envFileContentBase64 ? `echo '${envFileContentBase64}' | base64 -d > .env` : "touch .env"}
+
+echo '${composeB64}' | base64 -d > docker-compose.yml
+
+docker-compose pull
+docker-compose up -d
+
+echo "====================================== Deploy from ECR complete! ======================================"
+`;
+}
+
+/**
+ * Generates a minimal user-data script that only installs packages (Docker, SSM, nginx).
+ * Actual container deployment happens via SSM after user-data finishes.
+ */
+export function generateEcrUserDataScript(mainPort: string, nginxConf?: string): string {
+	const nginxBlock = nginxConf
+		? `cat > /etc/nginx/nginx.conf << 'NGINXEOF'
+${nginxConf}
+NGINXEOF`
+		: `sed -i 's/^[[:space:]]*server_name[[:space:]]\\+_;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+sed -i 's/^[[:space:]]*listen[[:space:]]\\+\\[::]\\:80\\(.*default_server.*\\)\\?;$/# &/' /etc/nginx/nginx.conf
+cat > /etc/nginx/conf.d/upgrade-map.conf << 'NGINXEOF'
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+NGINXEOF
+cat > /etc/nginx/conf.d/app.conf << 'NGINXEOF'
+server {
+    listen 80 default_server;
+    server_name _;
+    location / {
+        proxy_pass http://127.0.0.1:${mainPort || "8080"};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+NGINXEOF
+rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true`;
+
+	return `#!/bin/bash
+set -e
+trap 'EXIT_CODE=$?; echo "Script error at line $LINENO, exit code $EXIT_CODE"; exit $EXIT_CODE' ERR
+
+rm -rf /var/lib/cloud/data/tmp_* 2>/dev/null || true
+rm -rf /var/lib/cloud/instances/*/sem/* 2>/dev/null || true
+
+yum install -y docker git nginx
+dnf install -y amazon-ssm-agent 2>/dev/null || yum install -y amazon-ssm-agent 2>/dev/null || true
+systemctl enable --now amazon-ssm-agent 2>/dev/null || true
+
+yum clean all
+rm -rf /var/cache/yum/*
+
+AVAILABLE=$(df / | tail -1 | awk '{print \\$4}')
+AVAILABLE_MB=$((AVAILABLE / 1024))
+if [ $AVAILABLE_MB -gt 1200 ]; then
+    dd if=/dev/zero of=/swapfile bs=1M count=1024
+    chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+systemctl start docker && systemctl enable docker
+cat > /etc/docker/daemon.json << 'DOCKEREOF'
+{"log-driver":"json-file","log-opts":{"max-size":"10m","max-file":"3"}}
+DOCKEREOF
+systemctl restart docker
+
+curl -sL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose && chmod +x /usr/local/bin/docker-compose
+mkdir -p /usr/libexec/docker/cli-plugins /root/.docker/cli-plugins
+curl -sSL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-amd64" -o /usr/libexec/docker/cli-plugins/docker-buildx
+chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
+cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx
+
+mkdir -p /home/ec2-user/app
+
+systemctl start nginx && systemctl enable nginx
+${nginxBlock}
+nginx -t && systemctl reload nginx
+
+echo "====================================== Instance setup complete! ======================================"
+`;
+}
+
 /**
  * Runs the redeploy script on an existing instance via SSM and streams output to send().
  */

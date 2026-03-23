@@ -245,17 +245,31 @@ export function useDeployLogs(serviceName?: string, repoName?: string, options?:
 		return ws;
 	}
 
-	// On mount: whenever repoName + serviceName are provided, request deploy logs snapshot.
+	// On mount or context change: reset stale logs and request fresh deploy logs + service logs.
 	useEffect(() => {
 		if (!repoName || !serviceName || typeof window === "undefined") return;
+
+		// Clear stale data from previous service/repo to avoid cross-session bleed
+		setServiceLogs([]);
+		setDeployLogEntries([]);
+		setSteps([...defaultSteps]);
+		setDeployStatus("not-started");
+		setDeployError(null);
+
 		const active = getActiveDeployment();
 		const payloadUserId = (active?.repoName === repoName && active?.serviceName === serviceName) ? active.userID : undefined;
 		openSocket(() => {
 			const socket = wsRef.current;
 			if (socket?.readyState === WebSocket.OPEN) {
+				// Request deploy logs snapshot
 				socket.send(JSON.stringify({
 					type: "get_deploy_logs",
 					payload: { repoName, serviceName, userID: payloadUserId },
+				}));
+				// Re-subscribe to service logs for the new context
+				socket.send(JSON.stringify({
+					type: "service_logs",
+					payload: { serviceName, repoName },
 				}));
 			}
 		});
