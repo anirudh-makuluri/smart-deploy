@@ -45,10 +45,12 @@ export default function ServiceLogs({
 	logs,
 	serviceName,
 	repoName,
+	deployStatus,
 }: {
 	logs: LogEntry[];
 	serviceName?: string;
 	repoName?: string;
+	deployStatus?: string;
 	[key: string]: unknown;
 }) {
 
@@ -482,10 +484,31 @@ export default function ServiceLogs({
 
 			<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card" data-logs-scroll>
 				<div className="min-w-full font-mono text-sm text-muted-foreground">
-					{filteredLogs.length === 0 ? (
-						<p className="mt-10 text-center text-4xl text-muted-foreground/70">
-							{combinedLogs.length === 0 ? "😴 No logs yet" : "No matching logs"}
-						</p>
+				{filteredLogs.length === 0 ? (
+					<div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+						{combinedLogs.length === 0 ? (
+							deployStatus === "running" ? (
+								<>
+									<div className="size-10 mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+										<div className="size-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+									</div>
+									<p className="text-lg font-medium text-muted-foreground/80">Waiting for logs...</p>
+									<p className="text-sm text-muted-foreground/50 mt-1">Logs will appear here once the deployment starts producing output</p>
+								</>
+							) : (
+								<>
+									<p className="text-4xl mb-3">🚀</p>
+									<p className="text-lg font-medium text-muted-foreground/80">Start a deploy to see logs</p>
+									<p className="text-sm text-muted-foreground/50 mt-1">Deployment and service logs will appear here</p>
+								</>
+							)
+						) : (
+							<>
+								<p className="text-lg font-medium text-muted-foreground/70">No matching logs</p>
+								<p className="text-sm text-muted-foreground/50 mt-1">Try adjusting your filters</p>
+							</>
+						)}
+					</div>
 					) : (
 						<>
 							<div className="sticky top-0 z-0 grid grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/60 bg-card px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground/90">

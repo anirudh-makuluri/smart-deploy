@@ -254,14 +254,15 @@ export default function DeployLogsView({
 			)}
 
 			<div ref={logsContainerRef} className="rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
-				<ServiceLogs
-					{...((
-						{
-							logs: logsToRender,
-							repoName: repoNameForLogs,
-							serviceName: serviceNameForLogs,
-						} as unknown) as any)}
-				/>
+			<ServiceLogs
+				{...((
+					{
+						logs: logsToRender,
+						repoName: repoNameForLogs,
+						serviceName: serviceNameForLogs,
+						deployStatus,
+					} as unknown) as any)}
+			/>
 			</div>
 		</div>
 	);
