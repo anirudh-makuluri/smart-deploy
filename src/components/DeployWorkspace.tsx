@@ -7,7 +7,7 @@ import DeployWorkspaceMenu, { MenuSection } from "@/components/deploy-workspace/
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 
-import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
+import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
@@ -121,7 +121,25 @@ export default function DeployWorkspace() {
 
 	const serviceNameForLogs = deployment?.service_name ?? serviceName ?? repo?.name;
 	const repoNameForLogs = repo?.name ?? deployment?.repo_name;
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(serviceNameForLogs, repoNameForLogs);
+
+	const onDeployFinished = React.useCallback(
+		(p: DeployCompleteWsPayload) => {
+			if (p.success || !p.ec2?.instanceId?.trim() || !repo?.name || !serviceName) return;
+			void updateDeploymentById({
+				repo_name: repo.name,
+				service_name: serviceName,
+				ec2: p.ec2,
+				...(p.deploymentTarget && {
+					deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
+				}),
+				status: "failed",
+			});
+		},
+		[repo?.name, serviceName, updateDeploymentById]
+	);
+
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
+		useDeployLogs(serviceNameForLogs, repoNameForLogs, { onDeployFinished });
 	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
 	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" :
 		deployStatus === "running" ? "running" :

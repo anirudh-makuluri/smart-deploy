@@ -142,7 +142,7 @@ export async function handleDeploy(
 		const doneStep = deploySteps.find((step) => step.id === "done");
 		if (doneStep) doneStep.status = "error";
 		const durationMs = Date.now() - deployStartTime;
-		sendDeployComplete(
+		await sendDeployComplete(
 			ws,
 			undefined,
 			false,
@@ -287,7 +287,7 @@ type ServiceDeployDetails = {
 	ec2?: EC2DeployDetails;
 };
 
-function sendDeployComplete(
+async function sendDeployComplete(
 	ws: any,
 	deployUrl: string | undefined = "",
 	success: boolean,
@@ -299,20 +299,22 @@ function sendDeployComplete(
 	serviceDetails?: ServiceDeployDetails | null,
 	durationMs?: number
 ) {
-	// Save to database before sending WebSocket message
+	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
 	console.log("Saving deployment result to database...");
-	// console.log("Deployment details:", { deployConfig, deployUrl, success, deploymentTarget, vercelDns, serviceDetails, durationMs });
-
-	saveDeploymentToDB(
-		deployConfig,
-		deployUrl,
-		success,
-		deploySteps,
-		userID,
-		serviceDetails,
-		vercelDns?.success ? vercelDns.customUrl : null,
-		durationMs
-	).catch(err => console.error("Failed to save deployment to DB:", err));
+	try {
+		await saveDeploymentToDB(
+			deployConfig,
+			deployUrl,
+			success,
+			deploySteps,
+			userID,
+			serviceDetails,
+			vercelDns?.success ? vercelDns.customUrl : null,
+			durationMs
+		);
+	} catch (err) {
+		console.error("Failed to save deployment to DB:", err);
+	}
 
 	if (ws?.readyState === ws?.OPEN) {
 		const payload: {
@@ -461,7 +463,7 @@ async function handleAWSDeploy(
 
 
 	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
+	await sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
 
 	// Cleanup
 	fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -540,7 +542,7 @@ async function handleGCPDeploy(
 		if (doneStep) doneStep.status = 'success';
 		const durationMs = Date.now() - deployStartTime;
 		const success = gcpDeployUrl ? true : false;
-		sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -637,7 +639,7 @@ async function handleGCPDeploy(
 	const durationMs = Date.now() - deployStartTime;
 	const success = gcpDeployUrl ? true : false;
 
-	sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

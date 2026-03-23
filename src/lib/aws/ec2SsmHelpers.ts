@@ -11,7 +11,7 @@ import {
 } from "@aws-sdk/client-ssm";
 import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
 import { githubAuthenticatedCloneUrl } from "../githubGitAuth";
-import { canonicalDockerfileDeployPath } from "../dockerfileDeployPath";
+import { canonicalDockerfileDeployPath, inferSingleDockerfileBuild } from "../dockerfileDeployPath";
 
 const SSM_ROLE_NAME = "smartdeploy-ec2-ssm-role";
 export const SSM_PROFILE_NAME = "smartdeploy-ec2-ssm-profile";
@@ -255,12 +255,40 @@ COMPOSEEOF
 `;
 }
 
+function bashSingleQuoted(s: string): string {
+	return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
 /**
  * Generates bash commands to build and run Docker containers.
  * Uses docker-compose if a compose file exists; otherwise falls back to
  * single-service docker build + docker run.
  */
-function buildDockerRunScript(mainPort: string): string {
+function buildDockerRunScript(
+	mainPort: string,
+	singleDocker?: { dockerfile: string; context: string } | null,
+): string {
+	const singleBuildLines =
+		singleDocker != null
+			? `
+    echo "No docker-compose found. Building single-service image from ${singleDocker.dockerfile} (context: ${singleDocker.context})..."
+    if [ ! -f ${bashSingleQuoted(singleDocker.dockerfile)} ]; then
+        echo "ERROR: Dockerfile not found at ${singleDocker.dockerfile}"
+        echo "Repo root: $(pwd)"
+        ls -la
+        exit 1
+    fi
+    docker build -f ${bashSingleQuoted(singleDocker.dockerfile)} -t smartdeploy-app ${bashSingleQuoted(singleDocker.context)}
+`
+			: `
+    echo "No docker-compose found. Building single-service Docker image..."
+    if [ ! -f Dockerfile ]; then
+        echo "ERROR: No Dockerfile found in repository root."
+        exit 1
+    fi
+    docker build -t smartdeploy-app .
+`;
+
 	return `
 if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] || [ -f compose.yml ] || [ -f compose.yaml ]; then
     echo "Building and starting containers with docker-compose..."
@@ -291,12 +319,7 @@ if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] || [ -f compose.yml ]
     fi
     docker-compose up -d --build
 else
-    echo "No docker-compose found. Building single-service Docker image..."
-    if [ ! -f Dockerfile ]; then
-        echo "ERROR: No Dockerfile found in repository root."
-        exit 1
-    fi
-    docker build -t smartdeploy-app .
+${singleBuildLines}
     docker rm -f smartdeploy-app 2>/dev/null || true
     docker run -d --name smartdeploy-app --env-file .env -p ${mainPort || "8080"}:${mainPort || "8080"} --restart unless-stopped smartdeploy-app
 fi
@@ -310,17 +333,21 @@ docker system prune -af --volumes 2>/dev/null || true
  * Called after user-data has finished (packages installed, repo cloned, SSM ready).
  * Writes Dockerfiles + docker-compose.yml from scan_results if missing, then builds/runs.
  */
+type ScanServiceForDocker = { dockerfile_path?: string; build_context?: string };
+
 export function buildFirstDeployScript(params: {
 	envFileContentBase64: string;
 	dockerCompose: string;
 	dockerfiles: Record<string, string>;
 	mainPort: string;
+	scanServices?: ScanServiceForDocker[] | null;
 }): string {
-	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort } = params;
+	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort, scanServices } = params;
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
-	const runScript = buildDockerRunScript(mainPort);
+	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
+	const runScript = buildDockerRunScript(mainPort, singleDocker);
 
 	return `set -e
 echo "=== SSM first deploy: writing artifacts and building ==="
@@ -352,6 +379,7 @@ export function buildRedeployScript(params: {
 	dockerCompose: string;
 	dockerfiles: Record<string, string>;
 	mainPort: string;
+	scanServices?: ScanServiceForDocker[] | null;
 }): string {
 	const {
 		repoUrl,
@@ -362,12 +390,14 @@ export function buildRedeployScript(params: {
 		dockerCompose,
 		dockerfiles,
 		mainPort,
+		scanServices,
 	} = params;
 	const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
-	const runScript = buildDockerRunScript(mainPort);
+	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
+	const runScript = buildDockerRunScript(mainPort, singleDocker);
 
 	return `set -e
 echo "=== Disk space before redeploy ==="

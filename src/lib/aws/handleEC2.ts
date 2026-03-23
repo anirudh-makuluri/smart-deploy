@@ -318,6 +318,7 @@ async function redeployInstance(params: {
 		dockerCompose: scanResults?.docker_compose || "",
 		dockerfiles: scanResults?.dockerfiles || {},
 		mainPort,
+		scanServices: scanResults?.services,
 	});
 	let ssmResult: { success: boolean };
 	try {
@@ -444,6 +445,7 @@ async function launchNewInstance(params: {
 		dockerCompose: scanResults?.docker_compose || "",
 		dockerfiles: scanResults?.dockerfiles || {},
 		mainPort,
+		scanServices: scanResults?.services,
 	});
 
 	send("Deploying containers via SSM...", "deploy");

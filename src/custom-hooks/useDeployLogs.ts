@@ -2,6 +2,23 @@ import { DeployConfig, DeployStep } from "@/app/types";
 import { readDockerfile, getDeploymentDisplayUrl } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
+/** Payload from server `deploy_complete` WebSocket message (subset used by clients). */
+export type DeployCompleteWsPayload = {
+	success: boolean;
+	deployUrl?: string | null;
+	deploymentTarget?: string | null;
+	ec2?: DeployConfig["ec2"];
+	error?: string;
+	vercelDnsAdded?: boolean;
+	vercelDnsError?: string | null;
+	customUrl?: string | null;
+};
+
+export type UseDeployLogsOptions = {
+	/** Called after deploy finishes so the app can merge EC2 instanceId into store on failure (enables SSM retry on same instance). */
+	onDeployFinished?: (payload: DeployCompleteWsPayload) => void;
+};
+
 type SocketStatus = "connecting" | "open" | "closed" | "error";
 type DeployStatus = "not-started" | "running" | "success" | "error"
 
@@ -45,7 +62,7 @@ export function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string, repoName?: string) {
+export function useDeployLogs(serviceName?: string, repoName?: string, options?: UseDeployLogsOptions) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -58,6 +75,10 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
 	const wsRef = useRef<WebSocket | null>(null);
+	const onDeployFinishedRef = useRef(options?.onDeployFinished);
+	useEffect(() => {
+		onDeployFinishedRef.current = options?.onDeployFinished;
+	}, [options?.onDeployFinished]);
 	// Create and configure WebSocket lazily (when we actually need to deploy or fetch logs)
 	function createWebSocket(onReady?: () => void) {
 		const ws = new WebSocket(getWebSocketUrl());
@@ -132,35 +153,49 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 					if (snap.status === "success" || snap.status === "error") clearActiveDeployment();
 					break;
 				}
-				case "deploy_complete":
+				case "deploy_complete": {
+					const completePayload = payload as DeployCompleteWsPayload;
 					wasDeployingRef.current = false;
 					clearActiveDeployment();
-					setDeployStatus(payload.success ? "success" : "error");
-					if (!payload.success) {
-						setDeployError(payload.error ?? "Deployment failed");
+					setDeployStatus(completePayload.success ? "success" : "error");
+					if (!completePayload.success) {
+						setDeployError(completePayload.error ?? "Deployment failed");
 						setVercelDnsStatus("idle");
 						setVercelDnsError(null);
+						// Keep instanceId/network details for the next deploy (same as success path).
+						if (deployConfigRef.current && completePayload.ec2 != null) {
+							const cur = deployConfigRef.current;
+							const dt = completePayload.deploymentTarget;
+							deployConfigRef.current = {
+								...cur,
+								...(typeof dt === "string" && dt ? { deploymentTarget: dt as DeployConfig["deploymentTarget"] } : {}),
+								ec2: completePayload.ec2,
+								status: "failed",
+							};
+						}
 					} else {
 						setDeployError(null);
 						if (deployConfigRef.current) {
 							const cur = deployConfigRef.current;
 							const deployUrlFromPayload =
-								typeof payload.deployUrl === "string" && payload.deployUrl.trim() !== ""
-									? payload.deployUrl.trim()
+								typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
+									? completePayload.deployUrl.trim()
 									: undefined;
-							const updated = {
+							const dt =
+								(completePayload.deploymentTarget as DeployConfig["deploymentTarget"] | null | undefined) ??
+								cur.deploymentTarget;
+							const updated: DeployConfig = {
 								...cur,
 								...(deployUrlFromPayload != null && { deployUrl: deployUrlFromPayload }),
-								status: "running" as const,
-								deploymentTarget:
-									payload.deploymentTarget ?? cur.deploymentTarget,
-								...(payload.ec2 != null && { ec2: payload.ec2 }),
+								status: "running",
+								...(dt && { deploymentTarget: dt }),
+								...(completePayload.ec2 != null && { ec2: completePayload.ec2 }),
 							};
 							const compareUrl = deployUrlFromPayload ?? cur.deployUrl ?? "";
 							// Use backend-provided customUrl when Vercel DNS was added there
 							updated.custom_url =
-								typeof payload.customUrl === "string" && payload.customUrl.trim()
-									? payload.customUrl.trim()
+								typeof completePayload.customUrl === "string" && completePayload.customUrl.trim()
+									? completePayload.customUrl.trim()
 									: (() => {
 											const displayUrl = getDeploymentDisplayUrl(updated);
 											return displayUrl && displayUrl !== compareUrl ? displayUrl : undefined;
@@ -171,18 +206,20 @@ export function useDeployLogs(serviceName?: string, repoName?: string) {
 							prev.map((s) => (s.id === "done" ? { ...s, status: "success" as const } : s))
 						);
 						// Vercel DNS status from backend (added in handleDeploy before deploy_complete)
-						if (payload.vercelDnsAdded === true) {
+						if (completePayload.vercelDnsAdded === true) {
 							setVercelDnsStatus("success");
 							setVercelDnsError(null);
-						} else if (payload.vercelDnsError) {
+						} else if (completePayload.vercelDnsError) {
 							setVercelDnsStatus("error");
-							setVercelDnsError(payload.vercelDnsError);
+							setVercelDnsError(completePayload.vercelDnsError);
 						} else {
 							setVercelDnsStatus("idle");
 							setVercelDnsError(null);
 						}
 					}
+					onDeployFinishedRef.current?.(completePayload);
 					break;
+				}
 				default:
 					break;
 			}
