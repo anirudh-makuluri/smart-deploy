@@ -43,6 +43,14 @@ vi.mock("@/db-helper", () => ({
 describe("POST /api/deployment-preview-screenshot", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		global.fetch = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			headers: {
+				get: (key: string) => (key.toLowerCase() === "content-type" ? "text/html" : null),
+			},
+			text: async () => "<html><body>healthy page</body></html>",
+		}) as unknown as typeof fetch;
 	});
 
 	it("returns 401 when user session is missing", async () => {
@@ -72,6 +80,30 @@ describe("POST /api/deployment-preview-screenshot", () => {
 		expect(captureMock).not.toHaveBeenCalled();
 	});
 
+	it("re-captures screenshot when force=true even if one exists", async () => {
+		getServerSessionMock.mockResolvedValue({ userID: "u-1" });
+		maybeSingleMock.mockResolvedValue({
+			data: { id: "dep-1", data: { screenshot_url: "https://cdn.example.com/existing.png", deployUrl: "https://app.example.com" }, status: "running" },
+			error: null,
+		});
+		captureMock.mockResolvedValue("https://cdn.example.com/forced-new.png");
+		patchDeploymentDataMock.mockResolvedValue({ data: { ok: true } });
+
+		const { POST } = await import("@/app/api/deployment-preview-screenshot/route");
+		const res = await POST(new Request("http://localhost", {
+			method: "POST",
+			body: JSON.stringify({ repoName: "repo", serviceName: "svc", force: true }),
+		}) as any);
+		const body = await res.json();
+
+		expect(res.status).toBe(200);
+		expect(body.screenshotUrl).toBe("https://cdn.example.com/forced-new.png");
+		expect(captureMock).toHaveBeenCalled();
+		expect(patchDeploymentDataMock).toHaveBeenCalledWith("repo", "svc", "u-1", {
+			screenshot_url: "https://cdn.example.com/forced-new.png",
+		});
+	});
+
 	it("captures and patches screenshot for live deployment URL", async () => {
 		getServerSessionMock.mockResolvedValue({ userID: "u-1" });
 		maybeSingleMock.mockResolvedValue({
@@ -89,9 +121,36 @@ describe("POST /api/deployment-preview-screenshot", () => {
 		const body = await res.json();
 		expect(res.status).toBe(200);
 		expect(body.screenshotUrl).toBe("https://cdn.example.com/new.png");
+		expect(captureMock).toHaveBeenCalled();
 		expect( patchDeploymentDataMock).toHaveBeenCalledWith("repo", "svc", "u-1", {
 			screenshot_url: "https://cdn.example.com/new.png",
 		});
+	});
+
+	it("skips screenshot when preview is returning a gateway error", async () => {
+		getServerSessionMock.mockResolvedValue({ userID: "u-1" });
+		maybeSingleMock.mockResolvedValue({
+			data: { id: "dep-1", data: { deployUrl: "https://app.example.com" }, status: "running" },
+			error: null,
+		});
+		(global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: false,
+			status: 503,
+			headers: { get: () => "text/html" },
+			text: async () => "<html><title>503 Service Unavailable</title></html>",
+		});
+
+		const { POST } = await import("@/app/api/deployment-preview-screenshot/route");
+		const res = await POST(new Request("http://localhost", {
+			method: "POST",
+			body: JSON.stringify({ repoName: "repo", serviceName: "svc" }),
+		}) as any);
+		const body = await res.json();
+
+		expect(res.status).toBe(200);
+		expect(body.status).toBe("skipped");
+		expect(captureMock).not.toHaveBeenCalled();
+		expect(patchDeploymentDataMock).not.toHaveBeenCalled();
 	});
 
 	it("returns 400 when no deploy URL/custom URL exists", async () => {

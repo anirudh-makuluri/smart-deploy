@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import type { DeployConfig } from "@/app/types";
@@ -13,12 +13,16 @@ vi.mock("@/lib/aws/ec2InstanceTypes", () => ({
 	formatApproxEc2PriceCompact: vi.fn(() => "$0.0104/hr"),
 }));
 
-vi.mock("@/lib/utils", () => ({
-	formatTimestamp: vi.fn(() => "formatted-time"),
-	formatDeploymentTargetName: vi.fn(() => "EC2"),
-	getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) => deployment.custom_url || deployment.deployUrl || ""),
-	isDeploymentDisabled: vi.fn(() => false),
-}));
+vi.mock("@/lib/utils", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/lib/utils")>();
+	return {
+		...actual,
+		formatTimestamp: vi.fn(() => "formatted-time"),
+		formatDeploymentTargetName: vi.fn(() => "EC2"),
+		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) => deployment.custom_url || deployment.deployUrl || ""),
+		isDeploymentDisabled: vi.fn(() => false),
+	};
+});
 
 function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
@@ -71,5 +75,20 @@ describe("DeployOverview", () => {
 			"https://custom.example.com"
 		);
 		expect(screen.getByRole("link", { name: /8\.8\.8\.8/i })).toHaveAttribute("href", "http://8.8.8.8");
+	});
+
+	it("shows and triggers New Preview button when callback provided", () => {
+		const onRefreshPreview = vi.fn();
+		render(
+			<DeployOverview
+				deployment={makeDeployment()}
+				onRefreshPreview={onRefreshPreview}
+			/>
+		);
+
+		const btn = screen.getByRole("button", { name: /new preview/i });
+		expect(btn).toBeInTheDocument();
+		fireEvent.click(btn);
+		expect(onRefreshPreview).toHaveBeenCalledTimes(1);
 	});
 });

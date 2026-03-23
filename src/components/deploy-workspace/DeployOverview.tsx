@@ -1,4 +1,4 @@
-import { ExternalLink, Link2, Settings } from "lucide-react";
+import { ExternalLink, Link2, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeployConfig, repoType } from "@/app/types";
 import {
@@ -15,7 +15,9 @@ type DeployOverviewProps = {
 	deployment: DeployConfig;
 	region?: string;
 	isDeploying?: boolean;
+	isRefreshingPreview?: boolean;
 	onRedeploy?: (commitSha?: string) => void;
+	onRefreshPreview?: () => void;
 	onEditConfiguration?: () => void;
 	repo?: repoType;
 };
@@ -104,7 +106,9 @@ export default function DeployOverview({
 	deployment,
 	region = "us-west-2",
 	isDeploying = false,
+	isRefreshingPreview = false,
 	onRedeploy,
+	onRefreshPreview,
 	onEditConfiguration,
 	repo,
 }: DeployOverviewProps) {
@@ -176,7 +180,21 @@ export default function DeployOverview({
 					<div className="rounded-xl border border-border bg-card">
 						<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
 							<span>Front page preview</span>
-							<span className="text-muted-foreground/70">Live topology</span>
+							<div className="flex items-center gap-2">
+								<span className="text-muted-foreground/70">Live topology</span>
+								{onRefreshPreview && displayUrl && (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={onRefreshPreview}
+										disabled={isRefreshingPreview}
+										className="h-7 gap-1.5 px-2 text-[10px] font-semibold tracking-normal normal-case"
+									>
+										<RefreshCw className={`size-3 ${isRefreshingPreview ? "animate-spin" : ""}`} />
+										{isRefreshingPreview ? "Creating..." : "New Preview"}
+									</Button>
+								)}
+							</div>
 						</div>
 						{screenshotUrl ? (
 							<div className="relative h-80 md:h-96">

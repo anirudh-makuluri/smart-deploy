@@ -46,6 +46,8 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 	const [deployPathDraft, setDeployPathDraft] = useState("");
 	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
 	const [userFeedback, setUserFeedback] = useState("");
+	const [serviceDrafts, setServiceDrafts] = useState<Array<{ build_context: string; port: string }>>([]);
+	const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
 
 	useEffect(() => {
 		setIsEditing(false);
@@ -63,6 +65,15 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 			setDeployPathDraft(canonicalDockerfileDeployPath(activeTab));
 		}
 	}, [activeTab, dockerfileNames]);
+
+	useEffect(() => {
+		setServiceDrafts(
+			(results.services || []).map((svc) => ({
+				build_context: svc.build_context || ".",
+				port: String(svc.port || 8080),
+			}))
+		);
+	}, [results.services]);
 
 	const handleEdit = () => {
 		let content = "";
@@ -185,6 +196,40 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 		onUpdateResults(updated);
 		setActiveTab(newKey);
 		toast.success("Deploy path updated; this path is used when writing files on the server.");
+	};
+
+	const handleServiceDraftChange = (index: number, field: "build_context" | "port", value: string) => {
+		setServiceDrafts((prev) =>
+			prev.map((draft, i) => (i === index ? { ...draft, [field]: value } : draft))
+		);
+	};
+
+	const handleSaveServiceSettings = (index: number) => {
+		if (!onUpdateResults || !results.services?.[index]) return;
+		const draft = serviceDrafts[index];
+		if (!draft) return;
+
+		const nextBuildContext = draft.build_context.trim() || ".";
+		const parsedPort = Number.parseInt(draft.port, 10);
+		if (!Number.isFinite(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+			toast.error("Port must be a number between 1 and 65535.");
+			return;
+		}
+
+		const current = results.services[index];
+		if (current.build_context === nextBuildContext && current.port === parsedPort) {
+			return;
+		}
+
+		const updated: SDArtifactsResponse = {
+			...results,
+			services: results.services.map((svc, i) =>
+				i === index ? { ...svc, build_context: nextBuildContext, port: parsedPort } : svc
+			),
+		};
+		onUpdateResults(updated);
+		setEditingServiceIndex(null);
+		toast.success(`Updated ${current.name} settings`);
 	};
 
 	function buildTemplateFeedback(r: SDArtifactsResponse): string {
@@ -405,22 +450,91 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 						</div>
 						<div className="grid gap-3">
 							{results.services?.map((svc, i) => (
-								<div key={i} className="group relative">
+								<div
+									key={i}
+									className="group relative"
+									onDoubleClick={() => {
+										if (!onUpdateResults) return;
+										setEditingServiceIndex(i);
+									}}
+								>
 									<div className="absolute inset-0 bg-primary/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-									<div className="relative p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between group-hover:border-primary/20 transition-all">
-										<div className="flex items-center gap-4">
+									<div className="relative p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-4 group-hover:border-primary/20 transition-all">
+										{onUpdateResults && editingServiceIndex !== i && (
+											<Button
+												type="button"
+												size="icon"
+												variant="ghost"
+												className="absolute right-3 top-3 h-7 w-7 text-muted-foreground/60 hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
+												onClick={() => setEditingServiceIndex(i)}
+											>
+												<Edit2 className="size-3.5" />
+											</Button>
+										)}
+										<div className="flex items-center gap-4 flex-1 min-w-0">
 											<div className="size-10 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center p-2 group-hover:bg-primary/10 group-hover:border-primary/20 transition-colors">
 												{svc.name.includes('web') ? <Settings className="size-5 text-muted-foreground group-hover:text-primary" /> : <Database className="size-5 text-muted-foreground group-hover:text-primary" />}
 											</div>
-											<div>
+											<div className="min-w-0">
 												<p className="font-bold text-white text-sm tracking-tight">{svc.name}</p>
 												<p className="text-[10px] text-muted-foreground/50 font-mono mt-0.5">{svc.dockerfile_path}</p>
+												{editingServiceIndex === i && onUpdateResults ? (
+													<div className="mt-2.5 flex flex-wrap items-end gap-2">
+														<div className="min-w-[150px]">
+															<p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wide mb-1">ctx</p>
+															<Input
+																value={serviceDrafts[i]?.build_context ?? svc.build_context ?? "."}
+																onChange={(e) => handleServiceDraftChange(i, "build_context", e.target.value)}
+																placeholder="."
+																spellCheck={false}
+																autoComplete="off"
+																className="h-8 text-[11px] font-mono bg-white/[0.04] border-white/10 text-white/90"
+															/>
+														</div>
+														<div className="w-24">
+															<p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wide mb-1">port</p>
+															<Input
+																type="number"
+																min={1}
+																max={65535}
+																value={serviceDrafts[i]?.port ?? String(svc.port || 8080)}
+																onChange={(e) => handleServiceDraftChange(i, "port", e.target.value)}
+																className="h-8 text-[11px] font-mono bg-white/[0.04] border-white/10 text-white/90"
+															/>
+														</div>
+														<Button
+															type="button"
+															size="sm"
+															variant="secondary"
+															className="h-8 px-3 text-[10px] uppercase tracking-wide bg-white/10 hover:bg-white/15 text-white border-white/10"
+															onClick={() => handleSaveServiceSettings(i)}
+														>
+															Save
+														</Button>
+														<Button
+															type="button"
+															size="sm"
+															variant="ghost"
+															className="h-8 px-3 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-white"
+															onClick={() => setEditingServiceIndex(null)}
+														>
+															Cancel
+														</Button>
+													</div>
+												) : (
+													<>
+														<p className="text-[10px] text-muted-foreground/45 font-mono mt-0.5">ctx: {svc.build_context || "."}</p>
+														<p className="text-[10px] text-muted-foreground/45 font-mono mt-0.5">port: {svc.port || "Auto"}</p>
+													</>
+												)}
 											</div>
 										</div>
-										<div className="text-right">
-											<span className="text-[10px] font-black text-white/20 group-hover:text-primary/50 tracking-tighter uppercase transition-colors">Port</span>
-											<p className="text-xs font-bold text-white/60 group-hover:text-white transition-colors">{svc.port || 'Auto'}</p>
-										</div>
+										{editingServiceIndex !== i && (
+											<div className="text-right shrink-0 pl-2">
+												<span className="text-[10px] font-black text-white/20 group-hover:text-primary/50 tracking-tighter uppercase transition-colors">Port</span>
+												<p className="text-xs font-bold text-white/60 group-hover:text-white transition-colors">{svc.port || 'Auto'}</p>
+											</div>
+										)}
 									</div>
 								</div>
 							))}

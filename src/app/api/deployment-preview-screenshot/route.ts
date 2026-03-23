@@ -8,6 +8,43 @@ import { captureDeploymentScreenshotAndUpload } from "@/lib/deploymentScreenshot
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+const GATEWAY_HTTP_STATUSES = new Set([502, 503, 504]);
+
+function looksLikeGatewayErrorPage(bodyText: string): boolean {
+	const normalized = bodyText.toLowerCase();
+	return (
+		normalized.includes("bad gateway") ||
+		normalized.includes("gateway timeout") ||
+		normalized.includes("service unavailable") ||
+		normalized.includes("http error 502") ||
+		normalized.includes("http error 503") ||
+		normalized.includes("http error 504")
+	);
+}
+
+async function isPreviewGatewayError(targetUrl: string): Promise<boolean> {
+	try {
+		const res = await fetch(targetUrl, {
+			method: "GET",
+			redirect: "follow",
+			cache: "no-store",
+			signal: AbortSignal.timeout(10000),
+		});
+
+		if (GATEWAY_HTTP_STATUSES.has(res.status)) return true;
+		if (!res.ok) return false;
+
+		const contentType = res.headers.get("content-type") || "";
+		if (!contentType.toLowerCase().includes("text/html")) return false;
+
+		const text = await res.text();
+		return looksLikeGatewayErrorPage(text);
+	} catch (err) {
+		console.warn("preview health probe failed before screenshot capture:", err);
+		return false;
+	}
+}
+
 export async function POST(req: NextRequest) {
 	try {
 		const session = await getServerSession(authOptions);
@@ -19,6 +56,7 @@ export async function POST(req: NextRequest) {
 		const body = await req.json();
 		const repoName = String(body?.repoName || "").trim();
 		const serviceName = String(body?.serviceName || "").trim();
+		const force = Boolean(body?.force);
 
 		if (!repoName || !serviceName) {
 			return NextResponse.json({ error: "repoName and serviceName are required" }, { status: 400 });
@@ -44,7 +82,7 @@ export async function POST(req: NextRequest) {
 
 		const data = (row.data || {}) as Record<string, unknown>;
 		const existingScreenshotUrl = String(data.screenshot_url || "").trim();
-		if (existingScreenshotUrl) {
+		if (existingScreenshotUrl && !force) {
 			return NextResponse.json({ status: "success", screenshotUrl: existingScreenshotUrl });
 		}
 
@@ -53,6 +91,14 @@ export async function POST(req: NextRequest) {
 		const targetUrl = customUrl || deployUrl;
 		if (!targetUrl) {
 			return NextResponse.json({ error: "No live URL available for this deployment" }, { status: 400 });
+		}
+
+		const gatewayErrorPreview = await isPreviewGatewayError(targetUrl);
+		if (gatewayErrorPreview) {
+			return NextResponse.json({
+				status: "skipped",
+				reason: "Preview URL is returning a gateway error page",
+			});
 		}
 
 		const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({

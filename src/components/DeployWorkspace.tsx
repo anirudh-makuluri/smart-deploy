@@ -100,6 +100,7 @@ export default function DeployWorkspace() {
 
 	const screenshotUrl = deployment?.screenshot_url;
 	const [didRequestScreenshot, setDidRequestScreenshot] = React.useState(false);
+	const [isRefreshingPreview, setIsRefreshingPreview] = React.useState(false);
 
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
@@ -165,6 +166,45 @@ export default function DeployWorkspace() {
 		return () => clearInterval(interval);
 	}, [showDeployLogs, deployStatus]);
 
+	const requestPreviewScreenshot = React.useCallback(
+		async (force = false) => {
+			if (!repo?.name || !serviceName) return;
+			try {
+				const res = await fetch("/api/deployment-preview-screenshot", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ repoName: repo.name, serviceName, force }),
+				});
+				const data = await res.json();
+				if (!res.ok) {
+					console.error("Screenshot generation failed:", data?.error || data);
+					if (force) toast.error("Failed to create preview");
+					return;
+				}
+				if (data?.status === "skipped") {
+					if (force) toast.info("Preview is currently unavailable (gateway error)");
+					return;
+				}
+				await fetchRepoDeployments(repo.name);
+				if (force) toast.success("Created a new preview");
+			} catch (err) {
+				console.error("Screenshot generation request error:", err);
+				if (force) toast.error("Failed to create preview");
+			}
+		},
+		[repo?.name, serviceName, fetchRepoDeployments]
+	);
+
+	const handleManualCreatePreview = React.useCallback(async () => {
+		if (isRefreshingPreview) return;
+		setIsRefreshingPreview(true);
+		try {
+			await requestPreviewScreenshot(true);
+		} finally {
+			setIsRefreshingPreview(false);
+		}
+	}, [isRefreshingPreview, requestPreviewScreenshot]);
+
 	// If the service is running but we don't have a screenshot yet, generate one on-demand.
 	React.useEffect(() => {
 		if (!repo?.name || !serviceName) return;
@@ -175,29 +215,16 @@ export default function DeployWorkspace() {
 		if (!hasStoredLiveUrl) return;
 
 		setDidRequestScreenshot(true);
-
-		(async () => {
-			try {
-				const res = await fetch("/api/deployment-preview-screenshot", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ repoName: repo.name, serviceName }),
-				});
-				const data = await res.json();
-				if (!res.ok) {
-					console.error("Screenshot generation failed:", data?.error || data);
-					return;
-				}
-
-				// Refresh deployments so the new screenshot_url shows up.
-				await fetchRepoDeployments(repo.name);
-			} catch (err) {
-				console.error("Screenshot generation request error:", err);
-			} finally {
-				// Keep didRequestScreenshot true; user can redeploy if they want a different screenshot.
-			}
-		})();
-	}, [repo?.name, serviceName, didRequestScreenshot, effectiveDeploymentStatus, screenshotUrl, hasStoredLiveUrl, fetchRepoDeployments]);
+		void requestPreviewScreenshot(false);
+	}, [
+		repo?.name,
+		serviceName,
+		didRequestScreenshot,
+		effectiveDeploymentStatus,
+		screenshotUrl,
+		hasStoredLiveUrl,
+		requestPreviewScreenshot,
+	]);
 
 	const formatTime = (seconds: number) => {
 		const hrs = Math.floor(seconds / 3600);
@@ -305,13 +332,12 @@ export default function DeployWorkspace() {
 			console.error("Failed to clear backend cache:", err);
 		}
 
-		// 2. Clear frontend state and DB
-		const cleared: DeployConfig = {
-			...workingDeployment,
-			scan_results: undefined,
-		};
-
-		await updateDeploymentById(cleared);
+		// 2. Clear frontend state and DB (must send explicit null so DB helper clears persisted scan_results)
+		await updateDeploymentById({
+			repo_name: workingDeployment.repo_name,
+			service_name: workingDeployment.service_name,
+			scan_results: null as unknown as SDArtifactsResponse,
+		});
 		setScanResults(null);
 		setScanMode("idle");
 		toast.info("Analysis results cleared and cache invalidated");
@@ -574,7 +600,9 @@ export default function DeployWorkspace() {
 							<DeployOverview
 								deployment={workingDeployment}
 								isDeploying={isDeploying}
+								isRefreshingPreview={isRefreshingPreview}
 								onRedeploy={handleDeploy}
+								onRefreshPreview={handleManualCreatePreview}
 								onEditConfiguration={() => { setActiveSection("setup"); }}
 								repo={repo as repoType}
 							/>
@@ -603,12 +631,6 @@ export default function DeployWorkspace() {
 							<span className="text-border">/</span>
 							<span className="text-foreground">{serviceName ?? ""}</span>
 						</div>
-						{!isDraft && (
-							<div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-[10px] font-bold tracking-widest uppercase text-emerald-400">
-								<div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-								Live
-							</div>
-						)}
 					</div>
 
 					<div className="flex items-center gap-3">

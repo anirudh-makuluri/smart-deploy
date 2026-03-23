@@ -897,7 +897,12 @@ export async function ensureHostRule(
 		region,
 	], ws, "deploy");
 
-	let rules: Array<{ Priority?: string; Conditions?: Array<{ Field?: string; HostHeaderConfig?: { Values?: string[] } }>; Actions?: Array<{ Type?: string; TargetGroupArn?: string }> }> = [];
+	let rules: Array<{
+		RuleArn?: string;
+		Priority?: string;
+		Conditions?: Array<{ Field?: string; HostHeaderConfig?: { Values?: string[] } }>;
+		Actions?: Array<{ Type?: string; TargetGroupArn?: string }>;
+	}> = [];
 	try {
 		const parsed = JSON.parse(rulesRaw);
 		rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
@@ -905,12 +910,26 @@ export async function ensureHostRule(
 		rules = [];
 	}
 
-	const hasRule = rules.some((rule) =>
+	const existingRule = rules.find((rule) =>
 		(rule.Conditions || []).some((cond) =>
 			cond.Field === "host-header" && (cond.HostHeaderConfig?.Values || []).includes(hostname)
 		)
 	);
-	if (hasRule) return;
+	if (existingRule?.RuleArn) {
+		const currentTargetGroup = (existingRule.Actions || []).find((a) => a.Type === "forward")?.TargetGroupArn;
+		if (currentTargetGroup === targetGroupArn) return;
+		await runAWSCommand([
+			"elbv2",
+			"modify-rule",
+			"--rule-arn",
+			existingRule.RuleArn,
+			"--actions",
+			`Type=forward,TargetGroupArn=${targetGroupArn}`,
+			"--region",
+			region,
+		], ws, "deploy");
+		return;
+	}
 
 	const numericPriorities = rules
 		.map((r) => r.Priority)
