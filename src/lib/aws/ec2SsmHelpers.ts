@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import yaml from "js-yaml";
 import config from "../../config";
 import { createWebSocketLogger } from "../websocketLogger";
 import { runAWSCommand } from "./awsHelpers";
@@ -207,6 +208,41 @@ function normalizeDockerfilePathsInCompose(compose: string): string {
 }
 
 /**
+ * Ensures every service in a compose YAML has `env_file` referencing `.env`,
+ * so that env vars written to the repo root are available inside containers.
+ */
+function injectEnvFileIntoCompose(composeYaml: string): string {
+	try {
+		const doc = yaml.load(composeYaml) as Record<string, unknown> | null;
+		if (!doc || typeof doc !== "object" || !doc.services) return composeYaml;
+
+		const services = doc.services as Record<string, Record<string, unknown>>;
+		for (const svc of Object.values(services)) {
+			if (!svc || typeof svc !== "object") continue;
+
+			let envFiles: string[] = [];
+			if (typeof svc.env_file === "string") {
+				envFiles = [svc.env_file];
+			} else if (Array.isArray(svc.env_file)) {
+				envFiles = svc.env_file as string[];
+			}
+
+			const alreadyHasEnv = envFiles.some(
+				(f) => f === ".env" || f === "./.env",
+			);
+			if (!alreadyHasEnv) {
+				envFiles.push(".env");
+				svc.env_file = envFiles;
+			}
+		}
+
+		return yaml.dump(doc, { lineWidth: -1, noRefs: true });
+	} catch {
+		return composeYaml;
+	}
+}
+
+/**
  * Generates bash commands to write Dockerfiles from scan_results.dockerfiles
  * into the cloned repo at the paths given by each key (e.g. client/Dockerfile, apps/web/Dockerfile).
  * Keys that name a directory only (e.g. "client") are written to client/Dockerfile.
@@ -246,7 +282,9 @@ DOCKERFILEEOF
  */
 function buildComposeWriteScript(dockerCompose: string): string {
 	if (!dockerCompose) return "";
-	const normalizedCompose = normalizeDockerfilePathsInCompose(dockerCompose);
+	const normalizedCompose = injectEnvFileIntoCompose(
+		normalizeDockerfilePathsInCompose(dockerCompose),
+	);
 	return `
 echo "Writing docker-compose.yml from scan_results..."
 cat > docker-compose.yml << 'COMPOSEEOF'
@@ -709,16 +747,15 @@ export function buildEcrComposeDeployScript(params: {
 }): string {
 	const { ecrRegistry, ecrRepoName, imageTag, region, envFileContentBase64, composeContent, services } = params;
 
-	// Generate a modified compose file that uses ECR images instead of build directives
 	let modifiedCompose = composeContent;
 	for (const svc of services) {
 		const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
-		// Replace build: sections with image: references
 		modifiedCompose = modifiedCompose.replace(
 			new RegExp(`(\\b${svc.name}:[\\s\\S]*?)build:\\s*[^\\n]+`, "m"),
 			`$1image: ${svcUri}`,
 		);
 	}
+	modifiedCompose = injectEnvFileIntoCompose(modifiedCompose);
 	const composeB64 = Buffer.from(modifiedCompose, "utf8").toString("base64");
 
 	return `set -e
