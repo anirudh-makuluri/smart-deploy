@@ -29,5 +29,7 @@ export async function proxy(req : NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next|api|static|favicon.ico).*)"], // Exclude static, API, etc.
+  matcher: [
+    "/((?!_next|api|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico)).*)",
+  ], // Exclude static assets, API routes, etc.
 }

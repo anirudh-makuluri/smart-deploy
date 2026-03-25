@@ -19,6 +19,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
 	title: "Smart Deploy",
 	description: "Deploy your code in an easy way",
+	icons: {
+		icon: "/icon.svg",
+	},
 };
 
 export default function RootLayout({
