@@ -44,7 +44,7 @@ type ConfigTabsProps = {
 	onStartScan?: () => void;
 };
 
-const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "anirudh-makuluri.xyz";
+const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "smart-deploy.xyz";
 
 export default function ConfigTabs({
 	onConfigChange,

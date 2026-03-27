@@ -88,6 +88,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
 	const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
+	const prevRepoUrlRef = React.useRef<string | null>(null);
 
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
@@ -232,7 +233,15 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	// Fetch deployments explicitly for this repo on mount if needed
 	React.useEffect(() => {
-		setActiveServiceName(null);
+		const prevRepoUrl = prevRepoUrlRef.current;
+		const isRepoChange = prevRepoUrl !== null && prevRepoUrl !== repoUrl;
+		prevRepoUrlRef.current = repoUrl;
+
+		// Only reset active service when navigating to a different repo.
+		if (isRepoChange) {
+			setActiveServiceName(null);
+		}
+
 		setActiveRepo(resolvedRepo);
 		if (resolvedRepo.name) {
 			fetchRepoDeployments(resolvedRepo.name);
