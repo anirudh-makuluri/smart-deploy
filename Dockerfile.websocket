@@ -1,4 +1,4 @@
-# WebSocket server Dockerfile with GCP and AWS CLI support
+# WebSocket server Dockerfile with GCP and AWS SDK support
 FROM node:20-slim
 
 WORKDIR /app
@@ -16,22 +16,11 @@ RUN apt-get update && apt-get install -y \
     less \
     && rm -rf /var/lib/apt/lists/*
 
-# Install AWS CLI v2
-RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
-    && unzip awscliv2.zip \
-    && ./aws/install \
-    && rm -rf awscliv2.zip aws
-
 # Install Google Cloud SDK
-RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcl \
-    && bash /tmp/gcl --install-dir=/root --disable-prompts \
-    && rm /tmp/gcl
-ENV PATH $PATH:/root/google-cloud-sdk/bin
-
-# Install Docker CLI (for ECS deployments)
-RUN curl -fsSL https://get.docker.com -o get-docker.sh \
-    && sh get-docker.sh \
-    && rm get-docker.sh
+# RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcl \
+#     && bash /tmp/gcl --install-dir=/root --disable-prompts \
+#     && rm /tmp/gcl
+# ENV PATH $PATH:/root/google-cloud-sdk/bin
 
 # Copy package files
 COPY package.json package-lock.json ./

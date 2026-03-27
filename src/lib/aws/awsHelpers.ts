@@ -2,19 +2,74 @@ import fs from "fs";
 import path from "path";
 import archiver from "archiver";
 import config from "../../config";
-import { runCommandLiveWithWebSocket } from "../../server-helper";
 import { createWebSocketLogger } from "../websocketLogger";
+import { getAwsClientConfig } from "./sdkClients";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+	EC2Client,
+	DescribeVpcsCommand,
+	DescribeSubnetsCommand,
+	DescribeAvailabilityZonesCommand,
+	CreateDefaultSubnetCommand,
+	DescribeSecurityGroupsCommand,
+	CreateSecurityGroupCommand,
+	AuthorizeSecurityGroupIngressCommand,
+	DescribeInstancesCommand,
+	ModifyInstanceAttributeCommand,
+	RebootInstancesCommand,
+	TerminateInstancesCommand,
+	RunInstancesCommand,
+	DescribeKeyPairsCommand,
+	CreateKeyPairCommand,
+	DescribeImagesCommand,
+	DescribeRouteTablesCommand,
+	waitUntilInstanceRunning,
+} from "@aws-sdk/client-ec2";
+import {
+	ElasticLoadBalancingV2Client,
+	DescribeLoadBalancersCommand,
+	CreateLoadBalancerCommand,
+	DescribeTargetGroupsCommand,
+	CreateTargetGroupCommand,
+	DescribeListenersCommand,
+	ModifyListenerCommand,
+	CreateListenerCommand,
+	DescribeRulesCommand,
+	ModifyRuleCommand,
+	CreateRuleCommand,
+	RegisterTargetsCommand,
+	DeleteRuleCommand,
+	DeregisterTargetsCommand,
+} from "@aws-sdk/client-elastic-load-balancing-v2";
+import {
+	IAMClient,
+	GetInstanceProfileCommand,
+	CreateRoleCommand,
+	AttachRolePolicyCommand,
+	CreateInstanceProfileCommand,
+	AddRoleToInstanceProfileCommand,
+} from "@aws-sdk/client-iam";
+import { SSMClient, DescribeInstanceInformationCommand } from "@aws-sdk/client-ssm";
+import {
+	RDSClient,
+	DescribeDBSubnetGroupsCommand,
+	CreateDBSubnetGroupCommand,
+	DescribeDBInstancesCommand,
+	CreateDBInstanceCommand,
+	DeleteDBInstanceCommand,
+} from "@aws-sdk/client-rds";
 
 /**
- * Sets up AWS credentials for CLI commands
+ * Sets up AWS credentials for SDK usage (and any subprocesses if needed).
  */
 export async function setupAWSCredentials(ws: any): Promise<void> {
 	const send = createWebSocketLogger(ws);
 
 	send("Setting up AWS credentials...", 'auth');
 
-	// Set AWS environment variables for CLI commands
-	// If access keys are provided, use them. Otherwise, AWS CLI will use IAM instance role (if on EC2)
+	// Set AWS environment variables for SDKs and any subprocesses
+	// If access keys are provided, use them. Otherwise, SDK will use IAM instance role (if on EC2)
 	if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
 		process.env.AWS_ACCESS_KEY_ID = config.AWS_ACCESS_KEY_ID;
 		process.env.AWS_SECRET_ACCESS_KEY = config.AWS_SECRET_ACCESS_KEY;
@@ -27,10 +82,11 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 
 	// Verify credentials
 	try {
-		const identityOutput = await runCommandLiveWithWebSocket("aws", [
-			"sts", "get-caller-identity",
-			"--output", "json"
-		], ws, 'auth');
+		const identityOutput = await runAWSCommand(
+			["sts", "get-caller-identity", "--output", "json"],
+			ws,
+			"auth"
+		);
 
 		// Parse and display identity info
 		try {
@@ -52,107 +108,786 @@ export async function setupAWSCredentials(ws: any): Promise<void> {
 	}
 }
 
-/**
- * Runs an AWS CLI command with WebSocket logging
- * Sets PYTHONIOENCODING=utf-8 to prevent Windows charmap encoding errors
- */
-export async function runAWSCommand(
-	args: string[],
-	ws: any,
-	stepId: string
-): Promise<string> {
-	return runCommandLiveWithWebSocket("aws", args, ws, stepId, {
-		env: { PYTHONIOENCODING: "utf-8" } as any
+// AWS SDK command runner lives below (replaces AWS CLI dependency).
+type ParsedAwsArgs = {
+	service: string;
+	command: string;
+	options: Record<string, string | string[]>;
+	positionals: string[];
+};
+
+function normalizeOptValue(v: string): string {
+	const trimmed = v.trim();
+	if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+		return trimmed.slice(1, -1);
+	}
+	return trimmed;
+}
+
+function parseAwsArgs(args: string[]): ParsedAwsArgs {
+	const service = args[0] || "";
+	const command = args[1] || "";
+	const options: Record<string, string | string[]> = {};
+	const positionals: string[] = [];
+	const multiValueKeys = new Set([
+		"filters",
+		"subnet-ids",
+		"subnets",
+		"security-groups",
+		"security-group-ids",
+		"vpc-security-group-ids",
+		"instance-ids",
+		"key-names",
+		"owners",
+		"image-ids",
+		"group-ids",
+		"names",
+		"load-balancer-arns",
+	]);
+
+	const addOpt = (key: string, value: string) => {
+		const v = normalizeOptValue(value);
+		if (options[key] == null) options[key] = v;
+		else if (Array.isArray(options[key])) (options[key] as string[]).push(v);
+		else options[key] = [options[key] as string, v];
+	};
+
+	for (let i = 2; i < args.length; i++) {
+		const token = args[i];
+		if (token.startsWith("--")) {
+			const eqIdx = token.indexOf("=");
+			if (eqIdx !== -1) {
+				addOpt(token.slice(2, eqIdx), token.slice(eqIdx + 1));
+			} else {
+				const next = args[i + 1];
+				if (next && !next.startsWith("--")) {
+					const key = token.slice(2);
+					if (multiValueKeys.has(key)) {
+						let j = i + 1;
+						while (j < args.length && !args[j].startsWith("--")) {
+							addOpt(key, args[j]);
+							j++;
+						}
+						i = j - 1;
+					} else {
+						addOpt(key, next);
+						i++;
+					}
+				} else {
+					addOpt(token.slice(2), "true");
+				}
+			}
+		} else {
+			positionals.push(token);
+		}
+	}
+
+	return { service, command, options, positionals };
+}
+
+function getOpt(options: Record<string, string | string[]>, key: string): string | undefined {
+	const v = options[key];
+	if (Array.isArray(v)) return v[0];
+	return v as string | undefined;
+}
+
+function getOptAll(options: Record<string, string | string[]>, key: string): string[] {
+	const v = options[key];
+	if (Array.isArray(v)) return v;
+	return v ? [v as string] : [];
+}
+
+function asText(value: string | number | boolean | undefined | null): string {
+	if (value === undefined || value === null || value === "") return "None";
+	if (typeof value === "boolean") return value ? "true" : "false";
+	return String(value);
+}
+
+function parseFilters(raw: string | string[]): Array<{ Name: string; Values: string[] }> {
+	const items = Array.isArray(raw) ? raw : [raw];
+	return items.map((item) => {
+		const parts = item.split(",").map((p) => p.trim());
+		let name = "";
+		let values: string[] = [];
+		for (const p of parts) {
+			if (p.startsWith("Name=")) name = p.slice(5);
+			else if (p.startsWith("Values=")) values = p.slice(7).split(/\s*;\s*|\s*,\s*/).filter(Boolean);
+		}
+		if (name === "is-default") name = "isDefault";
+		return { Name: name, Values: values };
 	});
 }
 
-/**
- * Runs an AWS CLI command with stdout/stderr written to a temp file, then reads the file as UTF-8.
- * Use this for commands that can output Unicode (e.g. get-console-output) to avoid Windows
- * console encoding errors that cause the CLI to exit with code 255.
- */
-export async function runAWSCommandToFile(
-	args: string[],
-	ws: any,
-	stepId: string
-): Promise<string> {
-	const { spawn } = await import("child_process");
-	const os = await import("os");
-	const outPath = path.join(os.tmpdir(), `aws-console-${Date.now()}.txt`);
+function parseKeyValueList(raw: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const part of raw.split(",")) {
+		const [k, v] = part.split("=");
+		if (!k || v == null) continue;
+		out[k.trim()] = v.trim();
+	}
+	return out;
+}
 
-	return new Promise((resolve, reject) => {
-		let stdout = "";
-		let stderr = "";
-		const chunks: Buffer[] = [];
+function parseIpPermissions(raw: string): Array<{
+	IpProtocol?: string;
+	FromPort?: number;
+	ToPort?: number;
+	IpRanges?: Array<{ CidrIp?: string }>;
+	UserIdGroupPairs?: Array<{ GroupId?: string }>;
+}> {
+	const proto = /IpProtocol=([^,]+)/.exec(raw)?.[1];
+	const fromPort = /FromPort=([0-9]+)/.exec(raw)?.[1];
+	const toPort = /ToPort=([0-9]+)/.exec(raw)?.[1];
+	const cidr = /CidrIp=([0-9.\/]+)/.exec(raw)?.[1];
+	const groupId = /GroupId=([a-zA-Z0-9-]+)/.exec(raw)?.[1];
+	const perm: {
+		IpProtocol?: string;
+		FromPort?: number;
+		ToPort?: number;
+		IpRanges?: Array<{ CidrIp?: string }>;
+		UserIdGroupPairs?: Array<{ GroupId?: string }>;
+	} = {};
+	if (proto) perm.IpProtocol = proto;
+	if (fromPort) perm.FromPort = Number(fromPort);
+	if (toPort) perm.ToPort = Number(toPort);
+	if (cidr) perm.IpRanges = [{ CidrIp: cidr }];
+	if (groupId) perm.UserIdGroupPairs = [{ GroupId: groupId }];
+	return [perm];
+}
 
-		const child = spawn("aws", args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			env: {
-				...process.env,
-				PYTHONIOENCODING: "utf-8",
-				PYTHONLEGACYWINDOWSSTDIO: "1", // Force Python to use UTF-8 on Windows
-				LC_ALL: "en_US.UTF-8",
-				LANG: "en_US.UTF-8",
+function parseTargets(raw: string): Array<{ Id?: string; Port?: number }> {
+	const kv = parseKeyValueList(raw);
+	return [{
+		Id: kv.Id,
+		Port: kv.Port ? Number(kv.Port) : undefined,
+	}];
+}
+
+function parseAction(raw: string): { Type: string; TargetGroupArn?: string; FixedResponseConfig?: any; RedirectConfig?: any } {
+	const type = /Type=([^,]+)/.exec(raw)?.[1] || "forward";
+	if (type === "forward") {
+		const tga = /TargetGroupArn=([^,]+)/.exec(raw)?.[1];
+		return { Type: "forward", TargetGroupArn: tga };
+	}
+	if (type === "fixed-response") {
+		const cfgRaw = /FixedResponseConfig=\{([^}]+)\}/.exec(raw)?.[1] || "";
+		const kv = parseKeyValueList(cfgRaw);
+		return {
+			Type: "fixed-response",
+			FixedResponseConfig: {
+				StatusCode: kv.StatusCode,
+				ContentType: kv.ContentType,
+				MessageBody: kv.MessageBody,
 			},
-			windowsHide: true,
-		});
+		};
+	}
+	if (type === "redirect") {
+		const cfgRaw = /RedirectConfig=\{([^}]+)\}/.exec(raw)?.[1] || "";
+		const kv = parseKeyValueList(cfgRaw);
+		return {
+			Type: "redirect",
+			RedirectConfig: {
+				Protocol: kv.Protocol,
+				Port: kv.Port,
+				StatusCode: kv.StatusCode,
+			},
+		};
+	}
+	return { Type: type };
+}
 
-		// Collect stdout as buffers to preserve binary data
-		child.stdout?.on("data", (data: Buffer) => {
-			chunks.push(data);
-		});
+function parseConditions(raw: string): Array<{ Field?: string; HostHeaderConfig?: { Values?: string[] } }> {
+	const field = /Field=([^,]+)/.exec(raw)?.[1];
+	if (field === "host-header") {
+		const valuesRaw = /HostHeaderConfig=\{Values=([^}]+)\}/.exec(raw)?.[1] || "";
+		const values = valuesRaw.split(",").map((v) => v.trim()).filter(Boolean);
+		return [{ Field: "host-header", HostHeaderConfig: { Values: values } }];
+	}
+	return [{ Field: field }];
+}
 
-		// Collect stderr separately
-		child.stderr?.on("data", (data: Buffer) => {
-			try {
-				// Buffer.toString("utf8") automatically replaces invalid UTF-8 sequences
-				stderr += data.toString("utf8");
-			} catch {
-				// If decode fails for any reason, use latin1 as fallback (preserves all bytes)
-				stderr += data.toString("latin1");
+function parseTagSpecifications(raw: string): Array<{ ResourceType: string; Tags: Array<{ Key: string; Value: string }> }> {
+	const resourceType = /ResourceType=([^,]+)/.exec(raw)?.[1] || "instance";
+	const tagsRaw = /Tags=\[([^\]]+)\]/.exec(raw)?.[1] || "";
+	const tags: Array<{ Key: string; Value: string }> = [];
+	const re = /\{Key=([^,}]+),Value=([^}]+)\}/g;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(tagsRaw))) {
+		tags.push({ Key: m[1], Value: m[2] });
+	}
+	return [{ ResourceType: resourceType, Tags: tags }];
+}
+
+function parseBlockDeviceMappings(raw: string): Array<any> {
+	const device = /DeviceName=([^,]+)/.exec(raw)?.[1];
+	const ebsRaw = /Ebs=\{([^}]+)\}/.exec(raw)?.[1] || "";
+	const kv = parseKeyValueList(ebsRaw);
+	return [{
+		DeviceName: device,
+		Ebs: {
+			VolumeSize: kv.VolumeSize ? Number(kv.VolumeSize) : undefined,
+			VolumeType: kv.VolumeType,
+			DeleteOnTermination: kv.DeleteOnTermination === "true",
+		},
+	}];
+}
+
+function resolveRegion(options: Record<string, string | string[]>): string {
+	const region = getOpt(options, "region");
+	return region || config.AWS_REGION;
+}
+
+/**
+ * Runs an AWS CLI-like command using the AWS SDK (no local AWS CLI required).
+ */
+export async function runAWSCommand(
+	args: string[],
+	_ws: any,
+	_stepId: string
+): Promise<string> {
+	const { service, command, options, positionals } = parseAwsArgs(args);
+	const region = resolveRegion(options);
+
+	switch (service) {
+		case "sts": {
+			if (command !== "get-caller-identity") throw new Error(`Unsupported sts command: ${command}`);
+			const client = new STSClient(getAwsClientConfig(region));
+			const resp = await client.send(new GetCallerIdentityCommand({}));
+			const query = getOpt(options, "query");
+			if (query?.includes("Account")) return asText(resp.Account);
+			if (getOpt(options, "output") === "text") return asText(resp.Arn || resp.Account);
+			return JSON.stringify(resp);
+		}
+		case "s3api": {
+			const client = new S3Client(getAwsClientConfig(region));
+			if (command === "head-bucket") {
+				const bucket = getOpt(options, "bucket");
+				if (!bucket) throw new Error("s3api head-bucket missing --bucket");
+				await client.send(new HeadBucketCommand({ Bucket: bucket }));
+				return "";
 			}
-		});
-
-		child.on("close", (code) => {
-			try {
-				// Combine all stdout chunks and decode as UTF-8
-				const stdoutBuffer = Buffer.concat(chunks);
-				stdout = stdoutBuffer.toString("utf8");
-
-				// Write to file for consistency (though we already have the content)
-				fs.writeFileSync(outPath, stdout + (stderr ? "\n" + stderr : ""), "utf8");
-
-				try {
-					fs.unlinkSync(outPath);
-				} catch {
-					// ignore cleanup errors
-				}
-
-				if (code === 0) {
-					// Include stderr so we capture output when CLI writes to stderr (e.g. get-console-output when stdout is not a TTY)
-					const combined = stdout + (stderr ? "\n" + stderr : "");
-					resolve(combined.trim() || stdout);
-				} else {
-					// Sanitize error message to remove problematic Unicode
-					const errorMsg = `aws ${args.join(" ")} exited with code ${code}`;
-					const errorDetails = (stdout + "\n" + stderr).slice(-500);
-					const sanitized = errorDetails.replace(/[\u2190-\u21FF]/g, ""); // Remove arrow Unicode chars
-					reject(new Error(`${errorMsg}${sanitized ? "\n" + sanitized : ""}`));
-				}
-			} catch (e: any) {
-				// If file operations fail, still try to return what we have
-				if (code === 0 && stdout) {
-					resolve(stdout);
-				} else {
-					reject(e instanceof Error ? e : new Error(String(e)));
-				}
+			if (command === "create-bucket") {
+				const bucket = getOpt(options, "bucket");
+				if (!bucket) throw new Error("s3api create-bucket missing --bucket");
+				const cfgRaw = getOpt(options, "create-bucket-configuration");
+				const location = cfgRaw?.includes("LocationConstraint=") ? cfgRaw.split("LocationConstraint=")[1] : undefined;
+				await client.send(new CreateBucketCommand({
+					Bucket: bucket,
+					...(location && location !== "us-east-1" ? { CreateBucketConfiguration: { LocationConstraint: location } } : {}),
+				}));
+				return "";
 			}
-		});
-
-		child.on("error", (err) => {
-			reject(err);
-		});
-	});
+			throw new Error(`Unsupported s3api command: ${command}`);
+		}
+		case "s3": {
+			if (command !== "cp") throw new Error(`Unsupported s3 command: ${command}`);
+			const [localPath, s3Uri] = positionals;
+			if (!localPath || !s3Uri) throw new Error("s3 cp requires local path and s3://bucket/key");
+			const match = /^s3:\/\/([^/]+)\/(.+)$/.exec(s3Uri);
+			if (!match) throw new Error(`Invalid s3 uri: ${s3Uri}`);
+			const bucket = match[1];
+			const key = match[2];
+			const body = fs.createReadStream(localPath);
+			const client = new S3Client(getAwsClientConfig(region));
+			await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body }));
+			return "";
+		}
+		case "ec2": {
+			const client = new EC2Client(getAwsClientConfig(region));
+			if (command === "describe-vpcs") {
+				const filters = getOptAll(options, "filters");
+				const vpcIds = getOptAll(options, "vpc-ids");
+				const resp = await client.send(new DescribeVpcsCommand({
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+					...(vpcIds.length ? { VpcIds: vpcIds } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("Vpcs[0].VpcId")) return asText(resp.Vpcs?.[0]?.VpcId);
+				if (query.includes("Vpcs[0].IsDefault")) return asText(resp.Vpcs?.[0]?.IsDefault ?? null);
+				return JSON.stringify(resp.Vpcs ?? []);
+			}
+			if (command === "describe-subnets") {
+				const filters = getOptAll(options, "filters");
+				const resp = await client.send(new DescribeSubnetsCommand({
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("Subnets[*].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}")) {
+					const out = (resp.Subnets || []).map((s) => ({ SubnetId: s.SubnetId, AvailabilityZone: s.AvailabilityZone }));
+					return JSON.stringify(out);
+				}
+				if (query.includes("Subnets[*].SubnetId")) {
+					return (resp.Subnets || []).map((s) => s.SubnetId).filter(Boolean).join(" ");
+				}
+				return JSON.stringify(resp.Subnets ?? []);
+			}
+			if (command === "describe-availability-zones") {
+				const filters = getOptAll(options, "filters");
+				const resp = await client.send(new DescribeAvailabilityZonesCommand({
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("AvailabilityZones[*].ZoneName")) {
+					return (resp.AvailabilityZones || []).map((z) => z.ZoneName).filter(Boolean).join(" ");
+				}
+				return JSON.stringify(resp.AvailabilityZones ?? []);
+			}
+			if (command === "create-default-subnet") {
+				const az = getOpt(options, "availability-zone");
+				const resp = await client.send(new CreateDefaultSubnetCommand({ AvailabilityZone: az }));
+				return asText(resp.Subnet?.SubnetId);
+			}
+			if (command === "describe-security-groups") {
+				const filters = getOptAll(options, "filters");
+				const groupIds = getOptAll(options, "group-ids");
+				const resp = await client.send(new DescribeSecurityGroupsCommand({
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+					...(groupIds.length ? { GroupIds: groupIds } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("SecurityGroups[0].GroupId")) return asText(resp.SecurityGroups?.[0]?.GroupId);
+				if (query.includes("SecurityGroups[0].IpPermissions")) return JSON.stringify(resp.SecurityGroups?.[0]?.IpPermissions ?? []);
+				return JSON.stringify(resp.SecurityGroups ?? []);
+			}
+			if (command === "create-security-group") {
+				const groupName = getOpt(options, "group-name") || getOpt(options, "group-name");
+				const description = getOpt(options, "description") || "Security group";
+				const vpcId = getOpt(options, "vpc-id");
+				const resp = await client.send(new CreateSecurityGroupCommand({
+					GroupName: groupName,
+					Description: description?.replace(/^['"]|['"]$/g, "") || "Security group",
+					...(vpcId ? { VpcId: vpcId } : {}),
+				}));
+				return asText(resp.GroupId);
+			}
+			if (command === "authorize-security-group-ingress") {
+				const groupId = getOpt(options, "group-id");
+				const ipPermRaw = getOpt(options, "ip-permissions");
+				let ipPermissions: any[] = [];
+				if (ipPermRaw) ipPermissions = parseIpPermissions(ipPermRaw);
+				else {
+					const protocol = getOpt(options, "protocol") || "tcp";
+					const port = getOpt(options, "port");
+					const cidr = getOpt(options, "cidr");
+					ipPermissions = [{
+						IpProtocol: protocol,
+						FromPort: port ? Number(port) : undefined,
+						ToPort: port ? Number(port) : undefined,
+						IpRanges: cidr ? [{ CidrIp: cidr }] : undefined,
+					}];
+				}
+				await client.send(new AuthorizeSecurityGroupIngressCommand({
+					GroupId: groupId,
+					IpPermissions: ipPermissions,
+				}));
+				return "";
+			}
+			if (command === "describe-instances") {
+				const instanceIds = getOptAll(options, "instance-ids");
+				const resp = await client.send(new DescribeInstancesCommand({ InstanceIds: instanceIds }));
+				const query = getOpt(options, "query") || "";
+				const inst = resp.Reservations?.[0]?.Instances?.[0];
+				if (query.includes("Reservations[0].Instances[0].PublicIpAddress")) return asText(inst?.PublicIpAddress);
+				if (query.includes("Reservations[0].Instances[0].IamInstanceProfile.Arn")) return asText(inst?.IamInstanceProfile?.Arn);
+				if (query.includes("Reservations[0].Instances[0].{PublicIp:PublicIpAddress,SubnetId:SubnetId,VpcId:VpcId,State:State.Name}")) {
+					const out = {
+						PublicIp: inst?.PublicIpAddress ?? null,
+						SubnetId: inst?.SubnetId ?? null,
+						VpcId: inst?.VpcId ?? null,
+						State: inst?.State?.Name ?? null,
+					};
+					return JSON.stringify(out);
+				}
+				return JSON.stringify(resp.Reservations ?? []);
+			}
+			if (command === "modify-instance-attribute") {
+				const instanceId = getOpt(options, "instance-id");
+				const iamProfile = getOpt(options, "iam-instance-profile");
+				const name = iamProfile?.startsWith("Name=") ? iamProfile.slice(5) : iamProfile;
+				await client.send(new ModifyInstanceAttributeCommand({
+					InstanceId: instanceId,
+					IamInstanceProfile: name ? { Name: name } : undefined,
+				}));
+				return "";
+			}
+			if (command === "reboot-instances") {
+				const instanceIds = getOptAll(options, "instance-ids");
+				await client.send(new RebootInstancesCommand({ InstanceIds: instanceIds }));
+				return "";
+			}
+			if (command === "terminate-instances") {
+				const instanceIds = getOptAll(options, "instance-ids");
+				await client.send(new TerminateInstancesCommand({ InstanceIds: instanceIds }));
+				return "";
+			}
+			if (command === "run-instances") {
+				const imageId = getOpt(options, "image-id");
+				const instanceType = getOpt(options, "instance-type");
+				const keyName = getOpt(options, "key-name");
+				const securityGroupIds = getOptAll(options, "security-group-ids");
+				const subnetId = getOpt(options, "subnet-id");
+				const userDataArg = getOpt(options, "user-data");
+				let userData: string | undefined;
+				if (userDataArg?.startsWith("file://")) {
+					const filePath = userDataArg.replace("file://", "");
+					const raw = fs.readFileSync(filePath, "utf8");
+					userData = Buffer.from(raw, "utf8").toString("base64");
+				}
+				const iamProfile = getOpt(options, "iam-instance-profile");
+				const profileName = iamProfile?.startsWith("Name=") ? iamProfile.slice(5) : iamProfile;
+				const blockDeviceMappings = getOpt(options, "block-device-mappings");
+				const tagSpec = getOpt(options, "tag-specifications");
+				const resp = await client.send(new RunInstancesCommand({
+					ImageId: imageId,
+					InstanceType: instanceType,
+					KeyName: keyName,
+					SecurityGroupIds: securityGroupIds,
+					SubnetId: subnetId,
+					UserData: userData,
+					IamInstanceProfile: profileName ? { Name: profileName } : undefined,
+					...(blockDeviceMappings ? { BlockDeviceMappings: parseBlockDeviceMappings(blockDeviceMappings) } : {}),
+					...(tagSpec ? { TagSpecifications: parseTagSpecifications(tagSpec) } : {}),
+					MinCount: 1,
+					MaxCount: 1,
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("Instances[0].InstanceId")) return asText(resp.Instances?.[0]?.InstanceId);
+				return JSON.stringify(resp);
+			}
+			if (command === "wait") {
+				const waiter = positionals[0];
+				if (waiter !== "instance-running") throw new Error(`Unsupported ec2 wait: ${waiter}`);
+				const instanceIds = getOptAll(options, "instance-ids");
+				await waitUntilInstanceRunning({ client, maxWaitTime: 600 }, { InstanceIds: instanceIds });
+				return "";
+			}
+			if (command === "describe-key-pairs") {
+				const names = getOptAll(options, "key-names");
+				await client.send(new DescribeKeyPairsCommand({ KeyNames: names }));
+				return "";
+			}
+			if (command === "create-key-pair") {
+				const keyName = getOpt(options, "key-name");
+				const resp = await client.send(new CreateKeyPairCommand({ KeyName: keyName }));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("KeyMaterial")) return asText(resp.KeyMaterial);
+				return JSON.stringify(resp);
+			}
+			if (command === "describe-images") {
+				const owners = getOptAll(options, "owners");
+				const imageIds = getOptAll(options, "image-ids");
+				const filters = getOptAll(options, "filters");
+				const resp = await client.send(new DescribeImagesCommand({
+					...(owners.length ? { Owners: owners } : {}),
+					...(imageIds.length ? { ImageIds: imageIds } : {}),
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+				}));
+				const query = (getOpt(options, "query") || "").replace(/^"+|"+$/g, "");
+				if (query.includes("sort_by(Images, &CreationDate)[-1].ImageId")) {
+					const sorted = (resp.Images || []).slice().sort((a, b) => (a.CreationDate || "").localeCompare(b.CreationDate || ""));
+					return asText(sorted[sorted.length - 1]?.ImageId);
+				}
+				if (query.includes("max(Images[0].BlockDeviceMappings")) {
+					const mappings = resp.Images?.[0]?.BlockDeviceMappings || [];
+					const max = mappings
+						.map((m) => m.Ebs?.VolumeSize)
+						.filter((n): n is number => typeof n === "number")
+						.reduce((a, b) => Math.max(a, b), 0);
+					return asText(max || null);
+				}
+				return JSON.stringify(resp.Images ?? []);
+			}
+			if (command === "describe-route-tables") {
+				const filters = getOptAll(options, "filters");
+				const resp = await client.send(new DescribeRouteTablesCommand({
+					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("RouteTables[*].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,NatGatewayId]")) {
+					const out = (resp.RouteTables || []).map((rt) =>
+						(rt.Routes || [])
+							.filter((r) => r.DestinationCidrBlock === "0.0.0.0/0")
+							.map((r) => [r.GatewayId || null, r.NatGatewayId || null])
+					);
+					return JSON.stringify(out);
+				}
+				return JSON.stringify(resp.RouteTables ?? []);
+			}
+			throw new Error(`Unsupported ec2 command: ${command}`);
+		}
+		case "elbv2": {
+			const client = new ElasticLoadBalancingV2Client(getAwsClientConfig(region));
+			if (command === "describe-load-balancers") {
+				const names = getOptAll(options, "names");
+				const arns = getOptAll(options, "load-balancer-arns");
+				const resp = await client.send(new DescribeLoadBalancersCommand({
+					...(names.length ? { Names: names } : {}),
+					...(arns.length ? { LoadBalancerArns: arns } : {}),
+				}));
+				const lb = resp.LoadBalancers?.[0];
+				const query = getOpt(options, "query") || "";
+				if (query.includes("LoadBalancers[0].LoadBalancerArn")) return asText(lb?.LoadBalancerArn);
+				if (query.includes("LoadBalancers[0].DNSName")) return asText(lb?.DNSName);
+				return JSON.stringify(resp.LoadBalancers ?? []);
+			}
+			if (command === "create-load-balancer") {
+				const name = getOpt(options, "name");
+				const type = getOpt(options, "type") as "application" | "network" | "gateway" | undefined;
+				const scheme = getOpt(options, "scheme") as "internet-facing" | "internal" | undefined;
+				const subnets = getOptAll(options, "subnets");
+				const securityGroups = getOptAll(options, "security-groups");
+				const resp = await client.send(new CreateLoadBalancerCommand({
+					Name: name,
+					Type: type,
+					Scheme: scheme,
+					Subnets: subnets,
+					SecurityGroups: securityGroups,
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("LoadBalancers[0].LoadBalancerArn")) return asText(resp.LoadBalancers?.[0]?.LoadBalancerArn);
+				return JSON.stringify(resp);
+			}
+			if (command === "describe-target-groups") {
+				const names = getOptAll(options, "names");
+				const resp = await client.send(new DescribeTargetGroupsCommand({ Names: names }));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("TargetGroups[0].TargetGroupArn")) return asText(resp.TargetGroups?.[0]?.TargetGroupArn);
+				return JSON.stringify(resp.TargetGroups ?? []);
+			}
+			if (command === "create-target-group") {
+				const name = getOpt(options, "name");
+				const protocol = getOpt(options, "protocol") as "HTTP" | "HTTPS" | "TCP" | undefined;
+				const port = getOpt(options, "port");
+				const targetType = getOpt(options, "target-type") as "ip" | "instance" | "lambda" | undefined;
+				const vpcId = getOpt(options, "vpc-id");
+				const healthCheckProtocol = getOpt(options, "health-check-protocol") as "HTTP" | "HTTPS" | undefined;
+				const healthCheckPath = getOpt(options, "health-check-path");
+				const resp = await client.send(new CreateTargetGroupCommand({
+					Name: name,
+					Protocol: protocol,
+					Port: port ? Number(port) : undefined,
+					TargetType: targetType,
+					VpcId: vpcId,
+					HealthCheckProtocol: healthCheckProtocol,
+					HealthCheckPath: healthCheckPath,
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("TargetGroups[0].TargetGroupArn")) return asText(resp.TargetGroups?.[0]?.TargetGroupArn);
+				return JSON.stringify(resp);
+			}
+			if (command === "describe-listeners") {
+				const lbArn = getOpt(options, "load-balancer-arn");
+				const resp = await client.send(new DescribeListenersCommand({ LoadBalancerArn: lbArn }));
+				return JSON.stringify(resp);
+			}
+			if (command === "modify-listener") {
+				const listenerArn = getOpt(options, "listener-arn");
+				const actionsRaw = getOpt(options, "default-actions");
+				const actions = actionsRaw ? [parseAction(actionsRaw)] : [];
+				await client.send(new ModifyListenerCommand({
+					ListenerArn: listenerArn,
+					DefaultActions: actions,
+				}));
+				return "";
+			}
+			if (command === "create-listener") {
+				const lbArn = getOpt(options, "load-balancer-arn");
+				const protocol = getOpt(options, "protocol") as "HTTP" | "HTTPS" | undefined;
+				const port = getOpt(options, "port");
+				const cert = getOpt(options, "certificates");
+				const actionsRaw = getOpt(options, "default-actions");
+				const actions = actionsRaw ? [parseAction(actionsRaw)] : [];
+				const certArn = cert?.startsWith("CertificateArn=") ? cert.slice("CertificateArn=".length) : cert;
+				const resp = await client.send(new CreateListenerCommand({
+					LoadBalancerArn: lbArn,
+					Protocol: protocol,
+					Port: port ? Number(port) : undefined,
+					DefaultActions: actions,
+					...(certArn ? { Certificates: [{ CertificateArn: certArn }] } : {}),
+				}));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("Listeners[0].ListenerArn")) return asText(resp.Listeners?.[0]?.ListenerArn);
+				return JSON.stringify(resp);
+			}
+			if (command === "describe-rules") {
+				const listenerArn = getOpt(options, "listener-arn");
+				const resp = await client.send(new DescribeRulesCommand({ ListenerArn: listenerArn }));
+				return JSON.stringify(resp);
+			}
+			if (command === "modify-rule") {
+				const ruleArn = getOpt(options, "rule-arn");
+				const actionsRaw = getOpt(options, "actions");
+				const actions = actionsRaw ? [parseAction(actionsRaw)] : [];
+				await client.send(new ModifyRuleCommand({ RuleArn: ruleArn, Actions: actions }));
+				return "";
+			}
+			if (command === "create-rule") {
+				const listenerArn = getOpt(options, "listener-arn");
+				const priority = getOpt(options, "priority");
+				const conditionsRaw = getOpt(options, "conditions") || "";
+				const actionsRaw = getOpt(options, "actions") || "";
+				const resp = await client.send(new CreateRuleCommand({
+					ListenerArn: listenerArn,
+					Priority: priority ? Number(priority) : undefined,
+					Conditions: parseConditions(conditionsRaw),
+					Actions: [parseAction(actionsRaw)],
+				}));
+				return JSON.stringify(resp);
+			}
+			if (command === "register-targets") {
+				const tgArn = getOpt(options, "target-group-arn");
+				const targetsRaw = getOpt(options, "targets") || "";
+				await client.send(new RegisterTargetsCommand({
+					TargetGroupArn: tgArn,
+					Targets: parseTargets(targetsRaw),
+				}));
+				return "";
+			}
+			if (command === "deregister-targets") {
+				const tgArn = getOpt(options, "target-group-arn");
+				const targetsRaw = getOpt(options, "targets") || "";
+				await client.send(new DeregisterTargetsCommand({
+					TargetGroupArn: tgArn,
+					Targets: parseTargets(targetsRaw),
+				}));
+				return "";
+			}
+			if (command === "delete-rule") {
+				const ruleArn = getOpt(options, "rule-arn");
+				await client.send(new DeleteRuleCommand({ RuleArn: ruleArn }));
+				return "";
+			}
+			throw new Error(`Unsupported elbv2 command: ${command}`);
+		}
+		case "iam": {
+			const client = new IAMClient(getAwsClientConfig(region));
+			if (command === "get-instance-profile") {
+				const name = getOpt(options, "instance-profile-name");
+				await client.send(new GetInstanceProfileCommand({ InstanceProfileName: name }));
+				return "";
+			}
+			if (command === "create-role") {
+				const roleName = getOpt(options, "role-name");
+				const policyDoc = getOpt(options, "assume-role-policy-document") || "";
+				let policyJson = policyDoc;
+				if (policyDoc.startsWith("file://")) {
+					const filePath = policyDoc.replace("file://", "");
+					policyJson = fs.readFileSync(filePath, "utf8");
+				}
+				await client.send(new CreateRoleCommand({
+					RoleName: roleName,
+					AssumeRolePolicyDocument: policyJson,
+				}));
+				return "";
+			}
+			if (command === "attach-role-policy") {
+				const roleName = getOpt(options, "role-name");
+				const policyArn = getOpt(options, "policy-arn");
+				await client.send(new AttachRolePolicyCommand({ RoleName: roleName, PolicyArn: policyArn }));
+				return "";
+			}
+			if (command === "create-instance-profile") {
+				const name = getOpt(options, "instance-profile-name");
+				await client.send(new CreateInstanceProfileCommand({ InstanceProfileName: name }));
+				return "";
+			}
+			if (command === "add-role-to-instance-profile") {
+				const profile = getOpt(options, "instance-profile-name");
+				const roleName = getOpt(options, "role-name");
+				await client.send(new AddRoleToInstanceProfileCommand({ InstanceProfileName: profile, RoleName: roleName }));
+				return "";
+			}
+			throw new Error(`Unsupported iam command: ${command}`);
+		}
+		case "ssm": {
+			const client = new SSMClient(getAwsClientConfig(region));
+			if (command === "describe-instance-information") {
+				const filtersRaw = getOptAll(options, "filters");
+				const filters = filtersRaw.map((f) => {
+					const kv = parseKeyValueList(f);
+					const key = kv.Key || kv.key;
+					const values = kv.Values ? kv.Values.split(/\s*,\s*/).filter(Boolean) : [];
+					return { Key: key, Values: values };
+				});
+				const resp = await client.send(new DescribeInstanceInformationCommand({ Filters: filters }));
+				const query = getOpt(options, "query") || "";
+				if (query.includes("InstanceInformationList[0].InstanceId")) {
+					return asText(resp.InstanceInformationList?.[0]?.InstanceId);
+				}
+				return JSON.stringify(resp.InstanceInformationList ?? []);
+			}
+			throw new Error(`Unsupported ssm command: ${command}`);
+		}
+		case "rds": {
+			const client = new RDSClient(getAwsClientConfig(region));
+			if (command === "describe-db-subnet-groups") {
+				const name = getOpt(options, "db-subnet-group-name");
+				await client.send(new DescribeDBSubnetGroupsCommand({ DBSubnetGroupName: name }));
+				return "";
+			}
+			if (command === "create-db-subnet-group") {
+				const name = getOpt(options, "db-subnet-group-name");
+				const desc = getOpt(options, "db-subnet-group-description") || "DB subnet group";
+				const subnetIds = getOptAll(options, "subnet-ids");
+				await client.send(new CreateDBSubnetGroupCommand({
+					DBSubnetGroupName: name,
+					DBSubnetGroupDescription: desc,
+					SubnetIds: subnetIds,
+				}));
+				return "";
+			}
+			if (command === "describe-db-instances") {
+				const id = getOpt(options, "db-instance-identifier");
+				const resp = await client.send(new DescribeDBInstancesCommand({ DBInstanceIdentifier: id }));
+				const inst = resp.DBInstances?.[0];
+				const query = getOpt(options, "query") || "";
+				if (query.includes("DBInstances[0].Endpoint.Address")) return asText(inst?.Endpoint?.Address);
+				if (query.includes("DBInstances[0].[DBInstanceStatus,Endpoint.Address]")) {
+					return `${inst?.DBInstanceStatus || "None"} ${inst?.Endpoint?.Address || "None"}`.trim();
+				}
+				return JSON.stringify(resp.DBInstances ?? []);
+			}
+			if (command === "create-db-instance") {
+				const id = getOpt(options, "db-instance-identifier");
+				const cls = getOpt(options, "db-instance-class");
+				const engine = getOpt(options, "engine");
+				const masterUsername = getOpt(options, "master-username");
+				const masterPassword = getOpt(options, "master-user-password");
+				const allocatedStorage = getOpt(options, "allocated-storage");
+				const sgIds = getOptAll(options, "vpc-security-group-ids");
+				const subnetGroup = getOpt(options, "db-subnet-group-name");
+				const publiclyAccessible = Boolean(getOpt(options, "publicly-accessible"));
+				const backupRetention = getOpt(options, "backup-retention-period");
+				const dbName = getOpt(options, "db-name");
+				await client.send(new CreateDBInstanceCommand({
+					DBInstanceIdentifier: id,
+					DBInstanceClass: cls,
+					Engine: engine,
+					MasterUsername: masterUsername,
+					MasterUserPassword: masterPassword,
+					AllocatedStorage: allocatedStorage ? Number(allocatedStorage) : undefined,
+					VpcSecurityGroupIds: sgIds,
+					DBSubnetGroupName: subnetGroup,
+					PubliclyAccessible: publiclyAccessible,
+					BackupRetentionPeriod: backupRetention ? Number(backupRetention) : undefined,
+					...(dbName ? { DBName: dbName } : {}),
+				}));
+				return "";
+			}
+			if (command === "delete-db-instance") {
+				const id = getOpt(options, "db-instance-identifier");
+				const skipFinalSnapshot = !!getOpt(options, "skip-final-snapshot");
+				await client.send(new DeleteDBInstanceCommand({
+					DBInstanceIdentifier: id,
+					SkipFinalSnapshot: skipFinalSnapshot,
+				}));
+				return "";
+			}
+			throw new Error(`Unsupported rds command: ${command}`);
+		}
+		default:
+			throw new Error(`Unsupported AWS service: ${service}`);
+	}
 }
 
 /**

@@ -704,12 +704,13 @@ export function buildEcrDeployScript(params: {
 	region: string;
 	envFileContentBase64: string;
 	mainPort: string;
+	ecrPasswordB64: string;
 }): string {
-	const { ecrRegistry, imageUri, region, envFileContentBase64, mainPort } = params;
+	const { ecrRegistry, imageUri, envFileContentBase64, mainPort, ecrPasswordB64 } = params;
 	return `set -e
 echo "=== Deploying from ECR ==="
 
-aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecrRegistry}
+echo '${ecrPasswordB64}' | base64 -d | docker login --username AWS --password-stdin ${ecrRegistry}
 
 mkdir -p /home/ec2-user/app
 cd /home/ec2-user/app
@@ -744,8 +745,9 @@ export function buildEcrComposeDeployScript(params: {
 	envFileContentBase64: string;
 	composeContent: string;
 	services: { name: string; port: number }[];
+	ecrPasswordB64: string;
 }): string {
-	const { ecrRegistry, ecrRepoName, imageTag, region, envFileContentBase64, composeContent, services } = params;
+	const { ecrRegistry, ecrRepoName, imageTag, envFileContentBase64, composeContent, services, ecrPasswordB64 } = params;
 
 	let modifiedCompose = composeContent;
 	for (const svc of services) {
@@ -761,7 +763,7 @@ export function buildEcrComposeDeployScript(params: {
 	return `set -e
 echo "=== Deploying from ECR (compose) ==="
 
-aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecrRegistry}
+echo '${ecrPasswordB64}' | base64 -d | docker login --username AWS --password-stdin ${ecrRegistry}
 
 mkdir -p /home/ec2-user/app
 cd /home/ec2-user/app

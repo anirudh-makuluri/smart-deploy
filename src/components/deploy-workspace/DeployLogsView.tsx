@@ -261,6 +261,7 @@ export default function DeployLogsView({
 						repoName: repoNameForLogs,
 						serviceName: serviceNameForLogs,
 						deployStatus,
+						displayLimit: 100,
 					} as unknown) as any)}
 			/>
 			</div>

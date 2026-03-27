@@ -11,7 +11,7 @@ import {
 	AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import { ChevronDown, Search, X, Plus, Minus } from "lucide-react";
+import { ChevronDown, Search, X, Plus, Minus, Download } from "lucide-react";
 
 type LogEntry = { timestamp?: string; message?: string };
 
@@ -46,11 +46,13 @@ export default function ServiceLogs({
 	serviceName,
 	repoName,
 	deployStatus,
+	displayLimit,
 }: {
 	logs: LogEntry[];
 	serviceName?: string;
 	repoName?: string;
 	deployStatus?: string;
+	displayLimit?: number;
 	[key: string]: unknown;
 }) {
 
@@ -167,11 +169,16 @@ export default function ServiceLogs({
 		return out;
 	}, [extraHistory, logs]);
 
+	const limitedLogs = React.useMemo(() => {
+		if (!displayLimit || displayLimit <= 0) return combinedLogs;
+		return combinedLogs.slice(-displayLimit);
+	}, [combinedLogs, displayLimit]);
+
 	const filteredLogs = React.useMemo(() => {
 		const includeRules = keywordRules.filter((r) => r.mode === "include");
 		const excludeRules = keywordRules.filter((r) => r.mode === "exclude");
 
-		return combinedLogs.filter((log) => {
+		return limitedLogs.filter((log) => {
 			const msg = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
 			const msgLower = (msg || "").toLowerCase();
 
@@ -198,7 +205,7 @@ export default function ServiceLogs({
 
 			return true;
 		});
-	}, [combinedLogs, logFilter, keywordRules]);
+	}, [limitedLogs, logFilter, keywordRules]);
 
 	const firstErrorIndex = React.useMemo(() => {
 		return filteredLogs.findIndex((log) => {
@@ -206,6 +213,40 @@ export default function ServiceLogs({
 			return getLogType(msg) === "ERROR";
 		});
 	}, [filteredLogs]);
+
+	const handleExportLogs = () => {
+		if (logs.length === 0) return;
+		const exportedAt = new Date();
+		const contextLabel = serviceName || repoName || "deployment";
+		const safeContext = contextLabel.replace(/[^a-zA-Z0-9-_]+/g, "-");
+		const fileName = `smartdeploy-logs-${safeContext}-${exportedAt.toISOString().replace(/[:.]/g, "-")}.txt`;
+
+		const lines = logs.map((log) => {
+			const message = typeof log.message === "string" ? log.message : JSON.stringify(log.message);
+			const type = getLogType(message || "");
+			const time = log.timestamp ? new Date(log.timestamp).toISOString() : "-";
+			return `[${time}] [${type}] ${message || "-"}`;
+		});
+
+		const header = [
+			`SmartDeploy Logs Export`,
+			`Context: ${contextLabel}`,
+			`Exported at: ${exportedAt.toISOString()}`,
+			`Filter: ${logFilter}`,
+			`Total lines: ${logs.length}`,
+			"",
+		];
+
+		const blob = new Blob([header.join("\n") + lines.join("\n")], { type: "text/plain;charset=utf-8" });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.href = url;
+		link.download = fileName;
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		URL.revokeObjectURL(url);
+	};
 
 	const jumpToFirstError = () => {
 		if (firstErrorIndex < 0) return;
@@ -268,6 +309,7 @@ export default function ServiceLogs({
 
 	async function loadMoreOlderLogs() {
 		if (!serviceName) return;
+		if (displayLimit && displayLimit > 0) return;
 		if (!hasMoreHistoryRef.current) return;
 		if (isLoadingHistoryRef.current) return;
 
@@ -335,6 +377,7 @@ export default function ServiceLogs({
 		const viewport = containerRef.current?.querySelector<HTMLDivElement>('[data-slot="scroll-area-viewport"]');
 		if (!viewport) return;
 		if (!serviceName) return;
+		if (displayLimit && displayLimit > 0) return;
 
 		const onScroll = () => {
 			if (viewport.scrollTop <= 20) {
@@ -379,6 +422,20 @@ export default function ServiceLogs({
 					))}
 
 					<div className="ml-auto flex items-center gap-2">
+						<button
+							type="button"
+							className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+								filteredLogs.length > 0
+									? "text-muted-foreground hover:bg-muted/40 border border-transparent"
+									: "text-muted-foreground/50 border border-transparent cursor-not-allowed"
+							}`}
+							onClick={handleExportLogs}
+							disabled={filteredLogs.length === 0}
+							title={filteredLogs.length === 0 ? "No logs to export" : "Export logs"}
+						>
+							<Download className="size-3" />
+							Export
+						</button>
 						{firstErrorIndex >= 0 && (
 							<button
 								type="button"
@@ -555,7 +612,7 @@ export default function ServiceLogs({
 				</div>
 			</ScrollArea>
 
-				{showScrollToBottom && combinedLogs.length > 0 && (
+				{showScrollToBottom && limitedLogs.length > 0 && (
 					<div className="absolute bottom-3 right-3 z-20">
 						<Button
 							type="button"

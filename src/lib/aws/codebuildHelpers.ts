@@ -140,7 +140,9 @@ export async function ensureCodeBuildProject(
 // ─── Buildspec Generation ─────────────────────────────────────────────────
 
 function yamlListEntry(line: string, spaces: number): string {
-	return " ".repeat(spaces) + "- " + line;
+	// Quote commands to avoid YAML parsing issues when the command contains ":" or other special chars.
+	const quoted = JSON.stringify(line);
+	return " ".repeat(spaces) + "- " + quoted;
 }
 
 export function generateBuildspec(params: {
@@ -157,7 +159,7 @@ export function generateBuildspec(params: {
 
 	const preBuildCmds: string[] = [
 		"echo Logging in to Amazon ECR...",
-		`aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${ecrRegistry}`,
+		'if [ -n "$ECR_PASSWORD" ]; then echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin ' + ecrRegistry + '; else echo "Missing ECR_PASSWORD"; exit 1; fi',
 		// When DOCKERHUB_USERNAME + DOCKERHUB_TOKEN are passed as CodeBuild env overrides, authenticate to Docker Hub before docker build (avoids anonymous 429 rate limits).
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
@@ -197,13 +199,17 @@ export function generateBuildspec(params: {
 		for (const svc of services) {
 			const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
 			postBuildCmds.push(
-				`docker tag $(docker-compose images ${svc.name} -q 2>/dev/null || docker images -q "*${svc.name}*" | head -1) ${svcUri} || true`,
-				`docker push ${svcUri} || echo "Warning: could not push ${svc.name}"`,
+				`IMAGE_ID=$(docker-compose images ${svc.name} -q 2>/dev/null | head -1); ` +
+					`if [ -z "$IMAGE_ID" ]; then IMAGE_ID=$(docker images -q --filter "reference=*${svc.name}*" | head -1); fi; ` +
+					`if [ -n "$IMAGE_ID" ]; then docker tag "$IMAGE_ID" "${svcUri}"; docker push "${svcUri}" || echo "Warning: could not push ${svc.name}"; ` +
+					`else echo "Warning: could not find image for ${svc.name}"; fi`,
 			);
 		}
 		postBuildCmds.push(
-			`docker tag $(docker-compose images ${services[0].name} -q 2>/dev/null || docker images -q "*${services[0].name}*" | head -1) ${fullUri} || true`,
-			`docker push ${fullUri}`,
+			`IMAGE_ID=$(docker-compose images ${services[0].name} -q 2>/dev/null | head -1); ` +
+				`if [ -z "$IMAGE_ID" ]; then IMAGE_ID=$(docker images -q --filter "reference=*${services[0].name}*" | head -1); fi; ` +
+				`if [ -n "$IMAGE_ID" ]; then docker tag "$IMAGE_ID" "${fullUri}"; docker push "${fullUri}"; ` +
+				`else echo "Warning: could not find image for ${services[0].name}"; fi`,
 		);
 	} else {
 		const dockerfilePath = services[0]?.dockerfile_path || Object.keys(dockerfiles)[0] || "Dockerfile";
@@ -246,6 +252,7 @@ export async function startBuild(params: {
 	githubToken: string;
 	buildspec: string;
 	envVarsBase64?: string;
+	ecrPassword: string;
 	/** Optional: Docker Hub PAT + user so CodeBuild can pull public bases (e.g. node:20-alpine) without anonymous rate limits. */
 	dockerHub?: { username: string; token: string };
 	send: SendFn;
@@ -259,6 +266,7 @@ export async function startBuild(params: {
 		{ name: "REPO_FULL_NAME", value: params.repoFullName, type: "PLAINTEXT" },
 		{ name: "BRANCH_NAME", value: params.branch, type: "PLAINTEXT" },
 		{ name: "COMMIT_SHA", value: params.commitSha || "", type: "PLAINTEXT" },
+		{ name: "ECR_PASSWORD", value: params.ecrPassword, type: "PLAINTEXT" },
 	];
 
 	if (params.envVarsBase64) {
@@ -294,19 +302,21 @@ export async function waitForBuildAndStreamLogs(params: {
 	const cb = new CodeBuildClient(getAwsClientConfig(region));
 	const cwl = new CloudWatchLogsClient(getAwsClientConfig(region));
 
-	const logStreamName = buildId.split(":").pop()!;
+	let logGroupName: string | undefined = LOG_GROUP;
+	let logStreamName: string | undefined;
 	let nextToken: string | undefined;
 	let logStreamAvailable = false;
+	let sentLogLocation = false;
 	const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "FAULT", "STOPPED", "TIMED_OUT"]);
 
 	while (true) {
-		await new Promise((r) => setTimeout(r, 3000));
+		await new Promise((r) => setTimeout(r, 500));
 
 		// Stream logs from CloudWatch
-		if (!logStreamAvailable) {
+		if (!logStreamAvailable && logStreamName && logGroupName) {
 			try {
 				const resp = await cwl.send(new GetLogEventsCommand({
-					logGroupName: LOG_GROUP,
+					logGroupName,
 					logStreamName,
 					startFromHead: true,
 				}));
@@ -318,10 +328,10 @@ export async function waitForBuildAndStreamLogs(params: {
 			} catch {
 				// Log stream not ready yet
 			}
-		} else {
+		} else if (logStreamName && logGroupName) {
 			try {
 				const resp = await cwl.send(new GetLogEventsCommand({
-					logGroupName: LOG_GROUP,
+					logGroupName,
 					logStreamName,
 					...(nextToken ? { nextToken } : { startFromHead: true }),
 				}));
@@ -342,13 +352,25 @@ export async function waitForBuildAndStreamLogs(params: {
 			const build = buildResp.builds?.[0];
 			if (!build) continue;
 
+			// Prefer log stream/group from the build response when available
+			if (!logStreamName && build.logs?.streamName) logStreamName = build.logs.streamName;
+			if (build.logs?.groupName) logGroupName = build.logs.groupName;
+			if (!sentLogLocation && (build.logs?.deepLink || build.logs?.groupName || build.logs?.streamName)) {
+				const parts: string[] = [];
+				if (build.logs?.groupName) parts.push(`group=${build.logs.groupName}`);
+				if (build.logs?.streamName) parts.push(`stream=${build.logs.streamName}`);
+				if (build.logs?.deepLink) parts.push(`link=${build.logs.deepLink}`);
+				send(`CodeBuild logs: ${parts.join(" | ")}`, "build");
+				sentLogLocation = true;
+			}
+
 			const status = build.buildStatus;
 			if (status && terminalStatuses.has(status)) {
 				// Drain remaining logs
-				if (logStreamAvailable) {
+				if (logStreamAvailable && logStreamName && logGroupName) {
 					try {
 						const finalResp = await cwl.send(new GetLogEventsCommand({
-							logGroupName: LOG_GROUP,
+							logGroupName,
 							logStreamName,
 							...(nextToken ? { nextToken } : {}),
 						}));

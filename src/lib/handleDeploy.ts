@@ -20,7 +20,7 @@ import { handleEC2FromEcr } from "./aws/handleEC2";
 import { createRDSInstance } from "./aws/handleRDS";
 
 // CodeBuild + ECR imports
-import { getAwsAccountId, getEcrRegistry, getEcrImageUri, ensureEcrRepository, ensureEc2EcrPullPolicy } from "./aws/ecrHelpers";
+import { getAwsAccountId, getEcrRegistry, getEcrImageUri, ensureEcrRepository, ensureEc2EcrPullPolicy, getEcrAuthToken } from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
@@ -560,6 +560,9 @@ async function handleAWSCodeBuildDeploy(
 	const accountId = await getAwsAccountId(region);
 	const ecrRegistry = getEcrRegistry(accountId, region);
 	const ecrRepoName = `smartdeploy/${repoName}`;
+	const ecrAuth = await getEcrAuthToken(region);
+	const ecrPassword = ecrAuth.password;
+	const ecrPasswordB64 = Buffer.from(ecrPassword, "utf8").toString("base64");
 
 	send("Setting up ECR and CodeBuild...", "build");
 	await ensureEcrRepository(ecrRepoName, region, send);
@@ -598,6 +601,7 @@ async function handleAWSCodeBuildDeploy(
 		githubToken: token,
 		buildspec,
 		envVarsBase64: envBase64,
+		ecrPassword,
 		dockerHub,
 		send,
 	});
@@ -632,6 +636,7 @@ async function handleAWSCodeBuildDeploy(
 		imageTag,
 		ecrRegistry,
 		ecrRepoName,
+		ecrPasswordB64,
 		multiServiceConfig,
 		ws,
 		send,

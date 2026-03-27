@@ -2,6 +2,7 @@ import {
 	ECRClient,
 	CreateRepositoryCommand,
 	DescribeRepositoriesCommand,
+	GetAuthorizationTokenCommand,
 } from "@aws-sdk/client-ecr";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { IAMClient, AttachRolePolicyCommand } from "@aws-sdk/client-iam";
@@ -59,9 +60,24 @@ export async function ensureEcrRepository(
 	return resp.repository!.repositoryUri!;
 }
 
+export async function getEcrAuthToken(region: string): Promise<{ username: string; password: string }> {
+	const client = new ECRClient(getAwsClientConfig(region));
+	const resp = await client.send(new GetAuthorizationTokenCommand({}));
+	const auth = resp.authorizationData?.[0];
+	const token = auth?.authorizationToken;
+	if (!token) throw new Error("ECR authorization token missing");
+	const decoded = Buffer.from(token, "base64").toString("utf8");
+	const sep = decoded.indexOf(":");
+	if (sep === -1) throw new Error("Invalid ECR auth token format");
+	return {
+		username: decoded.slice(0, sep),
+		password: decoded.slice(sep + 1),
+	};
+}
+
 /**
  * Grants ECR read-only pull access to the EC2 SSM instance role so
- * `aws ecr get-login-password` and `docker pull` work on the instance.
+ * ECR-authenticated `docker pull` works on the instance.
  * Idempotent — attaching a policy that is already attached is a no-op.
  */
 export async function ensureEc2EcrPullPolicy(
