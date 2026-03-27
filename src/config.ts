@@ -21,8 +21,10 @@ const config = {
 	// CodeBuild pipeline: set to "true" to build Docker images via CodeBuild + ECR instead of on the EC2 instance.
 	USE_CODEBUILD: (process.env.USE_CODEBUILD || "true").toLowerCase() === "true",
 
-	// Lets Encrypt (EC2 + nginx)
-	LETSENCRYPT_EMAIL: process.env.LETSENCRYPT_EMAIL || "",
+	// Docker Hub (optional): used during CodeBuild so `docker build` pulls like `node:20-alpine` with your account limits instead of anonymous Hub limits.
+	// Create an access token at https://hub.docker.com/settings/security (read-only is enough for pulls).
+	DOCKERHUB_USERNAME: process.env.DOCKERHUB_USERNAME || "",
+	DOCKERHUB_TOKEN: process.env.DOCKERHUB_TOKEN || "",
 
 	// Deployment domain (for host-based routing with shared ALB)
 	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "anirudh-makuluri.xyz",
@@ -40,16 +42,6 @@ const config = {
 
 	// Supabase Storage bucket for deployed app screenshots
 	DEPLOYMENT_SCREENSHOT_BUCKET: process.env.DEPLOYMENT_SCREENSHOT_BUCKET || "deployment-screenshots",
-
-	// Firebase Configuration (deprecated – migration to Supabase)
-	FIREBASE_API_KEY: process.env.FIREBASE_API_KEY || "",
-	FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN || "",
-	FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",
-	FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET || "",
-	FIREBASE_MESSAGING_SENDER_ID: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
-	FIREBASE_APP_ID: process.env.FIREBASE_APP_ID || "",
-	FIREBASE_MEASUREMENT_ID: process.env.FIREBASE_MEASUREMENT_ID || "",
-	FIREBASE_SERVICE_ACCOUNT_KEY: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || ""
 }
 
 

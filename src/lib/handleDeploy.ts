@@ -574,6 +574,14 @@ async function handleAWSCodeBuildDeploy(
 		scanResults,
 	});
 
+	const dockerHubUser = config.DOCKERHUB_USERNAME?.trim();
+	const dockerHubToken = config.DOCKERHUB_TOKEN?.trim();
+	const dockerHub =
+		dockerHubUser && dockerHubToken ? { username: dockerHubUser, token: dockerHubToken } : undefined;
+	if (!dockerHub && dockerHubUser && !dockerHubToken) {
+		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing — Docker Hub login will be skipped.", "build");
+	}
+
 	const buildId = await startBuild({
 		region,
 		projectName,
@@ -583,6 +591,7 @@ async function handleAWSCodeBuildDeploy(
 		githubToken: token,
 		buildspec,
 		envVarsBase64: envBase64,
+		dockerHub,
 		send,
 	});
 

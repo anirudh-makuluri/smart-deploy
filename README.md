@@ -1,54 +1,44 @@
 # SmartDeploy
 
-**SmartDeploy** is a DevOps-style dashboard built with Next.js. Connect a GitHub account, scan a repository, tune build/run settings and environment variables, and deploy to **AWS (Docker on EC2)** or **Google Cloud Run**. A small **WebSocket worker** runs the long-lived deploy pipeline (clone, Docker, cloud APIs) so the UI can stream logs in real time.
+A DevOps dashboard built with Next.js. Connect your GitHub account, scan a repository, configure build settings and environment variables, and deploy to **AWS EC2** or **Google Cloud Run** — all from a single UI with real-time streaming logs.
 
 ---
 
 ## Features
 
-- **GitHub sign-in** — NextAuth with GitHub and Google OAuth; OAuth token used to clone private repos you can access.
-- **Repo scan & config** — AI-assisted analysis (`/api/llm`) suggests stack, commands, and Dockerfile content; optional **SSE streaming** scan is proxied to **[sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)** on `localhost:8080` (see Architecture).
-- **Two cloud paths** — **AWS**: EC2-based Docker deploy (VPC, optional ALB/custom domain hooks). **GCP**: Cloud Run via `gcloud` (Cloud Build, `us-central1` for the CLI deploy path in code).
-- **Multi-service on GCP** — Multiple services from scan results / compose-style detection can deploy to Cloud Run; **Cloud SQL** can be provisioned when `detectDatabase` finds a supported DB configuration in that flow.
-- **Live deploy logs** — WebSocket worker (`npm run ws`, default port `4001`) streams steps and logs to the UI.
-- **Deployment control** — Start/stop (pause/resume) **AWS EC2** instances for saved deployments via the deployment control API.
-- **Custom hostnames** — Visit links use `https://{service-name}.{NEXT_PUBLIC_DEPLOYMENT_DOMAIN}`; optional **Vercel DNS** API integration to create CNAMEs automatically.
-- **Self-hosted** — Docker Compose (`app` + `websocket`) and EC2 scripts under `scripts/` (including swap for small instances).
+- **GitHub sign-in** — OAuth via NextAuth; your token is used to clone private repos.
+- **AI-powered repo scan** — Gemini (or a local LLM) analyses the repo and suggests a Dockerfile, build commands, and stack info.
+- **AWS EC2 deploys** — Provisions an instance, builds a Docker image (locally or via CodeBuild + ECR), runs the container, and optionally wires up an ALB with HTTPS and custom-domain routing.
+- **Google Cloud Run deploys** — Builds via Cloud Build and deploys to Cloud Run, with multi-service support.
+- **Live deploy logs** — A WebSocket worker runs the pipeline and streams every step to the browser.
+- **Deployment management** — Start, stop, and delete deployments from the dashboard.
+- **Custom domains** — Visit links use `https://{service}.{your-domain}`; optional Vercel DNS integration creates CNAME records automatically.
 
 ---
 
 ## Architecture
 
-| Piece | Role |
-|--------|------|
-| **Next.js app** | UI, REST routes, NextAuth, calls to Gemini/local LLM, proxies streaming scan to `:8080` when used. |
-| **WebSocket server** | `src/websocket-server.ts` — runs deploy jobs, talks to Docker and cloud CLIs/SDKs. Start with `npm run ws` (or the `websocket` service in `docker-compose.yml`). |
-| **[sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)** (optional) | FastAPI analyzer (LangGraph + Amazon Bedrock): streaming scan, feedback, and cache APIs on **port 8080**. Not in this repo’s Compose file — install and run per [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts)’ README. SmartDeploy proxies to it from `src/app/api/scan/stream`, `feedback`, `feedback/stream`, and `cache`. Without it, use the non-streaming LLM flow. |
+| Component | Role |
+|-----------|------|
+| **Next.js app** (port 3000) | Dashboard UI, REST API routes, NextAuth, AI analysis |
+| **WebSocket server** (port 4001) | Long-running deploy worker — clones repos, builds Docker images, calls cloud APIs |
+
+Both run together via `npm run start-all` (dev) or `docker compose up` (production).
 
 ---
 
 ## Tech stack
 
-- **App**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, Radix/shadcn-style UI, TanStack Query, Zustand.
-- **Data**: Supabase (PostgreSQL) for users, deployments, history, cached repo metadata — run `supabase/schema.sql` in the Supabase SQL editor.
-- **Auth**: NextAuth.js — GitHub + Google providers.
-- **AI**: Google **Gemini** (`gemini-2.5-flash`) when `GEMINI_API_KEY` is set; optional **local LLM** via `LOCAL_LLM_BASE_URL` / `LOCAL_LLM_MODEL` (Ollama-compatible JSON API). *(AWS Bedrock helpers exist in code but are not wired into the live LLM route.)*
-- **Cloud**: AWS SDK (EC2, RDS, ELB, SSM, S3, IAM, STS), Google Cloud Run / Cloud Build / logging (via `gcloud` and libraries where used).
-- **Tests**: Vitest (`npm test`), Playwright e2e (`npm run test:e2e`).
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, TanStack Query, Zustand
+- **Database**: Supabase (PostgreSQL)
+- **Auth**: NextAuth.js (GitHub + Google)
+- **AI**: Google Gemini, with optional local LLM (Ollama) and AWS Bedrock fallbacks
+- **Cloud SDKs**: AWS (EC2, ELB, CodeBuild, ECR, SSM, IAM, STS), GCP (Cloud Run, Cloud Build, Logging)
+- **Tests**: Vitest (unit), Playwright (e2e)
 
 ---
 
-## Prerequisites
-
-- **Node.js 20+** (matches `Dockerfile` base image).
-- **Docker** — required on the machine that runs the WebSocket worker for builds and deploys.
-- **GCP path**: `gcloud` CLI installed and usable by the worker, plus `GCP_PROJECT_ID` and `GCP_SERVICE_ACCOUNT_KEY` in `.env`.
-- **AWS path**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and region — see [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) for permission shape (note: the doc mentions some services broadly; the app’s AWS **deploy** path is **EC2-centric**).
-- **Streaming scan in the UI**: [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts) running on **port 8080** (see that repo’s README for Python deps, Supabase cache schema, and Bedrock env vars).
-
----
-
-## Running locally
+## Quick start (local development)
 
 ### 1. Clone
 
@@ -57,39 +47,85 @@ git clone https://github.com/anirudh-makuluri/smart-deploy.git
 cd smart-deploy
 ```
 
-### 2. Install
+### 2. Install dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Environment
+### 3. Set up the database
 
-Copy **`.env.example`** to **`.env`** and fill in at least:
+Create a Supabase project and run the schema migration. See **[docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)** for step-by-step instructions.
 
-- **NextAuth**: `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, GitHub and/or Google OAuth IDs/secrets.
-- **Supabase**: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (after applying `supabase/schema.sql`).
-- **WebSocket**: `NEXT_PUBLIC_WS_URL` (e.g. `ws://localhost:4001` for local dev).
-- **AI (optional but recommended)**: `GEMINI_API_KEY` and/or `LOCAL_LLM_BASE_URL` (+ `LOCAL_LLM_MODEL` if needed).
-- **Cloud**: AWS and/or GCP variables depending on which provider you use.
+### 4. Configure environment variables
 
-For **auto-deploy on push** (GitHub App → worker), see [docs/GITHUB_APP_SETUP.md](docs/GITHUB_APP_SETUP.md) (`GITHUB_APP_*`, `DEPLOY_WORKER_URL`, `DEPLOY_WORKER_SECRET`).
+```bash
+cp .env.example .env
+```
 
-### 4. Start app + worker
+Open `.env` and fill in at least the **required** values. The file is heavily commented — see [`.env.example`](.env.example) for details.
+
+**Minimum for local dev:**
+
+| Variable | Where to get it |
+|----------|----------------|
+| `GITHUB_ID` / `GITHUB_SECRET` | [GitHub OAuth App](https://github.com/settings/developers) |
+| `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase dashboard (Project Settings -> API) |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS IAM (see [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md)) |
+
+### 5. Start the app + worker
 
 ```bash
 npm run start-all
 ```
 
-This runs `next dev` and the WebSocket server together (`concurrently`). Alternatively run `npm run dev` and `npm run ws` in two terminals.
-
-### 5. Production-like stack (Docker)
+This runs `next dev` (port 3000) and the WebSocket server (port 4001) together. Alternatively, run them separately:
 
 ```bash
-docker compose up --build
+npm run dev    # terminal 1
+npm run ws     # terminal 2
 ```
 
-Ensure `.env` is complete; the worker container expects access to **Docker** (see `docker-compose.yml` — `websocket` mounts `docker.sock`).
+Open [http://localhost:3000](http://localhost:3000), sign in with GitHub, and deploy a repo.
+
+---
+
+## Production deployment (Docker Compose)
+
+```bash
+cp .env.example .env
+# fill in all values
+
+docker compose up --build -d
+```
+
+The Compose file starts two containers (`app` on port 3000, `websocket` on port 4001). The worker container mounts `docker.sock` to build images on the host.
+
+To deploy SmartDeploy itself on an EC2 instance with Nginx and SSL, see **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+
+---
+
+## Cloud provider setup
+
+| Provider | Guide |
+|----------|-------|
+| **AWS** (EC2 deployments) | [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) |
+| **GCP** (Cloud Run deployments) | [docs/GCP_SETUP.md](docs/GCP_SETUP.md) |
+
+You only need to set up the provider(s) you plan to deploy to.
+
+---
+
+## Additional guides
+
+| Topic | Guide |
+|-------|-------|
+| Database (Supabase) | [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) |
+| Custom domains & DNS | [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md) |
+| Self-hosting on EC2 | [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) |
+| SSL certificates | [scripts/README-SSL.md](scripts/README-SSL.md) |
 
 ---
 
@@ -100,50 +136,33 @@ Ensure `.env` is complete; the worker container expects access to **Docker** (se
 | `npm run dev` | Next.js dev server |
 | `npm run build` / `npm start` | Production build / server |
 | `npm run ws` | WebSocket deploy worker |
-| `npm run start-all` | Dev + worker |
+| `npm run start-all` | Dev server + worker (concurrently) |
 | `npm run lint` | ESLint |
 | `npm test` | Vitest unit tests |
-| `npm run test:e2e` | Playwright (starts dev server via config) |
+| `npm run test:e2e` | Playwright end-to-end tests |
+
+See [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) for the shell scripts under `scripts/` (deploy, update, SSL, logs, status).
 
 ---
 
-## Managed databases
+## Environment variables reference
 
-- **GCP (multi-service Cloud Run path)**: If the multi-service deploy detects a database via `detectDatabase`, the worker can create **Cloud SQL** and wire connection strings into deploy steps.
-- **AWS**: The deploy pipeline includes an **RDS** step when a DB config is present; in the current **single-service EC2** entry in `handleDeploy`, DB config is not populated, so automatic RDS from that path is **not** active until wired — the **RDS helpers** remain in the codebase for future or custom integration.
+All variables are documented in [`.env.example`](.env.example). Here's a summary grouped by category:
 
-For connection-string formats and behavior, prefer reading `src/lib/handleDatabaseDeploy.ts`, `src/lib/aws/handleRDS.ts`, and `src/lib/databaseDetector.ts`.
-
----
-
-## AI & scan UX
-
-- **One-shot analysis**: `POST /api/llm` returns JSON-oriented deployment hints using Gemini (then optional local LLM fallback).
-- **Failure hints**: `POST /api/llm/analyze-failure` summarizes failed deploy logs.
-- **sd-artifacts integration**: `/api/scan/stream` → `POST /analyze/stream`; `/api/feedback` and `/api/feedback/stream` → `POST /feedback` and `/feedback/stream`; `/api/cache` → `DELETE /cache`. These routes use **`http://localhost:8080`** in code today (match sd-artifacts’ `PORT`).
-- Start sd-artifacts locally per its README (`python app.py`, `PORT=8080`) or rely on the LLM route for analysis without streaming.
-- Scan results can include **Hadolint-style Dockerfile feedback** when the payload includes `hadolint_results` (from sd-artifacts’ verification step).
-
----
-
-## Custom domains & Vercel DNS
-
-“Visit” URLs use `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`. If `VERCEL_TOKEN` (and domain settings) are set, the app can create/update **CNAME** records via Vercel’s API. Otherwise add DNS manually at your provider. Targets are the actual deploy endpoints (e.g. Cloud Run URLs, EC2/ALB hostnames), not legacy Amplify-specific flows.
+| Category | Variables | Required |
+|----------|-----------|----------|
+| **Auth** | `GITHUB_ID`, `GITHUB_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | GitHub + NextAuth yes |
+| **Database** | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Yes |
+| **WebSocket** | `NEXT_PUBLIC_WS_URL`, `WS_PORT` | URL yes |
+| **AI** | `GEMINI_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `BEDROCK_MODEL_ID` | At least one |
+| **AWS** | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_ACM_CERTIFICATE_ARN`, `USE_CODEBUILD`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | If using AWS |
+| **AWS Bedrock** | `AWS_BEDROCK_ACCESS_KEY_ID`, `AWS_BEDROCK_SECRET_ACCESS_KEY` | If using Bedrock |
+| **GCP** | `GCP_PROJECT_ID`, `GCP_SERVICE_ACCOUNT_KEY` | If using GCP |
+| **Domains** | `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`, `VERCEL_TOKEN`, `VERCEL_DOMAIN` | Domain yes |
+| **Misc** | `ENVIRONMENT`, `NODE_MAX_OLD_SPACE_SIZE`, `DEPLOYMENT_SCREENSHOT_BUCKET` | No |
 
 ---
 
-## Self-hosting on small EC2 (e.g. t3.micro)
+## License
 
-Low-RAM instances need **swap** for `next build`. See **[docs/T3_MICRO.md](docs/T3_MICRO.md)** (`scripts/setup-swap.sh`, `scripts/deploy.sh`, `scripts/update.sh`).
-
----
-
-## Documentation
-
-| Doc | Topic |
-|-----|--------|
-| [sd-artifacts](https://github.com/anirudh-makuluri/sd-artifacts) (external) | Streaming repo analysis, Bedrock/LangGraph pipeline, `/analyze/stream`, cache API |
-| [docs/GITHUB_APP_SETUP.md](docs/GITHUB_APP_SETUP.md) | GitHub App, webhooks, auto-deploy, worker secret |
-| [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md) | AWS IAM permissions for deploy |
-| [docs/T3_MICRO.md](docs/T3_MICRO.md) | Swap and EC2 sizing for builds |
-| [scripts/README-SSL.md](scripts/README-SSL.md) | SSL-related scripts (if used in your setup) |
+MIT

@@ -826,7 +826,7 @@ systemctl enable --now amazon-ssm-agent 2>/dev/null || true
 yum clean all
 rm -rf /var/cache/yum/*
 
-AVAILABLE=$(df / | tail -1 | awk '{print \\$4}')
+AVAILABLE=$(df / | tail -1 | awk '{print $4}')
 AVAILABLE_MB=$((AVAILABLE / 1024))
 if [ $AVAILABLE_MB -gt 1200 ]; then
     dd if=/dev/zero of=/swapfile bs=1M count=1024

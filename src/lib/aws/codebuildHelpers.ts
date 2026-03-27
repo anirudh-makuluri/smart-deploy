@@ -158,6 +158,8 @@ export function generateBuildspec(params: {
 	const preBuildCmds: string[] = [
 		"echo Logging in to Amazon ECR...",
 		`aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin ${ecrRegistry}`,
+		// When DOCKERHUB_USERNAME + DOCKERHUB_TOKEN are passed as CodeBuild env overrides, authenticate to Docker Hub before docker build (avoids anonymous 429 rate limits).
+		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
 		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
 		"cd src",
@@ -244,6 +246,8 @@ export async function startBuild(params: {
 	githubToken: string;
 	buildspec: string;
 	envVarsBase64?: string;
+	/** Optional: Docker Hub PAT + user so CodeBuild can pull public bases (e.g. node:20-alpine) without anonymous rate limits. */
+	dockerHub?: { username: string; token: string };
 	send: SendFn;
 }): Promise<string> {
 	const cb = new CodeBuildClient(getAwsClientConfig(params.region));
@@ -259,6 +263,13 @@ export async function startBuild(params: {
 
 	if (params.envVarsBase64) {
 		envOverrides.push({ name: "APP_ENV_VARS_B64", value: params.envVarsBase64, type: "PLAINTEXT" });
+	}
+
+	if (params.dockerHub?.username && params.dockerHub?.token) {
+		envOverrides.push(
+			{ name: "DOCKERHUB_USERNAME", value: params.dockerHub.username, type: "PLAINTEXT" },
+			{ name: "DOCKERHUB_TOKEN", value: params.dockerHub.token, type: "PLAINTEXT" },
+		);
 	}
 
 	const resp = await cb.send(new StartBuildCommand({

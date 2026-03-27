@@ -687,6 +687,15 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 			const errorMsg = e.message ?? String(e);
 			const sanitized = sanitizeConsoleOutput(errorMsg.replace(/[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF]/g, ""));
 
+			// Fail fast on explicit user-data/cloud-init script failures instead of continuing the polling loop.
+			if (
+				cloudInitFailureDetected ||
+				errorMsg.includes("Deployment failed during instance initialization (Cloud-init error)") ||
+				errorMsg.includes("Deployment did not complete successfully")
+			) {
+				throw e instanceof Error ? e : new Error(sanitized);
+			}
+
 			if (errorMsg.includes("charmap") || errorMsg.includes("codec") || errorMsg.includes("encode")) {
 				if (!encodingErrorShown) {
 					send(`Note: Console output encoding issue detected (Windows compatibility). Continuing...`, "deploy");
