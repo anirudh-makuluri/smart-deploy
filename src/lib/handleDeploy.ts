@@ -46,6 +46,13 @@ export async function handleDeploy(
 	}
 ): Promise<string> {
 	const deployStartTime = Date.now();
+	const dockerfileCount = Object.keys(deployConfig.scan_results?.dockerfiles || {}).length;
+	if (dockerfileCount < 1) {
+		throw new Error("Deployment requires at least one Dockerfile in scan results.");
+	}
+	if (!deployConfig.scan_results?.nginx_conf?.trim()) {
+		throw new Error("Deployment requires nginx.conf in scan results.");
+	}
 
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];

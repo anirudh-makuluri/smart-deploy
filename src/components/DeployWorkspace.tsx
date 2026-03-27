@@ -11,7 +11,7 @@ import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useD
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
-import { configSnapshotFromDeployConfig, normalizeRepoUrl } from "@/lib/utils";
+import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { branchNamesFromRepo, resolveWorkspaceBranch } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
@@ -117,6 +117,7 @@ export default function DeployWorkspace() {
 	const [scanResults, setScanResults] = React.useState<SDArtifactsResponse | null>(null);
 	const [scanStartTime, setScanStartTime] = React.useState<number>(0);
 	const [scanDuration, setScanDuration] = React.useState<number>(0);
+	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 
@@ -366,6 +367,14 @@ export default function DeployWorkspace() {
 		() => Boolean(deployment?.scan_results || scanResults),
 		[deployment?.scan_results, scanResults]
 	);
+	const effectiveScanResults = React.useMemo(
+		() => (scanResults || deployment?.scan_results || null),
+		[scanResults, deployment?.scan_results]
+	);
+	const deployDisabled = React.useMemo(
+		() => isDeploymentDisabled({ ...(workingDeployment || {}), scan_results: effectiveScanResults } as DeployConfig),
+		[workingDeployment, effectiveScanResults]
+	);
 
 	const isDraft = React.useMemo(
 		() => !deployment || effectiveDeploymentStatus === "didnt_deploy",
@@ -377,9 +386,14 @@ export default function DeployWorkspace() {
 		if (!token || !workingDeployment || !repo) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
+		if (deployDisabled) {
+			toast.error("Deployment requires at least one Dockerfile and nginx.conf.");
+			return;
+		}
 
 		const payload: DeployConfig = {
 			...workingDeployment,
+			scan_results: effectiveScanResults || workingDeployment.scan_results,
 			...(commitSha && { commitSha }),
 		};
 
@@ -426,6 +440,52 @@ export default function DeployWorkspace() {
 		setScanStartTime(Date.now());
 		setScanMode("scanning");
 		setActiveSection("scan");
+	}
+
+	async function prefillScanFromRepo() {
+		if (!workingDeployment?.url) return;
+
+		setIsPrefillingScan(true);
+		try {
+			const res = await fetch("/api/repos/prefill-infra", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					url: workingDeployment.url,
+					branch: workingDeployment.branch,
+					...(analyzeServicePath && { package_path: analyzeServicePath }),
+				}),
+			});
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data?.error || data?.details || "Failed to prefill infrastructure files");
+			}
+
+			if (!data?.found || !data?.results) {
+				toast.info("No existing Dockerfiles or compose files were found in the repository.");
+				return;
+			}
+
+			if (data?.branch && data.branch !== workingDeployment.branch) {
+				await updateDeploymentById({
+					repo_name: workingDeployment.repo_name,
+					service_name: workingDeployment.service_name,
+					branch: data.branch,
+				});
+			}
+
+			setScanDuration(0);
+			setScanResults(data.results);
+			setScanMode("results");
+			await onScanComplete(data.results);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to prefill infrastructure";
+			console.error("Prefill infrastructure error:", err);
+			toast.error(message);
+		} finally {
+			setIsPrefillingScan(false);
+		}
 	}
 
 	function onStartImproveScan(payload: FeedbackProgressPayload) {
@@ -477,7 +537,7 @@ export default function DeployWorkspace() {
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<PostScanResults
-								results={(scanResults || deployment?.scan_results) as SDArtifactsResponse}
+								results={effectiveScanResults as SDArtifactsResponse}
 								onUpdateResults={(updated) => {
 									setScanResults(updated);
 									onScanComplete(updated);
@@ -505,10 +565,21 @@ export default function DeployWorkspace() {
 								</p>
 							</div>
 							<div className="pt-4">
-								<Button size="lg" onClick={startScan} className="px-8 font-bold gap-2">
-									<Rocket className="size-5" />
-									Start Smart Analysis
-								</Button>
+								<div className="flex flex-wrap items-center justify-center gap-3">
+									<Button size="lg" onClick={startScan} className="px-8 font-bold gap-2">
+										<Rocket className="size-5" />
+										Start Smart Analysis
+									</Button>
+									<Button
+										size="lg"
+										variant="outline"
+										onClick={prefillScanFromRepo}
+										disabled={isPrefillingScan}
+										className="px-8 font-bold gap-2"
+									>
+										{isPrefillingScan ? "Checking Repository..." : "Use Existing Repo Files"}
+									</Button>
+								</div>
 							</div>
 							<div className="grid grid-cols-3 gap-4 pt-8 border-t border-border/50">
 								<div className="flex flex-col items-center gap-2">
@@ -650,18 +721,18 @@ export default function DeployWorkspace() {
 					<div className="flex items-center gap-3">
 						<div className="relative group">
 							<Button
-								disabled={!hasScanResults || isDeploying}
+								disabled={!hasScanResults || isDeploying || deployDisabled}
 								onClick={() => handleDeploy()}
 								className="h-9 px-6 font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden"
-								title={!hasScanResults ? "Run smart scan first" : ""}
+								title={!hasScanResults ? "Run smart scan first" : (deployDisabled ? "At least one Dockerfile and nginx.conf are required" : "")}
 							>
 								<Rocket className="size-4 relative z-10" />
 								<span className="relative z-10">Deploy</span>
 							</Button>
-							{!hasScanResults && (
+							{(!hasScanResults || deployDisabled) && (
 								<div className="absolute top-full right-0 mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
 									<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20">
-										Run smart scan first
+										{!hasScanResults ? "Run smart scan first" : "Need Dockerfile and nginx.conf"}
 									</div>
 								</div>
 							)}

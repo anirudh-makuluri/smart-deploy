@@ -297,9 +297,8 @@ export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 	if (!deployment) return true;
 
 	const scanResults = deployment.scan_results;
-	const hasInfrastructure =
-		(!!(scanResults?.dockerfiles && Object.keys(scanResults.dockerfiles).length > 0)) ||
-		!!scanResults?.has_existing_dockerfiles;
+	const hasDockerfile = !!(scanResults?.dockerfiles && Object.keys(scanResults.dockerfiles).length > 0);
+	const hasNginxConf = !!scanResults?.nginx_conf?.trim();
 
-	return !hasInfrastructure;
+	return !(hasDockerfile && hasNginxConf);
 }

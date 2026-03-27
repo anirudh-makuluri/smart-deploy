@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { DeployConfig, SDArtifactsResponse, repoType } from "@/app/types";
+import { DeployConfig, SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,13 +14,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Server, Rocket, Clock, Database, Share2, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw, FolderGit2 } from "lucide-react";
+import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Clock, Database, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw, FolderGit2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
 	canonicalDockerfileDeployPath,
 	isValidRepoRelativeDockerfilePath,
 	syncDockerfilePathInCompose,
 } from "@/lib/dockerfileDeployPath";
+
+type AddFileType = "dockerfile" | "compose";
 
 type PostScanResultsProps = {
 	results: SDArtifactsResponse;
@@ -32,7 +34,7 @@ type PostScanResultsProps = {
 	onStartImproveScan?: (payload: { repoUrl: string; commitSha?: string; feedback: string }) => void;
 };
 
-export default function PostScanResults({ results, scanTime, deployment, onStartDeployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
+export default function PostScanResults({ results, scanTime, deployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
 	const dockerfileNames = useMemo(() => {
 		if (!results.dockerfiles) return [];
 		return Object.keys(results.dockerfiles).sort((a, b) =>
@@ -45,6 +47,10 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 	const [editContent, setEditContent] = useState("");
 	const [deployPathDraft, setDeployPathDraft] = useState("");
 	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
+	const [addFileDialogOpen, setAddFileDialogOpen] = useState(false);
+	const [addFileType, setAddFileType] = useState<AddFileType>("dockerfile");
+	const [addFilePath, setAddFilePath] = useState("");
+	const [addFileContent, setAddFileContent] = useState("");
 	const [userFeedback, setUserFeedback] = useState("");
 	const [serviceDrafts, setServiceDrafts] = useState<Array<{ build_context: string; port: string }>>([]);
 	const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
@@ -105,6 +111,10 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 
 	const handleDelete = () => {
 		if (!onUpdateResults) return;
+		if (activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.length <= 1) {
+			toast.error("At least one Dockerfile is required. Add another Dockerfile before deleting this one.");
+			return;
+		}
 
 		const updatedResults = { ...results };
 		let nextTab = "";
@@ -132,6 +142,55 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 		onUpdateResults(updatedResults);
 		setActiveTab(nextTab);
 		toast.success("File deleted successfully");
+	};
+
+	const resetAddFileForm = () => {
+		setAddFileType("dockerfile");
+		setAddFilePath("");
+		setAddFileContent("");
+	};
+
+	const handleAddFile = () => {
+		if (!onUpdateResults) return;
+
+		const updatedResults: SDArtifactsResponse = {
+			...results,
+			dockerfiles: { ...(results.dockerfiles || {}) },
+		};
+
+		if (addFileType === "compose") {
+			if (results.docker_compose?.trim()) {
+				toast.error("A compose file already exists. Delete it first if you want to replace it.");
+				return;
+			}
+
+			updatedResults.docker_compose = addFileContent;
+			onUpdateResults(updatedResults);
+			setActiveTab("compose");
+			setAddFileDialogOpen(false);
+			resetAddFileForm();
+			toast.success("Compose file added successfully");
+			return;
+		}
+
+		const rawPath = addFilePath.trim();
+		if (!isValidRepoRelativeDockerfilePath(rawPath)) {
+			toast.error("Invalid Dockerfile path: use a repo-relative path like client/Dockerfile.");
+			return;
+		}
+
+		const dockerfilePath = canonicalDockerfileDeployPath(rawPath);
+		if (updatedResults.dockerfiles[dockerfilePath] !== undefined) {
+			toast.error(`A Dockerfile already exists at ${dockerfilePath}.`);
+			return;
+		}
+
+		updatedResults.dockerfiles[dockerfilePath] = addFileContent;
+		onUpdateResults(updatedResults);
+		setActiveTab(dockerfilePath);
+		setAddFileDialogOpen(false);
+		resetAddFileForm();
+		toast.success("Dockerfile added successfully");
 	};
 
 	const copyToClipboard = (text: string) => {
@@ -337,6 +396,98 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 						>
 							<RefreshCw className="size-4" />
 							Improve
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			<AlertDialog
+				open={addFileDialogOpen}
+				onOpenChange={(open) => {
+					setAddFileDialogOpen(open);
+					if (!open) resetAddFileForm();
+				}}
+			>
+				<AlertDialogContent className="bg-[#0a0a0f] border-white/5 max-w-lg shadow-2xl backdrop-blur-xl">
+					<AlertDialogHeader>
+						<AlertDialogTitle className="text-xl font-bold text-white tracking-tight">
+							Add Infrastructure File
+						</AlertDialogTitle>
+						<AlertDialogDescription className="text-muted-foreground/80 text-sm leading-relaxed text-left">
+							Choose whether the new file is a Dockerfile or a compose file so SmartDeploy can store and use it correctly.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<div className="py-3 space-y-4">
+						<div>
+							<p className="text-xs font-medium text-muted-foreground block mb-2">File type</p>
+							<div className="grid grid-cols-2 gap-2">
+								<Button
+									type="button"
+									variant={addFileType === "dockerfile" ? "default" : "outline"}
+									className={addFileType === "dockerfile" ? "justify-start" : "justify-start border-white/10 bg-white/5 hover:bg-white/10 text-white"}
+									onClick={() => setAddFileType("dockerfile")}
+								>
+									Dockerfile
+								</Button>
+								<Button
+									type="button"
+									variant={addFileType === "compose" ? "default" : "outline"}
+									className={addFileType === "compose" ? "justify-start" : "justify-start border-white/10 bg-white/5 hover:bg-white/10 text-white"}
+									onClick={() => setAddFileType("compose")}
+								>
+									Compose
+								</Button>
+							</div>
+						</div>
+
+						{addFileType === "dockerfile" ? (
+							<div>
+								<label htmlFor="new-dockerfile-path" className="text-xs font-medium text-muted-foreground block mb-2">
+									Dockerfile path
+								</label>
+								<Input
+									id="new-dockerfile-path"
+									placeholder="client/Dockerfile"
+									value={addFilePath}
+									onChange={(e) => setAddFilePath(e.target.value)}
+									className="font-mono bg-white/5 border-white/10 text-foreground placeholder:text-muted-foreground/50"
+									spellCheck={false}
+									autoComplete="off"
+								/>
+							</div>
+						) : (
+							<div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+								<p className="text-xs text-muted-foreground/80">
+									Compose files are stored as <span className="font-mono text-white/70">docker-compose.yml</span>.
+								</p>
+							</div>
+						)}
+
+						<div>
+							<label htmlFor="new-file-content" className="text-xs font-medium text-muted-foreground block mb-2">
+								File content
+							</label>
+							<Textarea
+								id="new-file-content"
+								placeholder={addFileType === "compose" ? "services:\n  app:\n    build: ." : "FROM node:20-alpine"}
+								value={addFileContent}
+								onChange={(e) => setAddFileContent(e.target.value)}
+								className="min-h-40 resize-y bg-white/5 border-white/10 text-foreground placeholder:text-muted-foreground/50 font-mono"
+								spellCheck={false}
+							/>
+						</div>
+					</div>
+					<AlertDialogFooter className="mt-4 gap-3 flex flex-row items-center justify-end">
+						<AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-white h-10 px-4 rounded-lg font-medium m-0">
+							Cancel
+						</AlertDialogCancel>
+						<Button
+							onClick={handleAddFile}
+							disabled={!onUpdateResults || !addFileContent.trim() || (addFileType === "dockerfile" && !addFilePath.trim())}
+							className="h-10 px-6 rounded-lg font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg flex items-center gap-2"
+						>
+							<Plus className="size-4" />
+							Add file
 						</Button>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -584,6 +735,10 @@ export default function PostScanResults({ results, scanTime, deployment, onStart
 								</Button>
 							) : (
 								<div className="flex items-center gap-2">
+									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => setAddFileDialogOpen(true)}>
+										<Plus className="size-3.5 mr-2" />
+										Add File
+									</Button>
 									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
 										<Edit2 className="size-3.5 mr-2" />
 										Modify File
