@@ -5,7 +5,7 @@ import config from "../../config";
 import { createWebSocketLogger } from "../websocketLogger";
 import { getAwsClientConfig } from "./sdkClients";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand, BucketLocationConstraint } from "@aws-sdk/client-s3";
 import {
 	EC2Client,
 	DescribeVpcsCommand,
@@ -16,10 +16,13 @@ import {
 	CreateSecurityGroupCommand,
 	AuthorizeSecurityGroupIngressCommand,
 	DescribeInstancesCommand,
-	ModifyInstanceAttributeCommand,
+	AssociateIamInstanceProfileCommand,
+	DescribeIamInstanceProfileAssociationsCommand,
+	ReplaceIamInstanceProfileAssociationCommand,
 	RebootInstancesCommand,
 	TerminateInstancesCommand,
 	RunInstancesCommand,
+	ResourceType,
 	DescribeKeyPairsCommand,
 	CreateKeyPairCommand,
 	DescribeImagesCommand,
@@ -28,6 +31,10 @@ import {
 } from "@aws-sdk/client-ec2";
 import {
 	ElasticLoadBalancingV2Client,
+	Action,
+	ActionTypeEnum,
+	TargetDescription,
+	RedirectActionStatusCodeEnum,
 	DescribeLoadBalancersCommand,
 	CreateLoadBalancerCommand,
 	DescribeTargetGroupsCommand,
@@ -255,25 +262,29 @@ function parseIpPermissions(raw: string): Array<{
 	return [perm];
 }
 
-function parseTargets(raw: string): Array<{ Id?: string; Port?: number }> {
+function parseTargets(raw: string): TargetDescription[] {
 	const kv = parseKeyValueList(raw);
+	if (!kv.Id) return [];
 	return [{
 		Id: kv.Id,
 		Port: kv.Port ? Number(kv.Port) : undefined,
 	}];
 }
 
-function parseAction(raw: string): { Type: string; TargetGroupArn?: string; FixedResponseConfig?: any; RedirectConfig?: any } {
-	const type = /Type=([^,]+)/.exec(raw)?.[1] || "forward";
-	if (type === "forward") {
+function parseAction(raw: string): Action {
+	const typeRaw = /Type=([^,]+)/.exec(raw)?.[1] || "forward";
+	const type = (typeRaw === "redirect" ? ActionTypeEnum.REDIRECT
+		: typeRaw === "fixed-response" ? ActionTypeEnum.FIXED_RESPONSE
+		: ActionTypeEnum.FORWARD);
+	if (type === ActionTypeEnum.FORWARD) {
 		const tga = /TargetGroupArn=([^,]+)/.exec(raw)?.[1];
-		return { Type: "forward", TargetGroupArn: tga };
+		return { Type: ActionTypeEnum.FORWARD, TargetGroupArn: tga };
 	}
-	if (type === "fixed-response") {
+	if (type === ActionTypeEnum.FIXED_RESPONSE) {
 		const cfgRaw = /FixedResponseConfig=\{([^}]+)\}/.exec(raw)?.[1] || "";
 		const kv = parseKeyValueList(cfgRaw);
 		return {
-			Type: "fixed-response",
+			Type: ActionTypeEnum.FIXED_RESPONSE,
 			FixedResponseConfig: {
 				StatusCode: kv.StatusCode,
 				ContentType: kv.ContentType,
@@ -281,15 +292,15 @@ function parseAction(raw: string): { Type: string; TargetGroupArn?: string; Fixe
 			},
 		};
 	}
-	if (type === "redirect") {
+	if (type === ActionTypeEnum.REDIRECT) {
 		const cfgRaw = /RedirectConfig=\{([^}]+)\}/.exec(raw)?.[1] || "";
 		const kv = parseKeyValueList(cfgRaw);
 		return {
-			Type: "redirect",
+			Type: ActionTypeEnum.REDIRECT,
 			RedirectConfig: {
 				Protocol: kv.Protocol,
 				Port: kv.Port,
-				StatusCode: kv.StatusCode,
+				StatusCode: kv.StatusCode as RedirectActionStatusCodeEnum,
 			},
 		};
 	}
@@ -306,8 +317,8 @@ function parseConditions(raw: string): Array<{ Field?: string; HostHeaderConfig?
 	return [{ Field: field }];
 }
 
-function parseTagSpecifications(raw: string): Array<{ ResourceType: string; Tags: Array<{ Key: string; Value: string }> }> {
-	const resourceType = /ResourceType=([^,]+)/.exec(raw)?.[1] || "instance";
+function parseTagSpecifications(raw: string): Array<{ ResourceType: ResourceType; Tags: Array<{ Key: string; Value: string }> }> {
+	const resourceType = (/ResourceType=([^,]+)/.exec(raw)?.[1] || "instance") as ResourceType;
 	const tagsRaw = /Tags=\[([^\]]+)\]/.exec(raw)?.[1] || "";
 	const tags: Array<{ Key: string; Value: string }> = [];
 	const re = /\{Key=([^,}]+),Value=([^}]+)\}/g;
@@ -373,7 +384,9 @@ export async function runAWSCommand(
 				const location = cfgRaw?.includes("LocationConstraint=") ? cfgRaw.split("LocationConstraint=")[1] : undefined;
 				await client.send(new CreateBucketCommand({
 					Bucket: bucket,
-					...(location && location !== "us-east-1" ? { CreateBucketConfiguration: { LocationConstraint: location } } : {}),
+					...(location && location !== "us-east-1"
+						? { CreateBucketConfiguration: { LocationConstraint: location as BucketLocationConstraint } }
+						: {}),
 				}));
 				return "";
 			}
@@ -504,10 +517,23 @@ export async function runAWSCommand(
 				const instanceId = getOpt(options, "instance-id");
 				const iamProfile = getOpt(options, "iam-instance-profile");
 				const name = iamProfile?.startsWith("Name=") ? iamProfile.slice(5) : iamProfile;
-				await client.send(new ModifyInstanceAttributeCommand({
-					InstanceId: instanceId,
-					IamInstanceProfile: name ? { Name: name } : undefined,
+				if (!instanceId || !name) return "";
+
+				const assoc = await client.send(new DescribeIamInstanceProfileAssociationsCommand({
+					Filters: [{ Name: "instance-id", Values: [instanceId] }],
 				}));
+				const associationId = assoc.IamInstanceProfileAssociations?.[0]?.AssociationId;
+				if (associationId) {
+					await client.send(new ReplaceIamInstanceProfileAssociationCommand({
+						AssociationId: associationId,
+						IamInstanceProfile: { Name: name },
+					}));
+				} else {
+					await client.send(new AssociateIamInstanceProfileCommand({
+						InstanceId: instanceId,
+						IamInstanceProfile: { Name: name },
+					}));
+				}
 				return "";
 			}
 			if (command === "reboot-instances") {
@@ -539,7 +565,7 @@ export async function runAWSCommand(
 				const tagSpec = getOpt(options, "tag-specifications");
 				const resp = await client.send(new RunInstancesCommand({
 					ImageId: imageId,
-					InstanceType: instanceType,
+					InstanceType: instanceType as any,
 					KeyName: keyName,
 					SecurityGroupIds: securityGroupIds,
 					SubnetId: subnetId,
