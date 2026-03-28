@@ -27,6 +27,8 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 	return p;
 }
 
+type WorkspaceDeployState = "idle" | "running" | "success" | "error";
+
 export default function DeployWorkspace() {
 	const deployments = useAppData((s) => s.deployments);
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
@@ -111,6 +113,8 @@ export default function DeployWorkspace() {
 		"not-started" | "running" | "success" | "error" | undefined
 	>(undefined);
 	const [elapsedTime, setElapsedTime] = React.useState(0);
+	const initialTitleRef = React.useRef<string | null>(null);
+	const initialIconHrefRef = React.useRef<string | null>(null);
 
 	// Scan state
 	const [scanMode, setScanMode] = React.useState<"idle" | "scanning" | "results">("idle");
@@ -161,6 +165,66 @@ export default function DeployWorkspace() {
 		deployStatus === "running" ? "running" :
 			deployStatus === "success" ? "success" :
 				deployStatus === "error" ? "error" : "not-started";
+
+	const workspaceDeployState = React.useMemo<WorkspaceDeployState>(() => {
+		if (isDeploying || deployStatus === "running") return "running";
+		if (deployStatus === "success") return "success";
+		if (deployStatus === "error") return "error";
+		return "idle";
+	}, [deployStatus, isDeploying]);
+
+	const pageTitleLabel = serviceName ?? repo?.name ?? "Smart Deploy";
+	const statusTitle = React.useMemo(() => {
+		if (workspaceDeployState === "running") return `${pageTitleLabel} - Deploying...`;
+		if (workspaceDeployState === "success") return `${pageTitleLabel} - Deployment succeeded`;
+		if (workspaceDeployState === "error") return `${pageTitleLabel} - Deployment failed`;
+		return pageTitleLabel === "Smart Deploy" ? "Smart Deploy" : `${pageTitleLabel} - Smart Deploy`;
+	}, [workspaceDeployState, pageTitleLabel]);
+
+	React.useEffect(() => {
+		if (typeof document === "undefined") return;
+		if (initialTitleRef.current === null) {
+			initialTitleRef.current = document.title;
+		}
+		document.title = statusTitle;
+	}, [statusTitle]);
+
+	React.useEffect(() => {
+		if (typeof document === "undefined") return;
+		let iconLink = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+		if (!iconLink) {
+			iconLink = document.createElement("link");
+			iconLink.setAttribute("rel", "icon");
+			document.head.appendChild(iconLink);
+		}
+		if (initialIconHrefRef.current === null) {
+			initialIconHrefRef.current = iconLink.getAttribute("href") ?? "/icon.svg";
+		}
+		const targetHref =
+			workspaceDeployState === "running"
+				? "/icons/favicon-deploying.svg"
+				: workspaceDeployState === "success"
+					? "/icons/favicon-success.svg"
+					: workspaceDeployState === "error"
+						? "/icons/favicon-failed.svg"
+						: initialIconHrefRef.current;
+		if (iconLink.getAttribute("href") !== targetHref) {
+			iconLink.setAttribute("href", targetHref);
+		}
+	}, [workspaceDeployState]);
+
+	React.useEffect(() => {
+		return () => {
+			if (typeof document === "undefined") return;
+			if (initialTitleRef.current) {
+				document.title = initialTitleRef.current;
+			}
+			const iconLink = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+			if (iconLink && initialIconHrefRef.current) {
+				iconLink.setAttribute("href", initialIconHrefRef.current);
+			}
+		};
+	}, []);
 
 	// Timer effect - starts when deployment begins
 	React.useEffect(() => {
