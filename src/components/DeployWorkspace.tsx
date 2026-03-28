@@ -173,7 +173,7 @@ export default function DeployWorkspace() {
 		return "idle";
 	}, [deployStatus, isDeploying]);
 
-	const pageTitleLabel = serviceName ?? repo?.name ?? "Smart Deploy";
+	const pageTitleLabel = repo?.name ?? "Smart Deploy";
 	const statusTitle = React.useMemo(() => {
 		if (workspaceDeployState === "running") return `${pageTitleLabel} - Deploying...`;
 		if (workspaceDeployState === "success") return `${pageTitleLabel} - Deployment succeeded`;

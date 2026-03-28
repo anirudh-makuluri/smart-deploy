@@ -3,6 +3,5 @@
   <path d="M16 6L6 11v3l10 5 10-5v-3L16 6z" fill="white" fill-opacity="0.95"/>
   <path d="M6 14l10 5 10-5v3l-10 5-10-5v-3z" fill="white" fill-opacity="0.85"/>
   <path d="M6 18l10 5 10-5v3l-10 5-10-5v-3z" fill="white" fill-opacity="0.7"/>
-  <circle cx="24.5" cy="24.5" r="4.3" fill="#22c55e"/>
-  <path d="M21.5 24.5L24.5 28L29 23" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24.5" cy="24.5" r="3.8" fill="#22c55e"/>
 </svg>
