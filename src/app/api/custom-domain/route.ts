@@ -131,12 +131,13 @@ export async function POST(req: NextRequest) {
 			return NextResponse.json({ status: "error", message: "Unauthorized: deployment does not belong to you" }, { status: 403 });
 		}		
 
-		//ts-ignore
-		const updateResponse = await dbHelper.updateDeployments({
-			repo_name: repoName,
-			service_name: serviceName,
-			custom_url: formattedCustomUrl,
-		}, userID);
+		const updateResponse = await dbHelper.updateDeployments(
+			{
+				...deployment,
+				custom_url: formattedCustomUrl ?? undefined,
+			},
+			userID
+		);
 
 		if (updateResponse.error) {
 			return NextResponse.json({ status: "error", message: "Failed to persist custom domain" }, { status: 500 });
