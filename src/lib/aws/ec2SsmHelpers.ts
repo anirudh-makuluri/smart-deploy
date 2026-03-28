@@ -1,7 +1,6 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import yaml from "js-yaml";
 import config from "../../config";
 import { createWebSocketLogger } from "../websocketLogger";
 import { runAWSCommand } from "./awsHelpers";
@@ -211,37 +210,6 @@ function normalizeDockerfilePathsInCompose(compose: string): string {
  * Ensures every service in a compose YAML has `env_file` referencing `.env`,
  * so that env vars written to the repo root are available inside containers.
  */
-function injectEnvFileIntoCompose(composeYaml: string): string {
-	try {
-		const doc = yaml.load(composeYaml) as Record<string, unknown> | null;
-		if (!doc || typeof doc !== "object" || !doc.services) return composeYaml;
-
-		const services = doc.services as Record<string, Record<string, unknown>>;
-		for (const svc of Object.values(services)) {
-			if (!svc || typeof svc !== "object") continue;
-
-			let envFiles: string[] = [];
-			if (typeof svc.env_file === "string") {
-				envFiles = [svc.env_file];
-			} else if (Array.isArray(svc.env_file)) {
-				envFiles = svc.env_file as string[];
-			}
-
-			const alreadyHasEnv = envFiles.some(
-				(f) => f === ".env" || f === "./.env",
-			);
-			if (!alreadyHasEnv) {
-				envFiles.push(".env");
-				svc.env_file = envFiles;
-			}
-		}
-
-		return yaml.dump(doc, { lineWidth: -1, noRefs: true });
-	} catch {
-		return composeYaml;
-	}
-}
-
 /**
  * Generates bash commands to write Dockerfiles from scan_results.dockerfiles
  * into the cloned repo at the paths given by each key (e.g. client/Dockerfile, apps/web/Dockerfile).
@@ -282,9 +250,7 @@ DOCKERFILEEOF
  */
 function buildComposeWriteScript(dockerCompose: string): string {
 	if (!dockerCompose) return "";
-	const normalizedCompose = injectEnvFileIntoCompose(
-		normalizeDockerfilePathsInCompose(dockerCompose),
-	);
+	const normalizedCompose = normalizeDockerfilePathsInCompose(dockerCompose);
 	return `
 echo "Writing docker-compose.yml from scan_results..."
 cat > docker-compose.yml << 'COMPOSEEOF'
@@ -737,6 +703,67 @@ echo "====================================== Deploy from ECR complete! =========
  * Generates the SSM script for deploying from ECR with docker-compose.
  * Replaces build directives with ECR image references.
  */
+function replaceBuildSectionWithImage(
+	composeContent: string,
+	serviceName: string,
+	imageUri: string,
+): string {
+	const lines = composeContent.split("\n");
+	const rewritten: string[] = [];
+	let currentService = "";
+	let serviceIndent = -1;
+	let skipIndent = -1;
+
+	for (const line of lines) {
+		const indent = line.match(/^\s*/)?.[0].length ?? 0;
+		const trimmed = line.trim();
+		const isServiceLine = trimmed.endsWith(":");
+
+		if (currentService === serviceName && trimmed && indent <= serviceIndent && !trimmed.startsWith("#")) {
+			currentService = "";
+			serviceIndent = -1;
+			skipIndent = -1;
+		}
+
+		if (isServiceLine) {
+			const candidate = trimmed.slice(0, -1).trim();
+			if (candidate === serviceName) {
+				currentService = serviceName;
+				serviceIndent = indent;
+				skipIndent = -1;
+				rewritten.push(line);
+				rewritten.push(`${" ".repeat(indent + 2)}image: ${imageUri}`);
+				continue;
+			}
+			if (indent <= serviceIndent) {
+				currentService = "";
+				serviceIndent = -1;
+				skipIndent = -1;
+			}
+		}
+
+		if (currentService === serviceName) {
+			if (trimmed.startsWith("build:")) {
+				skipIndent = indent;
+				continue;
+			}
+			if (skipIndent >= 0) {
+				if (indent > skipIndent) {
+					continue;
+				}
+				skipIndent = -1;
+			}
+			if (trimmed.startsWith("image:")) {
+				continue;
+			}
+		}
+
+		rewritten.push(line);
+	}
+
+	return rewritten.join("\n");
+}
+
 export function buildEcrComposeDeployScript(params: {
 	ecrRegistry: string;
 	ecrRepoName: string;
@@ -752,12 +779,8 @@ export function buildEcrComposeDeployScript(params: {
 	let modifiedCompose = composeContent;
 	for (const svc of services) {
 		const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
-		modifiedCompose = modifiedCompose.replace(
-			new RegExp(`(\\b${svc.name}:[\\s\\S]*?)build:\\s*[^\\n]+`, "m"),
-			`$1image: ${svcUri}`,
-		);
+		modifiedCompose = replaceBuildSectionWithImage(modifiedCompose, svc.name, svcUri);
 	}
-	modifiedCompose = injectEnvFileIntoCompose(modifiedCompose);
 	const composeB64 = Buffer.from(modifiedCompose, "utf8").toString("base64");
 
 	return `set -e

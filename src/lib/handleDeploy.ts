@@ -20,7 +20,15 @@ import { handleEC2FromEcr } from "./aws/handleEC2";
 import { createRDSInstance } from "./aws/handleRDS";
 
 // CodeBuild + ECR imports
-import { getAwsAccountId, getEcrRegistry, getEcrImageUri, ensureEcrRepository, ensureEc2EcrPullPolicy, getEcrAuthToken } from "./aws/ecrHelpers";
+import {
+	getAwsAccountId,
+	getEcrRegistry,
+	getEcrImageUri,
+	ensureEcrRepository,
+	ensureEc2EcrPullPolicy,
+	getEcrAuthToken,
+	ecrImageTagExists,
+} from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
@@ -57,136 +65,19 @@ export async function handleDeploy(
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
 	const send = createDeployStepsLogger(ws, deploySteps, options);
-	const previousDeploySend = ws ? (ws as any).__deploySend : undefined;
 	if (ws) {
 		(ws as any).__deploySend = send;
 	}
 
-	// Determine cloud provider (default to AWS)
-	const cloudProvider: CloudProvider = deployConfig.cloudProvider || 'aws';
-
-	const repoUrl = deployConfig.url;
-	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
-
-	// ── CodeBuild pipeline (no clone required) ──
-	if (cloudProvider === 'aws' && config.USE_CODEBUILD) {
-		try {
-			return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps);
-		} catch (error: any) {
-			send(`Deployment failed: ${error.message}`, 'error');
-			const doneStep = deploySteps.find((step) => step.id === "done");
-			if (doneStep) doneStep.status = "error";
-			const durationMs = Date.now() - deployStartTime;
-			await sendDeployComplete(ws, undefined, false, deployConfig, deploySteps, userID, deployConfig.deploymentTarget, null, null, durationMs);
-			throw error;
-		}
-	}
-
-	// ── Legacy path (clone + build on instance) ──
-	send(`Cloud Provider: ${cloudProvider.toUpperCase()}`, 'clone');
-
-	const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-"));
-	const cloneDir = path.join(tmpDir, repoName);
-
 	try {
-		const authenticatedRepoUrl = githubAuthenticatedCloneUrl(repoUrl, token);
-		let branch = deployConfig.branch?.trim() ?? "";
-		if (!branch) {
-			const parsed = parseGithubOwnerRepo(repoUrl);
-			if (parsed) {
-				try {
-					const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, token);
-					branch = default_branch;
-					deployConfig.branch = default_branch;
-				} catch (err) {
-					const msg = err instanceof Error ? err.message : String(err);
-					send(`Could not resolve default branch from GitHub: ${msg}`, "clone");
-					throw new Error("Missing deployment branch and could not resolve repository default");
-				}
-			}
-		}
-		if (!branch) {
-			send("Set a deployment branch in workspace settings before deploying.", "clone");
-			throw new Error("Missing deployment branch");
-		}
-		const commitSha = deployConfig.commitSha?.trim();
-		deployConfig.deploymentTarget = "ec2";
-
-		if (commitSha) {
-			send(`Cloning repo from branch "${branch}" and checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
-		} else {
-			send(`Cloning repo from branch "${branch}"...`, 'clone');
-		}
-
-		await runCommandLiveWithWebSocket("git", ["clone", "-b", branch, authenticatedRepoUrl, cloneDir], ws, 'clone', { send });
-
-		if (commitSha) {
-			send(`Checking out commit ${commitSha.substring(0, 7)}...`, 'clone');
-			await runCommandLiveWithWebSocket("git", ["checkout", commitSha], ws, 'clone', { cwd: cloneDir, send });
-			send(`✅ Checked out commit ${commitSha.substring(0, 7)}`, 'clone');
-		}
-
-		const scanResults = deployConfig.scan_results;
-		const appDir = scanResults?.services && scanResults.services.length > 0
-			? path.join(cloneDir, scanResults.services[0].build_context || ".")
-			: cloneDir;
-
-		send("✅ Clone repository completed", 'clone');
-		const nextDir = path.join(appDir, ".next");
-		if (fs.existsSync(nextDir)) {
-			send("Cleaning existing Next.js build cache...", 'detect');
-			try {
-				fs.rmSync(nextDir, { recursive: true, force: true });
-			} catch { /* ignore */ }
-		}
-
-		const multiServiceConfig: MultiServiceConfig = {
-			isMultiService: (scanResults?.services?.length || 0) > 1,
-			services: (scanResults?.services || []).map(s => ({
-				name: s.name,
-				workdir: path.join(cloneDir, s.build_context || "."),
-				dockerfile: s.dockerfile_path,
-				port: s.port,
-				build_context: path.join(cloneDir, s.build_context || ".")
-			})),
-			hasDockerCompose: !!scanResults?.docker_compose,
-			isMonorepo: (scanResults?.services?.length || 0) > 1,
-		};
-
-		const dbConfig = null;
-
-		if (cloudProvider === 'aws') {
-			return await handleAWSDeploy(deployConfig, appDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
-		} else {
-			return await handleGCPDeploy(deployConfig, appDir, cloneDir, tmpDir, multiServiceConfig, dbConfig, token, ws, userID, deployStartTime, send, deploySteps);
-		}
+		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps);
 	} catch (error: any) {
 		send(`Deployment failed: ${error.message}`, 'error');
 		const doneStep = deploySteps.find((step) => step.id === "done");
 		if (doneStep) doneStep.status = "error";
 		const durationMs = Date.now() - deployStartTime;
-		await sendDeployComplete(
-			ws,
-			undefined,
-			false,
-			deployConfig,
-			deploySteps,
-			userID,
-			deployConfig.deploymentTarget,
-			null,
-			null,
-			durationMs
-		);
-		fs.rmSync(tmpDir, { recursive: true, force: true });
+		await sendDeployComplete(ws, undefined, false, deployConfig, deploySteps, userID, deployConfig.deploymentTarget, null, null, durationMs);
 		throw error;
-	} finally {
-		if (ws) {
-			if (previousDeploySend) {
-				(ws as any).__deploySend = previousDeploySend;
-			} else {
-				delete (ws as any).__deploySend;
-			}
-		}
 	}
 }
 
@@ -260,28 +151,28 @@ async function saveDeploymentToDB(
 		} else {
 			console.log("Deployment saved to DB:", updateResponse.success);
 
-				// Kick off screenshot generation in the background so deploy completion isn't delayed.
-				if (success) {
-					const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
-					if (screenshotTargetUrl.trim()) {
-						void (async () => {
-							try {
-								const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({
-									url: screenshotTargetUrl,
-									ownerID: userID!,
-									repoName: deployConfig.repo_name,
-									serviceName: deployConfig.service_name,
-								});
+			// Kick off screenshot generation in the background so deploy completion isn't delayed.
+			if (success) {
+				const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
+				if (screenshotTargetUrl.trim()) {
+					void (async () => {
+						try {
+							const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({
+								url: screenshotTargetUrl,
+								ownerID: userID!,
+								repoName: deployConfig.repo_name,
+								serviceName: deployConfig.service_name,
+							});
 
-								await dbHelper.patchDeploymentData(deployConfig.repo_name, deployConfig.service_name, userID!, {
-									screenshot_url: screenshotPublicUrl,
-								});
-							} catch (err) {
-								console.error("Screenshot generation failed:", err);
-							}
-						})();
-					}
+							await dbHelper.patchDeploymentData(deployConfig.repo_name, deployConfig.service_name, userID!, {
+								screenshot_url: screenshotPublicUrl,
+							});
+						} catch (err) {
+							console.error("Screenshot generation failed:", err);
+						}
+					})();
 				}
+			}
 		}
 
 		// Record deployment history using repo_name + service_name
@@ -533,8 +424,8 @@ async function handleAWSCodeBuildDeploy(
 
 	const stsClient = new STSClient(getAwsClientConfig(region));
 	const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-	if (identity.Arn) send(`Authenticated as: ${identity.Arn}`, "auth");
-	send("✅ AWS credentials verified", "auth");
+	// if (identity.Arn) send(`Authenticated as: ${identity.Arn}`, "auth");
+	// send("✅ AWS credentials verified", "auth");
 
 	// Resolve branch
 	let branch = deployConfig.branch?.trim() ?? "";
@@ -561,28 +452,41 @@ async function handleAWSCodeBuildDeploy(
 	const ecrRegistry = getEcrRegistry(accountId, region);
 	const ecrRepoName = `smartdeploy/${repoName}`;
 	const ecrAuth = await getEcrAuthToken(region);
-	const ecrPassword = ecrAuth.password;
-	const ecrPasswordB64 = Buffer.from(ecrPassword, "utf8").toString("base64");
-
-	send("Setting up ECR and CodeBuild...", "build");
-	await ensureEcrRepository(ecrRepoName, region, send);
-	// Grant EC2 instances ECR pull access
-	await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
-
-	const roleArn = await ensureCodeBuildRole(region, send);
-	const projectName = await ensureCodeBuildProject(region, roleArn, send);
+	const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 
 	const scanResults = deployConfig.scan_results;
 	const envBase64 = deployConfig.env_vars
 		? Buffer.from(deployConfig.env_vars, "utf8").toString("base64")
 		: undefined;
 
-	const buildspec = generateBuildspec({
-		ecrRegistry,
-		ecrRepoName,
-		imageTag,
-		scanResults,
-	});
+	const services = scanResults?.services || [];
+	const hasCompose = !!scanResults?.docker_compose && services.length > 1;
+	const repoNames = new Set<string>();
+	repoNames.add(ecrRepoName);
+	if (hasCompose) {
+		for (const svc of services) {
+			const name = (svc.name || "").trim();
+			if (name) repoNames.add(`${ecrRepoName}-${name}`);
+		}
+	}
+	send("Preparing ECR repositories...", "build");
+	for (const repo of repoNames) {
+		await ensureEcrRepository(repo, region, send);
+	}
+	// Grant EC2 instances ECR pull access
+	await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
+
+	const hasCommit = Boolean(commitSha);
+	let allTagsExist = hasCommit;
+	if (hasCommit) {
+		for (const repo of repoNames) {
+			const exists = await ecrImageTagExists(region, repo, imageTag);
+			if (!exists) {
+				allTagsExist = false;
+				break;
+			}
+		}
+	}
 
 	const dockerHubUser = config.DOCKERHUB_USERNAME?.trim();
 	const dockerHubToken = config.DOCKERHUB_TOKEN?.trim();
@@ -592,24 +496,38 @@ async function handleAWSCodeBuildDeploy(
 		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing — Docker Hub login will be skipped.", "build");
 	}
 
-	const buildId = await startBuild({
-		region,
-		projectName,
-		repoFullName,
-		branch,
-		commitSha,
-		githubToken: token,
-		buildspec,
-		envVarsBase64: envBase64,
-		ecrPassword,
-		dockerHub,
-		send,
-	});
+	if (!hasCommit || !allTagsExist) {
+		const roleArn = await ensureCodeBuildRole(region, send);
+		const projectName = await ensureCodeBuildProject(region, roleArn, send);
 
-	const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
-	if (!buildResult.success) {
-		send("❌ Docker image build failed. Check build logs above.", "build");
-		throw new Error("CodeBuild failed — Docker image build did not succeed");
+		const buildspec = generateBuildspec({
+			ecrRegistry,
+			ecrRepoName,
+			imageTag,
+			region,
+			scanResults,
+		});
+
+		const buildId = await startBuild({
+			region,
+			projectName,
+			repoFullName,
+			branch,
+			commitSha,
+			githubToken: token,
+			buildspec,
+			envVarsBase64: envBase64,
+			dockerHub,
+			send,
+		});
+
+		const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
+		if (!buildResult.success) {
+			send("❌ Docker image build failed. Check build logs above.", "build");
+			throw new Error("CodeBuild failed — Docker image build did not succeed");
+		}
+	} else {
+		send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
 	}
 
 	const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);

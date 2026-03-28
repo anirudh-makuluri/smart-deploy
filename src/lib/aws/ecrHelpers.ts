@@ -1,6 +1,7 @@
 import {
 	ECRClient,
 	CreateRepositoryCommand,
+	DescribeImagesCommand,
 	DescribeRepositoriesCommand,
 	GetAuthorizationTokenCommand,
 } from "@aws-sdk/client-ecr";
@@ -58,6 +59,26 @@ export async function ensureEcrRepository(
 	);
 	send(`ECR repository created: ${repoName}`, "build");
 	return resp.repository!.repositoryUri!;
+}
+
+export async function ecrImageTagExists(
+	region: string,
+	repoName: string,
+	tag: string,
+): Promise<boolean> {
+	const client = new ECRClient(getAwsClientConfig(region));
+	try {
+		const resp = await client.send(
+			new DescribeImagesCommand({
+				repositoryName: repoName,
+				imageIds: [{ imageTag: tag }],
+			}),
+		);
+		return Boolean(resp.imageDetails && resp.imageDetails.length > 0);
+	} catch (e: any) {
+		if (e.name === "ImageNotFoundException") return false;
+		throw e;
+	}
 }
 
 export async function getEcrAuthToken(region: string): Promise<{ username: string; password: string }> {

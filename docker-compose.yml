@@ -5,8 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        - NODE_MAX_OLD_SPACE_SIZE=${NODE_MAX_OLD_SPACE_SIZE:-2048}
     container_name: smartdeploy-app
     restart: unless-stopped
     env_file: .env
@@ -73,6 +71,7 @@ services:
       - "4001:4001"
     environment:
       - NODE_ENV=production
+      - NODE_OPTIONS=--max-old-space-size=2048
       # OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}

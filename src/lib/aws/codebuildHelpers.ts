@@ -69,6 +69,8 @@ export async function ensureCodeBuildRole(
 			{
 				Effect: "Allow",
 				Action: [
+					"ecr:CreateRepository",
+					"ecr:DescribeRepositories",
 					"ecr:GetAuthorizationToken",
 					"ecr:BatchCheckLayerAvailability",
 					"ecr:GetDownloadUrlForLayer",
@@ -149,9 +151,10 @@ export function generateBuildspec(params: {
 	ecrRegistry: string;
 	ecrRepoName: string;
 	imageTag: string;
+	region: string;
 	scanResults?: SDArtifactsResponse;
 }): string {
-	const { ecrRegistry, ecrRepoName, imageTag, scanResults } = params;
+	const { ecrRegistry, ecrRepoName, imageTag, region, scanResults } = params;
 	const fullUri = `${ecrRegistry}/${ecrRepoName}:${imageTag}`;
 	const services = scanResults?.services || [];
 	const dockerfiles = scanResults?.dockerfiles || {};
@@ -159,7 +162,9 @@ export function generateBuildspec(params: {
 
 	const preBuildCmds: string[] = [
 		"echo Logging in to Amazon ECR...",
-		'if [ -n "$ECR_PASSWORD" ]; then echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin ' + ecrRegistry + '; else echo "Missing ECR_PASSWORD"; exit 1; fi',
+		'REGION="${AWS_DEFAULT_REGION:-${AWS_REGION}}"',
+		`if [ -z "$REGION" ]; then REGION="${region}"; fi`,
+		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${ecrRegistry}`,
 		// When DOCKERHUB_USERNAME + DOCKERHUB_TOKEN are passed as CodeBuild env overrides, authenticate to Docker Hub before docker build (avoids anonymous 429 rate limits).
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
@@ -252,7 +257,6 @@ export async function startBuild(params: {
 	githubToken: string;
 	buildspec: string;
 	envVarsBase64?: string;
-	ecrPassword: string;
 	/** Optional: Docker Hub PAT + user so CodeBuild can pull public bases (e.g. node:20-alpine) without anonymous rate limits. */
 	dockerHub?: { username: string; token: string };
 	send: SendFn;
@@ -266,7 +270,8 @@ export async function startBuild(params: {
 		{ name: "REPO_FULL_NAME", value: params.repoFullName, type: "PLAINTEXT" },
 		{ name: "BRANCH_NAME", value: params.branch, type: "PLAINTEXT" },
 		{ name: "COMMIT_SHA", value: params.commitSha || "", type: "PLAINTEXT" },
-		{ name: "ECR_PASSWORD", value: params.ecrPassword, type: "PLAINTEXT" },
+		{ name: "AWS_DEFAULT_REGION", value: params.region, type: "PLAINTEXT" },
+		{ name: "AWS_REGION", value: params.region, type: "PLAINTEXT" },
 	];
 
 	if (params.envVarsBase64) {
