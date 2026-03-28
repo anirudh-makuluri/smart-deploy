@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { parseEnvVarsToDisplay, buildEnvVarsString, parseEnvVarsToStore } from "@/lib/utils";
+import { toast } from "sonner";
 
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -17,7 +18,7 @@ import {
 } from "@/components/ui/form"
 import { Alert, AlertDescription } from "./ui/alert"
 
-import { RotateCw, Layers, Folder, Github, Globe, CheckCircle2, AlertTriangle, Settings2, Sparkles, GitBranch, CircleDot, Cpu } from "lucide-react";
+import { RotateCw, Layers, Folder, Globe, CheckCircle2, AlertTriangle, Settings2, Sparkles, GitBranch, CircleDot, Cpu } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { DeployConfig } from "@/app/types";
 import EnvVarSheet from "@/components/EnvVarSheet";
@@ -27,6 +28,7 @@ import {
 	EC2_INSTANCE_TYPE_PRESETS,
 	formatApproxEc2PriceCompact,
 } from "@/lib/aws/ec2InstanceTypes";
+import { useAppData } from "@/store/useAppData";
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
@@ -53,11 +55,11 @@ export default function ConfigTabs({
 	repoFullName,
 	onStartScan
 }: ConfigTabsProps) {
-
-
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment.env_vars ?? "")
 	);
+
+	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
 	const [isEnvSheetOpen, setIsEnvSheetOpen] = useState(false);
 	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
@@ -74,7 +76,6 @@ export default function ConfigTabs({
 		if (raw.endsWith(`.${DOMAIN_SUFFIX}`)) {
 			return raw.slice(0, -(DOMAIN_SUFFIX.length + 1));
 		}
-		// Fallback to first part
 		return raw.split(".")[0];
 	}, [deployment, DOMAIN_SUFFIX]);
 
@@ -86,6 +87,84 @@ export default function ConfigTabs({
 			custom_url: initialSubdomain,
 		},
 	})
+
+	const customUrlValue = form.watch("custom_url");
+	const [customUrlSaving, setCustomUrlSaving] = useState(false);
+	const [isCustomUrlDirty, setIsCustomUrlDirty] = useState(false);
+
+
+	useEffect(() => {
+		setIsCustomUrlDirty(customUrlValue !== initialSubdomain);
+	}, [customUrlValue, initialSubdomain]);
+
+	useEffect(() => {
+		form.setValue("custom_url", initialSubdomain, { shouldDirty: false });
+		setIsCustomUrlDirty(false);
+		setCustomUrlStatus({ type: null });
+	}, [initialSubdomain, form]);
+
+	const getCustomUrlFromSubdomain = (subdomain: string) =>
+		subdomain ? `https://${subdomain}.${DOMAIN_SUFFIX}` : "";
+
+	const handleSaveCustomUrl = async () => {
+		if (!deployment) return;
+		const raw = form.getValues("custom_url");
+		if (!raw) {
+			return
+		}
+		const finalUrl = getCustomUrlFromSubdomain(raw.trim());
+		const previousUrl = (deployment.custom_url || "").trim();
+		if (finalUrl === previousUrl) {
+			setIsCustomUrlDirty(false);
+			return;
+		}
+
+		setCustomUrlSaving(true);
+		try {
+			const response = await fetch("/api/custom-domain", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					repoName: deployment.repo_name,
+					serviceName: deployment.service_name,
+					customUrl: finalUrl,
+				}),
+			});
+			const data = await response.json();
+			const isError = response.status !== 200 || data?.status === "error";
+			if (isError) {
+				throw new Error(data?.message || data?.error || "Failed to save custom domain");
+			}
+
+			updateDeploymentById({
+				repo_name: deployment.repo_name,
+				service_name: deployment.service_name,
+				custom_url: finalUrl,
+			});
+			setIsCustomUrlDirty(false);
+			setCustomUrlStatus({
+				type: finalUrl ? "success" : null,
+				message: finalUrl ? data?.message || `Custom domain saved: ${finalUrl}` : undefined,
+			});
+			if (finalUrl) {
+				toast.success(data?.message || "Custom domain saved");
+			} else {
+				toast.success("Custom domain cleared");
+			}
+		} catch (error: any) {
+			const message = error?.message ?? "Failed to update custom domain";
+			setCustomUrlStatus({ type: "error", message });
+			toast.error(message);
+		} finally {
+			setCustomUrlSaving(false);
+		}
+	};
+
+	const handleCancelCustomUrl = () => {
+		form.setValue("custom_url", initialSubdomain, { shouldDirty: false });
+		setIsCustomUrlDirty(false);
+		setCustomUrlStatus({ type: null });
+	};
 
 	// Auto-save logic
 	const watchedBranch = form.watch("branch");
@@ -340,29 +419,21 @@ export default function ConfigTabs({
 									<FormControl>
 										<div className="relative group ">
 											<div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/30 font-mono text-[10px] group-focus-within:text-primary/50 transition-colors pointer-events-none">https://</div>
-											<Input
-												{...field}
-												placeholder="my-cool-app"
-												className="pl-14 pr-32 h-11 bg-white/[0.02] border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
-												onBlur={(e) => {
-													field.onBlur();
-													const val = e.target.value.trim().toLowerCase();
-													if (val) {
-														verifySubdomain(val);
-														const fullUrl = `https://${val}.${DOMAIN_SUFFIX}`;
-														if (fullUrl !== (deployment as any).custom_url) {
-															onConfigChange({ custom_url: fullUrl } as any);
-														}
-													}
-												}}
-												onChange={(e) => {
-													const val = e.target.value;
-													// Only keep the first part of what they paste/type if it looks like a full domain
-													const sanitized = val.replace(/^https?:\/\//, "").split(".")[0];
-													field.onChange(sanitized);
-													setCustomUrlStatus({ type: null });
-												}}
-											/>
+										<Input
+											{...field}
+											placeholder="my-cool-app"
+											className="pl-14 pr-32 h-11 bg-white/2 border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
+											// onBlur={(e) => {
+											// 	field.onBlur();												
+											// 	if (e.target.value) {
+											// 		verifySubdomain(e.target.value.trim());
+											// 	}
+											// }}
+											onChange={(e) => {
+												field.onChange(e.target.value);
+												setCustomUrlStatus({ type: null });
+											}}
+										/>
 											<div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
 												<span className="text-muted-foreground/20 font-mono text-[10px]">.{DOMAIN_SUFFIX}</span>
 												{customUrlVerifying && <RotateCw className="size-3 animate-spin text-primary" />}
@@ -385,6 +456,28 @@ export default function ConfigTabs({
 								</AlertDescription>
 							</Alert>
 						)}
+						<div className="flex flex-wrap items-center gap-2 pt-3">
+							<Button
+								type="button"
+								variant="ghost"
+								className="text-[11px] h-9 px-3"
+								onClick={handleCancelCustomUrl}
+								disabled={!isCustomUrlDirty || customUrlSaving}
+							>
+								Cancel
+							</Button>
+							<Button
+								type="button"
+								className="text-[11px] h-9 px-4"
+								onClick={handleSaveCustomUrl}
+								disabled={!isCustomUrlDirty || customUrlSaving}
+							>
+								{customUrlSaving ? "Saving…" : "Save"}
+							</Button>
+							<p className="text-[10px] text-muted-foreground/70">
+								Saving reconfigures the ALB + Vercel DNS record without redeploying.
+							</p>
+						</div>
 					</div>
 				</div>
 

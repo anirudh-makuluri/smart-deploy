@@ -54,6 +54,7 @@ export type EC2DeployDetails = {
 	subnetId: string;
 	securityGroupId: string;
 	amiId: string;
+	sharedAlbDns?: string;
 };
 
 export type CloudRunDeployDetails = {

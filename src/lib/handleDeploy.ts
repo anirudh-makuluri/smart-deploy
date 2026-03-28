@@ -340,6 +340,7 @@ async function handleAWSDeploy(
 		subnetId: ec2Result.subnetId,
 		securityGroupId: ec2Result.securityGroupId,
 		amiId: ec2Result.amiId,
+		sharedAlbDns: ec2Result.sharedAlbDns,
 	};
 
 	if (ec2Result.baseUrl == "") {
@@ -570,6 +571,7 @@ async function handleAWSCodeBuildDeploy(
 		subnetId: ec2Result.subnetId,
 		securityGroupId: ec2Result.securityGroupId,
 		amiId: ec2Result.amiId,
+		sharedAlbDns: ec2Result.sharedAlbDns,
 	};
 
 	let deployUrl: string | undefined;

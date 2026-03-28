@@ -39,9 +39,9 @@ import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 
 type SendFn = (msg: string, stepId: string) => void;
 
-type ServiceDef = { name: string; dir: string; port: number; isMonorepo?: boolean; relativePath?: string; framework?: string; language?: string };
+export type ServiceDef = { name: string; dir: string; port: number; isMonorepo?: boolean; relativePath?: string; framework?: string; language?: string };
 
-type NetworkingResult = {
+export type NetworkingResult = {
 	vpcId: string;
 	subnetIds: string[];
 	securityGroupId: string;
@@ -469,7 +469,7 @@ async function launchNewInstance(params: {
 }
 
 /** Configures the shared ALB for a new instance (target group, listener rules, host routing). */
-async function configureAlb(params: {
+export async function configureAlb(params: {
 	deployConfig: DeployConfig;
 	instanceId: string;
 	existingInstanceId: string | undefined;
