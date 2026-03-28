@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "516bd2154eb843a8240e43d5b285229129853114ad7075a5e141e1c08e408c84"
+    },
+    "react-useeffect": {
+      "source": "softaworks/agent-toolkit",
+      "sourceType": "github",
+      "computedHash": "1fdf524f8335afac6f44d3460d6d20e71db9c1d14643e4a31ea17d6463504447"
+    }
+  }
+}
