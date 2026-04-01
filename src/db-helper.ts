@@ -1,5 +1,5 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
-import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord, AccountMode } from "./app/types";
 import { v4 as uuidv4 } from "uuid";
 
 type RowDeployment = {
@@ -11,6 +11,11 @@ type RowDeployment = {
 	first_deployment: string | null;
 	last_deployment: string | null;
 	revision: number | null;
+	account_mode: AccountMode | null;
+	demo_expires_at: string | null;
+	demo_cleanup_status: string | null;
+	demo_repo_key: string | null;
+	demo_commit_sha: string | null;
 	data: Record<string, unknown>;
 	scan_results: Record<string, unknown> | null;
 };
@@ -22,12 +27,17 @@ function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string
 		repo_name,
 		service_name,
 		ownerID: owner_id,
+		...data,
 		// If status is missing/null in the DB we treat the service as not deployed yet.
 		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
 		first_deployment: first_deployment ?? undefined,
 		last_deployment: last_deployment ?? undefined,
 		revision: revision ?? 1,
-		...data,
+		accountMode: row.account_mode ?? undefined,
+		demoExpiresAt: row.demo_expires_at ?? undefined,
+		demoCleanupStatus: (row.demo_cleanup_status as DeployConfig["demoCleanupStatus"]) ?? undefined,
+		demoRepoKey: row.demo_repo_key ?? undefined,
+		demoCommitSha: row.demo_commit_sha ?? undefined,
 		scan_results: row.scan_results ? (row.scan_results as any) : undefined,
 	} as DeployConfig & { ownerID: string };
 }
@@ -83,6 +93,11 @@ export const dbHelper = {
 				first_deployment,
 				last_deployment,
 				revision,
+				accountMode,
+				demoExpiresAt,
+				demoCleanupStatus,
+				demoRepoKey,
+				demoCommitSha,
 				scan_results,
 				...rest
 			} = deployConfig as DeployConfig & { ownerID?: string };
@@ -94,6 +109,7 @@ export const dbHelper = {
 				.select("revision, data, status, scan_results")
 				.eq("repo_name", repo_name)
 				.eq("service_name", service_name)
+				.eq("owner_id", userID)
 				.order("last_deployment", { ascending: false })
 				.limit(1)
 				.maybeSingle();
@@ -109,6 +125,11 @@ export const dbHelper = {
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
+					account_mode: accountMode ?? null,
+					demo_expires_at: demoExpiresAt ?? null,
+					demo_cleanup_status: demoCleanupStatus ?? null,
+					demo_repo_key: demoRepoKey ?? null,
+					demo_commit_sha: demoCommitSha ?? null,
 					data: dataJson,
 					scan_results: scan_results || null,
 				});
@@ -118,6 +139,16 @@ export const dbHelper = {
 			const nextRevision = (existing.revision ?? 0) + 1;
 			const lastDeployment = new Date().toISOString();
 			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
+			const nextAccountMode = typeof accountMode !== "undefined" ? accountMode : undefined;
+			const clearDemoFields = nextAccountMode === "internal";
+			if (clearDemoFields) {
+				delete mergedData.demoExpiresAt;
+				delete mergedData.demoCleanupStatus;
+				delete mergedData.demoRepoKey;
+				delete mergedData.demoCommitSha;
+				delete mergedData.demoLocked;
+				delete mergedData.accountMode;
+			}
 
 			// Preserve existing status/scan_results unless explicitly provided
 			const hasStatus = Object.prototype.hasOwnProperty.call(deployConfig, "status");
@@ -132,11 +163,17 @@ export const dbHelper = {
 					status: nextStatus,
 					last_deployment: lastDeployment,
 					revision: nextRevision,
+					account_mode: nextAccountMode,
+					demo_expires_at: clearDemoFields ? null : (typeof demoExpiresAt !== "undefined" ? demoExpiresAt : undefined),
+					demo_cleanup_status: clearDemoFields ? null : (typeof demoCleanupStatus !== "undefined" ? demoCleanupStatus : undefined),
+					demo_repo_key: clearDemoFields ? null : (typeof demoRepoKey !== "undefined" ? demoRepoKey : undefined),
+					demo_commit_sha: clearDemoFields ? null : (typeof demoCommitSha !== "undefined" ? demoCommitSha : undefined),
 					data: mergedData,
 					scan_results: nextScanResults,
 				})
 				.eq("repo_name", repo_name)
-				.eq("service_name", service_name);
+				.eq("service_name", service_name)
+				.eq("owner_id", userID);
 
 			return { success: "Deployment data updated successfully" };
 		} catch (error) {
@@ -220,14 +257,16 @@ export const dbHelper = {
 		}
 	},
 
-	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
+	getDeployment: async function (repoName: string, serviceName: string, ownerID?: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
 		try {
 			const supabase = getSupabaseServer();
-			const { data: row, error } = await supabase
+			let query = supabase
 				.from("deployments")
 				.select("*")
 				.eq("repo_name", repoName)
-				.eq("service_name", serviceName)
+				.eq("service_name", serviceName);
+			if (ownerID) query = query.eq("owner_id", ownerID);
+			const { data: row, error } = await query
 				.order("last_deployment", { ascending: false })
 				.limit(1)
 				.maybeSingle();
@@ -269,21 +308,39 @@ export const dbHelper = {
 
 	getOrCreateUser: async function (
 		userID: string,
-		defaults: { name: string; image: string; createdAt?: string }
-	): Promise<{ error?: string; created?: boolean }> {
+		defaults: { name: string; image: string; createdAt?: string; accountMode?: AccountMode }
+	): Promise<{ error?: string; created?: boolean; accountMode?: AccountMode }> {
 		try {
 			const supabase = getSupabaseServer();
-			const { data: existing } = await supabase.from("users").select("id").eq("id", userID).single();
+			const { data: existing } = await supabase.from("users").select("id, account_mode").eq("id", userID).single();
 
-			if (existing) return { created: false };
+			if (existing) {
+				const nextAccountMode = defaults.accountMode ?? (existing.account_mode as AccountMode | null) ?? "demo";
+				if (existing.account_mode !== nextAccountMode) {
+					await supabase.from("users").update({ account_mode: nextAccountMode }).eq("id", userID);
+				}
+				return { created: false, accountMode: nextAccountMode };
+			}
 
 			await supabase.from("users").insert({
 				id: userID,
 				name: defaults.name,
 				image: defaults.image,
 				created_at: defaults.createdAt ?? new Date().toISOString(),
+				account_mode: defaults.accountMode ?? "demo",
 			});
-			return { created: true };
+			return { created: true, accountMode: defaults.accountMode ?? "demo" };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getUserAccountMode: async function (userID: string): Promise<{ error?: string; accountMode?: AccountMode }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase.from("users").select("account_mode").eq("id", userID).single();
+			if (error) return { error: error.message };
+			return { accountMode: (data?.account_mode as AccountMode | null) ?? "demo" };
 		} catch (error) {
 			return { error: error instanceof Error ? error.message : String(error) };
 		}
@@ -492,6 +549,84 @@ export const dbHelper = {
 		} catch (err) {
 			console.error("getUserRepoServices error:", err);
 			return { error: err instanceof Error ? err.message : String(err) };
+		}
+	},
+
+	isCustomDomainTaken: async function (customUrl: string, exclude?: { repoName?: string; serviceName?: string }) {
+		try {
+			const supabase = getSupabaseServer();
+			const normalized = customUrl.trim();
+			if (!normalized) return { taken: false };
+
+			const { data: rows, error } = await supabase
+				.from("deployments")
+				.select("repo_name, service_name, data")
+				.limit(50);
+
+			if (error) return { error: error.message };
+
+			const taken = (rows || []).some((row: Record<string, unknown>) => {
+				const data = (row.data as Record<string, unknown>) || {};
+				const value = String(data.custom_url || "").trim();
+				if (value !== normalized) return false;
+				if (!exclude) return true;
+				return !(row.repo_name === exclude.repoName && row.service_name === exclude.serviceName);
+			});
+
+			return { taken };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getRecentDeploymentHistoryForUser: async function (userID: string, limit = 20) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployment_history")
+				.select("timestamp")
+				.eq("user_id", userID)
+				.order("timestamp", { ascending: false })
+				.limit(limit);
+			if (error) return { error: error.message };
+			return { timestamps: (data || []).map((row: Record<string, unknown>) => String(row.timestamp || "")) };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	countActiveDemoDeployments: async function (userID?: string) {
+		try {
+			const supabase = getSupabaseServer();
+			let query = supabase
+				.from("deployments")
+				.select("id", { count: "exact", head: true })
+				.eq("account_mode", "demo")
+				.eq("status", "running");
+			if (userID) query = query.eq("owner_id", userID);
+			const { count, error } = await query;
+			if (error) return { error: error.message };
+			return { count: count ?? 0 };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getExpiredDemoDeployments: async function (beforeIso: string) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("account_mode", "demo")
+				.not("demo_expires_at", "is", null)
+				.lte("demo_expires_at", beforeIso)
+				.order("demo_expires_at", { ascending: true });
+
+			if (error) return { error: error.message };
+			return { deployments: (data || []).map((row) => rowToDeployConfig(row as RowDeployment)) };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
 		}
 	},
 

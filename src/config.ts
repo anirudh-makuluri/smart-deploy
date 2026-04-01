@@ -27,7 +27,7 @@ const config = {
 	DOCKERHUB_TOKEN: process.env.DOCKERHUB_TOKEN || "",
 
 	// Deployment domain (for host-based routing with shared ALB)
-	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "anirudh-makuluri.xyz",
+	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz",
 
 	// Vercel DNS (for custom domain management)
 	VERCEL_TOKEN: process.env.VERCEL_TOKEN || "",
@@ -42,6 +42,15 @@ const config = {
 
 	// Supabase Storage bucket for deployed app screenshots
 	DEPLOYMENT_SCREENSHOT_BUCKET: process.env.DEPLOYMENT_SCREENSHOT_BUCKET || "deployment-screenshots",
+
+	// Demo mode
+	DEMO_INTERNAL_EMAIL_MATCHERS: process.env.DEMO_INTERNAL_EMAIL_MATCHERS || "",
+	DEMO_TTL_MINUTES: process.env.DEMO_TTL_MINUTES || "10",
+	DEMO_MAX_ACTIVE_PER_USER: process.env.DEMO_MAX_ACTIVE_PER_USER || "1",
+	DEMO_MAX_GLOBAL_ACTIVE: process.env.DEMO_MAX_GLOBAL_ACTIVE || "5",
+	DEMO_REDEPLOY_COOLDOWN_SECONDS: process.env.DEMO_REDEPLOY_COOLDOWN_SECONDS || "300",
+	DEMO_MAX_DEPLOYS_PER_DAY: process.env.DEMO_MAX_DEPLOYS_PER_DAY || "3",
+	DEMO_SUBDOMAIN_PREFIX: process.env.DEMO_SUBDOMAIN_PREFIX || "demo",
 }
 
 

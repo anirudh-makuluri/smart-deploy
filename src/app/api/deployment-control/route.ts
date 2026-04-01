@@ -23,7 +23,7 @@ export async function PUT(req: NextRequest) {
 				return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 			}
 
-			const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName);
+			const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName, userID);
 			if (error || !deployment) {
 				return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
 			}

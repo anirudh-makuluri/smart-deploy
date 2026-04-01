@@ -24,6 +24,7 @@ type DashboardMainProps = {
 export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const router = useRouter();
 	const { data: session } = useSession();
+	const isDemoMode = session?.accountMode === "demo";
 	const { deployments, repoServices, repoList, isLoading, setAppData, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = React.useState(false);
 	const [showAddRepo, setShowAddRepo] = React.useState(false);
@@ -206,15 +207,17 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 						<div className="flex items-center justify-between gap-2">
 							<h2 className="text-lg font-semibold text-foreground">All Repositories</h2>
 							<div className="flex items-center gap-2">
-								<Button
-									onClick={() => setShowAddRepo((value) => !value)}
-									variant="outline"
-									size="sm"
-									className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-									title="Add public repository"
-								>
-									<Plus className="size-4" />
-								</Button>
+								{!isDemoMode && (
+									<Button
+										onClick={() => setShowAddRepo((value) => !value)}
+										variant="outline"
+										size="sm"
+										className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
+										title="Add public repository"
+									>
+										<Plus className="size-4" />
+									</Button>
+								)}
 								<Button
 									onClick={handleRefresh}
 									variant="outline"
@@ -227,7 +230,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 								</Button>
 							</div>
 						</div>
-						{showAddRepo && (
+						{showAddRepo && !isDemoMode && (
 							<div className="p-3 rounded-lg border border-border bg-background">
 								<p className="text-xs text-muted-foreground mb-2">Add Public Repository</p>
 								<div className="flex gap-2">
@@ -259,10 +262,13 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 										)}
 									</Button>
 								</div>
-								<p className="text-xs text-muted-foreground/70 mt-2">
-									Enter any public GitHub repository URL
-								</p>
+								<p className="text-xs text-muted-foreground/70 mt-2">Enter any public GitHub repository URL</p>
 							</div>
+						)}
+						{isDemoMode && (
+							<p className="text-sm text-muted-foreground">
+								Demo users can deploy the curated repositories shown here.
+							</p>
 						)}
 						{repoList.length === 0 ? (
 							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">

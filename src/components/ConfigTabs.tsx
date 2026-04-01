@@ -29,6 +29,7 @@ import {
 	formatApproxEc2PriceCompact,
 } from "@/lib/aws/ec2InstanceTypes";
 import { useAppData } from "@/store/useAppData";
+import { useSession } from "next-auth/react";
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
@@ -55,6 +56,8 @@ export default function ConfigTabs({
 	repoFullName,
 	onStartScan
 }: ConfigTabsProps) {
+	const { data: session } = useSession();
+	const isDemoMode = session?.accountMode === "demo";
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
 		parseEnvVarsToDisplay(deployment.env_vars ?? "")
 	);
@@ -239,6 +242,7 @@ export default function ConfigTabs({
 	};
 
 	useEffect(() => {
+		if (isDemoMode) return;
 		const currentSub = form.getValues("custom_url");
 		if (!currentSub) {
 			const serviceSub = (deployment.service_name && deployment.service_name !== ".") ? `-${deployment.service_name}` : "";
@@ -248,7 +252,7 @@ export default function ConfigTabs({
 		} else {
 			verifySubdomain(currentSub);
 		}
-	}, []);
+	}, [form, deployment.repo_name, deployment.service_name, isDemoMode]);
 
 	const hasScanResults = !!deployment.scan_results;
 
@@ -328,7 +332,7 @@ export default function ConfigTabs({
 										{branchSelectOptions.length === 0 ? (
 											<p className="text-sm text-muted-foreground py-2.5 px-1">Loading branches…</p>
 										) : (
-											<Select value={field.value} onValueChange={field.onChange}>
+											<Select value={field.value} onValueChange={field.onChange} disabled={isDemoMode}>
 												<SelectTrigger className="w-full h-11 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4">
 													<div className="flex items-center gap-2.5 w-full">
 														<GitBranch className="size-3.5 text-muted-foreground/40 shrink-0" />
@@ -363,6 +367,11 @@ export default function ConfigTabs({
 						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">
 							Size for new EC2 instances. Redeploying to an existing instance does not resize it—change type in AWS or replace the instance.
 						</p>
+						{isDemoMode && (
+							<p className="text-[10px] text-amber-200/80 leading-relaxed mt-1">
+								Demo deployments are locked to `t3.micro`.
+							</p>
+						)}
 						<p className="text-[10px] text-muted-foreground/30 leading-relaxed mt-1">
 							Prices are approximate on-demand Linux in <span className="text-muted-foreground/50">us-west-2</span> (EBS &amp; transfer extra; other regions differ).
 						</p>
@@ -371,6 +380,7 @@ export default function ConfigTabs({
 						<Select
 							value={ec2InstanceValue}
 							onValueChange={(value) => onConfigChange({ awsEc2InstanceType: value })}
+							disabled={isDemoMode}
 						>
 							<SelectTrigger className="w-full h-auto min-h-11 py-2 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4 whitespace-normal *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:items-start *:data-[slot=select-value]:text-left [&_[data-slot=select-value]]:w-full">
 								<div className="flex items-start gap-2.5 w-full min-w-0 text-left">
@@ -409,6 +419,11 @@ export default function ConfigTabs({
 							Custom Domain
 						</div>
 						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">Public URL for accessing your application</p>
+						{isDemoMode && (
+							<p className="text-[10px] text-amber-200/80 leading-relaxed mt-1">
+								Demo domains are auto-assigned and cannot be changed.
+							</p>
+						)}
 					</div>
 					<div className="w-full max-w-sm space-y-3">
 						<FormField
@@ -423,6 +438,7 @@ export default function ConfigTabs({
 											{...field}
 											placeholder="my-cool-app"
 											className="pl-14 pr-32 h-11 bg-white/2 border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
+											disabled={isDemoMode}
 											// onBlur={(e) => {
 											// 	field.onBlur();												
 											// 	if (e.target.value) {
@@ -462,7 +478,7 @@ export default function ConfigTabs({
 								variant="ghost"
 								className="text-[11px] h-9 px-3"
 								onClick={handleCancelCustomUrl}
-								disabled={!isCustomUrlDirty || customUrlSaving}
+								disabled={isDemoMode || !isCustomUrlDirty || customUrlSaving}
 							>
 								Cancel
 							</Button>
@@ -470,7 +486,7 @@ export default function ConfigTabs({
 								type="button"
 								className="text-[11px] h-9 px-4"
 								onClick={handleSaveCustomUrl}
-								disabled={!isCustomUrlDirty || customUrlSaving}
+								disabled={isDemoMode || !isCustomUrlDirty || customUrlSaving}
 							>
 								{customUrlSaving ? "Saving…" : "Save"}
 							</Button>
@@ -505,6 +521,7 @@ export default function ConfigTabs({
 								variant="outline"
 								className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-[10px]"
 								onClick={() => setIsEnvSheetOpen(true)}
+								disabled={isDemoMode}
 							>
 								<Settings2 className="size-3.5" />
 								Edit

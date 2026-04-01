@@ -7,6 +7,7 @@ create table if not exists public.users (
   name text,
   image text,
   created_at timestamptz default now(),
+  account_mode text not null default 'demo'
 );
 
 -- Deployments: one row per deployment; id = deployment id (e.g. repo/branch slug)
@@ -19,6 +20,11 @@ create table if not exists public.deployments (
   first_deployment timestamptz,
   last_deployment timestamptz,
   revision int default 1,
+  account_mode text,
+  demo_expires_at timestamptz,
+  demo_cleanup_status text,
+  demo_repo_key text,
+  demo_commit_sha text,
   data jsonb not null default '{}',
   scan_results jsonb
 );

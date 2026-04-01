@@ -7,6 +7,7 @@ export type DeployCompleteWsPayload = {
 	success: boolean;
 	deployUrl?: string | null;
 	deploymentTarget?: string | null;
+	demoExpiresAt?: string | null;
 	ec2?: DeployConfig["ec2"];
 	error?: string;
 	vercelDnsAdded?: boolean;
@@ -188,6 +189,7 @@ export function useDeployLogs(serviceName?: string, repoName?: string, options?:
 								...cur,
 								...(deployUrlFromPayload != null && { deployUrl: deployUrlFromPayload }),
 								status: "running",
+								...(completePayload.demoExpiresAt ? { demoExpiresAt: completePayload.demoExpiresAt } : {}),
 								...(dt && { deploymentTarget: dt }),
 								...(completePayload.ec2 != null && { ec2: completePayload.ec2 }),
 							};

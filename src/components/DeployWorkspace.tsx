@@ -39,6 +39,7 @@ export default function DeployWorkspace() {
 	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
 	const repoServices = useAppData((s) => s.repoServices);
 	const { data: session } = useSession();
+	const isDemoMode = session?.accountMode === "demo";
 	const repo = activeRepo;
 	const deployment = React.useMemo(() => {
 		if (!repo?.name || !serviceName) return undefined;
@@ -96,6 +97,23 @@ export default function DeployWorkspace() {
 		}
 	}, [repo, serviceName, deployment, updateDeploymentById]);
 
+	React.useEffect(() => {
+		if (!isDemoMode || !repo?.name || !serviceName) return;
+		const resolvedBranch = resolveWorkspaceBranch(repo, "");
+		const hasDemoDefaults =
+			deployment?.url === repo.html_url &&
+			(deployment?.branch ?? "") === resolvedBranch &&
+			deployment?.accountMode === "demo";
+		if (hasDemoDefaults) return;
+		void updateDeploymentById({
+			repo_name: repo.name,
+			service_name: serviceName,
+			url: repo.html_url,
+			branch: resolvedBranch,
+			accountMode: "demo",
+		});
+	}, [isDemoMode, repo, serviceName, deployment, updateDeploymentById]);
+
 	const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
 	const effectiveDeploymentStatus =
 		deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy");
@@ -133,9 +151,22 @@ export default function DeployWorkspace() {
 			if (p.success) {
 				const url = p.customUrl || p.deployUrl;
 				toast.success("Deployment successful", {
-					description: url ? `Live at ${url}` : "Your application is now running.",
+					description: isDemoMode
+						? `Live at ${url || "your demo URL"}. This demo auto-deletes in 10 minutes.`
+						: url ? `Live at ${url}` : "Your application is now running.",
 					duration: 8000,
 				});
+				if (repo?.name && serviceName) {
+					void updateDeploymentById({
+						repo_name: repo.name,
+						service_name: serviceName,
+						status: "running",
+						...(p.deployUrl ? { deployUrl: p.deployUrl } : {}),
+						...(p.customUrl ? { custom_url: p.customUrl } : {}),
+						...(p.demoExpiresAt ? { demoExpiresAt: p.demoExpiresAt } : {}),
+						...(p.ec2 ? { ec2: p.ec2 } : {}),
+					});
+				}
 			} else {
 				toast.error("Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
@@ -155,7 +186,7 @@ export default function DeployWorkspace() {
 				});
 			}
 		},
-		[repo?.name, serviceName, updateDeploymentById]
+		[isDemoMode, repo?.name, serviceName, updateDeploymentById]
 	);
 
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =

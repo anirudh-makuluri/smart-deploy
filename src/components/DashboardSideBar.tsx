@@ -13,6 +13,7 @@ type DashboardSideBarProps = {
 export default function DashboardSideBar({ activeView, onViewChange }: DashboardSideBarProps) {
 	const { data: session } = useSession();
 	const { repoList, deployments } = useAppData();
+	const isDemoMode = session?.accountMode === "demo";
 	const activeDeployments = deployments.filter((d) => {
 		const hasStoredLiveUrl = Boolean((d.custom_url ?? "").trim() || (d.deployUrl ?? "").trim());
 		return d.status === "running" && hasStoredLiveUrl;
@@ -68,6 +69,11 @@ export default function DashboardSideBar({ activeView, onViewChange }: Dashboard
 				</div>
 				<div className="mt-auto rounded-lg border border-border bg-background/70 p-3">
 					<p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Workspace Stats</p>
+					{isDemoMode && (
+						<p className="mb-2 text-[11px] text-amber-200/80">
+							Demo workspace: curated repos and short-lived deployments.
+						</p>
+					)}
 					<div className="grid grid-cols-3 gap-2">
 						<div className="rounded-md border border-border/70 bg-card px-2 py-2">
 							<p className="text-[11px] text-muted-foreground">Repos</p>

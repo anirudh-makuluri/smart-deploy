@@ -6,6 +6,7 @@ import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
+import { deleteDeploymentForOwner } from "./lib/deleteDeploymentHelper";
 
 async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
@@ -39,6 +40,28 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 const server = http.createServer();
 const wss = new WebSocketServer({ server });
 const port = Number(process.env.WS_PORT) || 4001;
+
+async function runDemoCleanupSweep() {
+	try {
+		const expired = await dbHelper.getExpiredDemoDeployments(new Date().toISOString());
+		if (expired.error || !expired.deployments?.length) return;
+
+		for (const deployment of expired.deployments) {
+			try {
+				await deleteDeploymentForOwner({
+					repoName: deployment.repo_name,
+					serviceName: deployment.service_name,
+					userID: deployment.ownerID,
+					skipOwnershipCheck: true,
+				});
+			} catch (error) {
+				console.error("demo cleanup failed:", error);
+			}
+		}
+	} catch (error) {
+		console.error("demo cleanup sweep failed:", error);
+	}
+}
 
 function sendDeployComplete(ws: any, success: boolean, error?: string) {
 	if (ws?.readyState === 1) {
@@ -133,4 +156,8 @@ process.on("unhandledRejection", (reason) => {
 
 server.listen(port, () => {
 	console.log(`WebSocket server running on ws://localhost:${port}`);
+	void runDemoCleanupSweep();
+	setInterval(() => {
+		void runDemoCleanupSweep();
+	}, 60_000);
 });

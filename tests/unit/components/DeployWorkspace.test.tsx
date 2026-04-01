@@ -142,4 +142,49 @@ describe("DeployWorkspace", () => {
 		);
 		expect(fetchRepoDeployments).toHaveBeenCalledWith("smart-deploy");
 	});
+
+	it("persists demo defaults only once per service", async () => {
+		mockUseSession.mockReturnValue({
+			data: { user: { name: "A" }, accessToken: "token", userID: "u-1", accountMode: "demo" },
+		});
+		appState = {
+			...appState,
+			activeRepo: {
+				name: "smart-deploy",
+				default_branch: "main",
+				full_name: "acme/smart-deploy",
+				html_url: "https://github.com/acme/smart-deploy",
+			},
+			activeServiceName: "web",
+			deployments: [],
+		};
+
+		const { rerender } = render(<DeployWorkspace />);
+
+		await waitFor(() =>
+			expect(updateDeploymentById).toHaveBeenCalledWith({
+				repo_name: "smart-deploy",
+				service_name: "web",
+				url: "https://github.com/acme/smart-deploy",
+				branch: "main",
+				accountMode: "demo",
+			})
+		);
+
+		appState = {
+			...appState,
+			deployments: [
+				{
+					...baseDeployment,
+					url: "https://github.com/acme/smart-deploy",
+					branch: "main",
+					accountMode: "demo",
+				},
+			],
+		};
+
+		rerender(<DeployWorkspace />);
+
+		await waitFor(() => expect(updateDeploymentById).toHaveBeenCalledTimes(1));
+	});
 });

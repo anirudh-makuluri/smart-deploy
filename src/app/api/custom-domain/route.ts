@@ -118,11 +118,15 @@ export async function POST(req: NextRequest) {
 
 		const session = await getServerSession(authOptions);
 		const userID = session?.userID;
+		const accountMode = session?.accountMode ?? "demo";
 		if (!userID) {
 			return NextResponse.json({ status: "error", message: "Unauthorized" }, { status: 401 });
 		}
+		if (accountMode === "demo") {
+			return NextResponse.json({ status: "error", message: "Demo domains are assigned automatically." }, { status: 403 });
+		}
 
-		const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName);
+		const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName, userID);
 		if (error || !deployment) {
 			return NextResponse.json({ status: "error", message: "Deployment not found" }, { status: 404 });
 		}

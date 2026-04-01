@@ -39,6 +39,7 @@ import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./hand
 import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
+import { assertDemoDeployLimits, getDemoDeploymentDefaults, getDemoExpiryIso } from "./demoDeployment";
 
 /**
  * Main deployment handler - routes to AWS (default) or GCP
@@ -53,6 +54,24 @@ export async function handleDeploy(
 		broadcast?: (id: string, msg: string) => void;
 	}
 ): Promise<string> {
+	if (userID) {
+		const userAccountMode = (await dbHelper.getUserAccountMode(userID)).accountMode ?? deployConfig.accountMode;
+		if (userAccountMode === "demo") {
+			deployConfig = await getDemoDeploymentDefaults(deployConfig);
+			await assertDemoDeployLimits(userID, deployConfig);
+		} else {
+			deployConfig = {
+				...deployConfig,
+				accountMode: "internal",
+				demoExpiresAt: undefined,
+				demoCleanupStatus: undefined,
+				demoRepoKey: undefined,
+				demoCommitSha: undefined,
+				demoLocked: false,
+			};
+		}
+	}
+
 	const deployStartTime = Date.now();
 	const dockerfileCount = Object.keys(deployConfig.scan_results?.dockerfiles || {}).length;
 	if (dockerfileCount < 1) {
@@ -152,7 +171,7 @@ async function saveDeploymentToDB(
 			console.log("Deployment saved to DB:", updateResponse.success);
 
 			// Kick off screenshot generation in the background so deploy completion isn't delayed.
-			if (success) {
+			if (success && deployConfig.accountMode !== "demo") {
 				const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
 				if (screenshotTargetUrl.trim()) {
 					void (async () => {
@@ -220,11 +239,22 @@ async function sendDeployComplete(
 	serviceDetails?: ServiceDeployDetails | null,
 	durationMs?: number
 ) {
+	const finalDeployConfig: DeployConfig =
+		deployConfig.accountMode === "demo"
+			? {
+				...deployConfig,
+				demoExpiresAt:
+					deployConfig.demoExpiresAt ||
+					getDemoExpiryIso(success ? undefined : 5),
+				demoCleanupStatus: "pending",
+				demoCommitSha: deployConfig.commitSha || deployConfig.demoCommitSha,
+			}
+			: deployConfig;
 	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
 	console.log("Saving deployment result to database...");
 	try {
 		await saveDeploymentToDB(
-			deployConfig,
+			finalDeployConfig,
 			deployUrl,
 			success,
 			deploySteps,
@@ -242,6 +272,7 @@ async function sendDeployComplete(
 			deployUrl: string | null;
 			success: boolean;
 			deploymentTarget: string | null;
+			demoExpiresAt?: string | null;
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
@@ -251,6 +282,9 @@ async function sendDeployComplete(
 			success,
 			deploymentTarget: deploymentTarget ?? null,
 		};
+		if (finalDeployConfig.accountMode === "demo") {
+			payload.demoExpiresAt = finalDeployConfig.demoExpiresAt ?? null;
+		}
 		if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
 		if (vercelDns) {
 			payload.vercelDnsAdded = vercelDns.success;
@@ -445,8 +479,8 @@ async function handleAWSCodeBuildDeploy(
 		send("Set a deployment branch in workspace settings before deploying.", "auth");
 		throw new Error("Missing deployment branch");
 	}
-	const commitSha = deployConfig.commitSha?.trim();
-	const imageTag = commitSha ? commitSha.substring(0, 6) : `deploy-${Date.now().toString(36)}`;
+	const commitSha = (deployConfig.demoCommitSha || deployConfig.commitSha)?.trim();
+	const imageTag = commitSha ? commitSha.substring(0, 12) : `deploy-${Date.now().toString(36)}`;
 
 	// ── Build: CodeBuild + ECR ──
 	const accountId = await getAwsAccountId(region);

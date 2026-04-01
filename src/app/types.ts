@@ -38,6 +38,8 @@ export type repoType = {
 	}[];
 };
 
+export type AccountMode = 'internal' | 'demo';
+
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
@@ -69,6 +71,7 @@ export type DeployConfig = {
 	url: string;
 	branch: string;
 	commitSha?: string;
+	accountMode?: AccountMode;
 	env_vars?: string;
 	deployUrl?: string;
 	custom_url?: string;
@@ -89,6 +92,11 @@ export type DeployConfig = {
 	awsRegion?: string;
 	/** EC2 instance type for new instances (e.g. t3.small). Defaults to t3.micro. */
 	awsEc2InstanceType?: string;
+	demoRepoKey?: string;
+	demoCommitSha?: string;
+	demoExpiresAt?: string;
+	demoCleanupStatus?: 'pending' | 'cleaned' | 'failed';
+	demoLocked?: boolean;
 	ec2?: EC2DeployDetails;
 	cloudRun?: CloudRunDeployDetails;
 	scan_results?: SDArtifactsResponse;

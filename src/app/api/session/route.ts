@@ -4,6 +4,7 @@ import { authOptions } from "../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { getGithubRepos } from "@/github-helper";
 import { repoType } from "@/app/types";
+import { buildDemoRepoList } from "../../../lib/demoMode";
 
 // Force dynamic rendering - prevents Next.js from analyzing this route during build
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,7 @@ export async function GET(req: NextRequest) {
 		const name = session?.user?.name
 		const image = session?.user?.image
 		const token = session?.accessToken
+		const accountMode = session?.accountMode ?? "demo";
 
 		if (!userID || !name || !image || !token) {
 			return NextResponse.json({ message: "Sufficient data not given" }, { status: 400 });
@@ -26,9 +28,18 @@ export async function GET(req: NextRequest) {
 			name,
 			image,
 			createdAt: new Date().toISOString(),
+			accountMode,
 		});
 		if (createResult.error) {
 			return NextResponse.json({ message: createResult.error }, { status: 500 });
+		}
+
+		if (accountMode === "demo") {
+			return NextResponse.json({
+				message: "Demo user synced successfully",
+				repoList: buildDemoRepoList(),
+				accountMode,
+			}, { status: 200 });
 		}
 
 		const { repos: existingRepos } = await dbHelper.getUserRepos(userID);
@@ -50,7 +61,8 @@ export async function GET(req: NextRequest) {
 
 		return NextResponse.json({ 
 			message: "User synced successfully",
-			repoList
+			repoList,
+			accountMode,
 		}, 
 			{ status: 200 }
 		);

@@ -10,6 +10,7 @@ import {
 import { ChevronDown, GitBranch, Rocket } from "lucide-react";
 import { useState } from "react";
 import { repoType } from "@/app/types";
+import { useSession } from "next-auth/react";
 
 interface DeployOptionsProps {
 	onDeploy: (commitSha?: string) => void;
@@ -19,6 +20,8 @@ interface DeployOptionsProps {
 }
 
 export default function DeployOptions({ onDeploy, disabled, repo, branch }: DeployOptionsProps) {
+	const { data: session } = useSession();
+	const isDemoMode = session?.accountMode === "demo";
 	const [isFetchingCommit, setIsFetchingCommit] = useState(false);
 
 	const handleDeployLatestCommit = async () => {
@@ -71,18 +74,19 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 					className="cursor-pointer"
 				>
 					<GitBranch className="h-4 w-4 mr-2 hover:text-primary" />
-					Deploy from Branch ({branch})
+					{isDemoMode ? `Deploy pinned demo build (${branch})` : `Deploy from Branch (${branch})`}
 				</DropdownMenuItem>
-				<DropdownMenuItem
-					onClick={handleDeployLatestCommit}
-					disabled={isFetchingCommit || !repo}
-					className="cursor-pointer disabled:opacity-50"
-				>
-					<Rocket className="h-4 w-4 mr-2 hover:text-primary" />
-					{isFetchingCommit ? "Fetching..." : "Deploy Latest Commit"}
-				</DropdownMenuItem>
+				{!isDemoMode && (
+					<DropdownMenuItem
+						onClick={handleDeployLatestCommit}
+						disabled={isFetchingCommit || !repo}
+						className="cursor-pointer disabled:opacity-50"
+					>
+						<Rocket className="h-4 w-4 mr-2 hover:text-primary" />
+						{isFetchingCommit ? "Fetching..." : "Deploy Latest Commit"}
+					</DropdownMenuItem>
+				)}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
 }
-

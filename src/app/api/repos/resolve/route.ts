@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import type { repoType } from "@/app/types";
+import { buildDemoRepoList, findDemoRepoConfig } from "../../../../lib/demoMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
 		const session = await getServerSession(authOptions);
 		const token = session?.accessToken;
 		const userID = session?.userID;
+		const accountMode = session?.accountMode ?? "demo";
 		if (!token || !userID) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
@@ -27,6 +29,18 @@ export async function GET(req: NextRequest) {
 		const repoName = req.nextUrl.searchParams.get("repo")?.trim();
 		if (!owner || !repoName) {
 			return NextResponse.json({ error: "Owner and repo are required" }, { status: 400 });
+		}
+		if (accountMode === "demo") {
+			const allowed = findDemoRepoConfig({ owner, repo: repoName });
+			if (!allowed) {
+				return NextResponse.json({ error: "Demo users can only access the curated demo repositories." }, { status: 403 });
+			}
+			const repo = buildDemoRepoList().find((entry) => entry.full_name.toLowerCase() === `${owner}/${repoName}`.toLowerCase());
+			if (!repo) {
+				return NextResponse.json({ error: "Configured demo repository not found" }, { status: 404 });
+			}
+			await dbHelper.syncUserRepos(userID, [repo]);
+			return NextResponse.json({ repo }, { status: 200 });
 		}
 
 		const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repoName}`, {

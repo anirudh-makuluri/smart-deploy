@@ -10,6 +10,7 @@ import {
 import { resolveWorkspaceBranch } from "@/lib/repoBranch";
 import DeployOptions from "@/components/DeployOptions";
 import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
+import * as React from "react";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -131,6 +132,21 @@ export default function DeployOverview({
 		: null;
 
 	const regionDisplay = (deployment.awsRegion || region).trim() || region;
+	const [now, setNow] = React.useState(() => Date.now());
+	const demoExpiresAt = deployment.demoExpiresAt ? new Date(deployment.demoExpiresAt).getTime() : null;
+	const demoSecondsLeft = demoExpiresAt ? Math.max(0, Math.floor((demoExpiresAt - now) / 1000)) : null;
+
+	React.useEffect(() => {
+		if (!demoExpiresAt) return;
+		const timer = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(timer);
+	}, [demoExpiresAt]);
+
+	function formatSeconds(seconds: number) {
+		const mins = Math.floor(seconds / 60);
+		const secs = seconds % 60;
+		return `${mins}:${secs.toString().padStart(2, "0")}`;
+	}
 
 	return (
 		<div className="space-y-6">
@@ -263,8 +279,30 @@ export default function DeployOverview({
 					</div>
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Environment</p>
-						<p className="mt-2 text-sm font-semibold text-foreground">Production</p>
+						<p className="mt-2 text-sm font-semibold text-foreground">
+							{deployment.accountMode === "demo" ? "Production demo" : "Production"}
+						</p>
 					</div>
+					{deployment.accountMode === "demo" && demoExpiresAt && (
+						<div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4">
+							<p className="text-xs uppercase tracking-wider text-amber-100/70">Demo expiry</p>
+							<p className="mt-2 text-sm font-semibold text-amber-100">
+								{demoSecondsLeft === 0 ? "Expiring now" : `Auto-deletes in ${formatSeconds(demoSecondsLeft ?? 0)}`}
+							</p>
+							<p className="mt-1 text-xs text-amber-100/70">{formatTimestamp(deployment.demoExpiresAt)}</p>
+						</div>
+					)}
+					{deployment.accountMode === "demo" && (
+						<div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4">
+							<p className="text-xs uppercase tracking-wider text-amber-100/70">Demo policy</p>
+							<p className="mt-2 text-sm text-amber-100">
+								This environment is pinned to a demo repo commit and runs on EC2 `t3.micro`.
+							</p>
+							<p className="mt-1 text-xs text-amber-100/70">
+								We reuse the same built image for demo deploys to keep costs down.
+							</p>
+						</div>
+					)}
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Region</p>
 						<p className="mt-2 font-mono text-sm font-semibold text-foreground">{regionDisplay}</p>

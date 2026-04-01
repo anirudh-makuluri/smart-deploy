@@ -3,6 +3,7 @@ import { AuthOptions } from "next-auth"
 import GitHubProvider from 'next-auth/providers/github'
 import GoogleProvider from 'next-auth/providers/google'
 import { dbHelper } from "@/db-helper"
+import { getAccountModeForEmail } from "../../../lib/demoMode";
 
 export const authOptions : AuthOptions = {
 	providers: [
@@ -24,10 +25,14 @@ export const authOptions : AuthOptions = {
 		async signIn({ user, account, profile }) {
 			const email = user.email || (profile as { email?: string })?.email || "";
 			const name = user.name || (profile as { name?: string })?.name || "";
-			if (!email.toLowerCase().includes("anirudh")) {
-				// Store in waiting list and deny sign-in (redirects to waiting-list page)
+			const existingAccountMode =
+				typeof user.id === "string" && user.id
+					? (await dbHelper.getUserAccountMode(user.id)).accountMode
+					: undefined;
+			const accountMode = existingAccountMode ?? getAccountModeForEmail(email);
+			user.accountMode = accountMode;
+			if (accountMode === "demo") {
 				await dbHelper.addToWaitingList(email, name || undefined);
-				return false;
 			}
 			return true;
 		},
@@ -46,6 +51,9 @@ export const authOptions : AuthOptions = {
 				token.accessToken = account.access_token
 				token.userID = user.id;
 			}
+			if (user?.accountMode) {
+				token.accountMode = user.accountMode;
+			}
 
 			return token
 		},
@@ -53,6 +61,13 @@ export const authOptions : AuthOptions = {
 		async session({ session, token }) {
 			session.accessToken = token.accessToken as string;
 			session.userID = token.userID;
+			const persistedAccountMode =
+				typeof token.userID === "string" && token.userID
+					? (await dbHelper.getUserAccountMode(token.userID)).accountMode
+					: undefined;
+			session.accountMode =
+				persistedAccountMode ??
+				((token.accountMode as "internal" | "demo" | undefined) ?? "demo");
 			return session
 		}
 	},

@@ -10,9 +10,13 @@ export async function POST(req: NextRequest) {
 		const session = await getServerSession(authOptions);
 		const token = session?.accessToken;
 		const userID = session?.userID;
+		const accountMode = session?.accountMode ?? "demo";
 
 		if (!token || !userID) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		}
+		if (accountMode === "demo") {
+			return NextResponse.json({ error: "Demo users can only access the curated demo repositories." }, { status: 403 });
 		}
 
 		const body = await req.json();

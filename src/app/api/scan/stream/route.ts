@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { authOptions } from "../../auth/authOptions";
+import { getSdApiBaseUrl, getSdApiHeaders } from "../../../../lib/sdApi";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,9 @@ export async function POST(req: Request) {
 
 	try {
 		console.log("Starting analyze stream for", payload.repo_url);
-		const response = await fetch("http://localhost:8080/analyze/stream", {
+		const response = await fetch(`${getSdApiBaseUrl()}/analyze/stream`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: getSdApiHeaders({ "Content-Type": "application/json" }),
 			body: JSON.stringify(payload)
 		});
 

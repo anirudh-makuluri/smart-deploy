@@ -13,6 +13,7 @@ import {
 	parseGithubOwnerRepo,
 	prepareGithubRepoWorkspace,
 } from "@/lib/githubRepoArchive";
+import { findDemoRepoConfig } from "../../../../lib/demoMode";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
 	try {
 		const session = await getServerSession(authOptions);
 		const token = session?.accessToken;
+		const accountMode = session?.accountMode ?? "demo";
 		if (!token) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
@@ -63,6 +65,34 @@ export async function POST(req: NextRequest) {
 		}
 
 		const { owner, repo } = parsed;
+		const demoRepo = accountMode === "demo" ? findDemoRepoConfig({ owner, repo, url: repoUrl }) : null;
+		if (accountMode === "demo" && !demoRepo) {
+			return NextResponse.json({ error: "Demo users can only scan the curated demo repositories." }, { status: 403 });
+		}
+		if (demoRepo?.scan_results?.services?.length) {
+			const services: DetectedServiceInfo[] = demoRepo.scan_results.services.map((svc) => ({
+				name: svc.name,
+				path: svc.build_context || ".",
+				language: svc.language || "",
+				framework: svc.framework,
+				port: svc.port,
+			}));
+			const userID = (session as { userID?: string })?.userID;
+			if (userID) {
+				await dbHelper.upsertRepoServices(userID, repoUrl, {
+					branch: demoRepo.branch,
+					repo_owner: owner,
+					repo_name: repo,
+					services,
+					is_monorepo: services.length > 1,
+				});
+			}
+			return NextResponse.json({
+				isMonorepo: services.length > 1,
+				isMultiService: services.length > 1,
+				services,
+			});
+		}
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "detect-services-"));
 
 		try {

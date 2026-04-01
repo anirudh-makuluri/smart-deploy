@@ -4,6 +4,7 @@ import { authOptions } from "../../auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { repoType } from "@/app/types";
 import { getGithubRepos } from "@/github-helper";
+import { buildDemoRepoList } from "../../../../lib/demoMode";
 
 
 export async function GET(req: NextRequest) {
@@ -11,6 +12,7 @@ export async function GET(req: NextRequest) {
 
 	const token = session?.accessToken
 	const userID = session?.userID
+	const accountMode = session?.accountMode ?? "demo";
 
 	if (!token) {
 		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
@@ -21,6 +23,13 @@ export async function GET(req: NextRequest) {
 	}
 
 	try {
+		if (accountMode === "demo") {
+			return NextResponse.json({
+				status: "success",
+				message: "Demo repositories refreshed",
+				repoList: buildDemoRepoList(),
+			}, { status: 200 });
+		}
 		const response = await getGithubRepos(token);
 		if (response.data) {
 			const repoList: repoType[] = response.data

@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { authOptions } from "../auth/authOptions";
+import { getSdApiBaseUrl, getSdApiHeaders } from "../../../lib/sdApi";
 
 export async function DELETE(req: Request) {
 	const session = await getServerSession(authOptions);
@@ -25,9 +26,9 @@ export async function DELETE(req: Request) {
 
 	try {
 		console.log("Deleting cache for", repo_url, commit_sha || "(all)");
-		const response = await fetch("http://localhost:8080/cache", {
+		const response = await fetch(`${getSdApiBaseUrl()}/cache`, {
 			method: "DELETE",
-			headers: { "Content-Type": "application/json" },
+			headers: getSdApiHeaders({ "Content-Type": "application/json" }),
 			body: JSON.stringify({ repo_url, commit_sha })
 		});
 

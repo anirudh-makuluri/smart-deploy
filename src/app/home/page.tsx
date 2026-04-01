@@ -9,12 +9,21 @@ import { useAppData } from "@/store/useAppData";
 
 export default function HomePage() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
-	const { setActiveServiceName } = useAppData();
+	const { deployments, isLoading, setActiveServiceName } = useAppData();
 	const [activeView, setActiveView] = React.useState<"overview" | "deployments" | "repositories">("overview");
+	const hasResolvedInitialView = React.useRef(false);
 
 	React.useEffect(() => {
 		setActiveServiceName(null);
 	}, [setActiveServiceName]);
+
+	React.useEffect(() => {
+		if (hasResolvedInitialView.current || isLoading) return;
+		hasResolvedInitialView.current = true;
+		if (deployments.length === 0 && activeView === "overview") {
+			setActiveView("repositories");
+		}
+	}, [activeView, deployments.length, isLoading]);
 
 	return (
 		<div className="landing-bg h-svh overflow-hidden flex flex-col text-foreground">

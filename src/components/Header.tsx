@@ -24,6 +24,7 @@ export default function Header() {
 
 	const isHome = pathname === "/home";
 	const isRepoPage = !!owner && !!repo && !isHome;
+	const isDemoMode = session?.accountMode === "demo";
 
 	function handleRepoClick() {
 		setActiveServiceName(null);
@@ -43,6 +44,11 @@ export default function Header() {
 								<div className="flex items-center gap-2 text-foreground/80">
 									<User className="size-3.5" />
 									<span>{session?.user?.name || "User Dashboard"}</span>
+									{isDemoMode && (
+										<span className="inline-flex items-center rounded-full border border-amber-300/20 bg-amber-400/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200">
+											Demo
+										</span>
+									)}
 								</div>
 							) : (
 								<div className="flex items-center gap-2 overflow-hidden">
@@ -105,6 +111,16 @@ export default function Header() {
 					)}
 				</div>
 			</div>
+			{isDemoMode && (
+				<div className="border-t border-amber-400/10 bg-amber-400/10 px-6 py-2 text-xs text-amber-100/90">
+					<div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-1">
+						<span className="font-semibold uppercase tracking-wide text-amber-200">Demo mode</span>
+						<span>Curated repos only</span>
+						<span>EC2 `t3.micro`</span>
+						<span>Deployments auto-delete after 10 minutes</span>
+					</div>
+				</div>
+			)}
 		</header>
 	);
 }
