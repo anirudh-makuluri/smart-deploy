@@ -169,14 +169,14 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			return;
 		}
 		// Fallback: use repoServices from store (from DB) if we have a record for this repo
-		const record = repoServices.find((r) => normalizeRepoUrlForMatch(r.repo_url) === normalizeRepoUrlForMatch(repoUrl));
+		const record = repoServices.find((r) => normalizeRepoUrlForMatch(r.repoUrl) === normalizeRepoUrlForMatch(repoUrl));
 		if (record?.services?.length) {
 			setServices(record.services);
 			setLoading(false);
 			setError(null);
 			setDetectedRepoCache(repoUrl, {
 				services: record.services,
-				isMonorepo: record.is_monorepo,
+				isMonorepo: record.isMonorepo,
 				isMultiService: record.services.length > 1,
 				packageManager: undefined,
 			});
@@ -215,7 +215,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	const repoDeployments = React.useMemo(() => {
 		const norm = normalizeRepoUrl(repoUrl);
-		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_name === resolvedRepo.name || normalizeRepoUrl(d.url) === norm)));
+		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repoName === resolvedRepo.name || normalizeRepoUrl(d.url) === norm)));
 	}, [deployments, repoUrl, resolvedRepo]);
 
 	// Fetch deployments explicitly for this repo on mount if needed
@@ -255,10 +255,10 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		try {
 			for (const dep of repoDeployments) {
 				try {
-					await deleteDeployment(dep.repo_name, dep.service_name);
-					deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
+				await deleteDeployment(dep.repoName, dep.serviceName);
+				deletedKeys.push({ repoName: dep.repoName, serviceName: dep.serviceName });
 				} catch (err: any) {
-					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
+					toast.error(err?.message || `Failed to delete ${dep.serviceName}`);
 				}
 			}
 			if (deletedKeys.length) {

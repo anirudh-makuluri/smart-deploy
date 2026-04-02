@@ -3,7 +3,7 @@ import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
 import { deleteVercelDnsRecord } from "@/lib/vercelDns";
 import { dbHelper } from "@/db-helper";
 import config from "@/config";
-import { DeployConfig } from "@/app/types";
+import { DeployConfig, EC2DeployDetails } from "@/app/types";
 import { runCommandLiveWithOutput } from "@/server-helper";
 
 export type DeleteDeploymentArgs = {
@@ -63,9 +63,10 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	const deployConfig = deployment as DeployConfig;
 	const cloudProvider = deployConfig.cloudProvider || "aws";
+	const ec2Casted = (deployConfig.ec2 || {}) as EC2DeployDetails;
 	const deploymentTarget =
 		deployConfig.deploymentTarget ||
-		(deployConfig.ec2?.instanceId ? "ec2" : undefined);
+		(ec2Casted?.instanceId ? "ec2" : undefined);
 
 	try {
 		if (cloudProvider === "aws" && deploymentTarget) {
@@ -103,8 +104,8 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	try {
 		const dnsResult = await deleteVercelDnsRecord({
-			customUrl: deployConfig.custom_url || null,
-			serviceName: deployConfig.service_name || validServiceName || null,
+		customUrl: deployConfig.liveUrl || null,
+		serviceName: deployConfig.serviceName || validServiceName || null,
 		});
 		if (!dnsResult.success) {
 			return {
@@ -156,13 +157,14 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 		const cloudProvider = deployConfig.cloudProvider || "aws";
 
 		if (cloudProvider === "aws" && deployConfig.deploymentTarget === "ec2") {
-			const instanceId = deployConfig.ec2?.instanceId;
-			if (!instanceId) {
-				return { status: "error", message: "No EC2 instanceId stored for this deployment" };
-			}
+		const ec2ConfigPause = (deployConfig.ec2 || {}) as EC2DeployDetails;
+		const instanceId = ec2ConfigPause?.instanceId;
+		if (!instanceId) {
+			return { status: "error", message: "No EC2 instanceId stored for this deployment" };
+		}
 
-			const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-			const clientConfig: ConstructorParameters<typeof EC2Client>[0] = { region };
+		const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
+		const clientConfig: ConstructorParameters<typeof EC2Client>[0] = { region };
 			if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
 				clientConfig.credentials = {
 					accessKeyId: config.AWS_ACCESS_KEY_ID,

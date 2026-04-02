@@ -54,7 +54,9 @@ export type EC2DeployDetails = {
 	subnetId: string;
 	securityGroupId: string;
 	amiId: string;
-	sharedAlbDns?: string;
+	sharedAlbDns: string;
+	/** EC2 instance type (e.g. t3.small). Defaults to t3.micro. */
+	instanceType: string;
 };
 
 export type CloudRunDeployDetails = {
@@ -65,33 +67,38 @@ export type CloudRunDeployDetails = {
 
 export type DeployConfig = {
 	id: string;
-	repo_name: string;
+	repoName: string;
 	url: string;
 	branch: string;
-	commitSha?: string;
-	env_vars?: string;
-	deployUrl?: string;
-	custom_url?: string;
-	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage). */
-	screenshot_url?: string;
-	service_name: string;
-	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
-	first_deployment?: string;
-	last_deployment?: string;
-	revision?: number;
-	token_usage?: {
-		input_tokens: number;
-		output_tokens: number;
-		total_tokens: number;
-	};
-	cloudProvider?: CloudProvider;
-	deploymentTarget?: DeploymentTarget;
-	awsRegion?: string;
-	/** EC2 instance type for new instances (e.g. t3.small). Defaults to t3.micro. */
-	awsEc2InstanceType?: string;
-	ec2?: EC2DeployDetails;
-	cloudRun?: CloudRunDeployDetails;
-	scan_results?: SDArtifactsResponse;
+	/** Commit SHA that was deployed; null if never deployed */
+	commitSha: string | null;
+	/** Environment variables as JSON string (optional for deployment) */
+	envVars?: string;
+	/** Live deployment URL (either auto-deployed or custom); null if didnt_deploy */
+	liveUrl: string | null;
+	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage); null if didnt_deploy */
+	screenshotUrl: string | null;
+	serviceName: string;
+	/** Deployment status */
+	status: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
+	/** ISO timestamp when first deployed; null if never deployed */
+	firstDeployment: string | null;
+	/** ISO timestamp of most recent deployment; null if never deployed */
+	lastDeployment: string | null;
+	/** Deployment revision counter; increments after each successful deploy */
+	revision: number;
+	/** Cloud provider (defaults to 'aws') */
+	cloudProvider: CloudProvider;
+	/** Deployment target (defaults to 'ec2' for AWS) */
+	deploymentTarget: DeploymentTarget;
+	/** AWS region (defaults to value from config) */
+	awsRegion: string;
+	/** AWS EC2 deployment details */
+	ec2: EC2DeployDetails | {};
+	/** Google Cloud Run deployment details */
+	cloudRun: CloudRunDeployDetails | {};
+	/** Analysis/scan results from detectServices */
+	scanResults: SDArtifactsResponse | {};
 }
 
 export type DeployStep = {
@@ -127,13 +134,13 @@ export type DetectedServiceInfo = {
 
 /** Stored record per user+repo for detected services metadata. */
 export type RepoServicesRecord = {
-	repo_url: string;
+	repoUrl: string;
 	branch: string;
-	repo_owner: string;
-	repo_name: string;
+	repoOwner: string;
+	repoName: string;
 	services: DetectedServiceInfo[];
-	is_monorepo: boolean;
-	updated_at: string;
+	isMonorepo: boolean;
+	updatedAt: string;
 };
 
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */

@@ -282,7 +282,7 @@ export async function updateCustomDomain(
 		const updateResponse = await dbHelper.updateDeployments(
 			{
 				...deployment,
-				custom_url: formattedCustomUrl ?? undefined,
+				liveUrl: formattedCustomUrl ?? null,
 			},
 			userID
 		);
@@ -292,11 +292,11 @@ export async function updateCustomDomain(
 		}
 
 		let configureMessage: string | null = null;
-		if (deployment.status === "running" && deployment.ec2?.instanceId && formattedCustomUrl) {
-			const previousCustomUrl = deployment.custom_url || null;
+		if (deployment.status === "running" && ((deployment.ec2 || {}) as Record<string, unknown>)?.instanceId && formattedCustomUrl) {
+			const previousCustomUrl = deployment.liveUrl || null;
 			const updatedDeployment = {
 				...deployment,
-				custom_url: formattedCustomUrl ?? undefined,
+				liveUrl: formattedCustomUrl ?? null,
 			};
 			await configureCustomDomainForDeployment(updatedDeployment, previousCustomUrl);
 			configureMessage = "ALB and Vercel DNS updated";
@@ -376,7 +376,7 @@ export async function verifyDns(
 		if (repoNameTrimmed && serviceNameTrimmed) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
 			if (deploymentRes.deployment) {
-				const currentCustomUrl = deploymentRes.deployment.custom_url || "";
+				const currentCustomUrl = deploymentRes.deployment.liveUrl || "";
 				const currentSubdomain = currentCustomUrl.replace(/^https?:\/\//, "").replace(/\..*$/, "");
 
 				if (currentSubdomain === sanitized) {

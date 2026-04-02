@@ -37,8 +37,8 @@ export default function DashboardDeploymentItem({
 			setIsDeleting(true);
 			const loadingId = toast.loading("Deleting deployment…");
 			try {
-				await deleteDeployment(deployConfig.repo_name, deployConfig.service_name);
-				removeDeployment(deployConfig.repo_name, deployConfig.service_name);
+			await deleteDeployment(deployConfig.repoName, deployConfig.serviceName);
+			removeDeployment(deployConfig.repoName, deployConfig.serviceName);
 				toast.dismiss(loadingId);
 				toast.success("Deployment deleted.");
 			} catch (err: any) {
@@ -52,7 +52,7 @@ export default function DashboardDeploymentItem({
 
 		try {
 			const actionKey = action === "pause" ? "pause" : "resume";
-			await controlDeployment(actionKey as "pause" | "resume" | "stop", deployConfig.repo_name, deployConfig.service_name);
+			await controlDeployment(actionKey as "pause" | "resume" | "stop", deployConfig.repoName, deployConfig.serviceName);
 			const nextStatus = action === "pause" ? "paused" : "running";
 			void updateDeploymentById({ ...deployConfig, status: nextStatus });
 			toast.success(
@@ -70,10 +70,10 @@ export default function DashboardDeploymentItem({
 			<div className="flex items-start justify-between gap-2">
 				<div className="min-w-0 flex-1">
 					<Link
-						href={`/services/${deployConfig.service_name}?repoName=${encodeURIComponent(deployConfig.repo_name)}`}
+						href={`/services/${deployConfig.serviceName}?repoName=${encodeURIComponent(deployConfig.repoName)}`}
 						className="font-semibold text-foreground hover:text-primary transition-colors truncate block"
 					>
-						{deployConfig.service_name}
+						{deployConfig.serviceName}
 					</Link>
 					<span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border mt-2 ${statusStyle}`}>
 						{deployConfig.status ?? "stopped"}

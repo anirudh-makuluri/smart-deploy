@@ -32,7 +32,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
-		const repoUrlNorm = normalizeUrl(record.repo_url);
+		const repoUrlNorm = normalizeUrl(record.repoUrl);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
@@ -49,8 +49,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 					? "Deployed"
 					: "Not deployed";
 		const base = {
-			owner: record.repo_owner,
-			name: record.repo_name,
+			owner: record.repoOwner,
+			name: record.repoName,
 			subtitle,
 			hasFailed,
 		};

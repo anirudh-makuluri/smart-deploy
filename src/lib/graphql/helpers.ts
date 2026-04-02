@@ -137,8 +137,8 @@ export function normalizeCustomUrlInput(value?: string): string | null {
 }
 
 export function buildServicesForDeployment(deployment: any): any[] {
-	const services = (deployment.scan_results?.services || []).filter(Boolean);
-	const fallbackName = deployment.service_name || deployment.repo_name;
+	const services = (deployment.scanResults?.services || []).filter(Boolean);
+	const fallbackName = deployment.serviceName || deployment.repoName;
 	if (services.length === 0) {
 		return [{ name: fallbackName, dir: ".", port: 8080 }];
 	}
@@ -188,7 +188,7 @@ export async function configureCustomDomainForDeployment(
 		instanceId,
 		existingInstanceId: undefined,
 		services,
-		repoName: deployment.repo_name,
+		repoName: deployment.repoName,
 		net,
 		region,
 		certificateArn,

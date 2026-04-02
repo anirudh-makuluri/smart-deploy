@@ -88,7 +88,7 @@ export default function RepoServicesList({
 							resolvedRepo.name
 						);
 						const status = deployment?.status;
-						const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
+						const hasStoredLiveUrl = Boolean(deployment?.liveUrl);
 						// Never show "Online" based on "running" alone; require an actual stored live URL.
 						const effectiveStatus =
 							status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (status ?? "didnt_deploy");

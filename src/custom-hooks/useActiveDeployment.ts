@@ -15,7 +15,7 @@ export function useActiveDeployment(): DeployConfig | undefined {
 	return useMemo(() => {
 		if (!activeRepo?.name || !activeServiceName) return undefined;
 		return deployments.find(
-			(dep) => dep.repo_name === activeRepo.name && dep.service_name === activeServiceName
+			(dep) => dep.repoName === activeRepo.name && dep.serviceName === activeServiceName
 		);
 	}, [deployments, activeRepo?.name, activeServiceName]);
 }

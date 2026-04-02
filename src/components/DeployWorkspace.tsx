@@ -63,8 +63,8 @@ export default function DeployWorkspace() {
 
 	// ============== MEMOIZED DERIVED VALUES (for callbacks & hooks) ==============
 	const hasStoredLiveUrl = React.useMemo(
-		() => Boolean(deployment?.deployUrl || deployment?.custom_url),
-		[deployment?.deployUrl, deployment?.custom_url]
+		() => Boolean(deployment?.liveUrl),
+		[deployment?.liveUrl]
 	);
 
 	const effectiveDeploymentStatus = React.useMemo(
@@ -76,11 +76,23 @@ export default function DeployWorkspace() {
 		if (!repo?.name || !serviceName) return null;
 		const base: DeployConfig = {
 			id: deployment?.id ?? "",
-			repo_name: repo.name,
-			service_name: serviceName,
+			repoName: repo.name,
+			serviceName: serviceName,
 			url: deployment?.url ?? repo.html_url ?? "",
 			branch: "",
 			status: deployment?.status ?? "didnt_deploy",
+			commitSha: null,
+			liveUrl: null,
+			screenshotUrl: null,
+			firstDeployment: null,
+			lastDeployment: null,
+			revision: 0,
+			cloudProvider: "aws",
+			deploymentTarget: "ec2",
+			awsRegion: "",
+			ec2: {},
+			cloudRun: {},
+			scanResults: {},
 		};
 		const merged = { ...base, ...(deployment as Partial<DeployConfig> | undefined) } as DeployConfig;
 		merged.url = merged.url ?? base.url ?? "";
@@ -103,10 +115,10 @@ export default function DeployWorkspace() {
 				});
 			}
 
-			if (!p.success && p.ec2?.instanceId?.trim() && repo?.name && serviceName) {
+			if (!p.success && ((p.ec2 || {}) as Record<string, unknown>)?.instanceId && repo?.name && serviceName) {
 				void updateDeploymentById({
-					repo_name: repo.name,
-					service_name: serviceName,
+					repoName: repo.name,
+					serviceName: serviceName,
 					ec2: p.ec2,
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
@@ -126,8 +138,8 @@ export default function DeployWorkspace() {
 		onUpdateBranch: async (branch: string) => {
 			if (!repo?.name || !serviceName) return;
 			await updateDeploymentById({
-				repo_name: repo.name,
-				service_name: serviceName,
+				repoName: repo.name,
+				serviceName: serviceName,
 				url: deployment?.url || "",
 				branch,
 			});
@@ -135,7 +147,7 @@ export default function DeployWorkspace() {
 	});
 
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
-		useDeployLogs(deployment?.service_name ?? serviceName ?? repo?.name, repo?.name ?? deployment?.repo_name, { onDeployFinished: onDeployFinishedCallback });
+		useDeployLogs(deployment?.serviceName ?? serviceName ?? repo?.name, repo?.name ?? deployment?.repoName, { onDeployFinished: onDeployFinishedCallback });
 
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
 		repoName: repo?.name,
@@ -163,7 +175,7 @@ export default function DeployWorkspace() {
 	const { isRefreshing: isRefreshingPreview, refreshScreenshot: handleManualCreatePreview } = usePreviewScreenshot({
 		repoName: repo?.name,
 		serviceName: serviceName || "",
-		screenshotUrl: deployment?.screenshot_url,
+			screenshotUrl: deployment?.screenshotUrl || undefined,
 		deploymentStatus: effectiveDeploymentStatus,
 		hasStoredLiveUrl: hasStoredLiveUrl,
 		onDeploymentsRefetch: async (repo: string) => {
@@ -186,13 +198,13 @@ export default function DeployWorkspace() {
 
 	// Memoize to prevent unnecessary re-renders of child components
 	const serviceNameForLogs = React.useMemo(
-		() => deployment?.service_name ?? serviceName ?? repo?.name,
-		[deployment?.service_name, serviceName, repo?.name]
+		() => deployment?.serviceName ?? serviceName ?? repo?.name,
+		[deployment?.serviceName, serviceName, repo?.name]
 	);
 
 	const repoNameForLogs = React.useMemo(
-		() => repo?.name ?? deployment?.repo_name,
-		[repo?.name, deployment?.repo_name]
+		() => repo?.name ?? deployment?.repoName,
+		[repo?.name, deployment?.repoName]
 	);
 
 	const analyzeServicePath = React.useMemo(() => {
@@ -204,22 +216,22 @@ export default function DeployWorkspace() {
 		const cached = fromList(getDetectedRepoCache(repo.html_url)?.services);
 		if (cached) return cached;
 		const norm = normalizeRepoUrl(repo.html_url);
-		const record = repoServices.find((r) => normalizeRepoUrl(r.repo_url) === norm);
+		const record = repoServices.find((r) => normalizeRepoUrl(r.repoUrl) === norm);
 		return fromList(record?.services);
 	}, [repo?.html_url, serviceName, getDetectedRepoCache, repoServices]);
 
 	const hasScanResults = React.useMemo(
-		() => Boolean(deployment?.scan_results || scanResults),
-		[deployment?.scan_results, scanResults]
+		() => Boolean(deployment?.scanResults || scanResults),
+		[deployment?.scanResults, scanResults]
 	);
 
 	const effectiveScanResults = React.useMemo(
-		() => (scanResults || deployment?.scan_results || null),
-		[scanResults, deployment?.scan_results]
+		() => (scanResults || deployment?.scanResults || null),
+		[scanResults, deployment?.scanResults]
 	);
 
 	const deployDisabled = React.useMemo(
-		() => isDeploymentDisabled({ ...(workingDeployment || {}), scan_results: effectiveScanResults } as DeployConfig),
+		() => isDeploymentDisabled({ ...(workingDeployment || {}), scanResults: effectiveScanResults } as DeployConfig),
 		[workingDeployment, effectiveScanResults]
 	);
 
@@ -251,9 +263,9 @@ export default function DeployWorkspace() {
 		const now = new Date().toISOString();
 		const next: DeployConfig = {
 			...config,
-			first_deployment: deployment?.first_deployment ?? now,
-			last_deployment: now,
-			revision: deployment?.revision ? deployment.revision + 1 : 1,
+			firstDeployment: config.firstDeployment ?? now,
+			lastDeployment: now,
+			revision: config.revision ? config.revision + 1 : 1,
 		};
 		await updateDeploymentById(next);
 	}
@@ -262,11 +274,11 @@ export default function DeployWorkspace() {
 		if (!session?.user || !repo?.name || !serviceName) return;
 
 		await updateDeploymentById({
-			repo_name: repo.name,
-			service_name: serviceName,
+			repoName: repo.name,
+			serviceName: serviceName,
 			url: workingDeployment?.url || "",
 			branch: effectiveBranch || "main",
-			scan_results: results,
+			scanResults: results,
 		});
 		setScanResults(results);
 		setScanMode("results");
@@ -283,18 +295,18 @@ export default function DeployWorkspace() {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					repo_url: workingDeployment.url,
-					commit_sha: workingDeployment.scan_results?.commit_sha || workingDeployment.commitSha,
+					commit_sha: ((workingDeployment.scanResults || {}) as Record<string, unknown>)?.commit_sha || workingDeployment.commitSha,
 				}),
 			});
 		} catch (err) {
 			console.error("Failed to clear backend cache:", err);
 		}
 
-		// 2. Clear frontend state and DB (must send explicit null so DB helper clears persisted scan_results)
+		// 2. Clear frontend state and DB (must send explicit null so DB helper clears persisted scanResults)
 		await updateDeploymentById({
-			repo_name: workingDeployment.repo_name,
-			service_name: workingDeployment.service_name,
-			scan_results: null as unknown as SDArtifactsResponse,
+			repoName: workingDeployment.repoName,
+			serviceName: workingDeployment.serviceName,
+			scanResults: null as unknown as SDArtifactsResponse,
 		});
 		setScanResults(null);
 		setScanMode("idle");
@@ -319,7 +331,7 @@ export default function DeployWorkspace() {
 		const payload: DeployConfig = {
 			...workingDeployment,
 			branch: effectiveBranch,
-			scan_results: effectiveScanResults || workingDeployment.scan_results,
+			scanResults: effectiveScanResults || workingDeployment.scanResults,
 			...(commitSha && { commitSha }),
 		};
 
@@ -374,8 +386,8 @@ export default function DeployWorkspace() {
 
 			if (data?.branch && data.branch !== effectiveBranch) {
 				await updateDeploymentById({
-					repo_name: workingDeployment.repo_name,
-					service_name: workingDeployment.service_name,
+					repoName: workingDeployment.repoName,
+					serviceName: workingDeployment.serviceName,
 					url: workingDeployment.url,
 					branch: data.branch,
 				});
@@ -388,8 +400,8 @@ export default function DeployWorkspace() {
 			// Ensure url and branch are stored for future fetches if this is a new deployment
 			if (!deployment) {
 				await updateDeploymentById({
-					repo_name: workingDeployment.repo_name,
-					service_name: workingDeployment.service_name,
+					repoName: workingDeployment.repoName,
+					serviceName: workingDeployment.serviceName,
 					url: workingDeployment.url,
 					branch: effectiveBranch,
 				});
@@ -518,8 +530,8 @@ export default function DeployWorkspace() {
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 						{workingDeployment && (
 							<DeploymentHistory
-								repoName={workingDeployment.repo_name}
-								serviceName={workingDeployment.service_name}
+							repoName={workingDeployment.repoName}
+							serviceName={workingDeployment.serviceName}
 								prefetchedData={deploymentHistory ? { history: deploymentHistory, total: historyTotal } : null}
 								isPrefetching={isLoadingHistory}
 							/>
@@ -541,7 +553,7 @@ export default function DeployWorkspace() {
 							serviceNameForLogs={serviceNameForLogs}
 							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (workingDeployment ? configSnapshotFromDeployConfig(workingDeployment) : {})}
 							repoUrl={workingDeployment?.url}
-							commitSha={workingDeployment?.scan_results?.commit_sha ?? workingDeployment?.commitSha}
+						commitSha={((workingDeployment?.scanResults || {}) as Record<string, unknown>)?.commit_sha as string | undefined ?? workingDeployment?.commitSha ?? undefined}
 							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>
@@ -555,8 +567,8 @@ export default function DeployWorkspace() {
 								branches={branchNamesFromRepo(repo ?? null)}
 								onConfigChange={(partial) => {
 									updateDeploymentById({
-										repo_name: workingDeployment.repo_name,
-										service_name: workingDeployment.service_name,
+										repoName: workingDeployment.repoName,
+										serviceName: workingDeployment.serviceName,
 										url: workingDeployment.url,
 										branch: effectiveBranch,
 										...partial,

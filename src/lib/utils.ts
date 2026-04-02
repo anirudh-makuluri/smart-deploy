@@ -244,9 +244,9 @@ export function getDeploymentForService(
 	const matches: DeployConfig[] = [];
 
 	for (const d of deployments) {
-		if (d.repo_name !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+		if (d.repoName !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
 
-		const dbServiceName = d.service_name || "";
+		const dbServiceName = d.serviceName || "";
 		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
 		const isRepoLevel = dbServiceName === "." || dbServiceName.toLowerCase() === repoName.toLowerCase();
 
@@ -269,14 +269,14 @@ export function getDeploymentForService(
 		const statusRankB = statusRank(b.status);
 		const statusDelta = statusRankB - statusRankA;
 		if (statusDelta !== 0) return statusDelta;
-		const aTime = new Date(a.last_deployment ?? 0).getTime();
-		const bTime = new Date(b.last_deployment ?? 0).getTime();
+		const aTime = new Date(a.lastDeployment ?? 0).getTime();
+		const bTime = new Date(b.lastDeployment ?? 0).getTime();
 		return bTime - aTime;
 	})[0];
 }
 
 export function countDeployedServicesForRepo(
-	repoRecord: Pick<RepoServicesRecord, "repo_url" | "repo_name" | "services">,
+	repoRecord: Pick<RepoServicesRecord, "repoUrl" | "repoName" | "services">,
 	deployments: DeployConfig[]
 ): number {
 	const services = repoRecord.services ?? [];
@@ -285,9 +285,9 @@ export function countDeployedServicesForRepo(
 	return services.reduce((count, svc) => {
 		const deployment = getDeploymentForService(
 			deployments,
-			repoRecord.repo_url,
+			repoRecord.repoUrl,
 			svc.name,
-			repoRecord.repo_name
+			repoRecord.repoName
 		);
 		return deployment && deployment.status !== "didnt_deploy" ? count + 1 : count;
 	}, 0);
@@ -296,9 +296,12 @@ export function countDeployedServicesForRepo(
 export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 	if (!deployment) return true;
 
-	const scanResults = deployment.scan_results;
-	const hasDockerfile = !!(scanResults?.dockerfiles && Object.keys(scanResults.dockerfiles).length > 0);
-	const hasNginxConf = !!scanResults?.nginx_conf?.trim();
+	const scanResults = deployment.scanResults;
+	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
+		? (scanResults as SDArtifactsResponse)
+		: null;
+	const hasDockerfile = !!(scanResultsTyped?.dockerfiles && Object.keys(scanResultsTyped.dockerfiles).length > 0);
+	const hasNginxConf = !!scanResultsTyped?.nginx_conf?.trim();
 
 	return !(hasDockerfile && hasNginxConf);
 }

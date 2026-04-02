@@ -24,8 +24,8 @@ const sortRepos = (list: repoType[]) =>
 
 const sortDeployments = (list: DeployConfig[]) =>
 	[...list].sort((a, b) => {
-		const dateA = a.last_deployment ? new Date(a.last_deployment).getTime() : 0;
-		const dateB = b.last_deployment ? new Date(b.last_deployment).getTime() : 0;
+		const dateA = a.lastDeployment ? new Date(a.lastDeployment).getTime() : 0;
+		const dateB = b.lastDeployment ? new Date(b.lastDeployment).getTime() : 0;
 		return dateB - dateA;
 	});
 
@@ -57,7 +57,7 @@ type AppState = {
 	getDetectedRepoCache: (repoUrl: string) => DetectedRepoCacheEntry | undefined;
 	/** Set cached detect-services result for a repo. */
 	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
-	updateDeploymentById: (deployment: Partial<DeployConfig> & { repo_name: string; service_name: string }) => Promise<void>;
+	updateDeploymentById: (deployment: Partial<DeployConfig> & { repoName: string; serviceName: string }) => Promise<void>;
 	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
 	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
@@ -148,7 +148,7 @@ export const useAppData = create<AppState>((set, get) => ({
 
 			// Upsert fetched deployments without erasing others in the store
 			set((state) => {
-				const otherDeployments = state.deployments.filter((d) => d.repo_name !== repoName);
+				const otherDeployments = state.deployments.filter((d) => d.repoName !== repoName);
 				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
 			});
 		} catch (err) {
@@ -177,7 +177,7 @@ export const useAppData = create<AppState>((set, get) => ({
 		}));
 	},
 
-	updateDeploymentById: async (partial: Partial<DeployConfig> & { repo_name: string; service_name: string }) => {
+	updateDeploymentById: async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
 		try {
 			await graphQLUpdateDeployment(partial as DeployConfig);
 		} catch (err) {
@@ -187,7 +187,7 @@ export const useAppData = create<AppState>((set, get) => ({
 
 		const deployments = get().deployments;
 		const matchKey = (dep: DeployConfig) =>
-			dep.repo_name === partial.repo_name && dep.service_name === partial.service_name;
+			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existing = deployments.find(matchKey);
 		const merged: DeployConfig = {
@@ -211,7 +211,7 @@ export const useAppData = create<AppState>((set, get) => ({
 	removeDeployment: (repoName: string, serviceName: string) => {
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => !(dep.repo_name === repoName && dep.service_name === serviceName))
+				state.deployments.filter((dep) => !(dep.repoName === repoName && dep.serviceName === serviceName))
 			),
 		}));
 	},
@@ -220,7 +220,7 @@ export const useAppData = create<AppState>((set, get) => ({
 		if (keys.length === 0) return;
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => !keys.some((k) => k.repoName === dep.repo_name && k.serviceName === dep.service_name))
+				state.deployments.filter((dep) => !keys.some((k) => k.repoName === dep.repoName && k.serviceName === dep.serviceName))
 			),
 		}));
 	},

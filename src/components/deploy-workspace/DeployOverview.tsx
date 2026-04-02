@@ -1,6 +1,6 @@
 import { ExternalLink, Link2, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, repoType } from "@/app/types";
+import { DeployConfig, EC2DeployDetails, repoType } from "@/app/types";
 import {
 	formatTimestamp,
 	formatDeploymentTargetName,
@@ -112,20 +112,21 @@ export default function DeployOverview({
 	onEditConfiguration,
 	repo,
 }: DeployOverviewProps) {
-	const hasStoredLiveUrl = Boolean(deployment.deployUrl || deployment.custom_url);
+	const hasStoredLiveUrl = Boolean(deployment.liveUrl);
 	// If a DB row says "running" but we don't have a stored live URL, treat it as not deployed.
 	const effectiveStatus =
 		deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy");
 	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
-	const screenshotUrl = deployment.screenshot_url;
-	const customUrlRaw = deployment.custom_url?.trim();
-	const instanceIpRaw = deployment.ec2?.publicIp?.trim();
+	const screenshotUrl = deployment.screenshotUrl;
+	const customUrlRaw = deployment.liveUrl?.trim();
+	const instanceIpRaw = ((deployment.ec2 || {}) as EC2DeployDetails)?.publicIp?.trim?.();
 	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
 	const deployDisabled = isDeploymentDisabled(deployment);
+	const ec2Casted = (deployment.ec2 || {}) as EC2DeployDetails;
 	const showEc2InstanceType =
-		deployment.deploymentTarget === "ec2" || !!deployment.ec2?.instanceId;
+		deployment.deploymentTarget === "ec2" || !!ec2Casted.instanceId;
 	const ec2TypeDisplay =
-		deployment.awsEc2InstanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+		ec2Casted.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
 	const ec2PriceEstimate = showEc2InstanceType
 		? formatApproxEc2PriceCompact(ec2TypeDisplay)
 		: null;
@@ -136,7 +137,7 @@ export default function DeployOverview({
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-center justify-between gap-4">
 				<div className="flex items-center gap-3">
-					<p className="text-2xl font-semibold text-foreground">{deployment.service_name}</p>
+					<p className="text-2xl font-semibold text-foreground">{deployment.serviceName}</p>
 					<span className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
 						<span className="h-2 w-2 rounded-full bg-primary" />
 						{effectiveStatus}
@@ -200,7 +201,7 @@ export default function DeployOverview({
 							<div className="relative h-80 md:h-96">
 								<img
 									src={screenshotUrl}
-									alt={`Screenshot of ${deployment.service_name}`}
+									alt={`Screenshot of ${deployment.serviceName}`}
 									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
 								/>
 							</div>
@@ -208,7 +209,7 @@ export default function DeployOverview({
 							<div className="relative h-80 md:h-96">
 								<iframe
 									src={displayUrl}
-									title={`Snapshot of ${deployment.service_name}`}
+									title={`Snapshot of ${deployment.serviceName}`}
 									className="absolute inset-0 h-full w-full pointer-events-none overflow-hidden rounded-b-lg"
 									loading="lazy"
 								/>
@@ -258,7 +259,7 @@ export default function DeployOverview({
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Last Deployment</p>
 						<p className="mt-2 text-lg font-semibold text-foreground">
-							{formatTimestamp(deployment.last_deployment)}
+						{formatTimestamp(deployment.lastDeployment || undefined)}
 						</p>
 					</div>
 					<div className="rounded-xl border border-border bg-card p-4">

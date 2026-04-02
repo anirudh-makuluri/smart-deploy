@@ -11,6 +11,7 @@ import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
+import { EC2DeployDetails } from "@/app/types";
 import {
 	fetchAndBuildRepo,
 	fetchLatestCommit,
@@ -283,7 +284,12 @@ export async function serviceLogs(
 		if (repoNameStr) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameStr, serviceNameStr);
 			const deployConfig = deploymentRes.deployment;
-			const instanceId = deployConfig?.ec2?.instanceId;
+			if (!deployConfig) {
+				throw new Error("Deployment not found");
+			}
+			
+			const ec2Casted = (deployConfig?.ec2 || {}) as EC2DeployDetails;
+			const instanceId = ec2Casted?.instanceId;
 
 			if (instanceId) {
 				const region = deployConfig.awsRegion || config.AWS_REGION;
@@ -373,13 +379,13 @@ function transformDeployment(deployment: any) {
 	
 	return {
 		id: deployment.id,
-		repo_name: deployment.repo_name,
-		service_name: deployment.service_name,
+		repo_name: deployment.repoName,
+		service_name: deployment.serviceName,
 		status: mapStatusToEnum(deployment.status),
-		first_deployment: deployment.first_deployment,
-		last_deployment: deployment.last_deployment,
+		first_deployment: deployment.firstDeployment,
+		last_deployment: deployment.lastDeployment,
 		revision: deployment.revision,
-		scan_results: deployment.scan_results || {},
+		scan_results: deployment.scanResults || {},
 		// Ensure required fields have values (defaults for fields not in data yet)
 		url: data.url || "",
 		branch: data.branch || "main",

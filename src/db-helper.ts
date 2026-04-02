@@ -17,18 +17,43 @@ type RowDeployment = {
 
 function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
 	const { id, repo_name, service_name, owner_id, status, first_deployment, last_deployment, revision, data } = row;
+	
+	// Extract fields from data JSONB
+	const {
+		url = '',
+		branch = '',
+		commitSha,
+		envVars,
+		liveUrl,
+		screenshotUrl,
+		cloudProvider = 'aws',
+		deploymentTarget = 'ec2',
+		awsRegion = '',
+		ec2,
+		cloudRun,
+	} = (data || {}) as Record<string, unknown>;
+
 	return {
 		id,
-		repo_name,
-		service_name,
+		repoName: repo_name,
+		serviceName: service_name,
 		ownerID: owner_id,
-		// If status is missing/null in the DB we treat the service as not deployed yet.
+		url,
+		branch,
+		commitSha: commitSha ?? null,
+		envVars,
+		liveUrl: liveUrl ?? null,
+		screenshotUrl: screenshotUrl ?? null,
 		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
-		first_deployment: first_deployment ?? undefined,
-		last_deployment: last_deployment ?? undefined,
-		revision: revision ?? 1,
-		...data,
-		scan_results: row.scan_results ? (row.scan_results as any) : undefined,
+		firstDeployment: first_deployment ?? null,
+		lastDeployment: last_deployment ?? null,
+		revision: revision ?? 0,
+		cloudProvider: (cloudProvider as 'aws' | 'gcp') || 'aws',
+		deploymentTarget: (deploymentTarget as 'ec2' | 'cloud_run') || 'ec2',
+		awsRegion,
+		ec2: (ec2 as Record<string, unknown>) || {},
+		cloudRun: (cloudRun as Record<string, unknown>) || {},
+		scanResults: (row.scan_results || {}) as Record<string, unknown>,
 	} as DeployConfig & { ownerID: string };
 }
 
@@ -87,81 +112,100 @@ export const dbHelper = {
 
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
-			const { repo_name, service_name } = deployConfig;
-			if (!repo_name || !service_name) return { error: "repo_name and service_name are required" };
+			const { repoName, serviceName } = deployConfig;
+			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
 
 			const supabase = getSupabaseServer();
 
 			if (deployConfig.status === "stopped") {
 				await supabase.from("deployments").delete()
-					.eq("repo_name", repo_name)
-					.eq("service_name", service_name);
+					.eq("repo_name", repoName)
+					.eq("service_name", serviceName);
 				return { success: "Deployment stopped and deleted" };
 			}
 
-			// Columns we store at top level; rest goes into data jsonb
+			// Extract top-level columns and rest goes to data JSONB
 			const {
 				id: _id,
-				repo_name: _rn,
-				service_name: _sn,
+				repoName: _rn,
+				serviceName: _sn,
 				status,
-				first_deployment,
-				last_deployment,
+				firstDeployment,
+				lastDeployment,
 				revision,
-				scan_results,
-				...rest
-			} = deployConfig as DeployConfig & { ownerID?: string };
-			const dataJson = { ...rest } as Record<string, unknown>;
+				scanResults,
+			// These go into data JSONB
+			url,
+			branch,
+			commitSha,
+			envVars,
+			liveUrl,
+			screenshotUrl,
+			cloudProvider,
+			deploymentTarget,
+			awsRegion,
+			ec2,
+			cloudRun,
+		} = deployConfig;
+		const dataJson: Record<string, unknown> = {
+			url,
+			branch,
+			commitSha,
+			envVars,
+			liveUrl,
+			screenshotUrl,
+			cloudProvider,
+			deploymentTarget,
+			awsRegion,
+			ec2,
+			cloudRun,
+		};
 
-
-			const { data: existing } = await supabase
-				.from("deployments")
-				.select("revision, data, status, scan_results")
-				.eq("repo_name", repo_name)
-				.eq("service_name", service_name)
-				.order("last_deployment", { ascending: false })
-				.limit(1)
-				.maybeSingle();
-			if (!existing) {
+		const { data: existing } = await supabase
+			.from("deployments")
+			.select("revision, data, status, scan_results")
+			.eq("repo_name", repoName)
+			.eq("service_name", serviceName)
+			.order("last_deployment", { ascending: false })
+			.limit(1)
+			.maybeSingle();			if (!existing) {
 				await supabase.from("deployments").insert({
 					id: uuidv4(),
-					repo_name: repo_name,
-					service_name: service_name,
+					repo_name: repoName,
+					service_name: serviceName,
 					owner_id: userID,
-					// If the caller didn't provide a status (e.g. scan-only persistence),
-					// do not mark it as running.
 					status: deployConfig.status ?? "didnt_deploy",
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
 					data: dataJson,
-					scan_results: scan_results || null,
+					scan_results: scanResults || null,
 				});
 				return { success: "New deployment created and added to user" };
 			}
 
 			const nextRevision = (existing.revision ?? 0) + 1;
-			const lastDeployment = new Date().toISOString();
+			const lastDeploymentTime = new Date().toISOString();
 			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
 
-			// Preserve existing status/scan_results unless explicitly provided
+			// Preserve existing status/scanResults unless explicitly provided
 			const hasStatus = Object.prototype.hasOwnProperty.call(deployConfig, "status");
 			const nextStatus = hasStatus ? deployConfig.status ?? null : existing.status;
 
-			const hasScanResults = typeof scan_results !== "undefined";
-			const nextScanResults = hasScanResults ? (scan_results || null) : existing.scan_results;
+			const hasScanResults = typeof scanResults !== "undefined";
+			const nextScanResults = hasScanResults ? (scanResults || null) : existing.scan_results;
 
 			await supabase
 				.from("deployments")
 				.update({
 					status: nextStatus,
-					last_deployment: lastDeployment,
+					last_deployment: lastDeploymentTime,
 					revision: nextRevision,
 					data: mergedData,
 					scan_results: nextScanResults,
 				})
-				.eq("repo_name", repo_name)
-				.eq("service_name", service_name);
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName);
 
 			return { success: "Deployment data updated successfully" };
 		} catch (error) {
@@ -179,7 +223,7 @@ export const dbHelper = {
 
 	deleteDeployment: async function (repoName: string, serviceName: string, userID: string) {
 		try {
-			if (!repoName || !serviceName || !userID) return { error: "repo_name, service_name, and user ID are required" };
+			if (!repoName || !serviceName || !userID) return { error: "repoName, serviceName, and user ID are required" };
 
 			const supabase = getSupabaseServer();
 
@@ -217,7 +261,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row as RowDeployment));
 			return { deployments };
 		} catch (error) {
 			console.error("getUserDeployments error:", error);
@@ -237,7 +281,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row as RowDeployment));
 			return { deployments };
 		} catch (error) {
 			console.error("getDeploymentsByRepo error:", error);
@@ -462,7 +506,8 @@ export const dbHelper = {
 			if (fetchError) return { error: fetchError.message };
 			if (!row) return { error: "Deployment not found" };
 
-			const nextData = { ...(row.data as Record<string, unknown>), ...patch };
+			const existingData = (row.data as Record<string, unknown>) || {};
+			const nextData: Record<string, unknown> = { ...existingData, ...patch };
 			const { error: updateError } = await supabase.from("deployments").update({ data: nextData }).eq("id", row.id);
 
 			if (updateError) return { error: updateError.message };
@@ -517,13 +562,13 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 			const records: RepoServicesRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
-				repo_url: r.repo_url as string,
-				branch: r.branch as string,
-				repo_owner: r.repo_owner as string,
-				repo_name: r.repo_name as string,
-				services: (r.services as DetectedServiceInfo[]) ?? [],
-				is_monorepo: (r.is_monorepo as boolean) ?? false,
-				updated_at: r.updated_at as string,
+			repoUrl: r.repo_url as string,
+			branch: r.branch as string,
+			repoOwner: r.repo_owner as string,
+			repoName: r.repo_name as string,
+			services: (r.services as DetectedServiceInfo[]) ?? [],
+			isMonorepo: (r.is_monorepo as boolean) ?? false,
+			updatedAt: r.updated_at as string,
 			}));
 			return { records };
 		} catch (err) {
