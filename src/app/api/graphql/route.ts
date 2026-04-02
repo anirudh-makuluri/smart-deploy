@@ -26,6 +26,8 @@ import { detectMultiService, type ServiceDefinition } from "@/lib/multiServiceDe
 import { ensureUserAndRepos, invalidateRepoCache } from "@/lib/sessionHelpers";
 import { addVercelDnsRecord } from "@/lib/vercelDns";
 import { createWebSocketLogger } from "@/lib/websocketLogger";
+import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
+import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 
 type GraphQLContext = {
 	session: Awaited<ReturnType<typeof getServerSession>>;
@@ -67,6 +69,7 @@ function requireUser(ctx: GraphQLContext): string {
 
 function detectOperation(query: string): string | null {
 	if (query.includes("appOverview")) return "appOverview";
+	if (query.includes("userDeployments")) return "userDeployments";
 	if (query.includes("repoDeployments")) return "repoDeployments";
 	if (query.includes("repoServices")) return "repoServices";
 	if (query.includes("resolveRepo")) return "resolveRepo";
@@ -84,6 +87,8 @@ function detectOperation(query: string): string | null {
 	if (query.includes("deleteDeployment")) return "deleteDeployment";
 	if (query.includes("deploymentControl")) return "deploymentControl";
 	if (query.includes("refreshRepos")) return "refreshRepos";
+	if (query.includes("updateUser")) return "updateUser";
+	if (query.includes("serviceLogs")) return "serviceLogs";
 	return null;
 }
 
@@ -301,6 +306,14 @@ function sortAndLimitRepos(repoList: Awaited<ReturnType<typeof ensureUserAndRepo
 		.slice(0, APP_OVERVIEW_REPO_LIMIT);
 }
 
+function sortReposByLatestCommit(repoList: Awaited<ReturnType<typeof ensureUserAndRepos>>["repoList"]) {
+	return [...repoList].sort((a, b) => {
+		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
+		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
+		return dateB - dateA;
+	});
+}
+
 async function executeOperation(
 	operation: string,
 	variables: Record<string, unknown>,
@@ -342,6 +355,13 @@ async function executeOperation(
 				const response = await dbHelper.getDeploymentsByRepo(userID, repoName);
 				if (response.error) throw new Error(String(response.error));
 				return { repoDeployments: response.deployments ?? [] };
+			});
+		case "userDeployments":
+			return withTiming("userDeployments", async () => {
+				const userID = requireUser(ctx);
+				const response = await dbHelper.getUserDeployments(userID);
+				if (response.error) throw new Error(String(response.error));
+				return { userDeployments: response.deployments ?? [] };
 			});
 		case "repoServices":
 			return withTiming("repoServices", async () => {
@@ -729,12 +749,15 @@ async function executeOperation(
 			return withTiming("session", async () => {
 				const userID = requireUser(ctx);
 				const { repoList } = await ensureUserAndRepos(ctx.session as any);
+				const limitNum = Number(variables.limit);
+				const shouldApplyLimit = Number.isFinite(limitNum) && limitNum > 0;
+				const sortedRepos = sortReposByLatestCommit(repoList);
 				return {
 					session: {
 						userID,
 						name: (ctx.session as any)?.user?.name ?? null,
 						image: (ctx.session as any)?.user?.image ?? null,
-						repoList: sortAndLimitRepos(repoList),
+						repoList: shouldApplyLimit ? sortedRepos.slice(0, limitNum) : sortedRepos,
 					},
 				};
 			});
@@ -810,6 +833,69 @@ async function executeOperation(
 					},
 				};
 			});
+		case "updateUser":
+			return withTiming("updateUser", async () => {
+				const userID = requireUser(ctx);
+				const data = (variables.data ?? {}) as Record<string, unknown>;
+				const result = await dbHelper.updateUser(userID, data);
+				if ((result as any).success) {
+					return {
+						updateUser: {
+							status: "success",
+							message: "Updated successfully",
+						},
+					};
+				} else {
+					const errorMsg = typeof (result as any).error === "string" 
+						? (result as any).error 
+						: String((result as any).error ?? "Failed to update user");
+					throw new Error(errorMsg);
+				}
+			});
+		case "serviceLogs":
+			return withTiming("serviceLogs", async () => {
+				const repoName = String(variables.repoName ?? "").trim();
+				const serviceName = String(variables.serviceName ?? "").trim();
+				let limit = Number(variables.limit ?? 50);
+				if (!Number.isFinite(limit) || limit <= 0) limit = 50;
+				limit = Math.min(limit, 5000);
+
+				if (!serviceName) {
+					throw new Error("serviceName is required");
+				}
+
+				// If this deployment is backed by EC2, use docker-compose logs via SSM.
+				if (repoName) {
+					const deploymentRes = await dbHelper.getDeployment(repoName, serviceName);
+					const deployConfig = deploymentRes.deployment;
+					const instanceId = deployConfig?.ec2?.instanceId;
+
+					if (instanceId) {
+						const region = deployConfig.awsRegion || config.AWS_REGION;
+						const logs = await getInitialEc2ServiceLogs({
+							instanceId,
+							region,
+							serviceName,
+							limit,
+						});
+						return {
+							serviceLogs: {
+								logs,
+								source: "ec2",
+							},
+						};
+					}
+				}
+
+				// Otherwise treat it as a Cloud Run-style service and query GCP logs.
+				const logs = await getInitialLogs(serviceName, limit) as { timestamp?: string; message?: string }[];
+				return {
+					serviceLogs: {
+						logs,
+						source: "gcp",
+					},
+				};
+			});
 		default:
 			throw new Error(`Unsupported GraphQL operation: ${operation}`);
 	}
@@ -841,6 +927,19 @@ async function handleGraphQL(req: NextRequest) {
 		const message = error instanceof Error ? error.message : "GraphQL request failed";
 		return NextResponse.json(graphQLError(message), { status: 500 });
 	}
+}
+
+export async function executeGraphQLOperation(
+	operation: string,
+	variables: Record<string, unknown>,
+	session: Awaited<ReturnType<typeof getServerSession>>
+) {
+	const ctx: GraphQLContext = {
+		session,
+		userID: (session as any)?.userID,
+		token: (session as any)?.accessToken,
+	};
+	return executeOperation(operation, variables, ctx);
 }
 
 export const dynamic = "force-dynamic";

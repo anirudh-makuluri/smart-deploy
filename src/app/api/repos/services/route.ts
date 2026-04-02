@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { dbHelper } from "@/db-helper";
+import { executeGraphQLOperation } from "@/app/api/graphql/route";
 import { authOptions } from "@/app/api/auth/authOptions";
 
 export const dynamic = "force-dynamic";
@@ -15,11 +15,9 @@ export async function GET() {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const result = await dbHelper.getUserRepoServices(userID);
-		if (result.error) {
-			return NextResponse.json({ error: result.error }, { status: 500 });
-		}
-		return NextResponse.json({ services: result.records ?? [] });
+		const response = await executeGraphQLOperation("repoServices", {}, session as any);
+		const services = (response.repoServices as any) ?? [];
+		return NextResponse.json({ services });
 	} catch (err) {
 		console.error("GET /api/repos/services error:", err);
 		return NextResponse.json(
@@ -27,6 +25,6 @@ export async function GET() {
 			{ status: 500 }
 		);
 	} finally {
-		console.debug(`[REST] repos/services completed in ${Date.now() - start}ms`);
+		console.debug(`[GraphQL-compat] repos/services completed in ${Date.now() - start}ms`);
 	}
 }
