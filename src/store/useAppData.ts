@@ -143,6 +143,7 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	fetchRepoDeployments: async (repoName: string) => {
 		try {
+			console.log(`Fetching deployments for ${repoName}...`);
 			const fetchedList = await fetchRepoDeploymentsGraphql(repoName);
 
 			// Upsert fetched deployments without erasing others in the store

@@ -16,7 +16,7 @@ export async function GET() {
 		}
 
 		const response = await executeGraphQLOperation("repoServices", {}, session as any);
-		const services = (response.repoServices as any) ?? [];
+		const services = (response?.repoServices as any) ?? [];
 		return NextResponse.json({ services });
 	} catch (err) {
 		console.error("GET /api/repos/services error:", err);

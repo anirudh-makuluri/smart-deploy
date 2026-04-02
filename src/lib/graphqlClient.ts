@@ -292,7 +292,25 @@ export async function refreshRepos(): Promise<repoType[]> {
 const DEPLOYMENT_HISTORY_QUERY = `
 	query DeploymentHistory($repoName: String!, $serviceName: String!, $page: Int!, $limit: Int!) {
 		deploymentHistory(repoName: $repoName, serviceName: $serviceName, page: $page, limit: $limit) {
-			history
+			history {
+				id
+				repo_name
+				service_name
+				timestamp
+				success
+				commitSha
+				commitMessage
+				branch
+				durationMs
+				steps {
+					label
+					logs
+					status
+					startedAt
+					endedAt
+				}
+				configSnapshot
+			}
 			page
 			limit
 			total
@@ -303,7 +321,25 @@ const DEPLOYMENT_HISTORY_QUERY = `
 const DEPLOYMENT_HISTORY_ALL_QUERY = `
 	query DeploymentHistoryAll($page: Int!, $limit: Int!) {
 		deploymentHistoryAll(page: $page, limit: $limit) {
-			history
+			history {
+				id
+				repo_name
+				service_name
+				timestamp
+				success
+				commitSha
+				commitMessage
+				branch
+				durationMs
+				steps {
+					label
+					logs
+					status
+					startedAt
+					endedAt
+				}
+				configSnapshot
+			}
 			page
 			limit
 			total

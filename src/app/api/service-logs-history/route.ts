@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 			session as any
 		);
 
-		const logs = (response.serviceLogs as any)?.logs ?? [];
+		const logs = (response?.serviceLogs as any)?.logs ?? [];
 		return NextResponse.json({ logs });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

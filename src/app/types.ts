@@ -41,7 +41,7 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type DeploymentTarget = 'ec2' | 'cloud-run';
+export type DeploymentTarget = 'ec2' | 'cloud_run';
 
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 

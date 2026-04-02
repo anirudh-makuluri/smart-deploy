@@ -15,7 +15,7 @@ create table if not exists public.deployments (
   repo_name text not null,
   service_name text not null,
   owner_id text not null references public.users(id) on delete cascade,
-  status text default 'running',
+  status text default 'didnt_deploy',
   first_deployment timestamptz,
   last_deployment timestamptz,
   revision int default 1,
