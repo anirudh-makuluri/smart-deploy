@@ -83,7 +83,7 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 	}
 
 	// Only stream gcloud logs for Cloud Run deployments
-	if (!serviceName || deployConfig?.deploymentTarget !== "cloud-run") {
+	if (!serviceName || deployConfig?.deploymentTarget !== "cloud_run") {
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 		}

@@ -8,11 +8,17 @@ import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 
 import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
+import { useDeploymentBranch } from "@/custom-hooks/useDeploymentBranch";
+import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
+import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
+import { useDeploymentTimer } from "@/custom-hooks/useDeploymentTimer";
+import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
+import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
-import { branchNamesFromRepo, resolveWorkspaceBranch } from "@/lib/repoBranch";
+import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
 import ScanProgress from "@/components/ScanProgress";
@@ -20,7 +26,7 @@ import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/Fee
 import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { fetchDeploymentHistoryPage, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
+import { fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
 	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
@@ -28,10 +34,8 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 	return p;
 }
 
-type WorkspaceDeployState = "idle" | "running" | "success" | "error";
-
 export default function DeployWorkspace() {
-	const deployments = useAppData((s) => s.deployments);
+	// ============== STORE SELECTIONS ==============
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
 	const activeRepo = useAppData((s) => s.activeRepo);
 	const serviceName = useAppData((s) => s.activeServiceName);
@@ -40,13 +44,33 @@ export default function DeployWorkspace() {
 	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
 	const repoServices = useAppData((s) => s.repoServices);
 	const { data: session } = useSession();
+
+	// ============== STATE ==============
+	const [isDeploying, setIsDeploying] = React.useState(false);
+	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
+	const [activeSection, setActiveSection] = React.useState<MenuSection>("setup");
+	const [scanMode, setScanMode] = React.useState<"idle" | "scanning" | "results">("idle");
+	const [scanResults, setScanResults] = React.useState<SDArtifactsResponse | null>(null);
+	const [scanStartTime, setScanStartTime] = React.useState<number>(0);
+	const [scanDuration, setScanDuration] = React.useState<number>(0);
+	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
+	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
+	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
+
+	// ============== BASIC CONTEXT ==============
 	const repo = activeRepo;
-	const deployment = React.useMemo(() => {
-		if (!repo?.name || !serviceName) return undefined;
-		return deployments.find(
-			(dep) => dep.repo_name === repo.name && dep.service_name === serviceName
-		);
-	}, [deployments, repo?.name, serviceName]);
+	const deployment = useActiveDeployment();
+
+	// ============== MEMOIZED DERIVED VALUES (for callbacks & hooks) ==============
+	const hasStoredLiveUrl = React.useMemo(
+		() => Boolean(deployment?.deployUrl || deployment?.custom_url),
+		[deployment?.deployUrl, deployment?.custom_url]
+	);
+
+	const effectiveDeploymentStatus = React.useMemo(
+		() => deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy"),
+		[deployment?.status, hasStoredLiveUrl]
+	);
 
 	const workingDeployment = React.useMemo<DeployConfig | null>(() => {
 		if (!repo?.name || !serviceName) return null;
@@ -60,76 +84,11 @@ export default function DeployWorkspace() {
 		};
 		const merged = { ...base, ...(deployment as Partial<DeployConfig> | undefined) } as DeployConfig;
 		merged.url = merged.url ?? base.url ?? "";
-		// Spread from DB overwrites branch with stale values (e.g. "main"); reconcile against remote branches last.
-		merged.branch = resolveWorkspaceBranch(repo, merged.branch);
 		return merged;
 	}, [deployment, repo, serviceName]);
 
-	/** Monorepo package root for the active service; sent to /analyze as package_path. */
-	const analyzeServicePath = React.useMemo(() => {
-		if (!repo?.html_url || !serviceName || serviceName === ".") return undefined;
-		const fromList = (list: DetectedServiceInfo[] | undefined) => {
-			const svc = list?.find((s) => s.name === serviceName);
-			return repoRelativeServicePath(svc?.path);
-		};
-		const cached = fromList(getDetectedRepoCache(repo.html_url)?.services);
-		if (cached) return cached;
-		const norm = normalizeRepoUrl(repo.html_url);
-		const record = repoServices.find((r) => normalizeRepoUrl(r.repo_url) === norm);
-		return fromList(record?.services);
-	}, [repo?.html_url, serviceName, getDetectedRepoCache, repoServices]);
-
-	// Persist corrected branch when DB had a name that does not exist on the remote (e.g. legacy "main").
-	React.useEffect(() => {
-		if (!repo?.name || !serviceName || !deployment) return;
-		const names = branchNamesFromRepo(repo);
-		if (names.length === 0) return;
-		const stored = deployment.branch?.trim() ?? "";
-		if (!stored) return;
-		if (names.includes(stored)) return;
-		const next = resolveWorkspaceBranch(repo, deployment.branch);
-		if (next && next !== stored) {
-			void updateDeploymentById({
-				repo_name: repo.name,
-				service_name: serviceName,
-				branch: next,
-			});
-		}
-	}, [repo, serviceName, deployment, updateDeploymentById]);
-
-	const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
-	const effectiveDeploymentStatus =
-		deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy");
-
-	const screenshotUrl = deployment?.screenshot_url;
-	const [didRequestScreenshot, setDidRequestScreenshot] = React.useState(false);
-	const [isRefreshingPreview, setIsRefreshingPreview] = React.useState(false);
-
-	const [isDeploying, setIsDeploying] = React.useState(false);
-	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
-	const [activeSection, setActiveSection] = React.useState<MenuSection>(effectiveDeploymentStatus !== "didnt_deploy" ? "overview" : "setup");
-	const [deploymentHistory, setDeploymentHistory] = React.useState<{ history: unknown[]; total: number } | null>(null);
-	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
-	const prevDeployStatusForHistoryRef = React.useRef<
-		"not-started" | "running" | "success" | "error" | undefined
-	>(undefined);
-	const [elapsedTime, setElapsedTime] = React.useState(0);
-	const initialTitleRef = React.useRef<string | null>(null);
-	const initialIconHrefRef = React.useRef<string | null>(null);
-
-	// Scan state
-	const [scanMode, setScanMode] = React.useState<"idle" | "scanning" | "results">("idle");
-	const [scanResults, setScanResults] = React.useState<SDArtifactsResponse | null>(null);
-	const [scanStartTime, setScanStartTime] = React.useState<number>(0);
-	const [scanDuration, setScanDuration] = React.useState<number>(0);
-	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
-	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
-	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
-
-	const serviceNameForLogs = deployment?.service_name ?? serviceName ?? repo?.name;
-	const repoNameForLogs = repo?.name ?? deployment?.repo_name;
-
-	const onDeployFinished = React.useCallback(
+	// ============== CALLBACKS ==============
+	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			if (p.success) {
 				const url = p.customUrl || p.deployUrl;
@@ -159,168 +118,123 @@ export default function DeployWorkspace() {
 		[repo?.name, serviceName, updateDeploymentById]
 	);
 
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
-		useDeployLogs(serviceNameForLogs, repoNameForLogs, { onDeployFinished });
-	const showDeployLogs = (isDeploying || deployStatus === "running" || deployStatus === "error");
-	const effectiveDeployStatus: DeployStatus = deployStatus === "not-started" ? "not-started" :
-		deployStatus === "running" ? "running" :
-			deployStatus === "success" ? "success" :
-				deployStatus === "error" ? "error" : "not-started";
+	// ============== CUSTOM HOOKS ==============
+	const { effectiveBranch, persistCorrectedBranch } = useDeploymentBranch({
+		repo,
+		deployment,
+		serviceName: serviceName || "",
+		onUpdateBranch: async (branch: string) => {
+			if (!repo?.name || !serviceName) return;
+			await updateDeploymentById({
+				repo_name: repo.name,
+				service_name: serviceName,
+				url: deployment?.url || "",
+				branch,
+			});
+		},
+	});
 
-	const workspaceDeployState = React.useMemo<WorkspaceDeployState>(() => {
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
+		useDeployLogs(deployment?.service_name ?? serviceName ?? repo?.name, repo?.name ?? deployment?.repo_name, { onDeployFinished: onDeployFinishedCallback });
+
+	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
+		repoName: repo?.name,
+		serviceName: serviceName || "",
+		deployStatus: deployStatus,
+	});
+
+	const { elapsedSeconds: elapsedTime, formattedTime } = useDeploymentTimer({
+		isActive: isDeploying || deployStatus === "running" || deployStatus === "error",
+		deployStatus: deployStatus,
+	});
+
+	const workspaceDeployState = React.useMemo(() => {
 		if (isDeploying || deployStatus === "running") return "running";
 		if (deployStatus === "success") return "success";
 		if (deployStatus === "error") return "error";
 		return "idle";
 	}, [deployStatus, isDeploying]);
 
-	const pageTitleLabel = repo?.name ?? "Smart Deploy";
-	const statusTitle = React.useMemo(() => {
-		if (workspaceDeployState === "running") return `${pageTitleLabel} - Deploying...`;
-		if (workspaceDeployState === "success") return `${pageTitleLabel} - Deployment succeeded`;
-		if (workspaceDeployState === "error") return `${pageTitleLabel} - Deployment failed`;
-		return pageTitleLabel === "Smart Deploy" ? "Smart Deploy" : `${pageTitleLabel} - Smart Deploy`;
-	}, [workspaceDeployState, pageTitleLabel]);
+	useDocumentTitleSync({
+		repoName: repo?.name,
+		workspaceState: workspaceDeployState,
+	});
 
-	React.useEffect(() => {
-		if (typeof document === "undefined") return;
-		if (initialTitleRef.current === null) {
-			initialTitleRef.current = document.title;
-		}
-		document.title = statusTitle;
-	}, [statusTitle]);
-
-	React.useEffect(() => {
-		if (typeof document === "undefined") return;
-		let iconLink = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-		if (!iconLink) {
-			iconLink = document.createElement("link");
-			iconLink.setAttribute("rel", "icon");
-			document.head.appendChild(iconLink);
-		}
-		if (initialIconHrefRef.current === null) {
-			initialIconHrefRef.current = iconLink.getAttribute("href") ?? "/icon.svg";
-		}
-		const targetHref =
-			workspaceDeployState === "running"
-				? "/icons/favicon-deploying.svg"
-				: workspaceDeployState === "success"
-					? "/icons/favicon-success.svg"
-					: workspaceDeployState === "error"
-						? "/icons/favicon-failed.svg"
-						: initialIconHrefRef.current;
-		if (iconLink.getAttribute("href") !== targetHref) {
-			iconLink.setAttribute("href", targetHref);
-		}
-	}, [workspaceDeployState]);
-
-	React.useEffect(() => {
-		return () => {
-			if (typeof document === "undefined") return;
-			if (initialTitleRef.current) {
-				document.title = initialTitleRef.current;
-			}
-			const iconLink = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
-			if (iconLink && initialIconHrefRef.current) {
-				iconLink.setAttribute("href", initialIconHrefRef.current);
-			}
-		};
-	}, []);
-
-	// Timer effect - starts when deployment begins
-	React.useEffect(() => {
-		if (!showDeployLogs || deployStatus === "not-started") {
-			setElapsedTime(0);
-			return;
-		}
-
-		const interval = setInterval(() => {
-			setElapsedTime(prev => prev + 1);
-		}, 1000);
-
-		// Reset timer when deployment completes
-		if (deployStatus === "success" || deployStatus === "error") {
-			clearInterval(interval);
-		}
-
-		return () => clearInterval(interval);
-	}, [showDeployLogs, deployStatus]);
-
-	const requestPreviewScreenshot = React.useCallback(
-		async (force = false) => {
-			if (!repo?.name || !serviceName) return;
-			try {
-				const res = await fetch("/api/deployment-preview-screenshot", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ repoName: repo.name, serviceName, force }),
-				});
-				const data = await res.json();
-				if (!res.ok) {
-					console.error("Screenshot generation failed:", data?.error || data);
-					if (force) toast.error("Failed to create preview");
-					return;
-				}
-				if (data?.status === "skipped") {
-					if (force) toast.info("Preview is currently unavailable (gateway error)");
-					return;
-				}
-				await fetchRepoDeployments(repo.name);
-				if (force) toast.success("Created a new preview");
-			} catch (err) {
-				console.error("Screenshot generation request error:", err);
-				if (force) toast.error("Failed to create preview");
-			}
+	const { isRefreshing: isRefreshingPreview, refreshScreenshot: handleManualCreatePreview } = usePreviewScreenshot({
+		repoName: repo?.name,
+		serviceName: serviceName || "",
+		screenshotUrl: deployment?.screenshot_url,
+		deploymentStatus: effectiveDeploymentStatus,
+		hasStoredLiveUrl: hasStoredLiveUrl,
+		onDeploymentsRefetch: async (repo: string) => {
+			await fetchRepoDeployments(repo);
 		},
-		[repo?.name, serviceName, fetchRepoDeployments]
+	});
+
+	// ============== ADDITIONAL MEMOIZED DERIVED VALUES ==============
+	const showDeployLogs = React.useMemo(
+		() => isDeploying || deployStatus === "running" || deployStatus === "error",
+		[isDeploying, deployStatus]
 	);
 
-	const handleManualCreatePreview = React.useCallback(async () => {
-		if (isRefreshingPreview) return;
-		setIsRefreshingPreview(true);
-		try {
-			await requestPreviewScreenshot(true);
-		} finally {
-			setIsRefreshingPreview(false);
-		}
-	}, [isRefreshingPreview, requestPreviewScreenshot]);
+	const effectiveDeployStatus: DeployStatus = React.useMemo(() => {
+		return deployStatus === "not-started" ? "not-started" :
+			deployStatus === "running" ? "running" :
+				deployStatus === "success" ? "success" :
+					deployStatus === "error" ? "error" : "not-started";
+	}, [deployStatus]);
 
-	// If the service is running but we don't have a screenshot yet, generate one on-demand.
+	// Memoize to prevent unnecessary re-renders of child components
+	const serviceNameForLogs = React.useMemo(
+		() => deployment?.service_name ?? serviceName ?? repo?.name,
+		[deployment?.service_name, serviceName, repo?.name]
+	);
+
+	const repoNameForLogs = React.useMemo(
+		() => repo?.name ?? deployment?.repo_name,
+		[repo?.name, deployment?.repo_name]
+	);
+
+	const analyzeServicePath = React.useMemo(() => {
+		if (!repo?.html_url || !serviceName || serviceName === ".") return undefined;
+		const fromList = (list: DetectedServiceInfo[] | undefined) => {
+			const svc = list?.find((s) => s.name === serviceName);
+			return repoRelativeServicePath(svc?.path);
+		};
+		const cached = fromList(getDetectedRepoCache(repo.html_url)?.services);
+		if (cached) return cached;
+		const norm = normalizeRepoUrl(repo.html_url);
+		const record = repoServices.find((r) => normalizeRepoUrl(r.repo_url) === norm);
+		return fromList(record?.services);
+	}, [repo?.html_url, serviceName, getDetectedRepoCache, repoServices]);
+
+	const hasScanResults = React.useMemo(
+		() => Boolean(deployment?.scan_results || scanResults),
+		[deployment?.scan_results, scanResults]
+	);
+
+	const effectiveScanResults = React.useMemo(
+		() => (scanResults || deployment?.scan_results || null),
+		[scanResults, deployment?.scan_results]
+	);
+
+	const deployDisabled = React.useMemo(
+		() => isDeploymentDisabled({ ...(workingDeployment || {}), scan_results: effectiveScanResults } as DeployConfig),
+		[workingDeployment, effectiveScanResults]
+	);
+
+	const isDraft = React.useMemo(
+		() => !deployment || effectiveDeploymentStatus === "didnt_deploy",
+		[deployment, effectiveDeploymentStatus]
+	);
+
+	// ============== EFFECTS ==============
+	// Persist corrected branch when branch from DB doesn't exist on remote
 	React.useEffect(() => {
-		if (!repo?.name || !serviceName) return;
-		if (didRequestScreenshot) return;
-		if (effectiveDeploymentStatus !== "running") return;
-		if (screenshotUrl) return;
-		// If there isn't a stored live URL, screenshot capture won't know what to render.
-		if (!hasStoredLiveUrl) return;
+		void persistCorrectedBranch();
+	}, [persistCorrectedBranch]);
 
-		setDidRequestScreenshot(true);
-		void requestPreviewScreenshot(false);
-	}, [
-		repo?.name,
-		serviceName,
-		didRequestScreenshot,
-		effectiveDeploymentStatus,
-		screenshotUrl,
-		hasStoredLiveUrl,
-		requestPreviewScreenshot,
-	]);
-
-	const formatTime = (seconds: number) => {
-		const hrs = Math.floor(seconds / 3600);
-		const mins = Math.floor((seconds % 3600) / 60);
-		const secs = seconds % 60;
-
-		if (hrs > 0) {
-			return `${hrs}h ${mins}m ${secs}s`;
-		} else if (mins > 0) {
-			return `${mins}m ${secs}s`;
-		} else {
-			return `${secs}s`;
-		}
-	};
-
-
+	// Handle deployment completion - update UI state after deploy succeeds or fails
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
 			setIsDeploying(false);
@@ -332,41 +246,6 @@ export default function DeployWorkspace() {
 			setDeployingCommitInfo(null);
 		}
 	}, [deployStatus, deployment?.id]);
-
-	const fetchDeploymentHistory = React.useCallback(async () => {
-		if (!repo?.name || !serviceName) return;
-		setIsLoadingHistory(true);
-		try {
-			const data = await fetchDeploymentHistoryPage(repo.name, serviceName, 1, 10);
-			setDeploymentHistory({ history: data.history, total: data.total ?? data.history.length });
-		} catch (err) {
-			console.error("Failed to fetch deployment history:", err);
-		} finally {
-			setIsLoadingHistory(false);
-		}
-	}, [repo?.name, serviceName]);
-
-	React.useEffect(() => {
-		if (!repo?.name || !serviceName) return;
-
-		const prevStatus = prevDeployStatusForHistoryRef.current;
-		const finishedDeployAttempt =
-			prevStatus === "running" &&
-			(deployStatus === "success" || deployStatus === "error");
-
-		if (deploymentHistory === null) {
-			fetchDeploymentHistory();
-		} else if (finishedDeployAttempt) {
-			fetchDeploymentHistory();
-		}
-
-		prevDeployStatusForHistoryRef.current = deployStatus;
-	}, [deploymentHistory, deployStatus, fetchDeploymentHistory, repo?.name, serviceName]);
-
-	React.useEffect(() => {
-		setDeploymentHistory(null);
-		prevDeployStatusForHistoryRef.current = undefined;
-	}, [repo?.name, serviceName]);
 
 	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
 		const now = new Date().toISOString();
@@ -385,6 +264,8 @@ export default function DeployWorkspace() {
 		await updateDeploymentById({
 			repo_name: repo.name,
 			service_name: serviceName,
+			url: workingDeployment?.url || "",
+			branch: effectiveBranch || "main",
 			scan_results: results,
 		});
 		setScanResults(results);
@@ -425,24 +306,6 @@ export default function DeployWorkspace() {
 		setShowRejectConfirm(true);
 	}
 
-	const hasScanResults = React.useMemo(
-		() => Boolean(deployment?.scan_results || scanResults),
-		[deployment?.scan_results, scanResults]
-	);
-	const effectiveScanResults = React.useMemo(
-		() => (scanResults || deployment?.scan_results || null),
-		[scanResults, deployment?.scan_results]
-	);
-	const deployDisabled = React.useMemo(
-		() => isDeploymentDisabled({ ...(workingDeployment || {}), scan_results: effectiveScanResults } as DeployConfig),
-		[workingDeployment, effectiveScanResults]
-	);
-
-	const isDraft = React.useMemo(
-		() => !deployment || effectiveDeploymentStatus === "didnt_deploy",
-		[deployment, effectiveDeploymentStatus]
-	);
-
 	async function handleDeploy(commitSha?: string) {
 		const token = session?.accessToken;
 		if (!token || !workingDeployment || !repo) {
@@ -455,6 +318,7 @@ export default function DeployWorkspace() {
 
 		const payload: DeployConfig = {
 			...workingDeployment,
+			branch: effectiveBranch,
 			scan_results: effectiveScanResults || workingDeployment.scan_results,
 			...(commitSha && { commitSha }),
 		};
@@ -486,7 +350,6 @@ export default function DeployWorkspace() {
 		setActiveSection("logs");
 	}
 
-
 	function startScan() {
 		setScanStartTime(Date.now());
 		setScanMode("scanning");
@@ -500,7 +363,7 @@ export default function DeployWorkspace() {
 		try {
 			const data = await prefillInfra(
 				workingDeployment.url,
-				workingDeployment.branch,
+				effectiveBranch,
 				analyzeServicePath
 			);
 
@@ -509,10 +372,11 @@ export default function DeployWorkspace() {
 				return;
 			}
 
-			if (data?.branch && data.branch !== workingDeployment.branch) {
+			if (data?.branch && data.branch !== effectiveBranch) {
 				await updateDeploymentById({
 					repo_name: workingDeployment.repo_name,
 					service_name: workingDeployment.service_name,
+					url: workingDeployment.url,
 					branch: data.branch,
 				});
 			}
@@ -521,6 +385,15 @@ export default function DeployWorkspace() {
 			setScanResults(data.results);
 			setScanMode("results");
 			await onScanComplete(data.results);
+			// Ensure url and branch are stored for future fetches if this is a new deployment
+			if (!deployment) {
+				await updateDeploymentById({
+					repo_name: workingDeployment.repo_name,
+					service_name: workingDeployment.service_name,
+					url: workingDeployment.url,
+					branch: effectiveBranch,
+				});
+			}
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Failed to prefill infrastructure";
 			console.error("Prefill infrastructure error:", err);
@@ -647,7 +520,7 @@ export default function DeployWorkspace() {
 							<DeploymentHistory
 								repoName={workingDeployment.repo_name}
 								serviceName={workingDeployment.service_name}
-								prefetchedData={deploymentHistory}
+								prefetchedData={deploymentHistory ? { history: deploymentHistory, total: historyTotal } : null}
 								isPrefetching={isLoadingHistory}
 							/>
 						)}
@@ -684,6 +557,8 @@ export default function DeployWorkspace() {
 									updateDeploymentById({
 										repo_name: workingDeployment.repo_name,
 										service_name: workingDeployment.service_name,
+										url: workingDeployment.url,
+										branch: effectiveBranch,
 										...partial,
 									});
 								}}
@@ -802,7 +677,7 @@ export default function DeployWorkspace() {
 							{elapsedTime > 0 && (
 								<div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-background/50 font-mono text-xs tabular-nums">
 									<Clock className="size-4 text-muted-foreground" />
-									{formatTime(elapsedTime)}
+									{formattedTime}
 								</div>
 							)}
 							<Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">

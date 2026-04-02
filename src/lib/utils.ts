@@ -52,7 +52,7 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 
 	const targetNames: Record<DeploymentTarget, string> = {
 		'ec2': 'AWS EC2',
-		'cloud-run': 'Google Cloud Run',
+		'cloud_run': 'Google Cloud Run',
 	};
 
 	return targetNames[target] || target;

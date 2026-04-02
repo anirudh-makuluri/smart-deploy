@@ -98,7 +98,7 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
 		{ id: "done", label: "✅ Done" },
 	],
-	"cloud-run": [
+	"cloud_run": [
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "detect", label: "🔍 Analyzing app" },
 		{ id: "auth", label: "🔐 Authentication" },
@@ -681,7 +681,7 @@ async function handleGCPDeploy(
 		let vercelResult: AddVercelDnsResult | null = null;
 		if (gcpDeployUrl && deployConfig.service_name?.trim()) {
 			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
-				deploymentTarget: "cloud-run",
+				deploymentTarget: "cloud_run",
 				previousCustomUrl: deployConfig.custom_url ?? null,
 			});
 		}
@@ -689,7 +689,7 @@ async function handleGCPDeploy(
 		if (doneStep) doneStep.status = 'success';
 		const durationMs = Date.now() - deployStartTime;
 		const success = gcpDeployUrl ? true : false;
-		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -777,7 +777,7 @@ async function handleGCPDeploy(
 	let vercelResult: AddVercelDnsResult | null = null;
 	if (gcpDeployUrl && deployConfig.service_name?.trim()) {
 		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
-			deploymentTarget: "cloud-run",
+			deploymentTarget: "cloud_run",
 			previousCustomUrl: deployConfig.custom_url ?? null,
 		});
 	}
@@ -786,7 +786,7 @@ async function handleGCPDeploy(
 	const durationMs = Date.now() - deployStartTime;
 	const success = gcpDeployUrl ? true : false;
 
-	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });
