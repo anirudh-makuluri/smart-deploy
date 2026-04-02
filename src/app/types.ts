@@ -116,7 +116,7 @@ export type DeployStep = {
 
 
 
-/** Service info detected by /api/repos/detect-services and persisted in repo_services. */
+/** Service info detected via GraphQL detectServices and persisted in repo_services. */
 export type DetectedServiceInfo = {
 	name: string;
 	path: string;

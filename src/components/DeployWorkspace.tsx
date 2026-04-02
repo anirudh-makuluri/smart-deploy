@@ -20,6 +20,7 @@ import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/Fee
 import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { fetchDeploymentHistoryPage, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
 	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
@@ -107,7 +108,7 @@ export default function DeployWorkspace() {
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const [activeSection, setActiveSection] = React.useState<MenuSection>(effectiveDeploymentStatus !== "didnt_deploy" ? "overview" : "setup");
-	const [deploymentHistory, setDeploymentHistory] = React.useState<unknown[] | null>(null);
+	const [deploymentHistory, setDeploymentHistory] = React.useState<{ history: unknown[]; total: number } | null>(null);
 	const [isLoadingHistory, setIsLoadingHistory] = React.useState(false);
 	const prevDeployStatusForHistoryRef = React.useRef<
 		"not-started" | "running" | "success" | "error" | undefined
@@ -336,11 +337,8 @@ export default function DeployWorkspace() {
 		if (!repo?.name || !serviceName) return;
 		setIsLoadingHistory(true);
 		try {
-			const res = await fetch(`/api/deployment-history?repoName=${encodeURIComponent(repo.name)}&serviceName=${encodeURIComponent(serviceName)}`);
-			const data = await res.json();
-			if (data.status === "success" && Array.isArray(data.history)) {
-				setDeploymentHistory(data.history);
-			}
+			const data = await fetchDeploymentHistoryPage(repo.name, serviceName, 1, 10);
+			setDeploymentHistory({ history: data.history, total: data.total ?? data.history.length });
 		} catch (err) {
 			console.error("Failed to fetch deployment history:", err);
 		} finally {
@@ -467,25 +465,14 @@ export default function DeployWorkspace() {
 		const repoName = repo.name ?? repoNameFromUrl;
 
 		if (owner && repoName) {
-			fetch("/api/commits/latest", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					owner,
-					repo: repoName,
-					branch: payload.branch,
-				}),
-			})
-				.then((res) => res.json())
-				.then((data) => {
-					if (data.commit) {
+			fetchLatestCommit(owner, repoName, payload.branch)
+				.then((commit) => {
+					if (commit) {
 						setDeployingCommitInfo({
-							sha: data.commit.sha,
-							message: data.commit.message,
-							author: data.commit.author,
-							date: data.commit.date,
+							sha: commit.sha,
+							message: commit.message,
+							author: commit.author,
+							date: commit.date,
 						});
 					}
 				})
@@ -511,20 +498,11 @@ export default function DeployWorkspace() {
 
 		setIsPrefillingScan(true);
 		try {
-			const res = await fetch("/api/repos/prefill-infra", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					url: workingDeployment.url,
-					branch: workingDeployment.branch,
-					...(analyzeServicePath && { package_path: analyzeServicePath }),
-				}),
-			});
-			const data = await res.json();
-
-			if (!res.ok) {
-				throw new Error(data?.error || data?.details || "Failed to prefill infrastructure files");
-			}
+			const data = await prefillInfra(
+				workingDeployment.url,
+				workingDeployment.branch,
+				analyzeServicePath
+			);
 
 			if (!data?.found || !data?.results) {
 				toast.info("No existing Dockerfiles or compose files were found in the repository.");

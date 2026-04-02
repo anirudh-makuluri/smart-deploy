@@ -28,6 +28,7 @@ import {
 	EC2_INSTANCE_TYPE_PRESETS,
 	formatApproxEc2PriceCompact,
 } from "@/lib/aws/ec2InstanceTypes";
+import { updateCustomDomain, verifyDns } from "@/lib/graphqlClient";
 import { useAppData } from "@/store/useAppData";
 
 export type FormSchemaType = z.infer<typeof formSchema>
@@ -121,20 +122,7 @@ export default function ConfigTabs({
 
 		setCustomUrlSaving(true);
 		try {
-			const response = await fetch("/api/custom-domain", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					repoName: deployment.repo_name,
-					serviceName: deployment.service_name,
-					customUrl: finalUrl,
-				}),
-			});
-			const data = await response.json();
-			const isError = response.status !== 200 || data?.status === "error";
-			if (isError) {
-				throw new Error(data?.message || data?.error || "Failed to save custom domain");
-			}
+			const data = await updateCustomDomain(deployment.repo_name, deployment.service_name, finalUrl);
 
 			updateDeploymentById({
 				repo_name: deployment.repo_name,
@@ -196,19 +184,10 @@ export default function ConfigTabs({
 
 		setCustomUrlVerifying(true);
 		try {
-			const res = await fetch("/api/verify-dns", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					subdomain,
-					repoName: deployment.repo_name,
-					serviceName: deployment.service_name
-				}),
-			});
-			const data = await res.json();
+			const data = await verifyDns(subdomain, deployment.repo_name, deployment.service_name);
 
 			if (data.available) {
-				const availableSubdomain = data.customUrl.replace(/^https?:\/\//, "").split(".")[0];
+				const availableSubdomain = (data.customUrl || "").replace(/^https?:\/\//, "").split(".")[0];
 				if (data.isOwned) {
 					setCustomUrlStatus({
 						type: 'owned',

@@ -33,6 +33,31 @@ function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string
 }
 
 export const dbHelper = {
+	upsertUser: async function (
+		userID: string,
+		payload: { name?: string; image?: string }
+	): Promise<{ error?: string }> {
+		try {
+			if (!userID) return { error: "userID not found" };
+			const supabase = getSupabaseServer();
+
+			const { error } = await supabase.from("users").upsert(
+				{
+					id: userID,
+					name: (payload.name || "").trim() || null,
+					image: (payload.image || "").trim() || null,
+					created_at: new Date().toISOString(),
+				},
+				{ onConflict: "id" }
+			);
+
+			if (error) return { error: error.message };
+			return {};
+		} catch (err: unknown) {
+			return { error: err instanceof Error ? err.message : String(err) };
+		}
+	},
+
 	updateUser: async function (userID: string, data: object) {
 		try {
 			if (!userID) return { error: "userID not found" };
@@ -328,19 +353,25 @@ export const dbHelper = {
 		}
 	},
 
-	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string) {
+	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
 			if (!user) return { error: "User not found" };
 
-			const { data: rows, error } = await supabase
+			const safePage = Math.max(1, page);
+			const safeLimit = Math.max(1, limit);
+			const from = (safePage - 1) * safeLimit;
+			const to = from + safeLimit - 1;
+
+			const { data: rows, error, count } = await supabase
 				.from("deployment_history")
-				.select("*")
+				.select("*", { count: "exact" })
 				.eq("user_id", userID)
 				.eq("repo_name", repoName)
 				.eq("service_name", serviceName)
-				.order("timestamp", { ascending: false });
+				.order("timestamp", { ascending: false })
+				.range(from, to);
 
 			if (error) return { error };
 
@@ -358,24 +389,30 @@ export const dbHelper = {
 				durationMs: row.duration_ms as number | undefined,
 			}));
 
-			return { history };
+			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
 			console.error("getDeploymentHistory error:", error);
 			return { error };
 		}
 	},
 
-	getAllDeploymentHistory: async function (userID: string) {
+	getAllDeploymentHistory: async function (userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
 			if (!user) return { error: "User doesn't exist" };
 
-			const { data: rows, error } = await supabase
+			const safePage = Math.max(1, page);
+			const safeLimit = Math.max(1, limit);
+			const from = (safePage - 1) * safeLimit;
+			const to = from + safeLimit - 1;
+
+			const { data: rows, error, count } = await supabase
 				.from("deployment_history")
-				.select("*")
+				.select("*", { count: "exact" })
 				.eq("user_id", userID)
-				.order("timestamp", { ascending: false });
+				.order("timestamp", { ascending: false })
+				.range(from, to);
 
 			if (error) return { error };
 
@@ -393,7 +430,7 @@ export const dbHelper = {
 				durationMs: row.duration_ms as number | undefined,
 			}));
 
-			return { history };
+			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
 			console.error("getAllDeploymentHistory error:", error);
 			return { error };

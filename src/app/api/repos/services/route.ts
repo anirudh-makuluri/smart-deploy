@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
+	const start = Date.now();
 	try {
 		const session = await getServerSession(authOptions);
 		const userID = (session as { userID?: string })?.userID;
@@ -25,5 +26,7 @@ export async function GET() {
 			{ error: err instanceof Error ? err.message : "Failed to load services" },
 			{ status: 500 }
 		);
+	} finally {
+		console.debug(`[REST] repos/services completed in ${Date.now() - start}ms`);
 	}
 }

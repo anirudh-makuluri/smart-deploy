@@ -9,6 +9,7 @@ import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import RepoServicesList from "@/components/RepoServicesList";
+import { deleteDeployment, detectRepoServices, resolveRepo } from "@/lib/graphqlClient";
 import { normalizeRepoUrl } from "@/lib/utils";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
@@ -118,11 +119,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		let cancelled = false;
 		void (async () => {
 			try {
-				const response = await fetch(
-					`/api/repos/resolve?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repoName)}`
-				);
-				const data = await response.json();
-				const fetchedRepo = response.ok ? (data.repo as repoType | undefined) : undefined;
+				const fetchedRepo = await resolveRepo(owner, repoName);
 				if (cancelled) return;
 
 				if (fetchedRepo) {
@@ -189,26 +186,16 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		let cancelled = false;
 		setLoading(true);
 		setError(null);
-		fetch("/api/repos/detect-services", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ url: repoUrl, branch: activeBranch }),
-		})
-			.then((res) => res.json())
+		detectRepoServices(repoUrl, activeBranch)
 			.then((data) => {
 				if (cancelled) return;
-				if (data.error) {
-					setError(data.error);
-					setServices([]);
-					return;
-				}
 				const list = data.services ?? [];
 				setServices(list);
 				setDetectedRepoCache(repoUrl, {
 					services: list,
 					isMonorepo: data.isMonorepo ?? false,
 					isMultiService: data.isMultiService ?? false,
-					packageManager: data.packageManager,
+					packageManager: data.packageManager ?? undefined,
 				});
 				refetchRepoServices();
 			})
@@ -268,20 +255,8 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		try {
 			for (const dep of repoDeployments) {
 				try {
-					const res = await fetch("/api/delete-deployment", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							repoName: dep.repo_name,
-							serviceName: dep.service_name,
-						}),
-					});
-					const data = await res.json();
-					if (data.status === "success") {
-						deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
-					} else {
-						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
-					}
+					await deleteDeployment(dep.repo_name, dep.service_name);
+					deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
 				} catch (err: any) {
 					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
 				}

@@ -1,52 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../auth/authOptions";
-import { dbHelper } from "@/db-helper";
-import { getGithubRepos } from "@/github-helper";
-import { repoType } from "@/app/types";
+import { ensureUserAndRepos } from "@/lib/sessionHelpers";
 
 // Force dynamic rendering - prevents Next.js from analyzing this route during build
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
+	const start = Date.now();
 	try {
 		const session = await getServerSession(authOptions)
 
 		const userID = session?.userID
-		const name = session?.user?.name
-		const image = session?.user?.image
 		const token = session?.accessToken
 
-		if (!userID || !name || !image || !token) {
-			return NextResponse.json({ message: "Sufficient data not given" }, { status: 400 });
+		if (!userID || !token) {
+			return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 		}
 
-		const createResult = await dbHelper.getOrCreateUser(userID, {
-			name,
-			image,
-			createdAt: new Date().toISOString(),
+		const { repoList: fullRepoList } = await ensureUserAndRepos(session as any);
+
+		const limitRaw = req.nextUrl.searchParams.get("limit");
+		const limit = limitRaw ? Number(limitRaw) : null;
+
+		const sorted = [...(fullRepoList ?? [])].sort((a, b) => {
+			const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
+			const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
+			return dateB - dateA;
 		});
-		if (createResult.error) {
-			return NextResponse.json({ message: createResult.error }, { status: 500 });
-		}
 
-		const { repos: existingRepos } = await dbHelper.getUserRepos(userID);
-		let repoList: repoType[] = [];
-
-		if (!existingRepos || existingRepos.length === 0) {
-			const response = await getGithubRepos(token);
-			if (response.data) {
-				repoList = response.data;
-				await dbHelper.syncUserRepos(userID, repoList);
-				console.log("Repos added for user");
-			} else {
-				console.log("Error occured while trying to add repos to user");
-			}
-		} else {
-			console.log("Repos already exist for user");
-			repoList = existingRepos;
-		}
+		const repoList =
+			limit && Number.isFinite(limit) && limit > 0 ? sorted.slice(0, limit) : sorted;
 
 		return NextResponse.json({ 
 			message: "User synced successfully",
@@ -58,5 +43,7 @@ export async function GET(req: NextRequest) {
 	} catch (error) {
 		console.error("Error adding user:", error);
 		return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
+	} finally {
+		console.debug(`[REST] session completed in ${Date.now() - start}ms`);
 	}
 }

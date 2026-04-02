@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
+	const start = Date.now();
 	try {
 		const session = await getServerSession(authOptions)
 
@@ -28,5 +29,7 @@ export async function GET(req: NextRequest) {
 
 	} catch (error) {
 		return NextResponse.json({ status: "error", message: error })
+	} finally {
+		console.debug(`[REST] get-deployments completed in ${Date.now() - start}ms`);
 	}
 }

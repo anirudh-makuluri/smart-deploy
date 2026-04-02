@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useAppData } from "@/store/useAppData";
 import { useState } from "react";
 import { toast } from "sonner";
+import { controlDeployment, deleteDeployment } from "@/lib/graphqlClient";
 
 const statusStyles: Record<string, string> = {
 	running: "bg-primary/20 text-primary border-primary/40",
@@ -36,22 +37,10 @@ export default function DashboardDeploymentItem({
 			setIsDeleting(true);
 			const loadingId = toast.loading("Deleting deployment…");
 			try {
-				const res = await fetch("/api/delete-deployment", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						repoName: deployConfig.repo_name,
-						serviceName: deployConfig.service_name,
-					}),
-				});
-				const response = await res.json();
+				await deleteDeployment(deployConfig.repo_name, deployConfig.service_name);
+				removeDeployment(deployConfig.repo_name, deployConfig.service_name);
 				toast.dismiss(loadingId);
-				if (response.status === "success") {
-					removeDeployment(deployConfig.repo_name, deployConfig.service_name);
-					toast.success("Deployment deleted.");
-				} else {
-					toast.error(response.error || response.details || "Failed to delete deployment.");
-				}
+				toast.success("Deployment deleted.");
 			} catch (err: any) {
 				toast.dismiss(loadingId);
 				toast.error(err?.message || "Failed to delete deployment.");
@@ -62,25 +51,13 @@ export default function DashboardDeploymentItem({
 		}
 
 		try {
-			const res = await fetch("/api/deployment-control", {
-				method: "PUT",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					repoName: deployConfig.repo_name,
-					serviceName: deployConfig.service_name,
-					action,
-				}),
-			});
-			const data = await res.json();
-			if (data.status === "success") {
-				const nextStatus = action === "pause" ? "paused" : "running";
-				void updateDeploymentById({ ...deployConfig, status: nextStatus });
-				toast.success(
-					nextStatus === "paused" ? "Deployment paused (instance stopping)." : "Deployment resumed (instance starting)."
-				);
-			} else {
-				toast.error(data.error || data.message || "Failed to update deployment.");
-			}
+			const actionKey = action === "pause" ? "pause" : "resume";
+			await controlDeployment(actionKey as "pause" | "resume" | "stop", deployConfig.repo_name, deployConfig.service_name);
+			const nextStatus = action === "pause" ? "paused" : "running";
+			void updateDeploymentById({ ...deployConfig, status: nextStatus });
+			toast.success(
+				nextStatus === "paused" ? "Deployment paused (instance stopping)." : "Deployment resumed (instance starting)."
+			);
 		} catch (err: any) {
 			toast.error(err?.message || "Failed to update deployment.");
 		}

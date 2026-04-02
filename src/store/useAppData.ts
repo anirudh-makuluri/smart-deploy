@@ -1,5 +1,12 @@
 import { DeployConfig, repoType, RepoServicesRecord, DetectedServiceInfo } from '@/app/types';
 import { create } from 'zustand';
+import {
+	fetchAppOverview,
+	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
+	fetchRepoServices,
+	refreshRepos,
+	updateDeployment as graphQLUpdateDeployment,
+} from '@/lib/graphqlClient';
 
 export type DetectedRepoCacheEntry = {
 	services: DetectedServiceInfo[];
@@ -93,19 +100,14 @@ export const useAppData = create<AppState>((set, get) => ({
 		if (hasFetched) return; // Already have data; avoid refetching on every navigation
 		set({ isLoading: true });
 		try {
-			const [res1, res2, res3] = await Promise.all([
-				fetch('/api/session').then((r) => r.json()),
-				fetch('/api/get-deployments').then((r) => r.json()),
-				fetch('/api/repos/services').then((r) => r.json()),
-			]);
-
-			let repoList: repoType[] = res1.repoList ?? [];
-			let deployments: DeployConfig[] = res2.deployments ?? [];
-			const repoServices: RepoServicesRecord[] = res3.services ?? [];
-			repoList = sortRepos(repoList);
-			deployments = sortDeployments(deployments);
-
-			set({ repoList, deployments, repoServices, isLoading: false, hasFetched: true });
+			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			set({
+				repoList: sortRepos(repoList),
+				deployments: sortDeployments(deployments),
+				repoServices: repoServices ?? [],
+				isLoading: false,
+				hasFetched: true,
+			});
 		} catch (err) {
 			console.error('API fetch failed', err);
 			set({ isLoading: false });
@@ -115,19 +117,14 @@ export const useAppData = create<AppState>((set, get) => ({
 	refetchAll: async () => {
 		set({ isLoading: true });
 		try {
-			const [res1, res2, res3] = await Promise.all([
-				fetch('/api/session').then((r) => r.json()),
-				fetch('/api/get-deployments').then((r) => r.json()),
-				fetch('/api/repos/services').then((r) => r.json()),
-			]);
-
-			let repoList: repoType[] = res1.repoList ?? [];
-			let deployments: DeployConfig[] = res2.deployments ?? [];
-			const repoServices: RepoServicesRecord[] = res3.services ?? [];
-			repoList = sortRepos(repoList);
-			deployments = sortDeployments(deployments);
-
-			set({ repoList, deployments, repoServices, isLoading: false, hasFetched: true });
+			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			set({
+				repoList: sortRepos(repoList),
+				deployments: sortDeployments(deployments),
+				repoServices: repoServices ?? [],
+				isLoading: false,
+				hasFetched: true,
+			});
 		} catch (err) {
 			console.error('Refetch failed', err);
 			set({ isLoading: false });
@@ -136,8 +133,8 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	refetchDeployments: async () => {
 		try {
-			const res = await fetch('/api/get-deployments').then((r) => r.json());
-			const list = res.deployments ?? [];
+			const { deployments } = await fetchAppOverview();
+			const list = deployments ?? [];
 			set({ deployments: sortDeployments(list) });
 		} catch (err) {
 			console.error('Refetch deployments failed', err);
@@ -146,12 +143,11 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	fetchRepoDeployments: async (repoName: string) => {
 		try {
-			const res = await fetch(`/api/get-repo-deployments?repoName=${encodeURIComponent(repoName)}`).then((r) => r.json());
-			const fetchedList: DeployConfig[] = res.deployments ?? [];
+			const fetchedList = await fetchRepoDeploymentsGraphql(repoName);
 
 			// Upsert fetched deployments without erasing others in the store
 			set((state) => {
-				const otherDeployments = state.deployments.filter(d => d.repo_name !== repoName);
+				const otherDeployments = state.deployments.filter((d) => d.repo_name !== repoName);
 				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
 			});
 		} catch (err) {
@@ -161,8 +157,8 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	refetchRepoServices: async () => {
 		try {
-			const res = await fetch('/api/repos/services').then((r) => r.json());
-			set({ repoServices: res.services ?? [] });
+			const services = await fetchRepoServices();
+			set({ repoServices: services ?? [] });
 		} catch (err) {
 			console.error('Refetch repo services failed', err);
 		}
@@ -181,14 +177,10 @@ export const useAppData = create<AppState>((set, get) => ({
 	},
 
 	updateDeploymentById: async (partial: Partial<DeployConfig> & { repo_name: string; service_name: string }) => {
-		const response = await fetch('/api/update-deployments', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(partial),
-		}).then((res) => res.json());
-
-		if (response.status === 'error') {
-			console.log(response.message);
+		try {
+			await graphQLUpdateDeployment(partial as DeployConfig);
+		} catch (err) {
+			console.log((err as Error).message);
 			return;
 		}
 
@@ -233,13 +225,14 @@ export const useAppData = create<AppState>((set, get) => ({
 	},
 
 	refreshRepoList: async () => {
-		const response = await fetch('/api/repos/refresh', { method: 'GET' }).then((res) =>
-			res.json()
-		);
-		if (response.status === 'success' && response.repoList) {
-			set({ repoList: sortRepos(response.repoList) });
+		try {
+			const repoList = await refreshRepos();
+			set({ repoList: sortRepos(repoList) });
+			return { status: 'success', message: 'Repos refreshed' };
+		} catch (err) {
+			console.error('Refresh repo list failed', err);
+			return { status: 'error', message: (err as Error).message };
 		}
-		return { status: response.status ?? 'error', message: response.message ?? '' };
 	},
 	setActiveRepo: (repo) => set({ activeRepo: repo }),
 	setActiveServiceName: (name) => set({ activeServiceName: name }),

@@ -10,7 +10,7 @@ import { countDeployedServicesForRepo, formatTimestamp } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import type { repoType } from "@/app/types";
+import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
 
 function normalizeUrl(url: string): string {
@@ -63,10 +63,6 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		return base;
 	});
 
-	React.useEffect(() => {
-		void refreshRepoList();
-	}, [refreshRepoList]);
-
 	async function handleRefresh() {
 		setIsRefreshing(true);
 		const response = await refreshRepoList();
@@ -101,21 +97,11 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		}
 		setIsLoadingRepo(true);
 		try {
-			const response = await fetch("/api/repos/public", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					owner: parsed.owner,
-					repo: parsed.repo,
-				}),
-			});
-			const data = await response.json();
-			if (!response.ok) {
-				toast.error(data.error || "Failed to fetch repository");
+			const repo = await addPublicRepo(parsed.owner, parsed.repo);
+			if (!repo) {
+				toast.error("Failed to fetch repository");
 				return;
 			}
-
-			const repo: repoType = data.repo;
 			setRepoUrl("");
 			setShowAddRepo(false);
 			setAppData([repo, ...repoList], deployments, isLoading, repoServices);

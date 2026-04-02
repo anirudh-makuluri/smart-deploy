@@ -10,6 +10,10 @@ const mockToastSuccess = vi.fn();
 const mockToastInfo = vi.fn();
 const fetchRepoDeployments = vi.fn();
 const updateDeploymentById = vi.fn();
+const getDetectedRepoCache = vi.fn(() => undefined);
+const setDetectedRepoCache = vi.fn();
+const setActiveRepo = vi.fn();
+const setActiveServiceName = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
@@ -89,6 +93,11 @@ describe("DeployWorkspace", () => {
 			activeServiceName: null,
 			isLoading: false,
 			fetchRepoDeployments,
+			getDetectedRepoCache,
+			setDetectedRepoCache,
+			setActiveRepo,
+			setActiveServiceName,
+			repoServices: [],
 		};
 		global.fetch = vi.fn().mockResolvedValue({
 			ok: true,
