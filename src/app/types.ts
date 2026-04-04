@@ -79,7 +79,7 @@ export type DeployConfig = {
 	/** ISO timestamp of most recent deployment; null if never deployed */
 	lastDeployment: string | null;
 	/** Deployment revision counter; increments after each successful deploy */
-	revision: number;
+	revision: number | null;
 	/** Cloud provider (defaults to 'aws') */
 	cloudProvider: CloudProvider;
 	/** Deployment target (defaults to 'ec2' for AWS) */
@@ -133,7 +133,7 @@ export type RepoServicesRecord = {
 	repo_name: string;
 	services: DetectedServiceInfo[];
 	is_monorepo: boolean;
-	updatedAt: string;
+	updated_at: string;
 };
 
 /** Per-platform compatibility from LLM: true if the project can run on that platform. */

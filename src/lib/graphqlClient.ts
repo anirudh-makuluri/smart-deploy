@@ -103,6 +103,7 @@ const APP_OVERVIEW_QUERY = `
 					securityGroupId
 					amiId
 					sharedAlbDns
+					instanceType
 				}
 				cloudRun {
 					serviceId
@@ -150,6 +151,7 @@ const REPO_DEPLOYMENTS_QUERY = `
 			deploymentTarget
 			awsRegion
 			ec2 {
+				success
 				baseUrl
 				instanceId
 				publicIp
@@ -158,6 +160,7 @@ const REPO_DEPLOYMENTS_QUERY = `
 				securityGroupId
 				amiId
 				sharedAlbDns
+				instanceType
 			}
 			cloudRun {
 				serviceId

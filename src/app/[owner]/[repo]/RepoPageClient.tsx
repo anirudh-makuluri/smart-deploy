@@ -117,7 +117,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 		// Fallback to DB cache if available
 		const record = repoServices.find(
-			(r) => normalizeRepoUrlForMatch(r.repoUrl) === normalizeRepoUrlForMatch(repoUrl)
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizeRepoUrlForMatch(repoUrl)
 		);
 		if (record?.services?.length) {
 			setServices(record.services);
@@ -125,7 +125,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			setServicesError(null);
 			setDetectedRepoCache(repoUrl, {
 				services: record.services,
-				isMonorepo: record.isMonorepo ?? false,
+				isMonorepo: record.is_monorepo ?? false,
 				isMultiService: record.services.length > 1,
 				packageManager: undefined,
 			});

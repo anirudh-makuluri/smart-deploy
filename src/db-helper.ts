@@ -552,13 +552,13 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 			const records: RepoServicesRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
-			repoUrl: r.repo_url as string,
+			repo_url: r.repo_url as string,
 			branch: r.branch as string,
-			repoOwner: r.repo_owner as string,
-			repoName: r.repo_name as string,
+			repo_owner: r.repo_owner as string,
+			repo_name: r.repo_name as string,
 			services: (r.services as DetectedServiceInfo[]) ?? [],
-			isMonorepo: (r.is_monorepo as boolean) ?? false,
-			updatedAt: r.updated_at as string,
+			is_monorepo: (r.is_monorepo as boolean) ?? false,
+			updated_at: r.updated_at as string,
 			}));
 			return { records };
 		} catch (err) {

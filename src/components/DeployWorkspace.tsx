@@ -45,6 +45,15 @@ export default function DeployWorkspace() {
 	const repoServices = useAppData((s) => s.repoServices);
 	const { data: session } = useSession();
 
+	// Early return if activeRepo or serviceName is not available
+	if (!activeRepo || !serviceName) {
+		return (
+			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
+				<p className="text-muted-foreground">Service not found</p>
+			</div>
+		);
+	}
+
 	// ============== STATE ==============
 	const [isDeploying, setIsDeploying] = React.useState(false);
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
@@ -166,7 +175,7 @@ export default function DeployWorkspace() {
 		const cached = fromList(getDetectedRepoCache(activeRepo.html_url)?.services);
 		if (cached) return cached;
 		const norm = normalizeRepoUrl(activeRepo.html_url);
-		const record = repoServices.find((r) => normalizeRepoUrl(r.repoUrl) === norm);
+		const record = repoServices.find((r) => normalizeRepoUrl(r.repo_url) === norm);
 		return fromList(record?.services);
 		}, 
 	[activeRepo.html_url, serviceName, getDetectedRepoCache, repoServices]);

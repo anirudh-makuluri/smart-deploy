@@ -37,7 +37,7 @@ describe("POST /api/vercel/add-dns-record", () => {
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ deployUrl: "https://foo.vercel.app", service_name: "web" }),
+				body: JSON.stringify({ liveUrl: "https://foo.vercel.app", serviceName: "web" }),
 			}) as any
 		);
 		expect(res.status).toBe(200);
@@ -51,7 +51,7 @@ describe("POST /api/vercel/add-dns-record", () => {
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ deployUrl: "https://foo.vercel.app" }),
+				body: JSON.stringify({ liveUrl: "https://foo.vercel.app" }),
 			}) as any
 		);
 		expect(res.status).toBe(400);

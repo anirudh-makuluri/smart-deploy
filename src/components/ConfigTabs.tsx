@@ -349,7 +349,7 @@ export default function ConfigTabs({
 					<div className="w-full max-w-sm space-y-2">
 						<Select
 							value={ec2InstanceValue}
-							onValueChange={(value) => onConfigChange({ ec2: { instanceType: value } })}
+							onValueChange={(value) => onConfigChange({ ec2: { ...(deployment.ec2 as any), instanceType: value } })}
 						>
 							<SelectTrigger className="w-full h-auto min-h-11 py-2 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4 whitespace-normal *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:items-start *:data-[slot=select-value]:text-left [&_[data-slot=select-value]]:w-full">
 								<div className="flex items-start gap-2.5 w-full min-w-0 text-left">

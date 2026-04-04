@@ -41,7 +41,8 @@ function DeployLogsModalContent({
 }) {
 	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
 		serviceName,
-		repoName
+		repoName,
+		{}
 	);
 
 	const fallbackEntries = React.useMemo(() => {

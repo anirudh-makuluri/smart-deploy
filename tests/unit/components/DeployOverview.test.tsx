@@ -19,7 +19,7 @@ vi.mock("@/lib/utils", async (importOriginal) => {
 		...actual,
 		formatTimestamp: vi.fn(() => "formatted-time"),
 		formatDeploymentTargetName: vi.fn(() => "EC2"),
-		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) => deployment.custom_url || deployment.deployUrl || ""),
+		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) => deployment.liveUrl || ""),
 		isDeploymentDisabled: vi.fn(() => false),
 	};
 });
@@ -27,25 +27,37 @@ vi.mock("@/lib/utils", async (importOriginal) => {
 function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
 		id: "dep-1",
-		repo_name: "repo",
+		repoName: "repo",
 		url: "https://github.com/acme/repo",
 		branch: "main",
-		service_name: "web",
+		serviceName: "web",
 		status: "running",
-		deployUrl: "https://web.example.com",
+		liveUrl: "https://web.example.com",
+		commitSha: null,
+		envVars: null,
+		screenshotUrl: null,
+		firstDeployment: null,
+		lastDeployment: null,
+		revision: null,
+		cloudProvider: "aws",
+		deploymentTarget: "ec2",
+		awsRegion: "us-west-2",
+		ec2: null,
+		cloudRun: null,
+		scanResults: {},
 		...overrides,
-	};
+	} as DeployConfig;
 }
 
 describe("DeployOverview", () => {
 	it("falls back to didnt_deploy when running has no stored live URL", () => {
-		render(<DeployOverview deployment={makeDeployment({ deployUrl: "", custom_url: "" })} />);
+		render(<DeployOverview deployment={makeDeployment({ liveUrl: "", screenshotUrl: "" })} />);
 		expect(screen.getByText("didnt_deploy")).toBeInTheDocument();
 		expect(screen.getByText("No live URL yet. Deploy to generate a preview snapshot.")).toBeInTheDocument();
 	});
 
 	it("renders screenshot when screenshot_url exists", () => {
-		render(<DeployOverview deployment={makeDeployment({ screenshot_url: "https://cdn.example.com/shot.png" })} />);
+		render(<DeployOverview deployment={makeDeployment({ screenshotUrl: "https://cdn.example.com/shot.png" })} />);
 		const screenshot = screen.getByAltText("Screenshot of web");
 		expect(screenshot).toBeInTheDocument();
 	});
@@ -54,7 +66,7 @@ describe("DeployOverview", () => {
 		render(
 			<DeployOverview
 				deployment={makeDeployment({
-					custom_url: "https://custom.example.com",
+					liveUrl: "https://custom.example.com",
 					ec2: {
 						success: true,
 						baseUrl: "http://8.8.8.8",
@@ -64,12 +76,13 @@ describe("DeployOverview", () => {
 						subnetId: "subnet-123",
 						securityGroupId: "sg-123",
 						amiId: "ami-123",
+						sharedAlbDns: "alb.example.com",
+						instanceType: "t3.micro",
 					},
 				})}
 			/>
 		);
 
-		expect(screen.getByText("Custom URL")).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /custom\.example\.com/i })).toHaveAttribute(
 			"href",
 			"https://custom.example.com"

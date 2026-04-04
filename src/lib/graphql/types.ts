@@ -91,8 +91,8 @@ export const typeDefs = `
     subnetId: String!
     securityGroupId: String!
     amiId: String!
-    sharedAlbDns: String
-    instanceType: String
+    sharedAlbDns: String!
+    instanceType: String!
   }
 
   type CloudRunDetails {
