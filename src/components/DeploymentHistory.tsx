@@ -173,7 +173,7 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 									<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
 										<div className="space-y-3 text-xs font-mono text-muted-foreground">
 											{entry.steps.map((step) => (
-												<div key={step.id}>
+												<div key={Math.random().toString(36).substring(2)} className="bg-background/50 p-2 rounded border border-border/50">
 													<p className="font-semibold text-foreground mb-1">
 														{step.label} ({step.status})
 														{(step.startedAt || step.endedAt) && (
