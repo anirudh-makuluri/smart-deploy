@@ -276,7 +276,7 @@ export function getDeploymentForService(
 }
 
 export function countDeployedServicesForRepo(
-	repoRecord: Pick<RepoServicesRecord, "repoUrl" | "repoName" | "services">,
+	repoRecord: Pick<RepoServicesRecord, "repo_url" | "repo_name" | "services">,
 	deployments: DeployConfig[]
 ): number {
 	const services = repoRecord.services ?? [];
@@ -285,9 +285,9 @@ export function countDeployedServicesForRepo(
 	return services.reduce((count, svc) => {
 		const deployment = getDeploymentForService(
 			deployments,
-			repoRecord.repoUrl,
+			repoRecord.repo_url,
 			svc.name,
-			repoRecord.repoName
+			repoRecord.repo_name
 		);
 		return deployment && deployment.status !== "didnt_deploy" ? count + 1 : count;
 	}, 0);

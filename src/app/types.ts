@@ -127,12 +127,12 @@ export type DetectedServiceInfo = {
 
 /** Stored record per user+repo for detected services metadata. */
 export type RepoServicesRecord = {
-	repoUrl: string;
+	repo_url: string;
 	branch: string;
-	repoOwner: string;
-	repoName: string;
+	repo_owner: string;
+	repo_name: string;
 	services: DetectedServiceInfo[];
-	isMonorepo: boolean;
+	is_monorepo: boolean;
 	updatedAt: string;
 };
 

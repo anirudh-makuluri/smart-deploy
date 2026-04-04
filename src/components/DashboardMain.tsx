@@ -12,6 +12,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
+import { RepoServicesRecord } from "@/app/types";
 
 function normalizeUrl(url: string): string {
 	return url?.replace(/\.git$/, "").toLowerCase().trim();
@@ -31,9 +32,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
-	const repoCards = repoServices.map((record) => {
-		console.log(record)
-		const repoUrlNorm = normalizeUrl(record.repoUrl);
+	const repoCards = repoServices.map((record : RepoServicesRecord) => {
+		const repoUrlNorm = normalizeUrl(record.repo_url);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
@@ -50,8 +50,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 					? "Deployed"
 					: "Not deployed";
 		const base = {
-			owner: record.repoOwner,
-			name: record.repoName,
+			owner: record.repo_owner,
+			name: record.repo_name,
 			subtitle,
 			hasFailed,
 		};
