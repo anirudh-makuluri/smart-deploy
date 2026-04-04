@@ -1,6 +1,6 @@
 import { ExternalLink, Link2, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, EC2DeployDetails, repoType } from "@/app/types";
+import { DeployConfig, EC2Details, repoType } from "@/app/types";
 import {
 	formatTimestamp,
 	formatDeploymentTargetName,
@@ -119,10 +119,10 @@ export default function DeployOverview({
 	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshotUrl;
 	const customUrlRaw = deployment.liveUrl?.trim();
-	const instanceIpRaw = ((deployment.ec2 || {}) as EC2DeployDetails)?.publicIp?.trim?.();
+	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
 	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
 	const deployDisabled = isDeploymentDisabled(deployment);
-	const ec2Casted = (deployment.ec2 || {}) as EC2DeployDetails;
+	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" || !!ec2Casted.instanceId;
 	const ec2TypeDisplay =

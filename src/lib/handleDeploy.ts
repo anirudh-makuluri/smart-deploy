@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, DeployStep, SDArtifactsResponse } from "../app/types";
+import { DeploymentTarget, DeployConfig, CloudProvider, EC2Details, DeployStep, SDArtifactsResponse } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -216,7 +216,7 @@ async function saveDeploymentToDB(
 
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
-	ec2?: EC2DeployDetails;
+	ec2?: EC2Details;
 };
 
 async function sendDeployComplete(
@@ -256,7 +256,7 @@ async function sendDeployComplete(
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
-			ec2?: EC2DeployDetails;
+			ec2?: EC2Details;
 		} = {
 			deployUrl: deployUrl ?? null,
 			success,
@@ -344,7 +344,7 @@ async function handleAWSDeploy(
 	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
 	const ec2Details = deployConfig.ec2 || {};
 	const ec2Typed = (ec2Details && typeof ec2Details === "object" && "instanceType" in ec2Details) 
-		? (ec2Details as EC2DeployDetails)
+		? (ec2Details as EC2Details)
 		: null;
 	serviceDetails.ec2 = {
 		success: ec2Result.success,
@@ -590,7 +590,7 @@ async function handleAWSCodeBuildDeploy(
 	const serviceDetails: ServiceDeployDetails = {};
 	const ec2Details2 = deployConfig.ec2 || {};
 	const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2) 
-		? (ec2Details2 as EC2DeployDetails)
+		? (ec2Details2 as EC2Details)
 		: null;
 	serviceDetails.ec2 = {
 		success: ec2Result.success,

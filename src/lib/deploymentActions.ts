@@ -3,7 +3,7 @@ import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
 import { deleteVercelDnsRecord } from "@/lib/vercelDns";
 import { dbHelper } from "@/db-helper";
 import config from "@/config";
-import { DeployConfig, EC2DeployDetails } from "@/app/types";
+import { DeployConfig, EC2Details } from "@/app/types";
 import { runCommandLiveWithOutput } from "@/server-helper";
 
 export type DeleteDeploymentArgs = {
@@ -63,7 +63,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	const deployConfig = deployment as DeployConfig;
 	const cloudProvider = deployConfig.cloudProvider || "aws";
-	const ec2Casted = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
 	const deploymentTarget =
 		deployConfig.deploymentTarget ||
 		(ec2Casted?.instanceId ? "ec2" : undefined);
@@ -157,7 +157,7 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 		const cloudProvider = deployConfig.cloudProvider || "aws";
 
 		if (cloudProvider === "aws" && deployConfig.deploymentTarget === "ec2") {
-		const ec2ConfigPause = (deployConfig.ec2 || {}) as EC2DeployDetails;
+		const ec2ConfigPause = (deployConfig.ec2 || {}) as EC2Details;
 		const instanceId = ec2ConfigPause?.instanceId;
 		if (!instanceId) {
 			return { status: "error", message: "No EC2 instanceId stored for this deployment" };

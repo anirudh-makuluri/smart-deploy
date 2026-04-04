@@ -84,20 +84,21 @@ export const typeDefs = `
 
   type EC2Details {
     success: Boolean!
-    baseUrl: String
-    instanceId: String
-    publicIp: String
-    vpcId: String
-    subnetId: String
-    securityGroupId: String
-    amiId: String
+    baseUrl: String!
+    instanceId: String!
+    publicIp: String!
+    vpcId: String!
+    subnetId: String!
+    securityGroupId: String!
+    amiId: String!
     sharedAlbDns: String
+    instanceType: String
   }
 
   type CloudRunDetails {
-    serviceId: String
-    region: String
-    projectId: String
+    serviceId: String!
+    region: String!
+    projectId: String!
   }
 
   type Deployment {

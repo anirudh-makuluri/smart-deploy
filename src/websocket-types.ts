@@ -1,4 +1,4 @@
-import { DeployConfig, DeployStep, EC2DeployDetails } from "./app/types";
+import { DeployConfig, DeployStep, EC2Details } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
@@ -55,8 +55,8 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		}
 	}
 
-	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object" && "instanceId" in deployConfig.ec2) {
-		const ec2Details = deployConfig.ec2 as EC2DeployDetails;
+	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object") {
+		const ec2Details = deployConfig.ec2 as EC2Details;
 		const region = deployConfig.awsRegion || config.AWS_REGION;
 		const logs = await getInitialEc2ServiceLogs({
 			instanceId: ec2Details.instanceId,

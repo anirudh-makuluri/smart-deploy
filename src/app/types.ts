@@ -3,7 +3,7 @@ export type repoType = {
 	name: string;
 	full_name: string;
 	html_url: string;
-	language: string;
+	language: string | null;
 	languages_url: string;
 	created_at: string;
 	updated_at: string;
@@ -37,7 +37,7 @@ export type DeploymentTarget = 'ec2' | 'cloud_run';
 
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
-export type EC2DeployDetails = {
+export type EC2Details = {
 	success: boolean;
 	baseUrl: string;
 	instanceId: string;
@@ -47,12 +47,13 @@ export type EC2DeployDetails = {
 	securityGroupId: string;
 	amiId: string;
 	sharedAlbDns: string;
-	/** EC2 instance type (e.g. t3.small). Defaults to t3.micro. */
 	instanceType: string;
 };
 
-export type CloudRunDeployDetails = {
-	// Expand with service name, region, etc. when needed
+export type CloudRunDetails = {
+	serviceId: string;
+	region: string;
+	projectId: string;
 };
 
 // ── Main deployment config ──
@@ -65,7 +66,7 @@ export type DeployConfig = {
 	/** Commit SHA that was deployed; null if never deployed */
 	commitSha: string | null;
 	/** Environment variables as JSON string (optional for deployment) */
-	envVars?: string;
+	envVars: string | null;
 	/** Live deployment URL (either auto-deployed or custom); null if didnt_deploy */
 	liveUrl: string | null;
 	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage); null if didnt_deploy */
@@ -85,10 +86,10 @@ export type DeployConfig = {
 	deploymentTarget: DeploymentTarget;
 	/** AWS region (defaults to value from config) */
 	awsRegion: string;
-	/** AWS EC2 deployment details */
-	ec2: EC2DeployDetails | {};
-	/** Google Cloud Run deployment details */
-	cloudRun: CloudRunDeployDetails | {};
+	/** AWS EC2 deployment details (null if not deployed to EC2 or status === didnt_deploy) */
+	ec2: EC2Details | null;
+	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
+	cloudRun: CloudRunDetails | null;
 	/** Analysis/scan results from detectServices */
 	scanResults: SDArtifactsResponse | {};
 }

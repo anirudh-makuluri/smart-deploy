@@ -75,6 +75,7 @@ const APP_OVERVIEW_QUERY = `
 					commit_sha
 					protected
 				}
+			}
 			deployments {
 				id
 				repoName

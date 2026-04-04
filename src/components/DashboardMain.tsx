@@ -14,7 +14,7 @@ import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
 
 function normalizeUrl(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase().trim();
+	return url?.replace(/\.git$/, "").toLowerCase().trim();
 }
 
 type DashboardMainProps = {
@@ -32,6 +32,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices.map((record) => {
+		console.log(record)
 		const repoUrlNorm = normalizeUrl(record.repoUrl);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;

@@ -1,4 +1,4 @@
-import { DeployConfig, EC2DeployDetails } from "../../app/types";
+import { DeployConfig, EC2Details } from "../../app/types";
 import config from "../../config";
 import {
 	EC2Client,
@@ -165,7 +165,7 @@ export async function deleteEC2Instance(
 		}
 	}
 
-	const instanceId = ((deployConfig.ec2 || {}) as EC2DeployDetails)?.instanceId;
+	const instanceId = ((deployConfig.ec2 || {}) as EC2Details)?.instanceId;
 	if (instanceId) {
 		try {
 			await ec2Client.send(

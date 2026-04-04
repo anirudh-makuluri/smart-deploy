@@ -64,13 +64,42 @@ create index if not exists idx_deployment_history_user_repo_service
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
 
--- User repos: one row per repo per user (keyed by repo name)
+-- User repos: one row per repo per user with denormalized fields
 create table if not exists public.user_repos (
   user_id text not null references public.users(id) on delete cascade,
   repo_name text not null,
-  data jsonb not null default '{}',
+  
+  -- Repository metadata (denormalized for efficient querying)
+  id text not null,
+  full_name text not null,
+  repo_owner text not null,
+  html_url text not null,
+  language text,
+  languages_url text not null,
+  created_at text not null,
+  updated_at text not null,
+  pushed_at text not null,
+  default_branch text not null,
+  private boolean not null,
+  visibility text not null,
+  owner_login text not null,
+  
+  -- Complex nested data stored as JSONB
+  latest_commit jsonb,
+  branches jsonb not null default '[]',
+  
+  -- Sync metadata
+  synced_at timestamptz not null default now(),
+  sync_error text,
+  
   primary key (user_id, repo_name)
 );
+
+-- Indexes for efficient user repo queries
+create index if not exists idx_user_repos_user_id on public.user_repos(user_id);
+create index if not exists idx_user_repos_language on public.user_repos(user_id, language);
+create index if not exists idx_user_repos_visibility on public.user_repos(user_id, visibility);
+create index if not exists idx_user_repos_synced_at on public.user_repos(user_id, synced_at desc);
 
 -- Detected services per repo (from detect-services); one row per repo per user
 create table if not exists public.repo_services (
@@ -110,6 +139,13 @@ alter table public.deployments enable row level security;
 alter table public.deployment_history enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.waiting_list enable row level security;
+
+-- RLS Policies for user_repos
+create policy "Users can view their own repos" on public.user_repos
+  for select using (auth.uid()::text = user_id);
+
+create policy "Users can manage their own repos" on public.user_repos
+  for all using (auth.uid()::text = user_id);
 
 -- Allow service role full access (service role key bypasses RLS by default)
 -- If using anon key from client, add policies here.

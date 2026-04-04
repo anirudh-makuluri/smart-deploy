@@ -2,7 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import config from "../../config";
-import { DeployConfig, EC2DeployDetails } from "../../app/types";
+import { DeployConfig, EC2Details } from "../../app/types";
 import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import {
@@ -263,7 +263,7 @@ async function ensureNetworking(
 	let subnetIds: string[];
 	let securityGroupId: string;
 
-	const ec2Casted = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
 	if (ec2Casted?.vpcId?.trim() && ec2Casted?.subnetId?.trim() && ec2Casted?.securityGroupId?.trim()) {
 		vpcId = ec2Casted.vpcId.trim();
 		subnetIds = [ec2Casted.subnetId.trim()];
@@ -359,15 +359,15 @@ async function redeployInstance(params: {
 		send("Redeploy command failed. Check logs above.", "deploy");
 		return {
 			success: false,
-			baseUrl: deployConfig.liveUrl || ((deployConfig.ec2 || {}) as EC2DeployDetails)?.baseUrl || "",
+			baseUrl: deployConfig.liveUrl || ((deployConfig.ec2 || {}) as EC2Details)?.baseUrl || "",
 			serviceUrls: new Map(),
 			instanceId: existingInstanceId,
-			publicIp: ((deployConfig.ec2 || {}) as EC2DeployDetails)?.publicIp || "",
+			publicIp: ((deployConfig.ec2 || {}) as EC2Details)?.publicIp || "",
 			...net, subnetId: net.subnetIds[0], amiId,
 		};
 	}
 
-	const publicIp = ((deployConfig.ec2 || {}) as EC2DeployDetails)?.publicIp?.trim() || (
+	const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
 		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 	).trim();
 
@@ -420,7 +420,7 @@ async function launchNewInstance(params: {
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
 
-	const ec2Config = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
 	let instanceId: string;
 	try {
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
@@ -776,7 +776,7 @@ function buildServiceUrls(
 	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
-	const ec2Config = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
 	let baseUrl: string;
 	if (deployConfig.serviceName) {
 		const host = customHost || buildServiceHostname(deployConfig.serviceName, deployConfig.serviceName);
@@ -856,7 +856,7 @@ export async function handleEC2(
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigMain?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -976,7 +976,7 @@ export async function handleEC2FromEcr(params: {
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigEcr = (deployConfig.ec2 || {}) as EC2DeployDetails;
+	const ec2ConfigEcr = (deployConfig.ec2 || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigEcr?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -1044,7 +1044,7 @@ export async function handleEC2FromEcr(params: {
 
 			if (!ssmResult.success) {
 				send("❌ ECR deploy failed. Check logs above.", "deploy");
-				const ec2EcrCasted = (deployConfig.ec2 || {}) as EC2DeployDetails;
+				const ec2EcrCasted = (deployConfig.ec2 || {}) as EC2Details;
 				return {
 					success: false,
 					baseUrl: deployConfig.liveUrl || ec2EcrCasted?.baseUrl || "",
@@ -1055,7 +1055,7 @@ export async function handleEC2FromEcr(params: {
 				};
 			}
 
-			const publicIp = ((deployConfig.ec2 || {}) as EC2DeployDetails)?.publicIp?.trim() || (
+			const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
 				await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 			).trim();
 
@@ -1087,7 +1087,7 @@ export async function handleEC2FromEcr(params: {
 	const instanceName = generateResourceName(repoName, "ec2");
 	let instanceId: string;
 	try {
-		const ec2Config = (deployConfig.ec2 || {}) as EC2DeployDetails;
+		const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
 		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);

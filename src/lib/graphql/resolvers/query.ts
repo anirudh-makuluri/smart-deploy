@@ -11,7 +11,7 @@ import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
-import { EC2DeployDetails } from "@/app/types";
+import { EC2Details } from "@/app/types";
 import {
 	fetchAndBuildRepo,
 	fetchLatestCommit,
@@ -286,7 +286,7 @@ export async function serviceLogs(
 				throw new Error("Deployment not found");
 			}
 			
-			const ec2Casted = (deployConfig?.ec2 || {}) as EC2DeployDetails;
+			const ec2Casted = (deployConfig?.ec2 || {}) as EC2Details;
 			const instanceId = ec2Casted?.instanceId;
 
 			if (instanceId) {
@@ -373,6 +373,14 @@ function mapDeploymentTargetToEnum(target: string | null | undefined): string | 
  * when user opens repo page. Use empty string as fallback for missing values.
  */
 function transformDeployment(deployment: any) {
+	// Helper to convert empty objects to null
+	const nullifyIfEmpty = (obj: any) => {
+		if (!obj || (typeof obj === "object" && Object.keys(obj).length === 0)) {
+			return null;
+		}
+		return obj;
+	};
+
 	return {
 		id: deployment.id,
 		repoName: deployment.repoName,
@@ -392,7 +400,7 @@ function transformDeployment(deployment: any) {
 		cloudProvider: deployment.cloudProvider ? mapCloudProviderToEnum(deployment.cloudProvider) : null,
 		deploymentTarget: deployment.deploymentTarget ? mapDeploymentTargetToEnum(deployment.deploymentTarget) : null,
 		awsRegion: deployment.awsRegion || undefined,
-		ec2: deployment.ec2 || null,
-		cloudRun: deployment.cloudRun || null,
+		ec2: nullifyIfEmpty(deployment.ec2),
+		cloudRun: nullifyIfEmpty(deployment.cloudRun),
 	};
 }

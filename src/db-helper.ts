@@ -298,12 +298,34 @@ export const dbHelper = {
 
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
 		const supabase = getSupabaseServer();
-		for (const repo of repoList) {
-			await supabase.from("user_repos").upsert(
-				{ user_id: userID, repo_name: repo.name, data: repo as unknown as Record<string, unknown> },
-				{ onConflict: "user_id,repo_name" }
-			);
-		}
+		
+		const rows = repoList.map(repo => ({
+			user_id: userID,
+			repo_name: repo.name,
+			id: repo.id,
+			full_name: repo.full_name,
+			repo_owner: repo.owner.login,
+			html_url: repo.html_url,
+			language: repo.language,
+			languages_url: repo.languages_url,
+			created_at: repo.created_at,
+			updated_at: repo.updated_at,
+			pushed_at: repo.pushed_at,
+			default_branch: repo.default_branch,
+			private: repo.private,
+			visibility: repo.visibility,
+			owner_login: repo.owner.login,
+			latest_commit: repo.latest_commit,
+			branches: repo.branches,
+			synced_at: new Date().toISOString(),
+			sync_error: null,
+		}));
+		
+		const { error } = await supabase
+			.from("user_repos")
+			.upsert(rows, { onConflict: "user_id,repo_name" });
+		
+		if (error) throw new Error(`Failed to sync repos: ${error.message}`);
 		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
 	},
 
@@ -312,11 +334,29 @@ export const dbHelper = {
 			const supabase = getSupabaseServer();
 			const { data: rows, error } = await supabase
 				.from("user_repos")
-				.select("data")
+				.select("*")
 				.eq("user_id", userID);
 
 			if (error) return { error: error.message };
-			const repos = (rows || []).map((r) => r.data as repoType);
+			
+			const repos = (rows || []).map((r) => ({
+				id: r.id,
+				name: r.repo_name,
+				full_name: r.full_name,
+				html_url: r.html_url,
+				language: r.language,
+				languages_url: r.languages_url,
+				created_at: r.created_at,
+				updated_at: r.updated_at,
+				pushed_at: r.pushed_at,
+				default_branch: r.default_branch,
+				private: r.private,
+				visibility: r.visibility,
+				owner: { login: r.owner_login },
+				latest_commit: r.latest_commit,
+				branches: r.branches || [],
+			})) as repoType[];
+			
 			return { repos };
 		} catch (error) {
 			return { error: error instanceof Error ? error.message : String(error) };
