@@ -234,9 +234,7 @@ export async function addPublicRepo(
 
 		await dbHelper.syncUserRepos(userID, [repoData]);
 
-		return {
-			repo: repoData,
-		};
+		return repoData;
 	});
 }
 

@@ -13,13 +13,9 @@ export const typeDefs = `
   # ──────────────────────────────────────────────────────────────
 
   enum RepositoryVisibility {
-    PUBLIC
-    PRIVATE
-    INTERNAL
-  }
-
-  type License {
-    spdx_id: String!
+    public
+    private
+    internal
   }
 
   type Commit {
@@ -52,12 +48,7 @@ export const typeDefs = `
     pushed_at: String!
     default_branch: String!
     private: Boolean!
-    description: String
     visibility: RepositoryVisibility!
-    license: License
-    forks_count: Int!
-    watchers_count: Int!
-    open_issues_count: Int!
     owner: RepositoryOwner!
     latest_commit: Commit
     branches: [Branch!]!
@@ -93,13 +84,13 @@ export const typeDefs = `
 
   type EC2Details {
     success: Boolean!
-    baseUrl: String!
-    instanceId: String!
-    publicIp: String!
-    vpcId: String!
-    subnetId: String!
-    securityGroupId: String!
-    amiId: String!
+    baseUrl: String
+    instanceId: String
+    publicIp: String
+    vpcId: String
+    subnetId: String
+    securityGroupId: String
+    amiId: String
     sharedAlbDns: String
   }
 
@@ -111,27 +102,24 @@ export const typeDefs = `
 
   type Deployment {
     id: String!
-    repo_name: String!
+    repoName: String!
     url: String!
     branch: String!
     commitSha: String
-    env_vars: String
-    deployUrl: String
-    custom_url: String
-    screenshot_url: String
-    service_name: String!
+    envVars: String
+    liveUrl: String
+    screenshotUrl: String
+    serviceName: String!
     status: DeploymentStatus!
-    first_deployment: String
-    last_deployment: String
+    firstDeployment: String
+    lastDeployment: String
     revision: Int
-    token_usage: TokenUsage
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
     awsRegion: String
-    awsEc2InstanceType: String
     ec2: EC2Details
     cloudRun: CloudRunDetails
-    scan_results: JSON!
+    scanResults: JSON!
   }
 
   # ──────────────────────────────────────────────────────────────
@@ -311,24 +299,22 @@ export const typeDefs = `
 
   input DeployConfigInput {
     id: String
-    repo_name: String!
+    repoName: String!
     url: String
     branch: String
     commitSha: String
-    env_vars: String
-    deployUrl: String
-    custom_url: String
-    screenshot_url: String
-    service_name: String!
+    envVars: String
+    liveUrl: String
+    screenshotUrl: String
+    serviceName: String!
     status: DeploymentStatus
-    first_deployment: String
-    last_deployment: String
+    firstDeployment: String
+    lastDeployment: String
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
     awsRegion: String
-    awsEc2InstanceType: String
-    scan_results: JSON
+    scanResults: JSON
   }
 
   input DeleteDeploymentInput {

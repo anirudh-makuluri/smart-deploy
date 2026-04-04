@@ -59,12 +59,7 @@ const APP_OVERVIEW_QUERY = `
 				pushed_at
 				default_branch
 				private
-				description
 				visibility
-				license
-				forks_count
-				watchers_count
-				open_issues_count
 				owner {
 					login
 				}
@@ -80,34 +75,40 @@ const APP_OVERVIEW_QUERY = `
 					commit_sha
 					protected
 				}
-			}
 			deployments {
 				id
-				repo_name
+				repoName
 				url
 				branch
 				commitSha
-				env_vars
-				deployUrl
-				custom_url
-				screenshot_url
-				service_name
+				envVars
+				liveUrl
+				screenshotUrl
+				serviceName
 				status
-				first_deployment
-				last_deployment
+				firstDeployment
+				lastDeployment
 				revision
-				token_usage {
-					input_tokens
-					output_tokens
-					total_tokens
-				}
 				cloudProvider
 				deploymentTarget
 				awsRegion
-				awsEc2InstanceType
-				ec2
-				cloudRun
-				scan_results
+				ec2 {
+					success
+					baseUrl
+					instanceId
+					publicIp
+					vpcId
+					subnetId
+					securityGroupId
+					amiId
+					sharedAlbDns
+				}
+				cloudRun {
+					serviceId
+					region
+					projectId
+				}
+				scanResults
 			}
 			repoServices {
 				repo_url
@@ -132,21 +133,37 @@ const REPO_DEPLOYMENTS_QUERY = `
 	query RepoDeployments($repoName: String!) {
 		repoDeployments(repoName: $repoName) {
 			id
-			repo_name
-			service_name
-			status
+			repoName
+			url
 			branch
 			commitSha
-			deployUrl
-			custom_url
-			awsRegion
+			envVars
+			liveUrl
+			screenshotUrl
+			serviceName
+			status
+			firstDeployment
+			lastDeployment
+			revision
+			cloudProvider
 			deploymentTarget
-			token_usage {
-				input_tokens
-				output_tokens
-				total_tokens
+			awsRegion
+			ec2 {
+				baseUrl
+				instanceId
+				publicIp
+				vpcId
+				subnetId
+				securityGroupId
+				amiId
+				sharedAlbDns
 			}
-			scan_results
+			cloudRun {
+				serviceId
+				region
+				projectId
+			}
+			scanResults
 		}
 	}
 `;
@@ -196,12 +213,7 @@ const REFRESH_REPOS_MUTATION = `
 				pushed_at
 				default_branch
 				private
-				description
 				visibility
-				license
-				forks_count
-				watchers_count
-				open_issues_count
 				owner {
 					login
 				}
@@ -384,7 +396,33 @@ const DEPLOYMENT_CONTROL_MUTATION = `
 const RESOLVE_REPO_QUERY = `
 	query ResolveRepo($owner: String!, $repo: String!) {
 		resolveRepo(owner: $owner, repo: $repo) {
-			repo
+			id
+			name
+			full_name
+			html_url
+			language
+			languages_url
+			created_at
+			updated_at
+			pushed_at
+			default_branch
+			private
+			visibility
+			owner {
+				login
+			}
+			latest_commit {
+				message
+				author
+				date
+				sha
+				url
+			}
+			branches {
+				name
+				commit_sha
+				protected
+			}
 		}
 	}
 `;
@@ -392,7 +430,33 @@ const RESOLVE_REPO_QUERY = `
 const ADD_PUBLIC_REPO_MUTATION = `
 	mutation AddPublicRepo($owner: String!, $repo: String!) {
 		addPublicRepo(owner: $owner, repo: $repo) {
-			repo
+			id
+			name
+			full_name
+			html_url
+			language
+			languages_url
+			created_at
+			updated_at
+			pushed_at
+			default_branch
+			private
+			visibility
+			owner {
+				login
+			}
+			latest_commit {
+				message
+				author
+				date
+				sha
+				url
+			}
+			branches {
+				name
+				commit_sha
+				protected
+			}
 		}
 	}
 `;
@@ -518,13 +582,13 @@ export async function controlDeployment(action: "pause" | "resume" | "stop", rep
 }
 
 export async function resolveRepo(owner: string, repo: string): Promise<repoType | null> {
-	const data = await graphQLRequest<{ resolveRepo: { repo: repoType } }>(RESOLVE_REPO_QUERY, { owner, repo });
-	return data.resolveRepo?.repo ?? null;
+	const data = await graphQLRequest<{ resolveRepo: repoType | null }>(RESOLVE_REPO_QUERY, { owner, repo });
+	return data.resolveRepo ?? null;
 }
 
 export async function addPublicRepo(owner: string, repo: string): Promise<repoType | null> {
-	const data = await graphQLRequest<{ addPublicRepo: { repo: repoType } }>(ADD_PUBLIC_REPO_MUTATION, { owner, repo });
-	return data.addPublicRepo?.repo ?? null;
+	const data = await graphQLRequest<{ addPublicRepo: repoType | null }>(ADD_PUBLIC_REPO_MUTATION, { owner, repo });
+	return data.addPublicRepo ?? null;
 }
 
 export async function detectRepoServices(url: string, branch?: string): Promise<DetectServicesResult> {

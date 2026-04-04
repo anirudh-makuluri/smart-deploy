@@ -10,15 +10,7 @@ export type repoType = {
 	pushed_at: string;
 	default_branch: string;
 	private: boolean;
-	description: string | null;
 	visibility: 'public' | 'private' | 'internal';
-	license: {
-		spdx_id: string;
-	} | null;
-
-	forks_count: number;
-	watchers_count: number;
-	open_issues_count: number;
 	owner: {
 		login: string;
 	};

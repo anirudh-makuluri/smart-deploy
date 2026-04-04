@@ -111,9 +111,7 @@ export async function resolveRepo(
 		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.token);
 		await dbHelper.syncUserRepos(userID, [repoData]);
 
-		return {
-			repo: repoData,
-		};
+		return repoData;
 	});
 }
 
@@ -375,23 +373,26 @@ function mapDeploymentTargetToEnum(target: string | null | undefined): string | 
  * when user opens repo page. Use empty string as fallback for missing values.
  */
 function transformDeployment(deployment: any) {
-	const data = deployment.data || {};
-	
 	return {
 		id: deployment.id,
-		repo_name: deployment.repoName,
-		service_name: deployment.serviceName,
+		repoName: deployment.repoName,
+		serviceName: deployment.serviceName,
+		ownerID: deployment.ownerID,
 		status: mapStatusToEnum(deployment.status),
-		first_deployment: deployment.firstDeployment,
-		last_deployment: deployment.lastDeployment,
+		firstDeployment: deployment.firstDeployment,
+		lastDeployment: deployment.lastDeployment,
 		revision: deployment.revision,
-		scan_results: deployment.scanResults || {},
-		// Ensure required fields have values (defaults for fields not in data yet)
-		url: data.url || "",
-		branch: data.branch || "main",
-		...data, // Spread JSONB fields (url, branch, ec2, env_vars, etc.)
-		// Map enum fields if they exist in data
-		cloudProvider: data.cloudProvider ? mapCloudProviderToEnum(data.cloudProvider) : null,
-		deploymentTarget: data.deploymentTarget ? mapDeploymentTargetToEnum(data.deploymentTarget) : null,
+		url: deployment.url || "",
+		branch: deployment.branch || "main",
+		commitSha: deployment.commitSha || undefined,
+		envVars: deployment.envVars || undefined,
+		liveUrl: deployment.liveUrl || undefined,
+		screenshotUrl: deployment.screenshotUrl || undefined,
+		scanResults: deployment.scanResults || {},
+		cloudProvider: deployment.cloudProvider ? mapCloudProviderToEnum(deployment.cloudProvider) : null,
+		deploymentTarget: deployment.deploymentTarget ? mapDeploymentTargetToEnum(deployment.deploymentTarget) : null,
+		awsRegion: deployment.awsRegion || undefined,
+		ec2: deployment.ec2 || null,
+		cloudRun: deployment.cloudRun || null,
 	};
 }

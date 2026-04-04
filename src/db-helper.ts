@@ -2,59 +2,76 @@ import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
 import { v4 as uuidv4 } from "uuid";
 
-type RowDeployment = {
-	id: string;
-	repo_name: string;
-	service_name: string;
-	owner_id: string;
-	status: string | null;
-	first_deployment: string | null;
-	last_deployment: string | null;
-	revision: number | null;
-	data: Record<string, unknown>;
-	scan_results: Record<string, unknown> | null;
-};
-
-function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
-	const { id, repo_name, service_name, owner_id, status, first_deployment, last_deployment, revision, data } = row;
-	
-	// Extract fields from data JSONB
+/**
+ * Transform database row (snake_case) to DeployConfig (camelCase)
+ */
+function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { ownerID: string } {
 	const {
-		url = '',
-		branch = '',
-		commitSha,
-		envVars,
-		liveUrl,
-		screenshotUrl,
-		cloudProvider = 'aws',
-		deploymentTarget = 'ec2',
-		awsRegion = '',
+		id,
+		repo_name,
+		service_name,
+		owner_id,
+		url,
+		branch,
+		commit_sha,
+		env_vars,
+		live_url,
+		screenshot_url,
+		cloud_provider,
+		deployment_target,
+		aws_region,
+		status,
+		first_deployment,
+		last_deployment,
+		revision,
 		ec2,
-		cloudRun,
-	} = (data || {}) as Record<string, unknown>;
+		cloud_run,
+		scan_results,
+	} = row;
 
 	return {
 		id,
-		repoName: repo_name,
-		serviceName: service_name,
-		ownerID: owner_id,
-		url,
-		branch,
-		commitSha: commitSha ?? null,
-		envVars,
-		liveUrl: liveUrl ?? null,
-		screenshotUrl: screenshotUrl ?? null,
+		repoName: repo_name || '',
+		serviceName: service_name || '',
+		ownerID: owner_id || '',
+		url: url || '',
+		branch: branch || '',
+		commitSha: commit_sha ?? null,
+		envVars: env_vars ?? undefined,
+		liveUrl: live_url ?? null,
+		screenshotUrl: screenshot_url ?? null,
 		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
 		firstDeployment: first_deployment ?? null,
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
-		cloudProvider: (cloudProvider as 'aws' | 'gcp') || 'aws',
-		deploymentTarget: (deploymentTarget as 'ec2' | 'cloud_run') || 'ec2',
-		awsRegion,
+		cloudProvider: (cloud_provider as 'aws' | 'gcp') || 'aws',
+		deploymentTarget: (deployment_target as 'ec2' | 'cloud_run') || 'ec2',
+		awsRegion: aws_region || '',
 		ec2: (ec2 as Record<string, unknown>) || {},
-		cloudRun: (cloudRun as Record<string, unknown>) || {},
-		scanResults: (row.scan_results || {}) as Record<string, unknown>,
+		cloudRun: (cloud_run as Record<string, unknown>) || {},
+		scanResults: (scan_results || {}) as Record<string, unknown>,
 	} as DeployConfig & { ownerID: string };
+}
+
+/**
+ * Transform DeployConfig (camelCase) to database row (snake_case)
+ */
+function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
+	return {
+		url: config.url,
+		branch: config.branch,
+		commit_sha: config.commitSha,
+		env_vars: config.envVars,
+		live_url: config.liveUrl,
+		screenshot_url: config.screenshotUrl,
+		cloud_provider: config.cloudProvider,
+		deployment_target: config.deploymentTarget,
+		aws_region: config.awsRegion,
+		status: config.status,
+		ec2: config.ec2,
+		cloud_run: config.cloudRun,
+		scan_results: config.scanResults,
+	};
 }
 
 export const dbHelper = {
@@ -124,89 +141,59 @@ export const dbHelper = {
 				return { success: "Deployment stopped and deleted" };
 			}
 
-			// Extract top-level columns and rest goes to data JSONB
-			const {
-				id: _id,
-				repoName: _rn,
-				serviceName: _sn,
-				status,
-				firstDeployment,
-				lastDeployment,
-				revision,
-				scanResults,
-			// These go into data JSONB
-			url,
-			branch,
-			commitSha,
-			envVars,
-			liveUrl,
-			screenshotUrl,
-			cloudProvider,
-			deploymentTarget,
-			awsRegion,
-			ec2,
-			cloudRun,
-		} = deployConfig;
-		const dataJson: Record<string, unknown> = {
-			url,
-			branch,
-			commitSha,
-			envVars,
-			liveUrl,
-			screenshotUrl,
-			cloudProvider,
-			deploymentTarget,
-			awsRegion,
-			ec2,
-			cloudRun,
-		};
+			// Check if deployment exists
+			const { data: existing, error: fetchError } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
 
-		const { data: existing } = await supabase
-			.from("deployments")
-			.select("revision, data, status, scan_results")
-			.eq("repo_name", repoName)
-			.eq("service_name", serviceName)
-			.order("last_deployment", { ascending: false })
-			.limit(1)
-			.maybeSingle();			if (!existing) {
-				await supabase.from("deployments").insert({
+			if (fetchError) return { error: fetchError.message };
+			
+			if (!existing) {
+				// Create new deployment with provided data
+				const insertPayload: Record<string, unknown> = {
 					id: uuidv4(),
 					repo_name: repoName,
 					service_name: serviceName,
 					owner_id: userID,
-					status: deployConfig.status ?? "didnt_deploy",
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
-					data: dataJson,
-					scan_results: scanResults || null,
-				});
+					...deployConfigToRow(deployConfig),
+				};
+
+				const { error: insertError } = await supabase.from("deployments").insert(insertPayload);
+				if (insertError) return { error: insertError.message };
 				return { success: "New deployment created and added to user" };
 			}
 
-			const nextRevision = (existing.revision ?? 0) + 1;
-			const lastDeploymentTime = new Date().toISOString();
-			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
+			// Build update payload
+			const updatePayload: Record<string, unknown> = {
+				revision: (existing.revision ?? 0) + 1,
+				...deployConfigToRow(deployConfig),
+			};
 
-			// Preserve existing status/scanResults unless explicitly provided
-			const hasStatus = Object.prototype.hasOwnProperty.call(deployConfig, "status");
-			const nextStatus = hasStatus ? deployConfig.status ?? null : existing.status;
+			// Update last_deployment only if commitSha changes
+			if (deployConfig.commitSha !== existing.commit_sha) {
+				updatePayload.last_deployment = new Date().toISOString();
+			}
 
-			const hasScanResults = typeof scanResults !== "undefined";
-			const nextScanResults = hasScanResults ? (scanResults || null) : existing.scan_results;
+			// Update first_deployment only if status changes from didnt_deploy to running
+			if (existing.status === "didnt_deploy" && deployConfig.status === "running") {
+				updatePayload.first_deployment = new Date().toISOString();
+			}
 
-			await supabase
+			const { error: updateError } = await supabase
 				.from("deployments")
-				.update({
-					status: nextStatus,
-					last_deployment: lastDeploymentTime,
-					revision: nextRevision,
-					data: mergedData,
-					scan_results: nextScanResults,
-				})
+				.update(updatePayload)
 				.eq("repo_name", repoName)
 				.eq("service_name", serviceName);
 
+			if (updateError) return { error: updateError.message };
 			return { success: "Deployment data updated successfully" };
 		} catch (error) {
 			console.error("updateDeployments error:", error);
@@ -261,7 +248,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getUserDeployments error:", error);
@@ -281,7 +268,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getDeploymentsByRepo error:", error);
@@ -302,7 +289,7 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (error || !row) return { error: "Deployment not found" };
-			return { deployment: rowToDeployConfig(row as RowDeployment) };
+			return { deployment: rowToDeployConfig(row) };
 		} catch (error) {
 			console.error("getDeployment error:", error);
 			return { error: error instanceof Error ? error.message : String(error) };
@@ -478,43 +465,6 @@ export const dbHelper = {
 		} catch (error) {
 			console.error("getAllDeploymentHistory error:", error);
 			return { error };
-		}
-	},
-
-	/**
-	 * Patch only the JSON `data` column for the latest deployment row.
-	 * This avoids bumping revision/status when we add derived assets (screenshots, etc.).
-	 */
-	patchDeploymentData: async function (
-		repoName: string,
-		serviceName: string,
-		userID: string,
-		patch: Record<string, unknown>
-	) {
-		try {
-			const supabase = getSupabaseServer();
-			const { data: row, error: fetchError } = await supabase
-				.from("deployments")
-				.select("id, data")
-				.eq("owner_id", userID)
-				.eq("repo_name", repoName)
-				.eq("service_name", serviceName)
-				.order("last_deployment", { ascending: false })
-				.limit(1)
-				.maybeSingle();
-
-			if (fetchError) return { error: fetchError.message };
-			if (!row) return { error: "Deployment not found" };
-
-			const existingData = (row.data as Record<string, unknown>) || {};
-			const nextData: Record<string, unknown> = { ...existingData, ...patch };
-			const { error: updateError } = await supabase.from("deployments").update({ data: nextData }).eq("id", row.id);
-
-			if (updateError) return { error: updateError.message };
-			return { success: true };
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : String(err);
-			return { error: message };
 		}
 	},
 

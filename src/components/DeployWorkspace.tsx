@@ -8,7 +8,7 @@ import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 
 import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
-import { useDeploymentBranch } from "@/custom-hooks/useDeploymentBranch";
+
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { useDeploymentTimer } from "@/custom-hooks/useDeploymentTimer";
@@ -37,8 +37,8 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 export default function DeployWorkspace() {
 	// ============== STORE SELECTIONS ==============
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
-	const activeRepo = useAppData((s) => s.activeRepo);
-	const serviceName = useAppData((s) => s.activeServiceName);
+	const activeRepo = useAppData((s) => s.activeRepo)!;
+	const serviceName = useAppData((s) => s.activeServiceName)!;
 	const isLoading = useAppData((s) => s.isLoading);
 	const fetchRepoDeployments = useAppData((s) => s.fetchRepoDeployments);
 	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
@@ -58,7 +58,6 @@ export default function DeployWorkspace() {
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 
 	// ============== BASIC CONTEXT ==============
-	const repo = activeRepo;
 	const deployment = useActiveDeployment();
 
 	// ============== MEMOIZED DERIVED VALUES (for callbacks & hooks) ==============
@@ -71,33 +70,6 @@ export default function DeployWorkspace() {
 		() => deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy"),
 		[deployment?.status, hasStoredLiveUrl]
 	);
-
-	const workingDeployment = React.useMemo<DeployConfig | null>(() => {
-		if (!repo?.name || !serviceName) return null;
-		const base: DeployConfig = {
-			id: deployment?.id ?? "",
-			repoName: repo.name,
-			serviceName: serviceName,
-			url: deployment?.url ?? repo.html_url ?? "",
-			branch: "",
-			status: deployment?.status ?? "didnt_deploy",
-			commitSha: null,
-			liveUrl: null,
-			screenshotUrl: null,
-			firstDeployment: null,
-			lastDeployment: null,
-			revision: 0,
-			cloudProvider: "aws",
-			deploymentTarget: "ec2",
-			awsRegion: "",
-			ec2: {},
-			cloudRun: {},
-			scanResults: {},
-		};
-		const merged = { ...base, ...(deployment as Partial<DeployConfig> | undefined) } as DeployConfig;
-		merged.url = merged.url ?? base.url ?? "";
-		return merged;
-	}, [deployment, repo, serviceName]);
 
 	// ============== CALLBACKS ==============
 	const onDeployFinishedCallback = React.useCallback(
@@ -115,9 +87,9 @@ export default function DeployWorkspace() {
 				});
 			}
 
-			if (!p.success && ((p.ec2 || {}) as Record<string, unknown>)?.instanceId && repo?.name && serviceName) {
+			if (!p.success && ((p.ec2 || {}) as Record<string, unknown>)?.instanceId && activeRepo?.name && serviceName) {
 				void updateDeploymentById({
-					repoName: repo.name,
+					repoName: activeRepo.name,
 					serviceName: serviceName,
 					ec2: p.ec2,
 					...(p.deploymentTarget && {
@@ -127,31 +99,20 @@ export default function DeployWorkspace() {
 				});
 			}
 		},
-		[repo?.name, serviceName, updateDeploymentById]
+		[activeRepo?.name, serviceName, updateDeploymentById]
 	);
 
-	// ============== CUSTOM HOOKS ==============
-	const { effectiveBranch, persistCorrectedBranch } = useDeploymentBranch({
-		repo,
-		deployment,
-		serviceName: serviceName || "",
-		onUpdateBranch: async (branch: string) => {
-			if (!repo?.name || !serviceName) return;
-			await updateDeploymentById({
-				repoName: repo.name,
-				serviceName: serviceName,
-				url: deployment?.url || "",
-				branch,
-			});
-		},
-	});
+	const effectiveBranch = React.useMemo(
+		() => deployment?.branch || activeRepo.default_branch,
+		[deployment?.branch, activeRepo.default_branch]
+	);
 
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
-		useDeployLogs(deployment?.serviceName ?? serviceName ?? repo?.name, repo?.name ?? deployment?.repoName, { onDeployFinished: onDeployFinishedCallback });
+		useDeployLogs(serviceName, activeRepo.name, { onDeployFinished: onDeployFinishedCallback });
 
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
-		repoName: repo?.name,
-		serviceName: serviceName || "",
+		repoName: activeRepo.name,
+		serviceName: serviceName,
 		deployStatus: deployStatus,
 	});
 
@@ -168,14 +129,14 @@ export default function DeployWorkspace() {
 	}, [deployStatus, isDeploying]);
 
 	useDocumentTitleSync({
-		repoName: repo?.name,
+		repoName: activeRepo.name,
 		workspaceState: workspaceDeployState,
 	});
 
 	const { isRefreshing: isRefreshingPreview, refreshScreenshot: handleManualCreatePreview } = usePreviewScreenshot({
-		repoName: repo?.name,
-		serviceName: serviceName || "",
-			screenshotUrl: deployment?.screenshotUrl || undefined,
+		repoName: activeRepo.name,
+		serviceName: serviceName,
+		screenshotUrl: deployment?.screenshotUrl || undefined,
 		deploymentStatus: effectiveDeploymentStatus,
 		hasStoredLiveUrl: hasStoredLiveUrl,
 		onDeploymentsRefetch: async (repo: string) => {
@@ -196,43 +157,34 @@ export default function DeployWorkspace() {
 					deployStatus === "error" ? "error" : "not-started";
 	}, [deployStatus]);
 
-	// Memoize to prevent unnecessary re-renders of child components
-	const serviceNameForLogs = React.useMemo(
-		() => deployment?.serviceName ?? serviceName ?? repo?.name,
-		[deployment?.serviceName, serviceName, repo?.name]
-	);
-
-	const repoNameForLogs = React.useMemo(
-		() => repo?.name ?? deployment?.repoName,
-		[repo?.name, deployment?.repoName]
-	);
-
 	const analyzeServicePath = React.useMemo(() => {
-		if (!repo?.html_url || !serviceName || serviceName === ".") return undefined;
+		if (!activeRepo.html_url || serviceName === ".") return undefined;
 		const fromList = (list: DetectedServiceInfo[] | undefined) => {
 			const svc = list?.find((s) => s.name === serviceName);
 			return repoRelativeServicePath(svc?.path);
 		};
-		const cached = fromList(getDetectedRepoCache(repo.html_url)?.services);
+		const cached = fromList(getDetectedRepoCache(activeRepo.html_url)?.services);
 		if (cached) return cached;
-		const norm = normalizeRepoUrl(repo.html_url);
+		const norm = normalizeRepoUrl(activeRepo.html_url);
 		const record = repoServices.find((r) => normalizeRepoUrl(r.repoUrl) === norm);
 		return fromList(record?.services);
-	}, [repo?.html_url, serviceName, getDetectedRepoCache, repoServices]);
+		}, 
+	[activeRepo.html_url, serviceName, getDetectedRepoCache, repoServices]);
 
-	const hasScanResults = React.useMemo(
-		() => Boolean(deployment?.scanResults || scanResults),
-		[deployment?.scanResults, scanResults]
-	);
 
 	const effectiveScanResults = React.useMemo(
 		() => (scanResults || deployment?.scanResults || null),
 		[scanResults, deployment?.scanResults]
 	);
 
+	const hasScanResults = React.useMemo(
+		() => Object.keys(effectiveScanResults || {}).length > 0,
+		[effectiveScanResults]
+	);
+
 	const deployDisabled = React.useMemo(
-		() => isDeploymentDisabled({ ...(workingDeployment || {}), scanResults: effectiveScanResults } as DeployConfig),
-		[workingDeployment, effectiveScanResults]
+		() => isDeploymentDisabled({ ...(deployment || {}), scanResults: effectiveScanResults } as DeployConfig),
+		[deployment, effectiveScanResults]
 	);
 
 	const isDraft = React.useMemo(
@@ -241,42 +193,26 @@ export default function DeployWorkspace() {
 	);
 
 	// ============== EFFECTS ==============
-	// Persist corrected branch when branch from DB doesn't exist on remote
-	React.useEffect(() => {
-		void persistCorrectedBranch();
-	}, [persistCorrectedBranch]);
 
 	// Handle deployment completion - update UI state after deploy succeeds or fails
 	React.useEffect(() => {
 		if (deployStatus === "success" && deployConfigRef.current) {
 			setIsDeploying(false);
 			setDeployingCommitInfo(null);
-			upsertDeploymentAfterDeploy(deployConfigRef.current);
 		}
 		if (deployStatus === "error") {
 			setIsDeploying(false);
 			setDeployingCommitInfo(null);
 		}
-	}, [deployStatus, deployment?.id]);
-
-	async function upsertDeploymentAfterDeploy(config: DeployConfig) {
-		const now = new Date().toISOString();
-		const next: DeployConfig = {
-			...config,
-			firstDeployment: config.firstDeployment ?? now,
-			lastDeployment: now,
-			revision: config.revision ? config.revision + 1 : 1,
-		};
-		await updateDeploymentById(next);
-	}
+	}, [deployStatus, updateDeploymentById]);
 
 	async function onScanComplete(results: SDArtifactsResponse) {
-		if (!session?.user || !repo?.name || !serviceName) return;
+		if (!session?.user || !activeRepo?.name || !serviceName) return;
 
 		await updateDeploymentById({
-			repoName: repo.name,
+			repoName: activeRepo.name,
 			serviceName: serviceName,
-			url: workingDeployment?.url || "",
+			url: deployment?.url || activeRepo?.html_url || "",
 			branch: effectiveBranch || "main",
 			scanResults: results,
 		});
@@ -286,7 +222,7 @@ export default function DeployWorkspace() {
 	}
 
 	async function handleConfirmRejectScan() {
-		if (!workingDeployment) return;
+		if (!deployment) return;
 
 		// 1. Clear backend cache
 		try {
@@ -294,8 +230,8 @@ export default function DeployWorkspace() {
 				method: "DELETE",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
-					repo_url: workingDeployment.url,
-					commit_sha: ((workingDeployment.scanResults || {}) as Record<string, unknown>)?.commit_sha || workingDeployment.commitSha,
+					repo_url: deployment.url,
+					commit_sha: ((deployment.scanResults || {}) as Record<string, unknown>)?.commit_sha || deployment.commitSha,
 				}),
 			});
 		} catch (err) {
@@ -304,8 +240,8 @@ export default function DeployWorkspace() {
 
 		// 2. Clear frontend state and DB (must send explicit null so DB helper clears persisted scanResults)
 		await updateDeploymentById({
-			repoName: workingDeployment.repoName,
-			serviceName: workingDeployment.serviceName,
+			repoName: deployment.repoName,
+			serviceName: deployment.serviceName,
 			scanResults: null as unknown as SDArtifactsResponse,
 		});
 		setScanResults(null);
@@ -320,7 +256,7 @@ export default function DeployWorkspace() {
 
 	async function handleDeploy(commitSha?: string) {
 		const token = session?.accessToken;
-		if (!token || !workingDeployment || !repo) {
+		if (!token || !deployment || !activeRepo) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
 		if (deployDisabled) {
@@ -329,16 +265,16 @@ export default function DeployWorkspace() {
 		}
 
 		const payload: DeployConfig = {
-			...workingDeployment,
+			...deployment,
 			branch: effectiveBranch,
-			scanResults: effectiveScanResults || workingDeployment.scanResults,
+			scanResults: effectiveScanResults || deployment.scanResults,
 			...(commitSha && { commitSha }),
 		};
 
 		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
 		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
-		const owner = repo.owner?.login ?? ownerFromUrl;
-		const repoName = repo.name ?? repoNameFromUrl;
+		const owner = activeRepo.owner?.login ?? ownerFromUrl;
+		const repoName = activeRepo.name ?? repoNameFromUrl;
 
 		if (owner && repoName) {
 			fetchLatestCommit(owner, repoName, payload.branch)
@@ -369,12 +305,12 @@ export default function DeployWorkspace() {
 	}
 
 	async function prefillScanFromRepo() {
-		if (!workingDeployment?.url) return;
+		if (!deployment?.url && !activeRepo?.html_url) return;
 
 		setIsPrefillingScan(true);
 		try {
 			const data = await prefillInfra(
-				workingDeployment.url,
+				deployment?.url || activeRepo?.html_url || "",
 				effectiveBranch,
 				analyzeServicePath
 			);
@@ -386,9 +322,9 @@ export default function DeployWorkspace() {
 
 			if (data?.branch && data.branch !== effectiveBranch) {
 				await updateDeploymentById({
-					repoName: workingDeployment.repoName,
-					serviceName: workingDeployment.serviceName,
-					url: workingDeployment.url,
+				repoName: deployment?.repoName || activeRepo?.name || "",
+				serviceName: deployment?.serviceName || serviceName || "",
+				url: deployment?.url || activeRepo?.html_url || "",
 					branch: data.branch,
 				});
 			}
@@ -400,9 +336,9 @@ export default function DeployWorkspace() {
 			// Ensure url and branch are stored for future fetches if this is a new deployment
 			if (!deployment) {
 				await updateDeploymentById({
-					repoName: workingDeployment.repoName,
-					serviceName: workingDeployment.serviceName,
-					url: workingDeployment.url,
+					repoName: activeRepo?.name || "",
+					serviceName: serviceName || "",
+					url: activeRepo?.html_url || "",
 					branch: effectiveBranch,
 				});
 			}
@@ -447,7 +383,7 @@ export default function DeployWorkspace() {
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
-								repoFullName={repo?.full_name ?? ""}
+								repoFullName={activeRepo.full_name}
 								packagePath={analyzeServicePath}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
@@ -470,7 +406,7 @@ export default function DeployWorkspace() {
 									onScanComplete(updated);
 								}}
 								scanTime={scanDuration}
-								deployment={workingDeployment!}
+								deployment={deployment!}
 								onStartDeployment={() => handleDeploy()}
 								onCancel={handleRejectScan}
 								onStartImproveScan={onStartImproveScan}
@@ -528,10 +464,10 @@ export default function DeployWorkspace() {
 			case "history":
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{workingDeployment && (
+						{deployment && (
 							<DeploymentHistory
-							repoName={workingDeployment.repoName}
-							serviceName={workingDeployment.serviceName}
+							repoName={deployment.repoName}
+							serviceName={deployment.serviceName}
 								prefetchedData={deploymentHistory ? { history: deploymentHistory, total: historyTotal } : null}
 								isPrefetching={isLoadingHistory}
 							/>
@@ -549,35 +485,33 @@ export default function DeployWorkspace() {
 							deployError={deployError}
 							deployingCommitInfo={deployingCommitInfo}
 							steps={steps}
-							repoNameForLogs={repoNameForLogs}
-							serviceNameForLogs={serviceNameForLogs}
-							configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (workingDeployment ? configSnapshotFromDeployConfig(workingDeployment) : {})}
-							repoUrl={workingDeployment?.url}
-						commitSha={((workingDeployment?.scanResults || {}) as Record<string, unknown>)?.commit_sha as string | undefined ?? workingDeployment?.commitSha ?? undefined}
+						repoNameForLogs={activeRepo.name}
+							serviceNameForLogs={serviceName}
+						configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (deployment ? configSnapshotFromDeployConfig(deployment) : {})}
+						repoUrl={deployment?.url}
+					commitSha={((deployment?.scanResults || {}) as Record<string, unknown>)?.commit_sha as string | undefined ?? deployment?.commitSha ?? undefined}
 							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>
 				);
 			case "setup":
 				return (
-					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{workingDeployment && (
-							<ConfigTabs
-								repoFullName={repo?.full_name ?? ""}
-								branches={branchNamesFromRepo(repo ?? null)}
-								onConfigChange={(partial) => {
-									updateDeploymentById({
-										repoName: workingDeployment.repoName,
-										serviceName: workingDeployment.serviceName,
-										url: workingDeployment.url,
-										branch: effectiveBranch,
-										...partial,
-									});
-								}}
-								deployment={workingDeployment}
-								onStartScan={startScan}
-							/>
-						)}
+				<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
+				<ConfigTabs
+					repoFullName={activeRepo.full_name}
+					branches={branchNamesFromRepo(activeRepo)}
+					onConfigChange={(partial) => {
+						updateDeploymentById({
+							repoName: deployment?.repoName || activeRepo.name,
+							serviceName: deployment?.serviceName || serviceName,
+							url: deployment?.url || activeRepo.html_url,
+							branch: effectiveBranch,
+							...partial,
+						});
+					}}
+					deployment={deployment as DeployConfig}
+					onStartScan={startScan}
+				/>
 					</div>
 				);
 			case "overview":
@@ -610,15 +544,15 @@ export default function DeployWorkspace() {
 				}
 				return (
 					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-						{workingDeployment && (
-							<DeployOverview
-								deployment={workingDeployment}
+							{deployment && (
+								<DeployOverview
+									deployment={deployment}
 								isDeploying={isDeploying}
 								isRefreshingPreview={isRefreshingPreview}
 								onRedeploy={handleDeploy}
 								onRefreshPreview={handleManualCreatePreview}
 								onEditConfiguration={() => { setActiveSection("setup"); }}
-								repo={repo as repoType}
+								repo={activeRepo as repoType}
 							/>
 						)}
 					</div>
@@ -626,7 +560,7 @@ export default function DeployWorkspace() {
 		}
 	}
 
-	if (!isLoading && !repo) {
+	if (!isLoading && !activeRepo) {
 		return (
 			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
 				<p className="text-muted-foreground">Service not found</p>
@@ -641,9 +575,9 @@ export default function DeployWorkspace() {
 				<div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
 					<div className="flex items-center gap-4 overflow-hidden">
 						<div className="flex items-center gap-2 text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-							<span className="text-muted-foreground/60">{repo?.name ?? ""}</span>
+						<span className="text-muted-foreground/60">{activeRepo.name}</span>
 							<span className="text-border">/</span>
-							<span className="text-foreground">{serviceName ?? ""}</span>
+							<span className="text-foreground">{serviceName}</span>
 						</div>
 					</div>
 

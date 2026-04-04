@@ -44,12 +44,7 @@ export function mapGithubRepoToAppRepo(repoData: any, latestCommit: any, branche
 		pushed_at: repoData.pushed_at,
 		default_branch: repoData.default_branch,
 		private: repoData.private,
-		description: repoData.description,
 		visibility: repoData.visibility,
-		license: repoData.license ? { spdx_id: repoData.license.spdx_id } : null,
-		forks_count: repoData.forks_count,
-		watchers_count: repoData.watchers_count,
-		open_issues_count: repoData.open_issues_count,
 		owner: { login: repoData.owner.login },
 		latest_commit: latestCommit
 			? {

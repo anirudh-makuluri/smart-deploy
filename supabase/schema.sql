@@ -15,15 +15,33 @@ create table if not exists public.deployments (
   repo_name text not null,
   service_name text not null,
   owner_id text not null references public.users(id) on delete cascade,
+  
+  -- Core deployment fields
+  url text not null default '',
+  branch text not null default '',
+  commit_sha text,
+  env_vars text,
+  live_url text,
+  screenshot_url text,
+  cloud_provider text default 'aws',
+  deployment_target text default 'ec2',
+  aws_region text not null default 'us-west-2',
+  
+  -- Status and metadata
   status text default 'didnt_deploy',
   first_deployment timestamptz,
   last_deployment timestamptz,
   revision int default 1,
-  data jsonb not null default '{}',
+  
+  -- Complex nested objects stay in JSONB
+  ec2 jsonb,
+  cloud_run jsonb,
   scan_results jsonb
 );
 
 create index if not exists idx_deployments_owner on public.deployments(owner_id);
+create index if not exists idx_deployments_region on public.deployments(aws_region);
+create index if not exists idx_deployments_provider on public.deployments(cloud_provider);
 
 -- Deployment history: stored per user so it survives deployment deletion
 create table if not exists public.deployment_history (

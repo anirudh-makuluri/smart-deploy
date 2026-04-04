@@ -62,7 +62,7 @@ export function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string, repoName?: string, options?: UseDeployLogsOptions) {
+export function useDeployLogs(serviceName: string, repoName: string, options: UseDeployLogsOptions) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
