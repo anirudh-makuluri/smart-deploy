@@ -857,7 +857,7 @@ export async function handleEC2(
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2Details;
-	const existingInstanceId = ec2ConfigMain?.instanceId?.trim();
+	const existingInstanceId = ec2ConfigMain?.instanceId?.trim() || "";
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);

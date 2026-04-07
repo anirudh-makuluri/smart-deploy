@@ -9,11 +9,22 @@ import { dbHelper } from "./db-helper";
 
 async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
+	let currentDeployment: any = null;
 	if (!resolvedUserId) {
 		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		resolvedUserId = deploymentResponse.deployment?.ownerID;
+		currentDeployment = deploymentResponse.deployment;
+		resolvedUserId = currentDeployment?.ownerID;
+	} else {
+		// Also fetch the current deployment to check its status
+		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
+		currentDeployment = deploymentResponse.deployment;
 	}
 	if (!resolvedUserId) return null;
+
+	// If the current deployment is in "didnt_deploy" status (fresh/draft), don't show old history
+	if (currentDeployment?.status === "didnt_deploy") {
+		return null;
+	}
 
 	const historyResponse = await dbHelper.getDeploymentHistory(repoName, serviceName, resolvedUserId);
 	if (historyResponse.error || !historyResponse.history || historyResponse.history.length === 0) {
@@ -121,16 +132,16 @@ function broadcastDeployFailed(reason: string) {
 	});
 }
 
+server.listen(port, () => {
+	console.log(`WebSocket server running on ws://localhost:${port}`);
+});
+
+// Log uncaught exceptions and rejections, but don't broadcast to clients
+// These aren't necessarily deployment failures
 process.on("uncaughtException", (err) => {
 	console.error("Uncaught exception:", err);
-	broadcastDeployFailed("Server error - deployment may have failed");
 });
 
 process.on("unhandledRejection", (reason) => {
 	console.error("Unhandled rejection:", reason);
-	broadcastDeployFailed("Server error - deployment may have failed");
-});
-
-server.listen(port, () => {
-	console.log(`WebSocket server running on ws://localhost:${port}`);
 });

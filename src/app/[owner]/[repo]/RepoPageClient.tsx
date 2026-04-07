@@ -182,8 +182,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		const norm = normalizeRepoUrl(`https://github.com/${owner}/${repoName}`);
 		return deployments.filter(
 			(d) =>
-				d.status !== "didnt_deploy" &&
-				(d.repoName === repo.name || normalizeRepoUrl(d.url) === norm)
+				d.repoName === repo.name || normalizeRepoUrl(d.url) === norm
 		);
 	}, [deployments, owner, repoName, repo]);
 

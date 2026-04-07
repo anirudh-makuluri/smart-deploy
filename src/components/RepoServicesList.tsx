@@ -81,17 +81,16 @@ export default function RepoServicesList({
 			{!loading && !error && services.length > 0 && (
 				<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 					{services.map((svc) => {
-						console.log(repoDeployments)
 						const deployment = getDeploymentForService(
 							repoDeployments,
 							repoUrl,
 							svc.name,
 							resolvedRepo.name
 						);
-						console.log(deployment);
 						const status = deployment?.status;
 						const isOnline = status === "running";
-						const isDraft = status !== "running" && status !== "failed" || !deployment;
+						const isDraft = deployment && status !== "running" && status !== "failed";
+						const hasNoDeployment = !deployment;
 						const isFailed = status === "failed";
 						const liveUrl = deployment?.liveUrl;
 
@@ -124,7 +123,12 @@ export default function RepoServicesList({
 									<div className="flex items-center gap-2">
 										{isDraft && (
 											<span className="text-sm text-muted-foreground">
-												Draft (Not deployed)
+												Draft (Not Deployed)
+											</span>
+										)}
+										{hasNoDeployment && (
+											<span className="text-sm text-muted-foreground">
+												Not Deployed
 											</span>
 										)}
 										{isFailed && (
