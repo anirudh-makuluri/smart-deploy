@@ -69,7 +69,7 @@ export default function ConfigTabs({
 	onConfigChangeRef.current = onConfigChange;
 
 	const initialSubdomain = React.useMemo(() => {
-		let raw = (deployment as any).liveUrl || "";
+		let raw = deployment.liveUrl;
 		if (!raw) return "";
 		// Strip protocol
 		raw = raw.replace(/^https?:\/\//, "");
@@ -164,20 +164,20 @@ export default function ConfigTabs({
 			return;
 		}
 		if (watchedBranch !== deployment.branch) {
-			onConfigChange({ branch: watchedBranch });
+			onConfigChangeRef.current({ branch: watchedBranch });
 		}
-	}, [watchedBranch, deployment.branch, onConfigChange]);
+	}, [watchedBranch, deployment.branch]);
 
 	useEffect(() => {
 		const envString = buildEnvVarsString(envEntries);
 		if (envString === deployment.envVars) return;
 
 		const timeoutId = setTimeout(() => {
-			onConfigChange({ envVars: envString });
+			onConfigChangeRef.current({ envVars: envString });
 		}, 500);
 
 		return () => clearTimeout(timeoutId);
-	}, [envEntries, deployment.envVars, onConfigChange]);
+	}, [envEntries, deployment.envVars]);
 
 	const verifySubdomain = async (subdomain: string) => {
 		if (!subdomain) return;
@@ -220,7 +220,7 @@ export default function ConfigTabs({
 	useEffect(() => {
 		const currentSub = form.getValues("liveUrl");
 		if (!currentSub) {
-		const serviceSub = (deployment.serviceName && deployment.serviceName !== ".") ? `-${deployment.serviceName}` : "";
+		const serviceSub = `-${Math.random().toString(36).substring(2, 6)}`;
 		const defaultSubdomain = `${deployment.repoName}${serviceSub}`;
 			form.setValue("liveUrl", defaultSubdomain);
 			verifySubdomain(defaultSubdomain);
@@ -251,7 +251,13 @@ export default function ConfigTabs({
 
 	React.useEffect(() => {
 		form.setValue("branch", deployment.branch ?? "", { shouldDirty: false });
-	}, [deployment.branch, deployment.repoName, deployment.serviceName, form.setValue]);
+	}, [deployment.branch, deployment.repoName, deployment.serviceName, form]);
+
+	React.useEffect(() => {
+		if (envEntries.length === 0 && deployment.envVars) {
+			setEnvEntries(parseEnvVarsToDisplay(deployment.envVars));
+		}
+	}, [deployment.envVars, deployment.repoName, deployment.serviceName]);
 
 	return (
 		<Form {...form}>
@@ -392,7 +398,7 @@ export default function ConfigTabs({
 					<div className="w-full max-w-sm space-y-3">
 						<FormField
 							control={form.control}
-						name="liveUrl"
+							name="liveUrl"
 							render={({ field }) => (
 								<FormItem>
 									<FormControl>
@@ -402,12 +408,6 @@ export default function ConfigTabs({
 											{...field}
 											placeholder="my-cool-app"
 											className="pl-14 pr-32 h-11 bg-white/2 border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
-											// onBlur={(e) => {
-											// 	field.onBlur();												
-											// 	if (e.target.value) {
-											// 		verifySubdomain(e.target.value.trim());
-											// 	}
-											// }}
 											onChange={(e) => {
 												field.onChange(e.target.value);
 												setCustomUrlStatus({ type: null });

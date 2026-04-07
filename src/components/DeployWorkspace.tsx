@@ -71,13 +71,13 @@ export default function DeployWorkspace() {
 
 	// ============== MEMOIZED DERIVED VALUES (for callbacks & hooks) ==============
 	const hasStoredLiveUrl = React.useMemo(
-		() => Boolean(deployment?.liveUrl),
-		[deployment?.liveUrl]
+		() => Boolean(deployment.liveUrl),
+		[deployment.liveUrl]
 	);
 
 	const effectiveDeploymentStatus = React.useMemo(
-		() => deployment?.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment?.status ?? "didnt_deploy"),
-		[deployment?.status, hasStoredLiveUrl]
+		() => deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy"),
+		[deployment.status, hasStoredLiveUrl]
 	);
 
 	// ============== CALLBACKS ==============
@@ -112,8 +112,8 @@ export default function DeployWorkspace() {
 	);
 
 	const effectiveBranch = React.useMemo(
-		() => deployment?.branch || activeRepo.default_branch,
-		[deployment?.branch, activeRepo.default_branch]
+		() => deployment.branch || activeRepo.default_branch,
+		[deployment.branch, activeRepo.default_branch]
 	);
 
 	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
@@ -145,7 +145,7 @@ export default function DeployWorkspace() {
 	const { isRefreshing: isRefreshingPreview, refreshScreenshot: handleManualCreatePreview } = usePreviewScreenshot({
 		repoName: activeRepo.name,
 		serviceName: serviceName,
-		screenshotUrl: deployment?.screenshotUrl || undefined,
+		screenshotUrl: deployment.screenshotUrl || undefined,
 		deploymentStatus: effectiveDeploymentStatus,
 		hasStoredLiveUrl: hasStoredLiveUrl,
 		onDeploymentsRefetch: async (repo: string) => {
@@ -182,8 +182,8 @@ export default function DeployWorkspace() {
 
 
 	const effectiveScanResults = React.useMemo(
-		() => (scanResults || deployment?.scanResults || null),
-		[scanResults, deployment?.scanResults]
+		() => (scanResults || deployment.scanResults || null),
+		[scanResults, deployment.scanResults]
 	);
 
 	const hasScanResults = React.useMemo(
@@ -192,13 +192,13 @@ export default function DeployWorkspace() {
 	);
 
 	const deployDisabled = React.useMemo(
-		() => isDeploymentDisabled({ ...(deployment || {}), scanResults: effectiveScanResults } as DeployConfig),
+		() => isDeploymentDisabled({ ...deployment, scanResults: effectiveScanResults } as DeployConfig),
 		[deployment, effectiveScanResults]
 	);
 
 	const isDraft = React.useMemo(
-		() => !deployment || effectiveDeploymentStatus === "didnt_deploy",
-		[deployment, effectiveDeploymentStatus]
+		() => effectiveDeploymentStatus === "didnt_deploy",
+		[effectiveDeploymentStatus]
 	);
 
 	// ============== EFFECTS ==============
@@ -221,7 +221,7 @@ export default function DeployWorkspace() {
 		await updateDeploymentById({
 			repoName: activeRepo.name,
 			serviceName: serviceName,
-			url: deployment?.url || activeRepo?.html_url || "",
+			url: deployment.url || activeRepo?.html_url || "",
 			branch: effectiveBranch || "main",
 			scanResults: results,
 		});
@@ -231,7 +231,7 @@ export default function DeployWorkspace() {
 	}
 
 	async function handleConfirmRejectScan() {
-		if (!deployment) return;
+		if (!deployment.repoName || !deployment.serviceName) return;
 
 		// 1. Clear backend cache
 		try {
@@ -265,7 +265,7 @@ export default function DeployWorkspace() {
 
 	async function handleDeploy(commitSha?: string) {
 		const token = session?.accessToken;
-		if (!token || !deployment || !activeRepo) {
+		if (!token || !activeRepo || !deployment.repoName || !deployment.serviceName) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
 		if (deployDisabled) {
@@ -314,12 +314,12 @@ export default function DeployWorkspace() {
 	}
 
 	async function prefillScanFromRepo() {
-		if (!deployment?.url && !activeRepo?.html_url) return;
+		if (!deployment.url && !activeRepo?.html_url) return;
 
 		setIsPrefillingScan(true);
 		try {
 			const data = await prefillInfra(
-				deployment?.url || activeRepo?.html_url || "",
+				deployment.url || activeRepo?.html_url || "",
 				effectiveBranch,
 				analyzeServicePath
 			);
@@ -331,9 +331,9 @@ export default function DeployWorkspace() {
 
 			if (data?.branch && data.branch !== effectiveBranch) {
 				await updateDeploymentById({
-				repoName: deployment?.repoName || activeRepo?.name || "",
-				serviceName: deployment?.serviceName || serviceName || "",
-				url: deployment?.url || activeRepo?.html_url || "",
+				repoName: deployment.repoName || activeRepo?.name || "",
+				serviceName: deployment.serviceName || serviceName || "",
+				url: deployment.url || activeRepo?.html_url || "",
 					branch: data.branch,
 				});
 			}
@@ -343,7 +343,7 @@ export default function DeployWorkspace() {
 			setScanMode("results");
 			await onScanComplete(data.results);
 			// Ensure url and branch are stored for future fetches if this is a new deployment
-			if (!deployment) {
+			if (!deployment.url) {
 				await updateDeploymentById({
 					repoName: activeRepo?.name || "",
 					serviceName: serviceName || "",
@@ -496,9 +496,9 @@ export default function DeployWorkspace() {
 							steps={steps}
 						repoNameForLogs={activeRepo.name}
 							serviceNameForLogs={serviceName}
-						configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : (deployment ? configSnapshotFromDeployConfig(deployment) : {})}
-						repoUrl={deployment?.url}
-					commitSha={((deployment?.scanResults || {}) as Record<string, unknown>)?.commit_sha as string | undefined ?? deployment?.commitSha ?? undefined}
+						configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : configSnapshotFromDeployConfig(deployment)}
+						repoUrl={deployment.url}
+					commitSha={((deployment.scanResults || {}) as Record<string, unknown>)?.commit_sha as string | undefined ?? deployment.commitSha ?? undefined}
 							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>
@@ -511,9 +511,9 @@ export default function DeployWorkspace() {
 					branches={branchNamesFromRepo(activeRepo)}
 					onConfigChange={(partial) => {
 						updateDeploymentById({
-							repoName: deployment?.repoName || activeRepo.name,
-							serviceName: deployment?.serviceName || serviceName,
-							url: deployment?.url || activeRepo.html_url,
+						repoName: deployment.repoName || activeRepo.name,
+						serviceName: deployment.serviceName || serviceName,
+						url: deployment.url || activeRepo.html_url,
 							branch: effectiveBranch,
 							...partial,
 						});
