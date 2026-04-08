@@ -3,7 +3,7 @@
  * Manages document title and favicon based on deployment state
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type DeploymentWorkspaceState = "idle" | "running" | "success" | "error";
 
@@ -12,9 +12,25 @@ interface UseDocumentTitleSyncProps {
 	workspaceState: DeploymentWorkspaceState;
 }
 
+const SUCCESS_DISPLAY_DURATION = 7000; // 7 seconds
+
 export function useDocumentTitleSync({ repoName, workspaceState }: UseDocumentTitleSyncProps) {
 	const initialTitleRef = useRef<string | null>(null);
 	const initialIconHrefRef = useRef<string | null>(null);
+	const [displayState, setDisplayState] = useState<DeploymentWorkspaceState>(workspaceState);
+
+	// Handle success state timeout - auto-revert after duration
+	useEffect(() => {
+		if (workspaceState === "success") {
+			setDisplayState("success");
+			const timer = setTimeout(() => {
+				setDisplayState("idle");
+			}, SUCCESS_DISPLAY_DURATION);
+			return () => clearTimeout(timer);
+		} else {
+			setDisplayState(workspaceState);
+		}
+	}, [workspaceState]);
 
 	// Update document title
 	useEffect(() => {
@@ -26,11 +42,11 @@ export function useDocumentTitleSync({ repoName, workspaceState }: UseDocumentTi
 
 		const pageTitleLabel = repoName ?? "Smart Deploy";
 		const statusTitle =
-			workspaceState === "running"
+			displayState === "running"
 				? `${pageTitleLabel} - Deploying...`
-				: workspaceState === "success"
+				: displayState === "success"
 					? `${pageTitleLabel} - Deployment succeeded`
-					: workspaceState === "error"
+					: displayState === "error"
 						? `${pageTitleLabel} - Deployment failed`
 						: pageTitleLabel === "Smart Deploy"
 							? "Smart Deploy"
@@ -43,7 +59,7 @@ export function useDocumentTitleSync({ repoName, workspaceState }: UseDocumentTi
 				document.title = initialTitleRef.current;
 			}
 		};
-	}, [repoName, workspaceState]);
+	}, [repoName, displayState]);
 
 	// Update favicon
 	useEffect(() => {
@@ -61,11 +77,11 @@ export function useDocumentTitleSync({ repoName, workspaceState }: UseDocumentTi
 		}
 
 		const targetHref =
-			workspaceState === "running"
+			displayState === "running"
 				? "/icons/favicon-deploying.svg"
-				: workspaceState === "success"
+				: displayState === "success"
 					? "/icons/favicon-success.svg"
-					: workspaceState === "error"
+					: displayState === "error"
 						? "/icons/favicon-failed.svg"
 						: initialIconHrefRef.current;
 
@@ -78,5 +94,5 @@ export function useDocumentTitleSync({ repoName, workspaceState }: UseDocumentTi
 				iconLink.setAttribute("href", initialIconHrefRef.current);
 			}
 		};
-	}, [workspaceState]);
+	}, [displayState]);
 }

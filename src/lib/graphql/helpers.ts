@@ -7,7 +7,7 @@
 
 import { detectMultiService } from "@/lib/multiServiceDetector";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
-import { getSubnetIds } from "@/lib/aws/awsHelpers";
+import { getSubnetIds, deleteHostRule, ensureSharedAlb } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
 import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace } from "@/lib/githubRepoArchive";
 import { deleteDeploymentForUser, controlDeploymentForUser } from "@/lib/deploymentActions";
@@ -178,6 +178,8 @@ export async function configureCustomDomainForDeployment(
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 	const send = createWebSocketLogger(null);
 
+	// First: Create the NEW domain configuration (ALB rule + DNS)
+	// If this fails, old domain remains active as fallback
 	await configureAlb({
 		deployConfig: deployment,
 		instanceId,
@@ -204,6 +206,42 @@ export async function configureCustomDomainForDeployment(
 
 	if (!result.success) {
 		throw new Error(result.error ?? "Failed to add Vercel DNS record");
+	}
+
+	// Second: Only after new domain is fully configured, remove the old one
+	// If old domain deletion fails, new domain is already live (degraded state, but working)
+	if (previousCustomUrl) {
+		try {
+			const alb = await ensureSharedAlb({
+				vpcId: net.vpcId,
+				subnetIds: net.subnetIds.slice(0, 2),
+				region,
+				ws: null,
+				certificateArn,
+			});
+
+			// Extract hostname from the previous custom URL
+			const oldHostname = (previousCustomUrl || "")
+				.replace(/^https?:\/\//, "")
+				.replace(/\/.*$/, "")
+				.trim();
+
+			if (oldHostname) {
+				// Determine which listener to query based on certificate config
+				const listenerArn = certificateArn ? alb.httpsListenerArn : alb.httpListenerArn;
+				if (listenerArn) {
+					const deleted = await deleteHostRule(listenerArn, oldHostname, region, null);
+					if (deleted) {
+						send(`Removed ALB listener rule for old domain: ${oldHostname}`, "deploy");
+					}
+				}
+			}
+		} catch (error) {
+			// Log but don't fail - old domain deletion issues should not block the update
+			// New domain is already live at this point
+			console.error("Error removing old domain rule:", error);
+			send(`Warning: Could not remove old domain rule: ${error}`, "deploy");
+		}
 	}
 }
 
