@@ -6,6 +6,7 @@ import DeploymentHistory from "@/components/DeploymentHistory";
 import DeployWorkspaceMenu, { MenuSection } from "@/components/deploy-workspace/DeployWorkspaceMenu";
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
+import BlueprintView from "@/components/blueprint/BlueprintView";
 
 import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
 
@@ -65,6 +66,7 @@ export default function DeployWorkspace() {
 	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
+	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
 
 	// ============== BASIC CONTEXT ==============
 	const deployment = useActiveDeployment();
@@ -483,9 +485,39 @@ export default function DeployWorkspace() {
 						)}
 					</div>
 				);
+			case "blueprint":
+				return (
+					<div className="flex h-full flex-1">
+						<BlueprintView
+							deployment={deployment as DeployConfig}
+							scanResults={effectiveScanResults as SDArtifactsResponse | null}
+							branchOptions={branchNamesFromRepo(activeRepo)}
+							onUpdateDeployment={(partial) =>
+								updateDeploymentById({
+									repoName: deployment.repoName || activeRepo.name,
+									serviceName: deployment.serviceName || serviceName,
+									url: deployment.url || activeRepo.html_url,
+									...partial,
+								})
+							}
+							onUpdateScanResults={async (updater) => {
+								const current = effectiveScanResults as SDArtifactsResponse | null;
+								if (!current) return;
+								const next = updater(current);
+								setScanResults(next);
+								await updateDeploymentById({
+									repoName: deployment.repoName || activeRepo.name,
+									serviceName: deployment.serviceName || serviceName,
+									url: deployment.url || activeRepo.html_url,
+									scanResults: next,
+								});
+							}}
+						/>
+					</div>
+				);
 			case "logs":
 				return (
-					<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
+					<div className="w-full mx-auto p-6 flex-1 max-w-6xl min-h-0 overflow-hidden">
 						<DeployLogsView
 							showDeployLogs={showDeployLogs}
 							deployLogEntries={deployLogEntries}
@@ -569,6 +601,28 @@ export default function DeployWorkspace() {
 		}
 	}
 
+	const deployAction = (
+		<div className="relative group">
+			<Button
+				disabled={!hasScanResults || isDeploying || deployDisabled}
+				onClick={() => handleDeploy()}
+				className={`h-10 w-full font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden ${isSidebarCollapsed ? "px-0" : "px-6"}`}
+				title={!hasScanResults ? "Run smart scan first" : (deployDisabled ? "At least one Dockerfile and nginx.conf are required" : "")}
+				aria-label="Deploy"
+			>
+				<Rocket className="size-4 relative z-10" />
+				{!isSidebarCollapsed ? <span className="relative z-10">Deploy</span> : null}
+			</Button>
+			{(!hasScanResults || deployDisabled) && (
+				<div className={`absolute top-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isSidebarCollapsed ? "left-0" : "left-0 right-0"}`}>
+					<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20 text-center">
+						{!hasScanResults ? "Run smart scan first" : "Need Dockerfile and nginx.conf"}
+					</div>
+				</div>
+			)}
+		</div>
+	);
+
 	if (!isLoading && !activeRepo) {
 		return (
 			<div className="landing-bg min-h-svh flex flex-col items-center justify-center gap-4 text-foreground">
@@ -578,45 +632,15 @@ export default function DeployWorkspace() {
 	}
 
 	return (
-		<div className="flex-1 flex flex-col text-foreground min-h-0 bg-background/30 dot-grid-bg">
+		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-background/30 text-foreground dot-grid-bg">
 			{/* Action Bar */}
 			<div className="border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-10 transition-all">
-				<div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-					<div className="flex items-center gap-4 overflow-hidden">
-						<div className="flex items-center gap-2 text-sm font-semibold tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
-						<span className="text-muted-foreground/60">{activeRepo.name}</span>
-							<span className="text-border">/</span>
-							<span className="text-foreground">{serviceName}</span>
-						</div>
-					</div>
-
-					<div className="flex items-center gap-3">
-						<div className="relative group">
-							<Button
-								disabled={!hasScanResults || isDeploying || deployDisabled}
-								onClick={() => handleDeploy()}
-								className="h-9 px-6 font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden"
-								title={!hasScanResults ? "Run smart scan first" : (deployDisabled ? "At least one Dockerfile and nginx.conf are required" : "")}
-							>
-								<Rocket className="size-4 relative z-10" />
-								<span className="relative z-10">Deploy</span>
-							</Button>
-							{(!hasScanResults || deployDisabled) && (
-								<div className="absolute top-full right-0 mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
-									<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20">
-										{!hasScanResults ? "Run smart scan first" : "Need Dockerfile and nginx.conf"}
-									</div>
-								</div>
-							)}
-						</div>
+				<div className="mx-auto flex max-w-6xl items-center justify-end px-6 py-4 md:justify-end">
+					<div className="w-full max-w-[164px] md:hidden">
+						{deployAction}
 					</div>
 				</div>
 			</div>
-
-			<DeployWorkspaceMenu
-				activeSection={activeSection}
-				onChange={setActiveSection}
-			/>
 
 			{isDeploying && deployingCommitInfo && (
 				<div className="mx-auto mt-6 w-full max-w-6xl px-6 animate-in slide-in-from-top-4 duration-500">
@@ -643,9 +667,28 @@ export default function DeployWorkspace() {
 				</div>
 			)}
 
-			<main className="flex-1 overflow-auto stealth-scrollbar">
-				{renderActiveSection()}
-			</main>
+			<div className="flex min-h-0 flex-1 overflow-hidden">
+				<aside className={`hidden h-full shrink-0 border-r border-white/6 bg-background/22 backdrop-blur-sm transition-[width] duration-200 md:block ${isSidebarCollapsed ? "w-20" : "w-60"}`}>
+					<DeployWorkspaceMenu
+						activeSection={activeSection}
+						onChange={setActiveSection}
+						footer={deployAction}
+						collapsed={isSidebarCollapsed}
+						onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
+					/>
+				</aside>
+				<div className="flex min-w-0 min-h-0 flex-1 flex-col">
+					<div className="border-b border-white/5 px-4 py-3 md:hidden">
+						<DeployWorkspaceMenu
+							activeSection={activeSection}
+							onChange={setActiveSection}
+						/>
+					</div>
+					<main className={activeSection === "blueprint" || activeSection === "logs" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto stealth-scrollbar"}>
+						{renderActiveSection()}
+					</main>
+				</div>
+			</div>
 
 			<ConfirmDialog
 				open={showRejectConfirm}

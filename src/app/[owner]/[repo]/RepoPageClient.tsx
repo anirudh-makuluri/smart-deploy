@@ -239,7 +239,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}
 
 	return (
-		<div className="dot-grid-bg min-h-svh flex flex-col text-foreground">
+		<div className={`dot-grid-bg flex flex-col text-foreground ${activeService ? "h-svh overflow-hidden" : "min-h-svh"}`}>
 			{isLoadingRepo && (
 				<div className="flex-1 flex items-center justify-center">
 					<div className="text-center space-y-4">
@@ -276,7 +276,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					)}
 					<Header />
 
-					<main className="flex-1 min-h-0 overflow-auto p-6">
+					<main className={activeService ? "flex-1 min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-auto"}>
 						{activeService ? (
 							<DeployWorkspace />
 						) : (

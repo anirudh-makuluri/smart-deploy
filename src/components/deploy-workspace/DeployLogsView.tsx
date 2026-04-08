@@ -107,7 +107,7 @@ export default function DeployLogsView({
 		: "Historical + live service output";
 
 	return (
-		<div className="space-y-6">
+		<div className="flex h-full min-h-0 flex-col gap-6 overflow-hidden">
 			{/* Live Status Header */}
 			<div className="rounded-2xl border border-white/5 bg-white/2 p-6 shadow-xl backdrop-blur-sm overflow-hidden relative group">
 				{showDeploymentHeader && (
@@ -253,7 +253,7 @@ export default function DeployLogsView({
 				</Alert>
 			)}
 
-			<div ref={logsContainerRef} className="rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
+			<div ref={logsContainerRef} className="min-h-0 flex-1 rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
 			<ServiceLogs
 				{...((
 					{
@@ -261,7 +261,8 @@ export default function DeployLogsView({
 						repoName: repoNameForLogs,
 						serviceName: serviceNameForLogs,
 						deployStatus,
-						displayLimit: 100,
+						displayLimit: 14,
+						scrollable: false,
 					} as unknown) as any)}
 			/>
 			</div>

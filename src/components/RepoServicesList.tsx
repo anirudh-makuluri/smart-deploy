@@ -34,7 +34,7 @@ export default function RepoServicesList({
 	openWorkspaceForService,
 }: RepoServicesListProps) {
 	return (
-		<>
+		<div className="flex flex-col h-full p-6">
 			<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 				<div>
 					<h1 className="text-xl font-semibold text-foreground">
@@ -162,6 +162,6 @@ export default function RepoServicesList({
 					})}
 				</div>
 			)}
-		</>
+		</div>
 	);
 }

@@ -47,12 +47,14 @@ export default function ServiceLogs({
 	repoName,
 	deployStatus,
 	displayLimit,
+	scrollable = true,
 }: {
 	logs: LogEntry[];
 	serviceName?: string;
 	repoName?: string;
 	deployStatus?: string;
 	displayLimit?: number;
+	scrollable?: boolean;
 	[key: string]: unknown;
 }) {
 
@@ -539,7 +541,7 @@ export default function ServiceLogs({
 				)}
 			</div>
 
-			<ScrollArea className="h-[70vh] w-full rounded-md border border-border bg-card" data-logs-scroll>
+			<ScrollArea className={`${scrollable ? "h-[70vh]" : "h-auto"} w-full rounded-md border border-border bg-card`} data-logs-scroll>
 				<div className="min-w-full font-mono text-sm text-muted-foreground">
 				{filteredLogs.length === 0 ? (
 					<div className="flex flex-col items-center justify-center py-20 px-4 text-center">
@@ -612,7 +614,7 @@ export default function ServiceLogs({
 				</div>
 			</ScrollArea>
 
-				{showScrollToBottom && limitedLogs.length > 0 && (
+				{scrollable && showScrollToBottom && limitedLogs.length > 0 && (
 					<div className="absolute bottom-3 right-3 z-20">
 						<Button
 							type="button"
