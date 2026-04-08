@@ -241,6 +241,15 @@ button {
     linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, white 4%), color-mix(in srgb, var(--muted) 45%, var(--background) 55%));
 }
 
+.landing-hero-wave {
+  background:
+    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--primary) 18%, transparent) 0, transparent 24%),
+    radial-gradient(circle at 78% 26%, color-mix(in srgb, var(--chart-3) 16%, transparent) 0, transparent 28%);
+  filter: blur(40px);
+  animation: landing-wave 18s ease-in-out infinite;
+  pointer-events: none;
+}
+
 .landing-panel {
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   background:
@@ -254,6 +263,7 @@ button {
 .landing-shell {
   position: relative;
   backdrop-filter: blur(18px);
+  transform-style: preserve-3d;
 }
 
 .landing-shell::after {
@@ -289,6 +299,40 @@ button {
 .landing-halo {
   background:
     radial-gradient(circle at center, color-mix(in srgb, var(--primary) 34%, transparent) 0, transparent 68%);
+}
+
+.landing-halo-float {
+  animation: landing-float 12s ease-in-out infinite;
+}
+
+.landing-card-glow {
+  background:
+    radial-gradient(circle at center, color-mix(in srgb, var(--primary) 22%, transparent) 0, transparent 72%);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+.landing-orbital-ring {
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 10%, transparent);
+}
+
+.landing-orbital-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 230deg,
+      color-mix(in srgb, var(--primary) 36%, transparent) 285deg,
+      transparent 330deg,
+      transparent 360deg
+    );
+  animation: landing-spin-slow 12s linear infinite;
+  mask: radial-gradient(circle at center, transparent 68%, black 69%, black 71%, transparent 72%);
 }
 
 .landing-orchestration-bg {
@@ -337,6 +381,35 @@ button {
 }
 
 @keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes landing-wave {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, 24px, 0) scale(1.04);
+  }
+}
+
+@keyframes landing-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+@keyframes landing-spin-slow {
   from {
     transform: rotate(0deg);
   }

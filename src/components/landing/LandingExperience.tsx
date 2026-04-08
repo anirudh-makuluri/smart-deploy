@@ -1,9 +1,9 @@
 "use client";
 
-import type React from "react";
-import { useState } from "react";
+import React from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
 import {
 	ArrowRight,
 	CheckCircle2,
@@ -45,26 +45,33 @@ type ScreenshotSlot = {
 	imageAlt: string;
 };
 
+type ProductMetric = {
+	value: number;
+	suffix?: string;
+	label: string;
+	description: string;
+};
+
 const productPillars: ProductPillar[] = [
 	{
-		eyebrow: "GitHub Intake",
-		title: "Import a repo and let SmartDeploy map the codebase.",
+		eyebrow: "Repo Intelligence",
+		title: "Understand services, runtimes, and deployment shape automatically.",
 		description:
-			"SmartDeploy detects services, runtimes, and branch status from your repository so you start with a deployment-ready workspace instead of a blank checklist.",
+			"SmartDeploy turns a raw repository into a readable deployment surface by detecting services, runtimes, branch state, and the pieces that need to ship together.",
 		icon: Github,
 	},
 	{
-		eyebrow: "Smart Analysis",
-		title: "Generate a deployment blueprint before you launch.",
+		eyebrow: "Decision Support",
+		title: "Surface the constraints that usually show up too late.",
 		description:
-			"Runtime checks, service dependencies, and deployment constraints are surfaced upfront so engineers make decisions with real technical context.",
+			"Blueprints, runtime checks, and dependency signals give engineers the technical context to choose the right release path before they start provisioning.",
 		icon: ScanSearch,
 	},
 	{
-		eyebrow: "Deploy and Verify",
-		title: "Ship with logs, rollout state, and preview in one view.",
+		eyebrow: "Operational Visibility",
+		title: "Keep rollout state, logs, and preview tied to the release.",
 		description:
-			"Visibility doesn't end after pressing deploy. Logs, status, and the live application stay connected to the release action.",
+			"Build output, runtime feedback, and the live application remain connected in one place so validation happens with context instead of tab switching.",
 		icon: SquareTerminal,
 	},
 ];
@@ -123,6 +130,52 @@ const screenshotSlots: ScreenshotSlot[] = [
 	},
 ];
 
+const productMetrics: ProductMetric[] = [
+	{
+		value: 4,
+		label: "Workflow steps",
+		description: "A short path from repository intake through release validation.",
+	},
+	{
+		value: 1,
+		label: "Shared workspace",
+		description: "Blueprints, deploy state, logs, and preview stay connected in one view.",
+	},
+	{
+		value: 3,
+		label: "Core surfaces",
+		description: "Repository intelligence, decision support, and operational visibility.",
+	},
+];
+
+const containerVariants: Variants = {
+	hidden: {},
+	show: {
+		transition: {
+			staggerChildren: 0.12,
+			delayChildren: 0.06,
+		},
+	},
+};
+
+const heroItemVariants: Variants = {
+	hidden: { opacity: 0, y: 24 },
+	show: {
+		opacity: 1,
+		y: 0,
+		transition: { duration: 0.7, ease: "easeOut" as const },
+	},
+};
+
+const drawLineVariants: Variants = {
+	hidden: { scaleX: 0, opacity: 0.35 },
+	show: {
+		scaleX: 1,
+		opacity: 1,
+		transition: { duration: 0.9, ease: "easeOut" as const },
+	},
+};
+
 function MotionDiv({
 	children,
 	className,
@@ -173,6 +226,52 @@ function SectionIntro({
 	);
 }
 
+function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
+	const [displayValue, setDisplayValue] = useState(0);
+	const prefersReducedMotion = useReducedMotion();
+	const ref = React.useRef<HTMLSpanElement | null>(null);
+	const hasAnimatedRef = React.useRef(false);
+	const inView = useInView(ref, { once: true, amount: 0.6 });
+
+	useEffect(() => {
+		if (!inView || prefersReducedMotion || hasAnimatedRef.current) {
+			return;
+		}
+		hasAnimatedRef.current = true;
+
+		const duration = 900;
+		const start = performance.now();
+
+		const frame = (timestamp: number) => {
+			const progress = Math.min((timestamp - start) / duration, 1);
+			const eased = 1 - (1 - progress) * (1 - progress);
+			setDisplayValue(Math.round(value * eased));
+
+			if (progress < 1) {
+				window.requestAnimationFrame(frame);
+			}
+		};
+
+		window.requestAnimationFrame(frame);
+	}, [inView, prefersReducedMotion, value]);
+
+	if (prefersReducedMotion) {
+		return (
+			<span ref={ref}>
+				{value}
+				{suffix}
+			</span>
+		);
+	}
+
+	return (
+		<span ref={ref}>
+			{displayValue}
+			{suffix}
+		</span>
+	);
+}
+
 function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 	const [failed, setFailed] = useState(false);
 
@@ -202,11 +301,28 @@ function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 }
 
 function HeroPreview() {
+	const prefersReducedMotion = useReducedMotion();
+
 	return (
-		<MotionDiv className="relative" y={12}>
-			<div className="landing-halo absolute -right-8 -top-10 h-40 w-40 rounded-full opacity-80 blur-3xl" aria-hidden />
-			<div className="landing-panel landing-shell relative overflow-hidden p-3 sm:p-4">
+		<motion.div
+			className="relative"
+			initial={prefersReducedMotion ? false : { opacity: 0, y: 18, scale: 0.97, rotateX: 8 }}
+			animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0, scale: 1, rotateX: 0 }}
+			transition={prefersReducedMotion ? undefined : { duration: 0.85, delay: 0.18, ease: [0.22, 1, 0.36, 1] }}
+		>
+			<motion.div
+				className="landing-halo landing-halo-float absolute -right-8 -top-10 h-40 w-40 rounded-full opacity-80 blur-3xl"
+				aria-hidden
+				animate={prefersReducedMotion ? undefined : { x: [0, 10, -6, 0], y: [0, 8, -4, 0], scale: [1, 1.08, 0.98, 1] }}
+				transition={prefersReducedMotion ? undefined : { duration: 12, repeat: Infinity, ease: "easeInOut" }}
+			/>
+			<motion.div
+				className="landing-panel landing-shell relative overflow-hidden p-3 sm:p-4"
+				whileHover={prefersReducedMotion ? undefined : { y: -6, rotateX: -2, rotateY: 2 }}
+				transition={{ duration: 0.35, ease: "easeOut" }}
+			>
 				<div className="landing-grid-overlay absolute inset-0 opacity-40" aria-hidden />
+				<div className="landing-orbital-ring absolute inset-6 rounded-[28px] opacity-70" aria-hidden />
 				<div className="relative z-10">
 					<div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/60 px-4 py-3">
 						<div className="flex items-center gap-2">
@@ -219,42 +335,73 @@ function HeroPreview() {
 							SmartDeploy
 						</span>
 					</div>
-					<div className="mt-3">
+					<motion.div
+						className="mt-3"
+						animate={prefersReducedMotion ? undefined : { y: [0, -5, 0] }}
+						transition={prefersReducedMotion ? undefined : { duration: 7, repeat: Infinity, ease: "easeInOut" }}
+					>
 						<ScreenshotImage
 							src="/screenshots/dashboard.png"
 							alt="SmartDeploy dashboard overview"
 						/>
-					</div>
+					</motion.div>
 				</div>
-			</div>
-		</MotionDiv>
+			</motion.div>
+		</motion.div>
 	);
 }
 
 function WorkflowRail() {
+	const prefersReducedMotion = useReducedMotion();
+
 	return (
-		<div className="grid gap-4 lg:grid-cols-4">
+		<div className="relative">
+			<motion.div
+				className="landing-connector absolute left-12 right-12 top-11 hidden h-px origin-left lg:block"
+				aria-hidden
+				initial={prefersReducedMotion ? false : "hidden"}
+				whileInView={prefersReducedMotion ? undefined : "show"}
+				viewport={{ once: true, amount: 0.4 }}
+				variants={drawLineVariants}
+			/>
+			<div className="grid gap-4 lg:grid-cols-4">
 			{workflowSteps.map((step, index) => {
 				const Icon = step.icon;
 
 				return (
-					<MotionDiv key={step.id} delay={index * 0.06}>
-						<div className="landing-panel landing-shell relative h-full overflow-hidden p-5">
+					<motion.div
+						key={step.id}
+						initial={prefersReducedMotion ? false : { opacity: 0, y: 26, scale: 0.98 }}
+						whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+						viewport={{ once: true, amount: 0.25 }}
+						transition={prefersReducedMotion ? undefined : { duration: 0.6, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+					>
+						<motion.div
+							className="group landing-panel landing-shell relative h-full overflow-hidden p-5"
+							whileHover={prefersReducedMotion ? undefined : { y: -6 }}
+							transition={{ duration: 0.25, ease: "easeOut" }}
+						>
 							<div className="landing-grid-overlay absolute inset-0 opacity-25" aria-hidden />
+							<div className="landing-card-glow absolute inset-x-6 top-0 h-24 opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden />
 							<div className="relative z-10">
 								<div className="flex items-center justify-between gap-4">
-									<div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+									<motion.div
+										className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"
+										whileHover={prefersReducedMotion ? undefined : { scale: 1.08, rotate: -4 }}
+										transition={{ duration: 0.25, ease: "easeOut" }}
+									>
 										<Icon className="size-5" />
-									</div>
+									</motion.div>
 									<span className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">{step.id}</span>
 								</div>
 								<h3 className="mt-5 text-xl font-semibold tracking-tight text-foreground">{step.title}</h3>
 								<p className="mt-3 text-sm leading-6 text-muted-foreground">{step.description}</p>
 							</div>
-						</div>
-					</MotionDiv>
+						</motion.div>
+					</motion.div>
 				);
 			})}
+			</div>
 		</div>
 	);
 }
@@ -266,9 +413,20 @@ function ScreenshotCard({
 	slot: ScreenshotSlot;
 	index: number;
 }) {
+	const prefersReducedMotion = useReducedMotion();
+
 	return (
-		<MotionDiv delay={index * 0.08}>
-			<div className="landing-panel landing-shell overflow-hidden p-5 lg:p-6">
+		<motion.div
+			initial={prefersReducedMotion ? false : { opacity: 0, y: 26 }}
+			whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+			viewport={{ once: true, amount: 0.2 }}
+			transition={prefersReducedMotion ? undefined : { duration: 0.65, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
+		>
+			<motion.div
+				className="landing-panel landing-shell overflow-hidden p-5 lg:p-6"
+				whileHover={prefersReducedMotion ? undefined : { y: -4 }}
+				transition={{ duration: 0.25, ease: "easeOut" }}
+			>
 				<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">{slot.eyebrow}</p>
 				<div className="mt-5 landing-shot relative overflow-hidden rounded-[28px] border border-border/75 bg-card/80 p-3">
 					<div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/70 px-4 py-3">
@@ -281,20 +439,25 @@ function ScreenshotCard({
 							{slot.eyebrow}
 						</span>
 					</div>
-					<div className="mt-3">
+					<motion.div
+						className="mt-3"
+						whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.01 }}
+						transition={{ duration: 0.25, ease: "easeOut" }}
+					>
 						<ScreenshotImage src={slot.imageSrc} alt={slot.imageAlt} />
-					</div>
+					</motion.div>
 				</div>
 				<h3 className="mt-6 text-2xl font-semibold tracking-tight text-foreground">{slot.title}</h3>
 				<p className="mt-3 text-base leading-7 text-muted-foreground">{slot.description}</p>
-			</div>
-		</MotionDiv>
+			</motion.div>
+		</motion.div>
 	);
 }
 
 export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 	const primaryHref = isSignedIn ? "/home" : "/auth";
 	const primaryCopy = isSignedIn ? "Open Dashboard" : "Start Deploying";
+	const prefersReducedMotion = useReducedMotion();
 
 	return (
 		<div className="landing-bg min-h-svh text-foreground">
@@ -318,32 +481,62 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 			</header>
 
 			<main>
-				<section className="landing-hero-bg relative overflow-hidden px-6 pb-20 pt-16 lg:px-10 lg:pb-28 lg:pt-20">
+				<section className="landing-hero-bg relative overflow-hidden px-6 pb-12 pt-10 lg:px-10 lg:pb-16 lg:pt-12">
+					<div className="landing-hero-wave absolute inset-x-0 top-0 h-[28rem] opacity-70" aria-hidden />
 					<div className="landing-grid-overlay absolute inset-0 opacity-45" aria-hidden />
-					<div className="mx-auto grid max-w-7xl gap-14 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
-						<MotionDiv className="relative z-10">
-							<div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary">
-								<Layers3 className="size-3.5" />
-								Smart deployment platform
-							</div>
-							<h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
+					<div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+						<motion.div
+							className="relative z-10"
+							initial={prefersReducedMotion ? false : "hidden"}
+							animate={prefersReducedMotion ? undefined : "show"}
+							variants={containerVariants}
+						>
+							<motion.h1
+								className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem] lg:leading-[0.95]"
+								variants={heroItemVariants}
+							>
 								Turn a GitHub repo into a deployable application.
-							</h1>
-							<p className="mt-6 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+							</motion.h1>
+							<motion.p
+								className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg"
+								variants={heroItemVariants}
+							>
 								Connect a repo, let Smart Analysis map the runtime and service layout, then deploy with logs, status, and preview still in view.
-							</p>
-							<div className="mt-8 flex flex-wrap gap-3">
-								<Button asChild size="lg" className="gap-2">
+							</motion.p>
+							<motion.div className="mt-7 flex flex-wrap gap-3" variants={heroItemVariants}>
+								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.9)]">
 									<Link href={primaryHref}>
 										{primaryCopy}
-										<ArrowRight className="size-4" />
+										<motion.span
+											animate={prefersReducedMotion ? undefined : { x: [0, 4, 0] }}
+											transition={prefersReducedMotion ? undefined : { duration: 2.6, repeat: Infinity, ease: "easeInOut" }}
+										>
+											<ArrowRight className="size-4" />
+										</motion.span>
 									</Link>
 								</Button>
 								<Button asChild size="lg" variant="outline">
 									<Link href="#capabilities">Learn more</Link>
 								</Button>
-							</div>
-						</MotionDiv>
+							</motion.div>
+
+							<motion.div className="mt-7 grid gap-3 sm:grid-cols-3" variants={heroItemVariants}>
+								{productMetrics.map((metric) => (
+									<div key={metric.label} className="landing-panel landing-shell group overflow-hidden px-4 py-3 sm:px-5">
+										<div className="landing-card-glow absolute inset-x-6 top-0 h-16 opacity-70" aria-hidden />
+										<p className="relative z-10 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+											<CountUp value={metric.value} suffix={metric.suffix} />
+										</p>
+										<p className="relative z-10 mt-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary">
+											{metric.label}
+										</p>
+										<p className="relative z-10 mt-1.5 text-sm leading-5 text-muted-foreground">
+											{metric.description}
+										</p>
+									</div>
+								))}
+							</motion.div>
+						</motion.div>
 
 						<div className="relative z-10">
 							<HeroPreview />
@@ -355,8 +548,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<div className="mx-auto max-w-7xl">
 						<SectionIntro
 							eyebrow="Capabilities"
-							title="Repository in, deployable application out."
-							description="SmartDeploy handles the full path from source code to production: import the repository, understand the application, deploy with context, and verify the live result."
+							title="Built around the hard parts of deployment work."
+							description="These are the platform capabilities SmartDeploy brings to every project: repository intelligence, better release decisions, and operational visibility once code is moving."
 							align="center"
 						/>
 
@@ -365,19 +558,34 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 								const Icon = pillar.icon;
 
 								return (
-									<MotionDiv key={pillar.title} delay={index * 0.08}>
-										<div className="landing-panel landing-shell relative h-full overflow-hidden p-6">
+									<motion.div
+										key={pillar.title}
+										initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+										whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+										viewport={{ once: true, amount: 0.2 }}
+										transition={prefersReducedMotion ? undefined : { duration: 0.55, delay: index * 0.08, ease: "easeOut" }}
+									>
+										<motion.div
+											className="group landing-panel landing-shell relative h-full overflow-hidden p-6"
+											whileHover={prefersReducedMotion ? undefined : { y: -8, scale: 1.01 }}
+											transition={{ duration: 0.25, ease: "easeOut" }}
+										>
 											<div className="landing-grid-overlay absolute inset-0 opacity-25" aria-hidden />
+											<div className="landing-card-glow absolute inset-x-8 top-0 h-24 opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden />
 											<div className="relative z-10">
-												<div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+												<motion.div
+													className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"
+													whileHover={prefersReducedMotion ? undefined : { scale: 1.08, rotate: -5 }}
+													transition={{ duration: 0.2, ease: "easeOut" }}
+												>
 													<Icon className="size-5" />
-												</div>
+												</motion.div>
 												<p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-primary">{pillar.eyebrow}</p>
 												<h3 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{pillar.title}</h3>
 												<p className="mt-4 text-sm leading-6 text-muted-foreground">{pillar.description}</p>
 											</div>
-										</div>
-									</MotionDiv>
+										</motion.div>
+									</motion.div>
 								);
 							})}
 						</div>
@@ -389,7 +597,7 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 						<SectionIntro
 							eyebrow="Workflow"
 							title="Four steps from source code to production."
-							description="A concrete, developer-facing release flow that covers import, analysis, deploy, and validation in one workspace."
+							description="Once those capabilities are in place, the day-to-day workflow stays simple: connect the repo, generate the blueprint, deploy with context, and validate the release."
 						/>
 
 						<div className="mt-14">
