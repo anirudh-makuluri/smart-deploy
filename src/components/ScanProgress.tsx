@@ -22,6 +22,7 @@ type ScanProgressProps = {
 const NODES = [
 	{ id: "scanner", label: "Scanner", desc: "Repository mapping" },
 	{ id: "planner", label: "Planner", desc: "Execution strategy" },
+	{ id: "commands_gen", label: "Commands Generator", desc: "Generating deployment commands" },
 	{ id: "docker_gen", label: "Dockerfile Generator", desc: "Optimizing build layers" },
 	{ id: "compose_gen", label: "Compose Generator", desc: "Infrastructure orchestration" },
 	{ id: "nginx_gen", label: "Nginx Generator", desc: "Routing and proxy setup" },
