@@ -28,14 +28,15 @@ import {
 	EC2_INSTANCE_TYPE_PRESETS,
 	formatApproxEc2PriceCompact,
 } from "@/lib/aws/ec2InstanceTypes";
+import { updateCustomDomain, verifyDns } from "@/lib/graphqlClient";
 import { useAppData } from "@/store/useAppData";
 
 export type FormSchemaType = z.infer<typeof formSchema>
 
 export const formSchema = z.object({
 	branch: z.string().min(1, { message: "Branch is required" }),
-	env_vars: z.string().optional(),
-	custom_url: z.string().optional(),
+	envVars: z.string().optional(),
+	liveUrl: z.string().optional(),
 })
 
 type ConfigTabsProps = {
@@ -56,7 +57,7 @@ export default function ConfigTabs({
 	onStartScan
 }: ConfigTabsProps) {
 	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
-		parseEnvVarsToDisplay(deployment.env_vars ?? "")
+		parseEnvVarsToDisplay(deployment.envVars ?? "")
 	);
 
 	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
@@ -68,7 +69,7 @@ export default function ConfigTabs({
 	onConfigChangeRef.current = onConfigChange;
 
 	const initialSubdomain = React.useMemo(() => {
-		let raw = (deployment as any).custom_url || "";
+		let raw = deployment.liveUrl;
 		if (!raw) return "";
 		// Strip protocol
 		raw = raw.replace(/^https?:\/\//, "");
@@ -83,22 +84,22 @@ export default function ConfigTabs({
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			branch: deployment.branch,
-			env_vars: deployment.env_vars ?? "",
-			custom_url: initialSubdomain,
+			envVars: deployment.envVars ?? "",
+			liveUrl: initialSubdomain,
 		},
 	})
 
-	const customUrlValue = form.watch("custom_url");
+	const liveUrlValue = form.watch("liveUrl");
 	const [customUrlSaving, setCustomUrlSaving] = useState(false);
 	const [isCustomUrlDirty, setIsCustomUrlDirty] = useState(false);
 
 
 	useEffect(() => {
-		setIsCustomUrlDirty(customUrlValue !== initialSubdomain);
-	}, [customUrlValue, initialSubdomain]);
+		setIsCustomUrlDirty(liveUrlValue !== initialSubdomain);
+	}, [liveUrlValue, initialSubdomain]);
 
 	useEffect(() => {
-		form.setValue("custom_url", initialSubdomain, { shouldDirty: false });
+		form.setValue("liveUrl", initialSubdomain, { shouldDirty: false });
 		setIsCustomUrlDirty(false);
 		setCustomUrlStatus({ type: null });
 	}, [initialSubdomain, form]);
@@ -108,12 +109,12 @@ export default function ConfigTabs({
 
 	const handleSaveCustomUrl = async () => {
 		if (!deployment) return;
-		const raw = form.getValues("custom_url");
+		const raw = form.getValues("liveUrl");
 		if (!raw) {
 			return
 		}
 		const finalUrl = getCustomUrlFromSubdomain(raw.trim());
-		const previousUrl = (deployment.custom_url || "").trim();
+		const previousUrl = (deployment.liveUrl || "").trim();
 		if (finalUrl === previousUrl) {
 			setIsCustomUrlDirty(false);
 			return;
@@ -121,25 +122,12 @@ export default function ConfigTabs({
 
 		setCustomUrlSaving(true);
 		try {
-			const response = await fetch("/api/custom-domain", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					repoName: deployment.repo_name,
-					serviceName: deployment.service_name,
-					customUrl: finalUrl,
-				}),
-			});
-			const data = await response.json();
-			const isError = response.status !== 200 || data?.status === "error";
-			if (isError) {
-				throw new Error(data?.message || data?.error || "Failed to save custom domain");
-			}
+			const data = await updateCustomDomain(deployment.repoName, deployment.serviceName, finalUrl);
 
 			updateDeploymentById({
-				repo_name: deployment.repo_name,
-				service_name: deployment.service_name,
-				custom_url: finalUrl,
+		repoName: deployment.repoName,
+		serviceName: deployment.serviceName,
+			liveUrl: finalUrl,
 			});
 			setIsCustomUrlDirty(false);
 			setCustomUrlStatus({
@@ -161,7 +149,7 @@ export default function ConfigTabs({
 	};
 
 	const handleCancelCustomUrl = () => {
-		form.setValue("custom_url", initialSubdomain, { shouldDirty: false });
+		form.setValue("liveUrl", initialSubdomain, { shouldDirty: false });
 		setIsCustomUrlDirty(false);
 		setCustomUrlStatus({ type: null });
 	};
@@ -176,39 +164,30 @@ export default function ConfigTabs({
 			return;
 		}
 		if (watchedBranch !== deployment.branch) {
-			onConfigChange({ branch: watchedBranch });
+			onConfigChangeRef.current({ branch: watchedBranch });
 		}
-	}, [watchedBranch, deployment.branch, onConfigChange]);
+	}, [watchedBranch, deployment.branch]);
 
 	useEffect(() => {
 		const envString = buildEnvVarsString(envEntries);
-		if (envString === deployment.env_vars) return;
+		if (envString === deployment.envVars) return;
 
 		const timeoutId = setTimeout(() => {
-			onConfigChange({ env_vars: envString });
+			onConfigChangeRef.current({ envVars: envString });
 		}, 500);
 
 		return () => clearTimeout(timeoutId);
-	}, [envEntries, deployment.env_vars, onConfigChange]);
+	}, [envEntries, deployment.envVars]);
 
 	const verifySubdomain = async (subdomain: string) => {
 		if (!subdomain) return;
 
 		setCustomUrlVerifying(true);
 		try {
-			const res = await fetch("/api/verify-dns", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					subdomain,
-					repoName: deployment.repo_name,
-					serviceName: deployment.service_name
-				}),
-			});
-			const data = await res.json();
+			const data = await verifyDns(subdomain, deployment.repoName, deployment.serviceName);
 
 			if (data.available) {
-				const availableSubdomain = data.customUrl.replace(/^https?:\/\//, "").split(".")[0];
+				const availableSubdomain = (data.customUrl || "").replace(/^https?:\/\//, "").split(".")[0];
 				if (data.isOwned) {
 					setCustomUrlStatus({
 						type: 'owned',
@@ -220,7 +199,7 @@ export default function ConfigTabs({
 						message: `Available: ${data.customUrl}`
 					});
 				}
-				form.setValue("custom_url", availableSubdomain);
+				form.setValue("liveUrl", availableSubdomain);
 			} else {
 				setCustomUrlStatus({
 					type: 'error',
@@ -239,27 +218,27 @@ export default function ConfigTabs({
 	};
 
 	useEffect(() => {
-		const currentSub = form.getValues("custom_url");
+		const currentSub = form.getValues("liveUrl");
 		if (!currentSub) {
-			const serviceSub = (deployment.service_name && deployment.service_name !== ".") ? `-${deployment.service_name}` : "";
-			const defaultSubdomain = `${deployment.repo_name}${serviceSub}`;
-			form.setValue("custom_url", defaultSubdomain);
+		const serviceSub = `-${Math.random().toString(36).substring(2, 6)}`;
+		const defaultSubdomain = `${deployment.repoName}${serviceSub}`;
+			form.setValue("liveUrl", defaultSubdomain);
 			verifySubdomain(defaultSubdomain);
 		} else {
 			verifySubdomain(currentSub);
 		}
 	}, []);
 
-	const hasScanResults = !!deployment.scan_results;
+	const hasScanResults = !!deployment.scanResults;
 
 	const ec2InstanceOptions = React.useMemo(() => {
-		const v = deployment.awsEc2InstanceType?.trim();
+		const v = (deployment.ec2 as any)?.instanceType?.trim?.();
 		const list: string[] = [...EC2_INSTANCE_TYPE_PRESETS];
 		if (v && !list.some((x) => x === v)) list.unshift(v);
 		return list;
-	}, [deployment.awsEc2InstanceType]);
+	}, [deployment.ec2]);
 
-	const ec2InstanceValue = deployment.awsEc2InstanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+	const ec2InstanceValue = (deployment.ec2 as any)?.instanceType?.trim?.() || DEFAULT_EC2_INSTANCE_TYPE;
 
 	const branchSelectOptions = React.useMemo(() => {
 		const fromRepo = (branchesProp ?? []).filter(Boolean);
@@ -272,7 +251,13 @@ export default function ConfigTabs({
 
 	React.useEffect(() => {
 		form.setValue("branch", deployment.branch ?? "", { shouldDirty: false });
-	}, [deployment.branch, deployment.repo_name, deployment.service_name, form.setValue]);
+	}, [deployment.branch, deployment.repoName, deployment.serviceName, form]);
+
+	React.useEffect(() => {
+		if (envEntries.length === 0 && deployment.envVars) {
+			setEnvEntries(parseEnvVarsToDisplay(deployment.envVars));
+		}
+	}, [deployment.envVars, deployment.repoName, deployment.serviceName]);
 
 	return (
 		<Form {...form}>
@@ -294,7 +279,7 @@ export default function ConfigTabs({
 								<CircleDot className="size-6 text-primary" />
 							</div>
 							<div className="flex flex-col overflow-hidden">
-								<span className="font-bold text-foreground text-sm truncate">{deployment.service_name != "." ? deployment.service_name + "@" : ""}{deployment.repo_name}</span>
+								<span className="font-bold text-foreground text-sm truncate">{deployment.serviceName != "." ? deployment.serviceName + "@" : ""}{deployment.repoName}</span>
 								<a
 									href={`https://github.com/${repoFullName}`}
 									target="_blank"
@@ -370,7 +355,7 @@ export default function ConfigTabs({
 					<div className="w-full max-w-sm space-y-2">
 						<Select
 							value={ec2InstanceValue}
-							onValueChange={(value) => onConfigChange({ awsEc2InstanceType: value })}
+							onValueChange={(value) => onConfigChange({ ec2: { ...(deployment.ec2 as any), instanceType: value } })}
 						>
 							<SelectTrigger className="w-full h-auto min-h-11 py-2 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4 whitespace-normal *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:items-start *:data-[slot=select-value]:text-left [&_[data-slot=select-value]]:w-full">
 								<div className="flex items-start gap-2.5 w-full min-w-0 text-left">
@@ -413,7 +398,7 @@ export default function ConfigTabs({
 					<div className="w-full max-w-sm space-y-3">
 						<FormField
 							control={form.control}
-							name="custom_url"
+							name="liveUrl"
 							render={({ field }) => (
 								<FormItem>
 									<FormControl>
@@ -423,12 +408,6 @@ export default function ConfigTabs({
 											{...field}
 											placeholder="my-cool-app"
 											className="pl-14 pr-32 h-11 bg-white/2 border-white/5 rounded-xl focus-visible:ring-primary/20 text-foreground font-medium text-sm placeholder:text-muted-foreground/10 hover:border-white/10 transition-colors"
-											// onBlur={(e) => {
-											// 	field.onBlur();												
-											// 	if (e.target.value) {
-											// 		verifySubdomain(e.target.value.trim());
-											// 	}
-											// }}
 											onChange={(e) => {
 												field.onChange(e.target.value);
 												setCustomUrlStatus({ type: null });

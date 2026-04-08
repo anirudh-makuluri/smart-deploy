@@ -14,7 +14,7 @@ export default function DashboardSideBar({ activeView, onViewChange }: Dashboard
 	const { data: session } = useSession();
 	const { repoList, deployments } = useAppData();
 	const activeDeployments = deployments.filter((d) => {
-		const hasStoredLiveUrl = Boolean((d.custom_url ?? "").trim() || (d.deployUrl ?? "").trim());
+		const hasStoredLiveUrl = Boolean((d.liveUrl ?? "").trim());
 		return d.status === "running" && hasStoredLiveUrl;
 	}).length;
 	const unhealthyDeployments = deployments.filter((d) => d.status === "failed" || d.status === "stopped" || d.status === "paused").length;

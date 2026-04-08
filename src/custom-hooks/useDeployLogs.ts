@@ -62,7 +62,7 @@ export function getWebSocketUrl(): string {
 	return "ws://localhost:4001";
 }
 
-export function useDeployLogs(serviceName?: string, repoName?: string, options?: UseDeployLogsOptions) {
+export function useDeployLogs(serviceName: string, repoName: string, options: UseDeployLogsOptions) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<{ timestamp?: string; message?: string }[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -186,19 +186,19 @@ export function useDeployLogs(serviceName?: string, repoName?: string, options?:
 								cur.deploymentTarget;
 							const updated: DeployConfig = {
 								...cur,
-								...(deployUrlFromPayload != null && { deployUrl: deployUrlFromPayload }),
+								...(deployUrlFromPayload != null && { liveUrl: deployUrlFromPayload }),
 								status: "running",
 								...(dt && { deploymentTarget: dt }),
 								...(completePayload.ec2 != null && { ec2: completePayload.ec2 }),
 							};
-							const compareUrl = deployUrlFromPayload ?? cur.deployUrl ?? "";
+							const compareUrl = deployUrlFromPayload ?? cur.liveUrl ?? "";
 							// Use backend-provided customUrl when Vercel DNS was added there
-							updated.custom_url =
+						updated.liveUrl =
 								typeof completePayload.customUrl === "string" && completePayload.customUrl.trim()
 									? completePayload.customUrl.trim()
 									: (() => {
 											const displayUrl = getDeploymentDisplayUrl(updated);
-											return displayUrl && displayUrl !== compareUrl ? displayUrl : undefined;
+										return displayUrl && displayUrl !== compareUrl ? displayUrl : null;
 										})();
 							deployConfigRef.current = updated;
 						}
@@ -301,7 +301,7 @@ export function useDeployLogs(serviceName?: string, repoName?: string, options?:
 
 		if (typeof window !== "undefined") {
 			try {
-				sessionStorage.setItem(ACTIVE_DEPLOYMENT_KEY, JSON.stringify({ repoName: deployConfig.repo_name, serviceName: deployConfig.service_name, userID }));
+				sessionStorage.setItem(ACTIVE_DEPLOYMENT_KEY, JSON.stringify({ repoName: deployConfig.repoName, serviceName: deployConfig.serviceName, userID }));
 			} catch { /* ignore */ }
 		}
 

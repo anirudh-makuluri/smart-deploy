@@ -1718,6 +1718,68 @@ export async function ensureHostRule(
 	], ws, "deploy");
 }
 
+/**
+ * Delete a host-based routing rule from an ALB listener for a specific hostname.
+ * Used when removing an old custom domain during domain update.
+ */
+export async function deleteHostRule(
+	listenerArn: string,
+	hostname: string,
+	region: string,
+	ws: any
+): Promise<boolean> {
+	try {
+		const rulesRaw = await runAWSCommand([
+			"elbv2",
+			"describe-rules",
+			"--listener-arn",
+			listenerArn,
+			"--output",
+			"json",
+			"--region",
+			region,
+		], ws, "deploy");
+
+		let rules: Array<{
+			RuleArn?: string;
+			IsDefault?: boolean;
+			Priority?: string;
+			Conditions?: Array<{ Field?: string; HostHeaderConfig?: { Values?: string[] } }>;
+		}> = [];
+		try {
+			const parsed = JSON.parse(rulesRaw);
+			rules = Array.isArray(parsed?.Rules) ? parsed.Rules : [];
+		} catch {
+			return false;
+		}
+
+		// Find the rule matching the hostname
+		const ruleToDelete = rules.find((rule) =>
+			!rule.IsDefault && rule.Priority !== "default" &&
+			(rule.Conditions || []).some((cond) =>
+				cond.Field === "host-header" && (cond.HostHeaderConfig?.Values || []).includes(hostname)
+			)
+		);
+
+		if (!ruleToDelete?.RuleArn) {
+			return false; // Rule not found
+		}
+
+		// Delete the rule
+		await runAWSCommand(
+			["elbv2", "delete-rule", "--rule-arn", ruleToDelete.RuleArn, "--region", region],
+			ws,
+			"deploy"
+		);
+
+		return true;
+	} catch (error) {
+		// Log but don't throw - deletion failures should not break the domain update
+		console.error(`Failed to delete host rule for ${hostname}:`, error);
+		return false;
+	}
+}
+
 export async function registerInstanceToTargetGroup(
 	targetGroupArn: string,
 	instanceId: string,

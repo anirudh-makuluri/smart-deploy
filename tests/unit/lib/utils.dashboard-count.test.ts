@@ -18,11 +18,24 @@ function makeRepoRecord(overrides: Partial<RepoServicesRecord> = {}): RepoServic
 function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
 		id: "dep-1",
-		repo_name: "shop",
+		repoName: "shop",
 		url: "https://github.com/acme/shop",
 		branch: "main",
-		service_name: "web",
+		serviceName: "web",
 		status: "running",
+		commitSha: null,
+		envVars: null,
+		liveUrl: null,
+		screenshotUrl: null,
+		firstDeployment: null,
+		lastDeployment: null,
+		revision: null,
+		cloudProvider: "aws",
+		deploymentTarget: "ec2",
+		awsRegion: "us-west-2",
+		ec2: null,
+		cloudRun: null,
+		scanResults: {},
 		...overrides,
 	};
 }
@@ -30,7 +43,7 @@ function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 describe("countDeployedServicesForRepo", () => {
 	it("counts deployed services by exact service name match", () => {
 		const record = makeRepoRecord();
-		const deployments = [makeDeployment({ service_name: "web", status: "running" })];
+		const deployments = [makeDeployment({ serviceName: "web", status: "running" })];
 
 		expect(countDeployedServicesForRepo(record, deployments)).toBe(1);
 	});
@@ -42,7 +55,7 @@ describe("countDeployedServicesForRepo", () => {
 				{ name: "api", path: "apps/api", language: "ts" },
 			],
 		});
-		const deployments = [makeDeployment({ service_name: ".", status: "running" })];
+		const deployments = [makeDeployment({ serviceName: ".", status: "running" })];
 
 		expect(countDeployedServicesForRepo(record, deployments)).toBe(2);
 	});

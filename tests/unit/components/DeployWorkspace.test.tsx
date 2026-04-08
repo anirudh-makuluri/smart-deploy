@@ -10,6 +10,10 @@ const mockToastSuccess = vi.fn();
 const mockToastInfo = vi.fn();
 const fetchRepoDeployments = vi.fn();
 const updateDeploymentById = vi.fn();
+const getDetectedRepoCache = vi.fn(() => undefined);
+const setDetectedRepoCache = vi.fn();
+const setActiveRepo = vi.fn();
+const setActiveServiceName = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
@@ -62,11 +66,24 @@ vi.mock("@/components/ConfirmDialog", () => ({
 
 const baseDeployment: DeployConfig = {
 	id: "dep-1",
-	repo_name: "smart-deploy",
-	service_name: "web",
+	repoName: "smart-deploy",
+	serviceName: "web",
 	url: "https://github.com/acme/smart-deploy",
 	branch: "main",
 	status: "running",
+	commitSha: null,
+	envVars: null,
+	liveUrl: null,
+	screenshotUrl: null,
+	firstDeployment: null,
+	lastDeployment: null,
+	revision: null,
+	cloudProvider: "aws",
+	deploymentTarget: "ec2",
+	awsRegion: "us-west-2",
+	ec2: null,
+	cloudRun: null,
+	scanResults: {},
 };
 
 describe("DeployWorkspace", () => {
@@ -89,6 +106,11 @@ describe("DeployWorkspace", () => {
 			activeServiceName: null,
 			isLoading: false,
 			fetchRepoDeployments,
+			getDetectedRepoCache,
+			setDetectedRepoCache,
+			setActiveRepo,
+			setActiveServiceName,
+			repoServices: [],
 		};
 		global.fetch = vi.fn().mockResolvedValue({
 			ok: true,
@@ -129,7 +151,7 @@ describe("DeployWorkspace", () => {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
 			activeServiceName: "web",
-			deployments: [{ ...baseDeployment, deployUrl: "https://web.example.com" }],
+			deployments: [{ ...baseDeployment, liveUrl: "https://web.example.com" }],
 		};
 
 		render(<DeployWorkspace />);

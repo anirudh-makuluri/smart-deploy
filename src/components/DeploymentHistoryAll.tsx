@@ -13,6 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, GitBranch, GitCommit, History, Loader2 } from "lucide-react";
+import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 
 type DeploymentHistoryAllEntry = {
 	id: string;
@@ -32,22 +33,21 @@ export default function DeploymentHistoryAll() {
 	const [history, setHistory] = React.useState<DeploymentHistoryAllEntry[]>([]);
 	const [loading, setLoading] = React.useState(true);
 	const [error, setError] = React.useState<string | null>(null);
+	const [page, setPage] = React.useState(1);
+	const [total, setTotal] = React.useState(0);
+	const limit = 10;
 
 	React.useEffect(() => {
 		setLoading(true);
 		setError(null);
-		fetch("/api/deployment-history/all")
-			.then((res) => res.json())
+		fetchDeploymentHistoryAllPage(page, limit)
 			.then((data) => {
-				if (data.status === "success" && Array.isArray(data.history)) {
-					setHistory(data.history);
-				} else {
-					setError(data.message || "Failed to load history");
-				}
+				setHistory(data.history as DeploymentHistoryAllEntry[]);
+				setTotal(data.total ?? 0);
 			})
 			.catch((err) => setError(err?.message || "Failed to load history"))
 			.finally(() => setLoading(false));
-	}, []);
+	}, [page]);
 
 	if (loading) {
 		return (
@@ -166,6 +166,31 @@ export default function DeploymentHistoryAll() {
 					</AccordionItem>
 				))}
 			</Accordion>
+			<div className="flex items-center justify-between border-t border-border px-4 py-3">
+				<p className="text-xs text-muted-foreground">
+					Page {page} of {Math.max(1, Math.ceil(total / limit))}
+				</p>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						className="border-border bg-transparent"
+						disabled={page === 1 || loading}
+						onClick={() => setPage((current) => Math.max(1, current - 1))}
+					>
+						Previous
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						className="border-border bg-transparent"
+						disabled={page >= Math.ceil(total / limit) || loading}
+						onClick={() => setPage((current) => current + 1)}
+					>
+						Next
+					</Button>
+				</div>
+			</div>
 		</div>
 	);
 }

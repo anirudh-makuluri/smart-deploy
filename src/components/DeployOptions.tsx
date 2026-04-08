@@ -10,6 +10,7 @@ import {
 import { ChevronDown, GitBranch, Rocket } from "lucide-react";
 import { useState } from "react";
 import { repoType } from "@/app/types";
+import { fetchLatestCommit } from "@/lib/graphqlClient";
 
 interface DeployOptionsProps {
 	onDeploy: (commitSha?: string) => void;
@@ -26,24 +27,8 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 
 		setIsFetchingCommit(true);
 		try {
-			const response = await fetch("/api/commits/latest", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					owner: repo.owner.login,
-					repo: repo.name,
-					branch: branch,
-				}),
-			});
-
-			if (!response.ok) {
-				throw new Error("Failed to fetch latest commit");
-			}
-
-			const data = await response.json();
-			onDeploy(data.commit.sha);
+			const commit = await fetchLatestCommit(repo.owner.login, repo.name, branch);
+			onDeploy(commit.sha);
 		} catch (error) {
 			console.error("Error fetching latest commit:", error);
 			// Fallback to deploying without commit SHA

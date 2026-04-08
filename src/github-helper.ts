@@ -59,13 +59,8 @@ export async function getGithubRepos(token: string) {
 					pushed_at: repo.pushed_at,
 					default_branch: repo.default_branch,
 					private: repo.private,
-					description: repo.description,
 					visibility: repo.visibility,
-					license: repo.license?.spdx_id ?? null,
-					forks_count: repo.forks_count,
-					watchers_count: repo.watchers_count,
-					open_issues_count: repo.open_issues_count,
-
+					owner: repo.owner,
 					// Latest commit info
 					latest_commit: latestCommit
 						? {

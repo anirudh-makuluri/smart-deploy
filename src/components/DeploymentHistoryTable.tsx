@@ -22,6 +22,7 @@ import {
 import { Download, Loader2, Search } from "lucide-react";
 import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import type { DeployStep } from "@/app/types";
+import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 
 const statusOptions = ["all", "success", "failed"] as const;
 const envOptions = ["all", "production", "staging", "development"] as const;
@@ -90,18 +91,19 @@ export default function DeploymentHistoryTable() {
 	const [query, setQuery] = React.useState("");
 	const [statusFilter, setStatusFilter] = React.useState<(typeof statusOptions)[number]>("all");
 	const [envFilter, setEnvFilter] = React.useState<(typeof envOptions)[number]>("all");
+	const [page, setPage] = React.useState(1);
+	const [total, setTotal] = React.useState(0);
+	const limit = 10;
 
 	React.useEffect(() => {
 		setLoading(true);
-		fetch("/api/deployment-history/all")
-			.then((res) => res.json())
+		fetchDeploymentHistoryAllPage(page, limit)
 			.then((data) => {
-				if (data.status === "success" && Array.isArray(data.history)) {
-					setHistory(data.history);
-				}
+				setHistory(data.history as DeploymentHistoryRow[]);
+				setTotal(data.total ?? 0);
 			})
 			.finally(() => setLoading(false));
-	}, []);
+	}, [page]);
 
 	const filtered = React.useMemo(() => {
 		return history.filter((row) => {
@@ -245,6 +247,29 @@ export default function DeploymentHistoryTable() {
 						</TableBody>
 					</Table>
 				)}
+			</div>
+			<div className="mt-4 flex items-center justify-between">
+				<p className="text-xs text-muted-foreground">
+					Page {page} of {Math.max(1, Math.ceil(total / limit))}
+				</p>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						className="border-border bg-background/60"
+						disabled={page === 1 || loading}
+						onClick={() => setPage((current) => Math.max(1, current - 1))}
+					>
+						Previous
+					</Button>
+					<Button
+						variant="outline"
+						className="border-border bg-background/60"
+						disabled={page >= Math.ceil(total / limit) || loading}
+						onClick={() => setPage((current) => current + 1)}
+					>
+						Next
+					</Button>
+				</div>
 			</div>
 		</div>
 	);

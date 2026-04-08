@@ -2,7 +2,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import config from "../../config";
-import { DeployConfig } from "../../app/types";
+import { DeployConfig, EC2Details } from "../../app/types";
 import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import {
@@ -263,10 +263,11 @@ async function ensureNetworking(
 	let subnetIds: string[];
 	let securityGroupId: string;
 
-	if (deployConfig.ec2?.vpcId?.trim() && deployConfig.ec2?.subnetId?.trim() && deployConfig.ec2?.securityGroupId?.trim()) {
-		vpcId = deployConfig.ec2.vpcId.trim();
-		subnetIds = [deployConfig.ec2.subnetId.trim()];
-		securityGroupId = deployConfig.ec2.securityGroupId.trim();
+	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
+	if (ec2Casted?.vpcId?.trim() && ec2Casted?.subnetId?.trim() && ec2Casted?.securityGroupId?.trim()) {
+		vpcId = ec2Casted.vpcId.trim();
+		subnetIds = [ec2Casted.subnetId.trim()];
+		securityGroupId = ec2Casted.securityGroupId.trim();
 		send("Reusing existing VPC, subnet, and security group...", "setup");
 	} else {
 		send("Setting up networking...", "setup");
@@ -276,7 +277,16 @@ async function ensureNetworking(
 	}
 
 	const ports = new Set<number>([22, 80, 443]);
-	if (deployConfig.scan_results?.services?.[0]?.port) ports.add(deployConfig.scan_results.services[0].port);
+	if (typeof deployConfig.scanResults === "object" && deployConfig.scanResults && "services" in deployConfig.scanResults) {
+		const sr = deployConfig.scanResults as Record<string, unknown>;
+		const services = sr.services as Array<Record<string, unknown>>;
+		if (Array.isArray(services) && services.length > 0 && "port" in services[0]) {
+			const port = services[0].port as number;
+			if (typeof port === "number" && !Number.isNaN(port)) {
+				ports.add(port);
+			}
+		}
+	}
 	for (const svc of services) if (typeof svc.port === "number" && !Number.isNaN(svc.port)) ports.add(svc.port);
 	if (multiServiceConfig.isMultiService) {
 		for (const svc of multiServiceConfig.services) if (typeof svc.port === "number") ports.add(svc.port);
@@ -309,19 +319,23 @@ async function redeployInstance(params: {
 }): Promise<EC2Result> {
 	const { deployConfig, existingInstanceId, region, services, repoName, token, envBase64, mainPort, net, amiId, certificateArn, ws, send } = params;
 
-	const scanResults = deployConfig.scan_results;
+	const scanResults = deployConfig.scanResults;
 	send("Reusing existing instance (SSM redeploy)...", "deploy");
 	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
+	const scanResultsCasted = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults 
+		? (scanResults as Record<string, unknown>)
+		: ({} as Record<string, unknown>);
+	
 	const script = buildRedeployScript({
 		repoUrl: deployConfig.url,
 		branch: deployConfig.branch?.trim() || "",
 		token,
-		commitSha: deployConfig.commitSha,
+		commitSha: deployConfig.commitSha ?? undefined,
 		envFileContentBase64: envBase64,
-		dockerCompose: scanResults?.docker_compose || "",
-		dockerfiles: scanResults?.dockerfiles || {},
+		dockerCompose: (scanResultsCasted.docker_compose as string) || "",
+		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 		mainPort,
-		scanServices: scanResults?.services,
+		scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
 	});
 	let ssmResult: { success: boolean };
 	try {
@@ -345,15 +359,15 @@ async function redeployInstance(params: {
 		send("Redeploy command failed. Check logs above.", "deploy");
 		return {
 			success: false,
-			baseUrl: deployConfig.deployUrl || deployConfig.ec2?.baseUrl || "",
+			baseUrl: deployConfig.liveUrl || ((deployConfig.ec2 || {}) as EC2Details)?.baseUrl || "",
 			serviceUrls: new Map(),
 			instanceId: existingInstanceId,
-			publicIp: deployConfig.ec2?.publicIp || "",
+			publicIp: ((deployConfig.ec2 || {}) as EC2Details)?.publicIp || "",
 			...net, subnetId: net.subnetIds[0], amiId,
 		};
 	}
 
-	const publicIp = deployConfig.ec2?.publicIp?.trim() || (
+	const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
 		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 	).trim();
 
@@ -388,6 +402,10 @@ async function launchNewInstance(params: {
 	await ensureSSMInstanceProfile(region, ws);
 	await ensureKeyPair(keyName, region, ws);
 
+	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
+		? ((deployConfig.scanResults as Record<string, unknown>)?.nginx_conf as string) || ""
+		: "";
+	
 	const userData = generateUserDataScript(
 		deployConfig.url,
 		deployConfig.branch?.trim() || "",
@@ -395,16 +413,17 @@ async function launchNewInstance(params: {
 		envBase64,
 		mainPort,
 		wsPort,
-		deployConfig.scan_results?.nginx_conf || "",
-		deployConfig.commitSha,
+		nginxConf,
+		deployConfig.commitSha ?? undefined,
 	);
 	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.sh`);
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
 
+	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
 	let instanceId: string;
 	try {
-		const instanceType = resolveEc2InstanceType(deployConfig.awsEc2InstanceType);
+		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
 		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
 		const rootVolumeGiB = Math.max(30, amiMinRootVolumeGiB);
@@ -442,13 +461,16 @@ async function launchNewInstance(params: {
 	send("Waiting for SSM agent to be ready...", "deploy");
 	await ensureInstanceSsmReady(instanceId, region, ws, send);
 
-	const scanResults = deployConfig.scan_results;
+	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "docker_compose" in deployConfig.scanResults 
+		? (deployConfig.scanResults as Record<string, unknown>)
+		: ({} as Record<string, unknown>);
+	
 	const firstDeployScript = buildFirstDeployScript({
 		envFileContentBase64: envBase64,
-		dockerCompose: scanResults?.docker_compose || "",
-		dockerfiles: scanResults?.dockerfiles || {},
+		dockerCompose: (scanResultsCasted.docker_compose as string) || "",
+		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 		mainPort,
-		scanServices: scanResults?.services,
+		scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
 	});
 
 	send("Deploying containers via SSM...", "deploy");
@@ -494,7 +516,7 @@ export async function configureAlb(params: {
 				: "ALB HTTP listener missing."
 		);
 	}
-	const customHost = normalizeDomain(deployConfig.custom_url);
+	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
 
 	await allowAlbToReachService(net.securityGroupId, alb.albSgId, 80, ws);
 
@@ -510,7 +532,7 @@ export async function configureAlb(params: {
 
 	const serviceUrls = new Map<string, string>();
 	for (const svc of services) {
-		const sub = services.length === 1 && deployConfig.service_name?.trim() ? deployConfig.service_name.trim() : svc.name;
+		const sub = services.length === 1 && deployConfig.serviceName?.trim() ? deployConfig.serviceName.trim() : svc.name;
 		const hostname = customHost || buildServiceHostname(svc.name, sub);
 		if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
 		const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
@@ -751,16 +773,17 @@ function buildServiceUrls(
 	certificateArn: string,
 ): { baseUrl: string; serviceUrls: Map<string, string> } {
 	const serviceUrls = new Map<string, string>();
-	const customHost = normalizeDomain(deployConfig.custom_url);
+	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
+	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
 	let baseUrl: string;
-	if (deployConfig.service_name) {
-		const host = customHost || buildServiceHostname(deployConfig.service_name, deployConfig.service_name);
-		baseUrl = host ? `${scheme}://${host}` : deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+	if (deployConfig.serviceName) {
+		const host = customHost || buildServiceHostname(deployConfig.serviceName, deployConfig.serviceName);
+		baseUrl = host ? `${scheme}://${host}` : ec2Config?.baseUrl || `http://${publicIp}`;
 		serviceUrls.set(services[0]?.name || repoName, baseUrl);
 	} else {
-		baseUrl = customBaseUrl || deployConfig.ec2?.baseUrl || `http://${publicIp}`;
+		baseUrl = customBaseUrl || ec2Config?.baseUrl || `http://${publicIp}`;
 		for (const svc of services) serviceUrls.set(svc.name, baseUrl);
 	}
 	return { baseUrl, serviceUrls };
@@ -782,7 +805,11 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			language: s.language,
 		}));
 
-		const mainService = deployConfig.scan_results?.services?.[0];
+		const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "services" in deployConfig.scanResults
+			? (deployConfig.scanResults as Record<string, unknown>).services as Array<{ build_context: string }> | undefined
+			: undefined;
+		
+		const mainService = scanResultsCasted?.[0];
 		const requestedWorkdir = normalizePathForMatch(mainService?.build_context);
 		if (requestedWorkdir && requestedWorkdir !== ".") {
 			const byWorkdir = allServices.find((svc) => {
@@ -795,7 +822,7 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			}
 		}
 
-		const serviceName = deployConfig.service_name?.trim();
+		const serviceName = deployConfig.serviceName?.trim();
 		if (serviceName?.startsWith(`${repoName}-`)) {
 			const suffix = serviceName.slice(repoName.length + 1).toLowerCase();
 			const byName = allServices.find((svc) => svc.name.toLowerCase() === suffix);
@@ -806,7 +833,12 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 
 		return allServices;
 	}
-	return [{ name: repoName, dir: ".", port: deployConfig.scan_results?.services?.[0]?.port || 8080 }];
+	const scanServices = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "services" in deployConfig.scanResults
+		? (deployConfig.scanResults as Record<string, unknown>).services as Array<{ port?: number }> | undefined
+		: undefined;
+	
+	const mainServicePort = scanServices?.[0]?.port || 8080;
+	return [{ name: repoName, dir: ".", port: mainServicePort }];
 }
 
 // ─── Main entry point ───────────────────────────────────────────────────────
@@ -824,12 +856,13 @@ export async function handleEC2(
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
+	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2Details;
+	const existingInstanceId = ec2ConfigMain?.instanceId?.trim() || "";
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
-	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
-	const { envBase64 } = buildEnvBase64(deployConfig.env_vars || "", dbConnectionString, undefined);
+	const amiId = ec2ConfigMain?.amiId?.trim() || await getLatestAMI(region, ws);
+	const { envBase64 } = buildEnvBase64(deployConfig.envVars || "", dbConnectionString, undefined);
 
 	let mainPort = "";
 	let wsPort = "";
@@ -895,7 +928,7 @@ export async function handleEC2(
 		};
 	}
 
-	const customHost = normalizeDomain(deployConfig.custom_url);
+	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);
@@ -943,12 +976,13 @@ export async function handleEC2FromEcr(params: {
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const existingInstanceId = deployConfig.ec2?.instanceId?.trim();
+	const ec2ConfigEcr = (deployConfig.ec2 || {}) as EC2Details;
+	const existingInstanceId = ec2ConfigEcr?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
 	const net = await ensureNetworking(deployConfig, repoName, region, services, multiServiceConfig, ws, send);
-	const amiId = deployConfig.ec2?.amiId?.trim() || await getLatestAMI(region, ws);
-	const { envBase64 } = buildEnvBase64(deployConfig.env_vars || "", dbConnectionString, undefined);
+	const amiId = ec2ConfigEcr?.amiId?.trim() || await getLatestAMI(region, ws);
+	const { envBase64 } = buildEnvBase64(deployConfig.envVars || "", dbConnectionString, undefined);
 
 	let mainPort = "";
 	for (const svc of services) {
@@ -957,20 +991,27 @@ export async function handleEC2FromEcr(params: {
 	}
 	if (!mainPort) mainPort = "8080";
 
-	const scanResults = deployConfig.scan_results;
-	const hasCompose = !!scanResults?.docker_compose && (scanResults.services?.length || 0) > 1;
+	const scanResults = deployConfig.scanResults;
+	const scanResultsCasted = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults
+		? (scanResults as Record<string, unknown>)
+		: ({} as Record<string, unknown>);
+	
+	const hasCompose = !!(scanResultsCasted.docker_compose) && ((scanResultsCasted.services as any)?.length || 0) > 1;
 
 	// Build the SSM deploy script based on compose or single-service
 	const buildDeployScript = (): string => {
 		if (hasCompose) {
+			const dockerCompose = (scanResultsCasted.docker_compose as string) || "";
+			const services = ((scanResultsCasted.services as unknown) as Array<{ name: string; port: number }>) || [];
+			
 			return buildEcrComposeDeployScript({
 				ecrRegistry,
 				ecrRepoName,
 				imageTag,
 				region,
 				envFileContentBase64: envBase64,
-				composeContent: scanResults!.docker_compose,
-				services: (scanResults!.services || []).map((s) => ({ name: s.name, port: s.port })),
+				composeContent: dockerCompose,
+				services: services.map((s) => ({ name: s.name, port: s.port })),
 				ecrPasswordB64,
 			});
 		}
@@ -1003,17 +1044,18 @@ export async function handleEC2FromEcr(params: {
 
 			if (!ssmResult.success) {
 				send("❌ ECR deploy failed. Check logs above.", "deploy");
+				const ec2EcrCasted = (deployConfig.ec2 || {}) as EC2Details;
 				return {
 					success: false,
-					baseUrl: deployConfig.deployUrl || deployConfig.ec2?.baseUrl || "",
+					baseUrl: deployConfig.liveUrl || ec2EcrCasted?.baseUrl || "",
 					serviceUrls: new Map(),
 					instanceId: existingInstanceId,
-					publicIp: deployConfig.ec2?.publicIp || "",
+					publicIp: ec2EcrCasted?.publicIp || "",
 					...net, subnetId: net.subnetIds[0], amiId,
 				};
 			}
 
-			const publicIp = deployConfig.ec2?.publicIp?.trim() || (
+			const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
 				await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 			).trim();
 
@@ -1034,7 +1076,10 @@ export async function handleEC2FromEcr(params: {
 	await ensureSSMInstanceProfile(region, ws);
 	await ensureKeyPair(keyName, region, ws);
 
-	const userData = generateEcrUserDataScript(mainPort, deployConfig.scan_results?.nginx_conf || "");
+	const ecrNginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
+		? ((deployConfig.scanResults as Record<string, unknown>)?.nginx_conf as string) || ""
+		: "";
+	const userData = generateEcrUserDataScript(mainPort, ecrNginxConf);
 	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-ecr-${Date.now()}.sh`);
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
@@ -1042,7 +1087,8 @@ export async function handleEC2FromEcr(params: {
 	const instanceName = generateResourceName(repoName, "ec2");
 	let instanceId: string;
 	try {
-		const instanceType = resolveEc2InstanceType(deployConfig.awsEc2InstanceType);
+		const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
 		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
 		const rootVolumeGiB = Math.max(30, amiMinRootVolumeGiB);
@@ -1094,7 +1140,7 @@ export async function handleEC2FromEcr(params: {
 		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
 	}
 
-	const customHost = normalizeDomain(deployConfig.custom_url);
+	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);

@@ -4,7 +4,7 @@ import path from "path";
 import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeploymentTarget, DeployConfig, CloudProvider, EC2DeployDetails, DeployStep } from "../app/types";
+import { DeploymentTarget, DeployConfig, CloudProvider, EC2Details, DeployStep, SDArtifactsResponse } from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -54,11 +54,17 @@ export async function handleDeploy(
 	}
 ): Promise<string> {
 	const deployStartTime = Date.now();
-	const dockerfileCount = Object.keys(deployConfig.scan_results?.dockerfiles || {}).length;
+	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
+		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
+		: {};
+	const dockerfileCount = Object.keys(scanResultsCasted || {}).length;
 	if (dockerfileCount < 1) {
 		throw new Error("Deployment requires at least one Dockerfile in scan results.");
 	}
-	if (!deployConfig.scan_results?.nginx_conf?.trim()) {
+	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
+		? ((deployConfig.scanResults as Record<string, unknown>).nginx_conf as string)
+		: "";
+	if (!nginxConf?.trim()) {
 		throw new Error("Deployment requires nginx.conf in scan results.");
 	}
 
@@ -98,7 +104,7 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
 		{ id: "done", label: "✅ Done" },
 	],
-	"cloud-run": [
+	"cloud_run": [
 		{ id: "clone", label: "📦 Cloning repository" },
 		{ id: "detect", label: "🔍 Analyzing app" },
 		{ id: "auth", label: "🔐 Authentication" },
@@ -139,8 +145,8 @@ async function saveDeploymentToDB(
 		const minimalDeployment: DeployConfig = {
 			...deployConfig,
 			status: success ? "running" : "failed",
-			...(deployUrl && { deployUrl }),
-			...(customUrl && { custom_url: customUrl }),
+			...(deployUrl && { liveUrl: deployUrl }),
+			...(customUrl && { liveUrl: customUrl }),
 			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
 		};
 
@@ -160,13 +166,18 @@ async function saveDeploymentToDB(
 							const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({
 								url: screenshotTargetUrl,
 								ownerID: userID!,
-								repoName: deployConfig.repo_name,
-								serviceName: deployConfig.service_name,
+								repoName: deployConfig.repoName,
+								serviceName: deployConfig.serviceName,
 							});
-
-							await dbHelper.patchDeploymentData(deployConfig.repo_name, deployConfig.service_name, userID!, {
-								screenshot_url: screenshotPublicUrl,
-							});
+							
+							// Update deployment with screenshot URL
+							await dbHelper.updateDeployments(
+								{
+									...minimalDeployment,
+									screenshotUrl: screenshotPublicUrl,
+								},
+								userID
+							);
 						} catch (err) {
 							console.error("Screenshot generation failed:", err);
 						}
@@ -187,8 +198,8 @@ async function saveDeploymentToDB(
 		};
 
 		const historyResponse = await dbHelper.addDeploymentHistory(
-			deployConfig.repo_name,
-			deployConfig.service_name,
+			deployConfig.repoName,
+			deployConfig.serviceName,
 			userID,
 			historyEntry
 		);
@@ -205,7 +216,7 @@ async function saveDeploymentToDB(
 
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
-	ec2?: EC2DeployDetails;
+	ec2?: EC2Details;
 };
 
 async function sendDeployComplete(
@@ -245,7 +256,7 @@ async function sendDeployComplete(
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
-			ec2?: EC2DeployDetails;
+			ec2?: EC2Details;
 		} = {
 			deployUrl: deployUrl ?? null,
 			success,
@@ -331,6 +342,10 @@ async function handleAWSDeploy(
 	success = ec2Result.success;
 
 	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
+	const ec2Details = deployConfig.ec2 || {};
+	const ec2Typed = (ec2Details && typeof ec2Details === "object" && "instanceType" in ec2Details) 
+		? (ec2Details as EC2Details)
+		: null;
 	serviceDetails.ec2 = {
 		success: ec2Result.success,
 		baseUrl: ec2Result.baseUrl,
@@ -340,7 +355,8 @@ async function handleAWSDeploy(
 		subnetId: ec2Result.subnetId,
 		securityGroupId: ec2Result.securityGroupId,
 		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns,
+		sharedAlbDns: ec2Result.sharedAlbDns || "",
+		instanceType: ec2Typed?.instanceType || "t3.micro",
 	};
 
 	if (ec2Result.baseUrl == "") {
@@ -362,11 +378,11 @@ async function handleAWSDeploy(
 
 
 	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.custom_url != deployUrl && deployConfig.service_name?.trim() && success) {
+	if (deployUrl && deployConfig.liveUrl != deployUrl && deployConfig.serviceName?.trim() && success) {
 		send("Adding Vercel DNS record...", 'done');
-		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
+		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
 			deploymentTarget: target,
-			previousCustomUrl: deployConfig.custom_url ?? null,
+			previousCustomUrl: deployConfig.liveUrl ?? null,
 		});
 	}
 
@@ -455,13 +471,15 @@ async function handleAWSCodeBuildDeploy(
 	const ecrAuth = await getEcrAuthToken(region);
 	const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 
-	const scanResults = deployConfig.scan_results;
-	const envBase64 = deployConfig.env_vars
-		? Buffer.from(deployConfig.env_vars, "utf8").toString("base64")
+	const scanResults = deployConfig.scanResults;
+	const envBase64 = deployConfig.envVars
+		? Buffer.from(deployConfig.envVars, "utf8").toString("base64")
 		: undefined;
 
-	const services = scanResults?.services || [];
-	const hasCompose = !!scanResults?.docker_compose && services.length > 1;
+	const services = (scanResults && typeof scanResults === "object" && "services" in scanResults)
+		? (scanResults as SDArtifactsResponse).services
+		: [];
+	const hasCompose = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults && services.length > 1;
 	const repoNames = new Set<string>();
 	repoNames.add(ecrRepoName);
 	if (hasCompose) {
@@ -501,12 +519,17 @@ async function handleAWSCodeBuildDeploy(
 		const roleArn = await ensureCodeBuildRole(region, send);
 		const projectName = await ensureCodeBuildProject(region, roleArn, send);
 
+		// Only pass scanResults if it has the proper structure
+		const scanResultsForBuild = (scanResults && "stack_summary" in scanResults) 
+			? (scanResults as SDArtifactsResponse)
+			: undefined;
+
 		const buildspec = generateBuildspec({
 			ecrRegistry,
 			ecrRepoName,
 			imageTag,
 			region,
-			scanResults,
+			scanResults: scanResultsForBuild,
 		});
 
 		const buildId = await startBuild({
@@ -536,17 +559,20 @@ async function handleAWSCodeBuildDeploy(
 
 	// ── Setup + Deploy: EC2 from ECR ──
 	send("Setting up networking...", "setup");
+	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
+		? (scanResults as SDArtifactsResponse)
+		: null;
 	const multiServiceConfig: MultiServiceConfig = {
-		isMultiService: (scanResults?.services?.length || 0) > 1,
-		services: (scanResults?.services || []).map(s => ({
+		isMultiService: (scanResultsTyped?.services?.length || 0) > 1,
+		services: (scanResultsTyped?.services || []).map(s => ({
 			name: s.name,
 			workdir: s.build_context || ".",
 			dockerfile: s.dockerfile_path,
 			port: s.port,
 			build_context: s.build_context || ".",
 		})),
-		hasDockerCompose: !!scanResults?.docker_compose,
-		isMonorepo: (scanResults?.services?.length || 0) > 1,
+		hasDockerCompose: !!scanResultsTyped?.docker_compose,
+		isMonorepo: (scanResultsTyped?.services?.length || 0) > 1,
 	};
 
 	const ec2Result = await handleEC2FromEcr({
@@ -562,6 +588,10 @@ async function handleAWSCodeBuildDeploy(
 	});
 
 	const serviceDetails: ServiceDeployDetails = {};
+	const ec2Details2 = deployConfig.ec2 || {};
+	const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2) 
+		? (ec2Details2 as EC2Details)
+		: null;
 	serviceDetails.ec2 = {
 		success: ec2Result.success,
 		baseUrl: ec2Result.baseUrl,
@@ -571,7 +601,8 @@ async function handleAWSCodeBuildDeploy(
 		subnetId: ec2Result.subnetId,
 		securityGroupId: ec2Result.securityGroupId,
 		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns,
+		sharedAlbDns: ec2Result.sharedAlbDns || "",
+		instanceType: ec2Typed2?.instanceType || "t3.micro",
 	};
 
 	let deployUrl: string | undefined;
@@ -594,11 +625,11 @@ async function handleAWSCodeBuildDeploy(
 	}
 
 	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.custom_url !== deployUrl && deployConfig.service_name?.trim() && ec2Result.success) {
-		send("Adding Vercel DNS record...", "done");
-		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.service_name, {
-			deploymentTarget: target,
-			previousCustomUrl: deployConfig.custom_url ?? null,
+		if (deployUrl && deployConfig.liveUrl !== deployUrl && deployConfig.serviceName?.trim() && ec2Result.success) {
+			send("Adding Vercel DNS record...", "done");
+			vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
+				deploymentTarget: target,
+				previousCustomUrl: deployConfig.liveUrl ?? null,
 		});
 	}
 
@@ -679,17 +710,17 @@ async function handleGCPDeploy(
 		const firstGcpUrl = serviceUrls.entries().next().value;
 		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
 		let vercelResult: AddVercelDnsResult | null = null;
-		if (gcpDeployUrl && deployConfig.service_name?.trim()) {
-			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
-				deploymentTarget: "cloud-run",
-				previousCustomUrl: deployConfig.custom_url ?? null,
+		if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
+			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
+				deploymentTarget: "cloud_run",
+				previousCustomUrl: deployConfig.liveUrl ?? null,
 			});
 		}
 		const doneStep = deploySteps.find(s => s.id === 'done');
 		if (doneStep) doneStep.status = 'success';
 		const durationMs = Date.now() - deployStartTime;
 		const success = gcpDeployUrl ? true : false;
-		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
 		fs.rmSync(tmpDir, { recursive: true, force: true });
 		return "done";
 	}
@@ -717,8 +748,11 @@ async function handleGCPDeploy(
 	const dockerfilePath = path.join(appDir, "Dockerfile");
 
 	if (!fs.existsSync(dockerfilePath)) {
-		const scanResults = deployConfig.scan_results;
-		const dockerfileContent = scanResults?.dockerfiles?.["Dockerfile"] || (scanResults?.services?.[0]?.dockerfile_path ? scanResults?.dockerfiles?.[scanResults.services[0].dockerfile_path] : null);
+		const scanResults = deployConfig.scanResults;
+		const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
+			? (scanResults as SDArtifactsResponse)
+			: null;
+		const dockerfileContent = scanResultsTyped?.dockerfiles?.["Dockerfile"] || (scanResultsTyped?.services?.[0]?.dockerfile_path ? scanResultsTyped?.dockerfiles?.[scanResultsTyped.services[0].dockerfile_path] : null);
 
 		if (dockerfileContent) {
 			send(`Using AI-generated Dockerfile`, 'clone');
@@ -742,8 +776,8 @@ async function handleGCPDeploy(
 
 	// Build environment variables
 	const envVarsList: string[] = [];
-	if (deployConfig.env_vars) {
-		envVarsList.push(deployConfig.env_vars.replace(/\r?\n/g, ","));
+	if (deployConfig.envVars) {
+		envVarsList.push(deployConfig.envVars.replace(/\r?\n/g, ","));
 	}
 	if (dbConnectionString) {
 		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
@@ -775,10 +809,10 @@ async function handleGCPDeploy(
 	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
 	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
 	let vercelResult: AddVercelDnsResult | null = null;
-	if (gcpDeployUrl && deployConfig.service_name?.trim()) {
-		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.service_name, {
-			deploymentTarget: "cloud-run",
-			previousCustomUrl: deployConfig.custom_url ?? null,
+	if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
+		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
+			deploymentTarget: "cloud_run",
+			previousCustomUrl: deployConfig.liveUrl ?? null,
 		});
 	}
 	const doneStep = deploySteps.find(s => s.id === 'done');
@@ -786,7 +820,7 @@ async function handleGCPDeploy(
 	const durationMs = Date.now() - deployStartTime;
 	const success = gcpDeployUrl ? true : false;
 
-	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud-run", vercelResult, null, durationMs);
+	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
 
 	// Cleanup temp folder
 	fs.rmSync(tmpDir, { recursive: true, force: true });

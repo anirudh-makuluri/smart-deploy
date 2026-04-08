@@ -3,63 +3,15 @@
 import * as React from "react";
 import { useAppData } from "@/store/useAppData";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
-import { resolveInitialRepoBranch } from "@/lib/repoBranch";
 import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import RepoServicesList from "@/components/RepoServicesList";
+import { deleteDeployment, resolveRepo, detectRepoServices } from "@/lib/graphqlClient";
 import { normalizeRepoUrl } from "@/lib/utils";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
-
-function repoMatchesPage(r: repoType, owner: string, repoName: string, normalizedRepoTarget: string): boolean {
-	const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
-	const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
-	return sameFullName || sameUrl;
-}
-
-function sortReposList(list: repoType[]): repoType[] {
-	return [...list].sort((a, b) => {
-		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
-		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
-		return dateB - dateA;
-	});
-}
-
-function repoMetadataLooksComplete(r: repoType | undefined): boolean {
-	return Boolean(r?.default_branch?.trim());
-}
-
-function buildMinimalRepo(owner: string, repoName: string): repoType {
-	const normalizedOwner = owner.trim();
-	const normalizedRepoName = repoName.trim();
-	const fullName = `${normalizedOwner}/${normalizedRepoName}`;
-	const htmlUrl = `https://github.com/${fullName}`;
-	const nowIso = new Date().toISOString();
-	return {
-		id: htmlUrl,
-		name: normalizedRepoName,
-		full_name: fullName,
-		html_url: htmlUrl,
-		language: "Unknown",
-		languages_url: `https://api.github.com/repos/${fullName}/languages`,
-		created_at: nowIso,
-		updated_at: nowIso,
-		pushed_at: nowIso,
-		default_branch: "",
-		private: false,
-		description: null,
-		visibility: "public",
-		license: null,
-		forks_count: 0,
-		watchers_count: 0,
-		open_issues_count: 0,
-		owner: { login: normalizedOwner },
-		latest_commit: null,
-		branches: [],
-	};
-}
 
 type RepoPageClientProps = {
 	owner: string;
@@ -81,173 +33,168 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		activeServiceName: storeActiveService,
 		setActiveServiceName,
 		setActiveRepo,
+		activeRepo,
 	} = useAppData();
 
 	const [isDeleting, setIsDeleting] = React.useState(false);
-	const [services, setServices] = React.useState<DetectedServiceInfo[]>([]);
-	const [loading, setLoading] = React.useState(true);
-	const [error, setError] = React.useState<string | null>(null);
 	const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
-	const prevRepoUrlRef = React.useRef<string | null>(null);
+	const [repoNotFound, setRepoNotFound] = React.useState(false);
+	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
 
-	const repoUrl = `https://github.com/${owner}/${repoName}`;
-	const minimalRepo = React.useMemo(() => buildMinimalRepo(owner, repoName), [owner, repoName]);
-	const normalizedRepoTarget = React.useMemo(() => normalizeRepoUrlForMatch(repoUrl), [repoUrl]);
-	const fromStoreRepo = React.useMemo<repoType | undefined>(() => {
-		return repoList.find((r) => {
-			const sameFullName = r.full_name?.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
-			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoTarget;
+	// Set active repo, fetching from GitHub if not in store
+	React.useEffect(() => {
+		// If activeRepo already matches current route, no need to refetch
+		if (activeRepo?.full_name.toLowerCase() === `${owner}/${repoName}`.toLowerCase()) {
+			setRepoNotFound(false);
+			setIsLoadingRepo(false);
+			return;
+		}
+
+		// Search store for the repo
+		const normalizedUrl = normalizeRepoUrlForMatch(`https://github.com/${owner}/${repoName}`);
+		const found = repoList.find((r) => {
+			const sameFullName = r.full_name.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
+			const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedUrl;
 			return sameFullName || sameUrl;
 		});
-	}, [repoList, owner, repoName, normalizedRepoTarget]);
-	const resolvedRepo = React.useMemo<repoType>(() => {
-		return fromStoreRepo ?? minimalRepo;
-	}, [fromStoreRepo, minimalRepo]);
-	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
-		if (!storeActiveService) return null;
-		// "Deploy all on one instance" sets activeServiceName to "." — that row is not in detected services.
-		if (storeActiveService === "." && services.length > 0) {
-			return { name: ".", path: ".", language: "unknown" };
+
+		if (found) {
+			setActiveRepo(found);
+			setRepoNotFound(false);
+			setIsLoadingRepo(false);
+			return;
 		}
-		return services.find((svc) => svc.name === storeActiveService) ?? null;
-	}, [services, storeActiveService]);
 
-	React.useEffect(() => {
-		if (repoMetadataLooksComplete(fromStoreRepo)) return;
-
+		// Repo not in store, fetch from GitHub
 		let cancelled = false;
+		setIsLoadingRepo(true);
+		setRepoNotFound(false);
+
 		void (async () => {
 			try {
-				const response = await fetch(
-					`/api/repos/resolve?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repoName)}`
-				);
-				const data = await response.json();
-				const fetchedRepo = response.ok ? (data.repo as repoType | undefined) : undefined;
-				if (cancelled) return;
-
-				if (fetchedRepo) {
-					useAppData.setState((state) => {
-						const idx = state.repoList.findIndex((r) =>
-							repoMatchesPage(r, owner, repoName, normalizedRepoTarget)
-						);
-						if (idx >= 0) {
-							const next = [...state.repoList];
-							next[idx] = fetchedRepo;
-							return { repoList: sortReposList(next) };
-						}
-						return { repoList: sortReposList([...state.repoList, fetchedRepo]) };
-					});
-					return;
+				const repo = await resolveRepo(owner, repoName);
+				if (!cancelled) {
+					if (repo) {
+						setActiveRepo(repo);
+						setRepoNotFound(false);
+					} else {
+						setRepoNotFound(true);
+					}
+					setIsLoadingRepo(false);
 				}
-
-				useAppData.setState((state) => {
-					if (state.repoList.some((r) => repoMatchesPage(r, owner, repoName, normalizedRepoTarget))) {
-						return state;
-					}
-					return { repoList: sortReposList([...state.repoList, minimalRepo]) };
-				});
 			} catch {
-				if (cancelled) return;
-				useAppData.setState((state) => {
-					if (state.repoList.some((r) => repoMatchesPage(r, owner, repoName, normalizedRepoTarget))) {
-						return state;
-					}
-					return { repoList: sortReposList([...state.repoList, minimalRepo]) };
-				});
+				if (!cancelled) {
+					setRepoNotFound(true);
+					setIsLoadingRepo(false);
+				}
 			}
 		})();
+
 		return () => {
 			cancelled = true;
 		};
-	}, [fromStoreRepo, owner, repoName, normalizedRepoTarget, minimalRepo]);
+	}, [owner, repoName, repoList, activeRepo, setActiveRepo]);
 
-	const activeBranch = resolveInitialRepoBranch(resolvedRepo) || "";
+	const repo = activeRepo;
+
+	// Fetch repo services (detect services from repo content) with multi-level caching
+	const [services, setServices] = React.useState<DetectedServiceInfo[]>([]);
+	const [servicesLoading, setServicesLoading] = React.useState(true);
+	const [servicesError, setServicesError] = React.useState<string | null>(null);
 
 	React.useEffect(() => {
+		const repoUrl = `https://github.com/${owner}/${repoName}`;
+		const activeBranch = repo?.default_branch || "";
+
+		// Check in-memory cache first
 		const cached = getDetectedRepoCache(repoUrl);
 		if (cached?.services?.length !== undefined) {
 			setServices(cached.services);
-			setLoading(false);
-			setError(null);
+			setServicesLoading(false);
+			setServicesError(null);
 			return;
 		}
-		// Fallback: use repoServices from store (from DB) if we have a record for this repo
-		const record = repoServices.find((r) => normalizeRepoUrlForMatch(r.repo_url) === normalizeRepoUrlForMatch(repoUrl));
+
+		// Fallback to DB cache if available
+		const record = repoServices.find(
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizeRepoUrlForMatch(repoUrl)
+		);
 		if (record?.services?.length) {
 			setServices(record.services);
-			setLoading(false);
-			setError(null);
+			setServicesLoading(false);
+			setServicesError(null);
 			setDetectedRepoCache(repoUrl, {
 				services: record.services,
-				isMonorepo: record.is_monorepo,
+				isMonorepo: record.is_monorepo ?? false,
 				isMultiService: record.services.length > 1,
 				packageManager: undefined,
 			});
 			return;
 		}
 
+		// Fetch from API if no cache available
 		let cancelled = false;
-		setLoading(true);
-		setError(null);
-		fetch("/api/repos/detect-services", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ url: repoUrl, branch: activeBranch }),
-		})
-			.then((res) => res.json())
+		setServicesLoading(true);
+		setServicesError(null);
+		detectRepoServices(repoUrl, activeBranch)
 			.then((data) => {
 				if (cancelled) return;
-				if (data.error) {
-					setError(data.error);
-					setServices([]);
-					return;
-				}
 				const list = data.services ?? [];
 				setServices(list);
 				setDetectedRepoCache(repoUrl, {
 					services: list,
 					isMonorepo: data.isMonorepo ?? false,
 					isMultiService: data.isMultiService ?? false,
-					packageManager: data.packageManager,
+					packageManager: data.packageManager ?? undefined,
 				});
 				refetchRepoServices();
 			})
 			.catch((err) => {
 				if (!cancelled) {
-					setError(err?.message ?? "Failed to load services");
+					setServicesError(err?.message ?? "Failed to load services");
 					setServices([]);
 				}
 			})
 			.finally(() => {
-				if (!cancelled) setLoading(false);
+				if (!cancelled) setServicesLoading(false);
 			});
+
 		return () => {
 			cancelled = true;
 		};
-	}, [repoUrl, activeBranch, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
+	}, [owner, repoName, repo, repoServices, getDetectedRepoCache, setDetectedRepoCache, refetchRepoServices]);
 
+	const loading = servicesLoading;
+	const error = servicesError;
+
+	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
+		if (!storeActiveService) return null;
+		// "Deploy all on one instance" sets activeServiceName to "." — that row is not in detected services.
+		if (storeActiveService === "." && services.length > 0) {
+			return { name: ".", path: ".", language: "unknown" };
+		}
+		return services.find((svc: DetectedServiceInfo) => svc.name === storeActiveService) ?? null;
+	}, [services, storeActiveService]);
+
+	// Filter deployments for current repo
 	const repoDeployments = React.useMemo(() => {
-		const norm = normalizeRepoUrl(repoUrl);
-		return deployments.filter((d) => (d.status !== "didnt_deploy" && (d.repo_name === resolvedRepo.name || normalizeRepoUrl(d.url) === norm)));
-	}, [deployments, repoUrl, resolvedRepo]);
+		if (!repo) return [];
+		const norm = normalizeRepoUrl(`https://github.com/${owner}/${repoName}`);
+		return deployments.filter(
+			(d) =>
+				d.repoName === repo.name || normalizeRepoUrl(d.url) === norm
+		);
+	}, [deployments, owner, repoName, repo]);
 
-	// Fetch deployments explicitly for this repo on mount if needed
+	// Fetch deployments and reset active service on repo change
 	React.useEffect(() => {
-		const prevRepoUrl = prevRepoUrlRef.current;
-		const isRepoChange = prevRepoUrl !== null && prevRepoUrl !== repoUrl;
-		prevRepoUrlRef.current = repoUrl;
-
-		// Only reset active service when navigating to a different repo.
-		if (isRepoChange) {
-			setActiveServiceName(null);
+		setActiveServiceName(null);
+		if (repo?.name) {
+			fetchRepoDeployments(repo.name);
 		}
+	}, [repo, fetchRepoDeployments, setActiveServiceName]);
 
-		setActiveRepo(resolvedRepo);
-		if (resolvedRepo.name) {
-			fetchRepoDeployments(resolvedRepo.name);
-		}
-	}, [repoUrl, resolvedRepo, fetchRepoDeployments, setActiveServiceName, setActiveRepo]);
-
+	// Cleanup on unmount
 	React.useEffect(() => {
 		return () => {
 			setActiveServiceName(null);
@@ -256,7 +203,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [setActiveRepo, setActiveServiceName]);
 
 	function openWorkspaceForService(svc: DetectedServiceInfo) {
-		setActiveRepo(resolvedRepo);
 		setActiveServiceName(svc.name);
 	}
 
@@ -268,22 +214,10 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		try {
 			for (const dep of repoDeployments) {
 				try {
-					const res = await fetch("/api/delete-deployment", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							repoName: dep.repo_name,
-							serviceName: dep.service_name,
-						}),
-					});
-					const data = await res.json();
-					if (data.status === "success") {
-						deletedKeys.push({ repoName: dep.repo_name, serviceName: dep.service_name });
-					} else {
-						toast.error(data.error || data.details || `Failed to delete ${dep.service_name}`);
-					}
+				await deleteDeployment(dep.repoName, dep.serviceName);
+				deletedKeys.push({ repoName: dep.repoName, serviceName: dep.serviceName });
 				} catch (err: any) {
-					toast.error(err?.message || `Failed to delete ${dep.service_name}`);
+					toast.error(err?.message || `Failed to delete ${dep.serviceName}`);
 				}
 			}
 			if (deletedKeys.length) {
@@ -306,43 +240,73 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	return (
 		<div className="dot-grid-bg min-h-svh flex flex-col text-foreground">
-			{isDeleting && (
-				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
-					<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-					<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
+			{isLoadingRepo && (
+				<div className="flex-1 flex items-center justify-center">
+					<div className="text-center space-y-4">
+						<div className="inline-block">
+							<div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+						</div>
+						<p className="text-muted-foreground">Loading repository…</p>
+					</div>
 				</div>
 			)}
-			<Header />
+			{repoNotFound && !isLoadingRepo && (
+				<div className="flex-1 flex items-center justify-center">
+					<div className="text-center space-y-4">
+						<h1 className="text-3xl font-bold">Repository Not Found</h1>
+						<p className="text-muted-foreground">
+							The repository <span className="font-mono font-semibold">{owner}/{repoName}</span> does not exist or is not accessible.
+						</p>
+						<a
+							href="/"
+							className="inline-block mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90"
+						>
+							Go Back Home
+						</a>
+					</div>
+				</div>
+			)}
+			{!repoNotFound && !isLoadingRepo && repo && (
+				<>
+					{isDeleting && (
+						<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
+							<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+							<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
+						</div>
+					)}
+					<Header />
 
-			<main className="flex-1 min-h-0 overflow-auto p-6">
-				{activeService ? (
-					<DeployWorkspace />
-				) : (
-					<RepoServicesList
-						owner={owner}
-						repoName={repoName}
-						repoUrl={repoUrl}
-						services={services}
-						loading={loading}
-						error={error}
-						repoDeployments={repoDeployments}
-						resolvedRepo={resolvedRepo}
-						setActiveService={openWorkspaceForService}
-						handleDeleteAllDeployments={handleDeleteAllDeployments}
-						openWorkspaceForService={openWorkspaceForService}
+					<main className="flex-1 min-h-0 overflow-auto p-6">
+						{activeService ? (
+							<DeployWorkspace />
+						) : (
+							<RepoServicesList
+								owner={owner}
+								repoName={repoName}
+								repoUrl={`https://github.com/${owner}/${repoName}`}
+								services={services}
+								loading={loading}
+								error={error}
+								repoDeployments={repoDeployments}
+								resolvedRepo={repo}
+								setActiveService={openWorkspaceForService}
+								handleDeleteAllDeployments={handleDeleteAllDeployments}
+								openWorkspaceForService={openWorkspaceForService}
+							/>
+						)}
+					</main>
+
+					<ConfirmDialog
+						open={showDeleteAllConfirm}
+						onOpenChange={setShowDeleteAllConfirm}
+						onConfirm={handleConfirmDeleteAll}
+						title="Delete All Deployments?"
+						description={`This will permanently delete all ${repoDeployments.length} deployments associated with this repository. This action cannot be undone and will stop all running services.`}
+						confirmText="Delete All"
+						variant="destructive"
 					/>
-				)}
-			</main>
-
-			<ConfirmDialog
-				open={showDeleteAllConfirm}
-				onOpenChange={setShowDeleteAllConfirm}
-				onConfirm={handleConfirmDeleteAll}
-				title="Delete All Deployments?"
-				description={`This will permanently delete all ${repoDeployments.length} deployments associated with this repository. This action cannot be undone and will stop all running services.`}
-				confirmText="Delete All"
-				variant="destructive"
-			/>
+				</>
+			)}
 		</div>
 	);
 }

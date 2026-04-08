@@ -1,4 +1,4 @@
-import { DeployConfig, DeployStep } from "./app/types";
+import { DeployConfig, DeployStep, EC2Details } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
@@ -14,8 +14,8 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 		userID,
 	}: { deployConfig: DeployConfig; token: string; userID?: string } = payload;
 
-	const repoName = deployConfig.repo_name;
-	const serviceName = deployConfig.service_name;
+	const repoName = deployConfig.repoName;
+	const serviceName = deployConfig.serviceName;
 	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
 
 	const options = {
@@ -55,10 +55,13 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		}
 	}
 
-	if (deployConfig?.ec2?.instanceId) {
+	if (deployConfig?.status !== "running") return;
+
+	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object") {
+		const ec2Details = deployConfig.ec2 as EC2Details;
 		const region = deployConfig.awsRegion || config.AWS_REGION;
 		const logs = await getInitialEc2ServiceLogs({
-			instanceId: deployConfig.ec2.instanceId,
+			instanceId: ec2Details.instanceId,
 			region,
 			serviceName,
 			limit: 200,
@@ -83,7 +86,7 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 	}
 
 	// Only stream gcloud logs for Cloud Run deployments
-	if (!serviceName || deployConfig?.deploymentTarget !== "cloud-run") {
+	if (!serviceName || deployConfig?.deploymentTarget !== "cloud_run") {
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 		}

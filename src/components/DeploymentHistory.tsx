@@ -14,18 +14,23 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
+import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
 
 export default function DeploymentHistory({ repoName, serviceName, prefetchedData, isPrefetching }: { repoName: string; serviceName: string; prefetchedData?: any; isPrefetching?: boolean }) {
-	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>(prefetchedData || []);
+	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>(prefetchedData?.history || prefetchedData || []);
 	const [loading, setLoading] = React.useState(isPrefetching ? true : !prefetchedData);
 	const [error, setError] = React.useState<string | null>(null);
 	const [analyzingId, setAnalyzingId] = React.useState<string | null>(null);
 	const [analysisByEntryId, setAnalysisByEntryId] = React.useState<Record<string, string>>({});
+	const [page, setPage] = React.useState(1);
+	const [total, setTotal] = React.useState(prefetchedData?.total ?? 0);
+	const limit = 10;
 
 	React.useEffect(() => {
-		// If we have prefetched data, use it
-		if (prefetchedData) {
-			setHistory(prefetchedData);
+		// Use prefetched data only for the first page.
+		if (prefetchedData && page === 1) {
+			setHistory(prefetchedData.history || prefetchedData);
+			setTotal(prefetchedData.total ?? (Array.isArray(prefetchedData) ? prefetchedData.length : 0));
 			setLoading(false);
 			return;
 		}
@@ -34,20 +39,20 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 		if (!repoName || !serviceName) return;
 		setLoading(true);
 		setError(null);
-		fetch(`/api/deployment-history?repoName=${encodeURIComponent(repoName)}&serviceName=${encodeURIComponent(serviceName)}`)
-			.then((res) => res.json())
+		fetchDeploymentHistoryPage(repoName, serviceName, page, limit)
 			.then((data) => {
-				if (data.status === "success" && Array.isArray(data.history)) {
-					setHistory(data.history);
-				} else {
-					setError(data.message || "Failed to load history");
-				}
+				setHistory(data.history ?? []);
+				setTotal(data.total ?? 0);
 			})
 			.catch((err) => {
 				setError(err?.message || "Failed to load history");
 			})
 			.finally(() => setLoading(false));
-	}, [repoName, serviceName, prefetchedData]);
+	}, [repoName, serviceName, prefetchedData, page]);
+
+	React.useEffect(() => {
+		setPage(1);
+	}, [repoName, serviceName]);
 
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);
@@ -168,7 +173,7 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 									<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
 										<div className="space-y-3 text-xs font-mono text-muted-foreground">
 											{entry.steps.map((step) => (
-												<div key={step.id}>
+												<div key={Math.random().toString(36).substring(2)} className="bg-background/50 p-2 rounded border border-border/50">
 													<p className="font-semibold text-foreground mb-1">
 														{step.label} ({step.status})
 														{(step.startedAt || step.endedAt) && (
@@ -227,6 +232,31 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 					</AccordionItem>
 				))}
 			</Accordion>
+			<div className="flex items-center justify-between border-t border-border px-4 py-3">
+				<p className="text-xs text-muted-foreground">
+					Page {page} of {Math.max(1, Math.ceil(total / limit))}
+				</p>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						className="border-border bg-transparent"
+						disabled={page === 1 || loading}
+						onClick={() => setPage((current) => Math.max(1, current - 1))}
+					>
+						Previous
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						className="border-border bg-transparent"
+						disabled={page >= Math.ceil(total / limit) || loading}
+						onClick={() => setPage((current) => current + 1)}
+					>
+						Next
+					</Button>
+				</div>
+			</div>
 		</div>
 	);
 }

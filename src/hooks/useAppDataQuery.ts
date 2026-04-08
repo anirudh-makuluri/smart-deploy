@@ -5,9 +5,16 @@ import { useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 import { useAppData } from "@/store/useAppData";
 import type { DeployConfig, repoType, RepoServicesRecord } from "@/app/types";
+import { benchmarkAppOverview, fetchAppOverview } from "@/lib/graphqlClient";
 
 const CACHE_KEY = "smart-deploy-app-data";
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+declare global {
+	interface Window {
+		smartDeployBenchmarkAppOverview?: (runs?: number) => Promise<unknown>;
+	}
+}
 
 type CachedAppData = {
 	userID: string;
@@ -53,14 +60,7 @@ function clearCache() {
 }
 
 async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: DeployConfig[]; repoServices: RepoServicesRecord[] }> {
-	const [sessionRes, deploymentsRes, servicesRes] = await Promise.all([
-		fetch("/api/session").then((r) => r.json()),
-		fetch("/api/get-deployments").then((r) => r.json()),
-		fetch("/api/repos/services").then((r) => r.json()),
-	]);
-	const repoList = sessionRes?.repoList ?? [];
-	const deployments = deploymentsRes?.deployments ?? [];
-	const repoServices = servicesRes?.services ?? [];
+	const { repoList, deployments, repoServices } = await fetchAppOverview();
 	return { repoList, deployments, repoServices };
 }
 
@@ -106,6 +106,14 @@ export function useAppDataQuery() {
 			clearCache();
 		}
 	}, [status, unAuthenticated]);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		window.smartDeployBenchmarkAppOverview = benchmarkAppOverview;
+		return () => {
+			delete window.smartDeployBenchmarkAppOverview;
+		};
+	}, []);
 
 	return query;
 }

@@ -311,7 +311,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		const feedback = userFeedback.trim() ? `${template}\n\nAdditional feedback: ${userFeedback.trim()}` : template;
 		onStartImproveScan({
 			repoUrl: deployment.url,
-			commitSha: results.commit_sha || deployment.commitSha,
+			commitSha: (results.commit_sha || deployment.commitSha) ?? undefined,
 			feedback,
 		});
 		setImproveDialogOpen(false);
@@ -338,7 +338,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 						Post-Scan Results
 					</h2>
 					<p className="text-muted-foreground/60 mt-2 flex items-center gap-2 text-sm">
-						Repository: <span className="text-primary font-mono font-medium hover:underline cursor-pointer">{deployment.repo_name}{deployment.service_name != "." ? "/" + deployment.service_name : ""}</span>
+						Repository: <span className="text-primary font-mono font-medium hover:underline cursor-pointer">{deployment.repoName}{deployment.serviceName != "." ? "/" + deployment.serviceName : ""}</span>
 					</p>
 				</div>
 				<div className="flex items-center gap-3">

@@ -2,37 +2,104 @@ import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
 import { v4 as uuidv4 } from "uuid";
 
-type RowDeployment = {
-	id: string;
-	repo_name: string;
-	service_name: string;
-	owner_id: string;
-	status: string | null;
-	first_deployment: string | null;
-	last_deployment: string | null;
-	revision: number | null;
-	data: Record<string, unknown>;
-	scan_results: Record<string, unknown> | null;
-};
-
-function rowToDeployConfig(row: RowDeployment): DeployConfig & { ownerID: string } {
-	const { id, repo_name, service_name, owner_id, status, first_deployment, last_deployment, revision, data } = row;
-	return {
+/**
+ * Transform database row (snake_case) to DeployConfig (camelCase)
+ */
+function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { ownerID: string } {
+	const {
 		id,
 		repo_name,
 		service_name,
-		ownerID: owner_id,
-		// If status is missing/null in the DB we treat the service as not deployed yet.
+		owner_id,
+		url,
+		branch,
+		commit_sha,
+		env_vars,
+		live_url,
+		screenshot_url,
+		cloud_provider,
+		deployment_target,
+		aws_region,
+		status,
+		first_deployment,
+		last_deployment,
+		revision,
+		ec2,
+		cloud_run,
+		scan_results,
+	} = row;
+
+	return {
+		id,
+		repoName: repo_name || '',
+		serviceName: service_name || '',
+		ownerID: owner_id || '',
+		url: url || '',
+		branch: branch || '',
+		commitSha: commit_sha ?? null,
+		envVars: env_vars ?? undefined,
+		liveUrl: live_url ?? null,
+		screenshotUrl: screenshot_url ?? null,
 		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
-		first_deployment: first_deployment ?? undefined,
-		last_deployment: last_deployment ?? undefined,
-		revision: revision ?? 1,
-		...data,
-		scan_results: row.scan_results ? (row.scan_results as any) : undefined,
+		firstDeployment: first_deployment ?? null,
+		lastDeployment: last_deployment ?? null,
+		revision: revision ?? 0,
+		cloudProvider: (cloud_provider as 'aws' | 'gcp') || 'aws',
+		deploymentTarget: (deployment_target as 'ec2' | 'cloud_run') || 'ec2',
+		awsRegion: aws_region || '',
+		ec2: (ec2 as Record<string, unknown>) || {},
+		cloudRun: (cloud_run as Record<string, unknown>) || {},
+		scanResults: (scan_results || {}) as Record<string, unknown>,
 	} as DeployConfig & { ownerID: string };
 }
 
+/**
+ * Transform DeployConfig (camelCase) to database row (snake_case)
+ */
+function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
+	return {
+		url: config.url,
+		branch: config.branch,
+		commit_sha: config.commitSha,
+		env_vars: config.envVars,
+		live_url: config.liveUrl,
+		screenshot_url: config.screenshotUrl,
+		cloud_provider: config.cloudProvider,
+		deployment_target: config.deploymentTarget,
+		aws_region: config.awsRegion,
+		status: config.status,
+		ec2: config.ec2,
+		cloud_run: config.cloudRun,
+		scan_results: config.scanResults,
+	};
+}
+
 export const dbHelper = {
+	upsertUser: async function (
+		userID: string,
+		payload: { name?: string; image?: string }
+	): Promise<{ error?: string }> {
+		try {
+			if (!userID) return { error: "userID not found" };
+			const supabase = getSupabaseServer();
+
+			const { error } = await supabase.from("users").upsert(
+				{
+					id: userID,
+					name: (payload.name || "").trim() || null,
+					image: (payload.image || "").trim() || null,
+					created_at: new Date().toISOString(),
+				},
+				{ onConflict: "id" }
+			);
+
+			if (error) return { error: error.message };
+			return {};
+		} catch (err: unknown) {
+			return { error: err instanceof Error ? err.message : String(err) };
+		}
+	},
+
 	updateUser: async function (userID: string, data: object) {
 		try {
 			if (!userID) return { error: "userID not found" };
@@ -62,82 +129,71 @@ export const dbHelper = {
 
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
-			const { repo_name, service_name } = deployConfig;
-			if (!repo_name || !service_name) return { error: "repo_name and service_name are required" };
+			const { repoName, serviceName } = deployConfig;
+			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
 
 			const supabase = getSupabaseServer();
 
 			if (deployConfig.status === "stopped") {
 				await supabase.from("deployments").delete()
-					.eq("repo_name", repo_name)
-					.eq("service_name", service_name);
+					.eq("repo_name", repoName)
+					.eq("service_name", serviceName);
 				return { success: "Deployment stopped and deleted" };
 			}
 
-			// Columns we store at top level; rest goes into data jsonb
-			const {
-				id: _id,
-				repo_name: _rn,
-				service_name: _sn,
-				status,
-				first_deployment,
-				last_deployment,
-				revision,
-				scan_results,
-				...rest
-			} = deployConfig as DeployConfig & { ownerID?: string };
-			const dataJson = { ...rest } as Record<string, unknown>;
-
-
-			const { data: existing } = await supabase
+			// Check if deployment exists
+			const { data: existing, error: fetchError } = await supabase
 				.from("deployments")
-				.select("revision, data, status, scan_results")
-				.eq("repo_name", repo_name)
-				.eq("service_name", service_name)
+				.select("*")
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
 				.order("last_deployment", { ascending: false })
 				.limit(1)
 				.maybeSingle();
+
+			if (fetchError) return { error: fetchError.message };
+			
 			if (!existing) {
-				await supabase.from("deployments").insert({
+				// Create new deployment with provided data
+				const insertPayload: Record<string, unknown> = {
 					id: uuidv4(),
-					repo_name: repo_name,
-					service_name: service_name,
+					repo_name: repoName,
+					service_name: serviceName,
 					owner_id: userID,
-					// If the caller didn't provide a status (e.g. scan-only persistence),
-					// do not mark it as running.
-					status: deployConfig.status ?? "didnt_deploy",
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
-					data: dataJson,
-					scan_results: scan_results || null,
-				});
+					...deployConfigToRow(deployConfig),
+				};
+
+				const { error: insertError } = await supabase.from("deployments").insert(insertPayload);
+				if (insertError) return { error: insertError.message };
 				return { success: "New deployment created and added to user" };
 			}
 
-			const nextRevision = (existing.revision ?? 0) + 1;
-			const lastDeployment = new Date().toISOString();
-			const mergedData = { ...((existing.data as Record<string, unknown>) || {}), ...dataJson };
+			// Build update payload
+			const updatePayload: Record<string, unknown> = {
+				revision: (existing.revision ?? 0) + 1,
+				...deployConfigToRow(deployConfig),
+			};
 
-			// Preserve existing status/scan_results unless explicitly provided
-			const hasStatus = Object.prototype.hasOwnProperty.call(deployConfig, "status");
-			const nextStatus = hasStatus ? deployConfig.status ?? null : existing.status;
+			// Update last_deployment only if commitSha changes
+			if (deployConfig.commitSha !== existing.commit_sha) {
+				updatePayload.last_deployment = new Date().toISOString();
+			}
 
-			const hasScanResults = typeof scan_results !== "undefined";
-			const nextScanResults = hasScanResults ? (scan_results || null) : existing.scan_results;
+			// Update first_deployment only if status changes from didnt_deploy to running
+			if (existing.status === "didnt_deploy" && deployConfig.status === "running") {
+				updatePayload.first_deployment = new Date().toISOString();
+			}
 
-			await supabase
+			const { error: updateError } = await supabase
 				.from("deployments")
-				.update({
-					status: nextStatus,
-					last_deployment: lastDeployment,
-					revision: nextRevision,
-					data: mergedData,
-					scan_results: nextScanResults,
-				})
-				.eq("repo_name", repo_name)
-				.eq("service_name", service_name);
+				.update(updatePayload)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName);
 
+			if (updateError) return { error: updateError.message };
 			return { success: "Deployment data updated successfully" };
 		} catch (error) {
 			console.error("updateDeployments error:", error);
@@ -154,7 +210,7 @@ export const dbHelper = {
 
 	deleteDeployment: async function (repoName: string, serviceName: string, userID: string) {
 		try {
-			if (!repoName || !serviceName || !userID) return { error: "repo_name, service_name, and user ID are required" };
+			if (!repoName || !serviceName || !userID) return { error: "repoName, serviceName, and user ID are required" };
 
 			const supabase = getSupabaseServer();
 
@@ -192,7 +248,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getUserDeployments error:", error);
@@ -212,7 +268,7 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-			const deployments = (rows || []).map((row) => rowToDeployConfig(row as RowDeployment));
+		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getDeploymentsByRepo error:", error);
@@ -233,7 +289,7 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (error || !row) return { error: "Deployment not found" };
-			return { deployment: rowToDeployConfig(row as RowDeployment) };
+			return { deployment: rowToDeployConfig(row) };
 		} catch (error) {
 			console.error("getDeployment error:", error);
 			return { error: error instanceof Error ? error.message : String(error) };
@@ -242,12 +298,34 @@ export const dbHelper = {
 
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
 		const supabase = getSupabaseServer();
-		for (const repo of repoList) {
-			await supabase.from("user_repos").upsert(
-				{ user_id: userID, repo_name: repo.name, data: repo as unknown as Record<string, unknown> },
-				{ onConflict: "user_id,repo_name" }
-			);
-		}
+		
+		const rows = repoList.map(repo => ({
+			user_id: userID,
+			repo_name: repo.name,
+			id: repo.id,
+			full_name: repo.full_name,
+			repo_owner: repo.owner.login,
+			html_url: repo.html_url,
+			language: repo.language,
+			languages_url: repo.languages_url,
+			created_at: repo.created_at,
+			updated_at: repo.updated_at,
+			pushed_at: repo.pushed_at,
+			default_branch: repo.default_branch,
+			private: repo.private,
+			visibility: repo.visibility,
+			owner_login: repo.owner.login,
+			latest_commit: repo.latest_commit,
+			branches: repo.branches,
+			synced_at: new Date().toISOString(),
+			sync_error: null,
+		}));
+		
+		const { error } = await supabase
+			.from("user_repos")
+			.upsert(rows, { onConflict: "user_id,repo_name" });
+		
+		if (error) throw new Error(`Failed to sync repos: ${error.message}`);
 		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
 	},
 
@@ -256,11 +334,29 @@ export const dbHelper = {
 			const supabase = getSupabaseServer();
 			const { data: rows, error } = await supabase
 				.from("user_repos")
-				.select("data")
+				.select("*")
 				.eq("user_id", userID);
 
 			if (error) return { error: error.message };
-			const repos = (rows || []).map((r) => r.data as repoType);
+			
+			const repos = (rows || []).map((r) => ({
+				id: r.id,
+				name: r.repo_name,
+				full_name: r.full_name,
+				html_url: r.html_url,
+				language: r.language,
+				languages_url: r.languages_url,
+				created_at: r.created_at,
+				updated_at: r.updated_at,
+				pushed_at: r.pushed_at,
+				default_branch: r.default_branch,
+				private: r.private,
+				visibility: r.visibility,
+				owner: { login: r.owner_login },
+				latest_commit: r.latest_commit,
+				branches: r.branches || [],
+			})) as repoType[];
+			
 			return { repos };
 		} catch (error) {
 			return { error: error instanceof Error ? error.message : String(error) };
@@ -328,19 +424,25 @@ export const dbHelper = {
 		}
 	},
 
-	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string) {
+	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
 			if (!user) return { error: "User not found" };
 
-			const { data: rows, error } = await supabase
+			const safePage = Math.max(1, page);
+			const safeLimit = Math.max(1, limit);
+			const from = (safePage - 1) * safeLimit;
+			const to = from + safeLimit - 1;
+
+			const { data: rows, error, count } = await supabase
 				.from("deployment_history")
-				.select("*")
+				.select("*", { count: "exact" })
 				.eq("user_id", userID)
 				.eq("repo_name", repoName)
 				.eq("service_name", serviceName)
-				.order("timestamp", { ascending: false });
+				.order("timestamp", { ascending: false })
+				.range(from, to);
 
 			if (error) return { error };
 
@@ -358,24 +460,30 @@ export const dbHelper = {
 				durationMs: row.duration_ms as number | undefined,
 			}));
 
-			return { history };
+			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
 			console.error("getDeploymentHistory error:", error);
 			return { error };
 		}
 	},
 
-	getAllDeploymentHistory: async function (userID: string) {
+	getAllDeploymentHistory: async function (userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
 			if (!user) return { error: "User doesn't exist" };
 
-			const { data: rows, error } = await supabase
+			const safePage = Math.max(1, page);
+			const safeLimit = Math.max(1, limit);
+			const from = (safePage - 1) * safeLimit;
+			const to = from + safeLimit - 1;
+
+			const { data: rows, error, count } = await supabase
 				.from("deployment_history")
-				.select("*")
+				.select("*", { count: "exact" })
 				.eq("user_id", userID)
-				.order("timestamp", { ascending: false });
+				.order("timestamp", { ascending: false })
+				.range(from, to);
 
 			if (error) return { error };
 
@@ -393,46 +501,10 @@ export const dbHelper = {
 				durationMs: row.duration_ms as number | undefined,
 			}));
 
-			return { history };
+			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
 			console.error("getAllDeploymentHistory error:", error);
 			return { error };
-		}
-	},
-
-	/**
-	 * Patch only the JSON `data` column for the latest deployment row.
-	 * This avoids bumping revision/status when we add derived assets (screenshots, etc.).
-	 */
-	patchDeploymentData: async function (
-		repoName: string,
-		serviceName: string,
-		userID: string,
-		patch: Record<string, unknown>
-	) {
-		try {
-			const supabase = getSupabaseServer();
-			const { data: row, error: fetchError } = await supabase
-				.from("deployments")
-				.select("id, data")
-				.eq("owner_id", userID)
-				.eq("repo_name", repoName)
-				.eq("service_name", serviceName)
-				.order("last_deployment", { ascending: false })
-				.limit(1)
-				.maybeSingle();
-
-			if (fetchError) return { error: fetchError.message };
-			if (!row) return { error: "Deployment not found" };
-
-			const nextData = { ...(row.data as Record<string, unknown>), ...patch };
-			const { error: updateError } = await supabase.from("deployments").update({ data: nextData }).eq("id", row.id);
-
-			if (updateError) return { error: updateError.message };
-			return { success: true };
-		} catch (err: unknown) {
-			const message = err instanceof Error ? err.message : String(err);
-			return { error: message };
 		}
 	},
 
@@ -480,13 +552,13 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 			const records: RepoServicesRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
-				repo_url: r.repo_url as string,
-				branch: r.branch as string,
-				repo_owner: r.repo_owner as string,
-				repo_name: r.repo_name as string,
-				services: (r.services as DetectedServiceInfo[]) ?? [],
-				is_monorepo: (r.is_monorepo as boolean) ?? false,
-				updated_at: r.updated_at as string,
+			repo_url: r.repo_url as string,
+			branch: r.branch as string,
+			repo_owner: r.repo_owner as string,
+			repo_name: r.repo_name as string,
+			services: (r.services as DetectedServiceInfo[]) ?? [],
+			is_monorepo: (r.is_monorepo as boolean) ?? false,
+			updated_at: r.updated_at as string,
 			}));
 			return { records };
 		} catch (err) {

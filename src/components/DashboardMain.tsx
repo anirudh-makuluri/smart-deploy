@@ -10,11 +10,12 @@ import { countDeployedServicesForRepo, formatTimestamp } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import type { repoType } from "@/app/types";
+import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
+import { RepoServicesRecord } from "@/app/types";
 
 function normalizeUrl(url: string): string {
-	return url.replace(/\.git$/, "").toLowerCase().trim();
+	return url?.replace(/\.git$/, "").toLowerCase().trim();
 }
 
 type DashboardMainProps = {
@@ -31,7 +32,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
-	const repoCards = repoServices.map((record) => {
+	const repoCards = repoServices.map((record : RepoServicesRecord) => {
 		const repoUrlNorm = normalizeUrl(record.repo_url);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
@@ -62,10 +63,6 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		}
 		return base;
 	});
-
-	React.useEffect(() => {
-		void refreshRepoList();
-	}, [refreshRepoList]);
 
 	async function handleRefresh() {
 		setIsRefreshing(true);
@@ -101,21 +98,11 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		}
 		setIsLoadingRepo(true);
 		try {
-			const response = await fetch("/api/repos/public", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					owner: parsed.owner,
-					repo: parsed.repo,
-				}),
-			});
-			const data = await response.json();
-			if (!response.ok) {
-				toast.error(data.error || "Failed to fetch repository");
+			const repo = await addPublicRepo(parsed.owner, parsed.repo);
+			if (!repo) {
+				toast.error("Failed to fetch repository");
 				return;
 			}
-
-			const repo: repoType = data.repo;
 			setRepoUrl("");
 			setShowAddRepo(false);
 			setAppData([repo, ...repoList], deployments, isLoading, repoServices);

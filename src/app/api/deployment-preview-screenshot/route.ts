@@ -1,125 +1,135 @@
+/**
+ * POST /api/deployment-preview-screenshot
+ * 
+ * Generates a screenshot of a deployed application on-demand.
+ * Called from the frontend when user clicks "New Preview" button.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/authOptions";
-import { getSupabaseServer } from "@/lib/supabaseServer";
+import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { captureDeploymentScreenshotAndUpload } from "@/lib/deploymentScreenshot";
+import { getDeploymentDisplayUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const GATEWAY_HTTP_STATUSES = new Set([502, 503, 504]);
-
-function looksLikeGatewayErrorPage(bodyText: string): boolean {
-	const normalized = bodyText.toLowerCase();
-	return (
-		normalized.includes("bad gateway") ||
-		normalized.includes("gateway timeout") ||
-		normalized.includes("service unavailable") ||
-		normalized.includes("http error 502") ||
-		normalized.includes("http error 503") ||
-		normalized.includes("http error 504")
-	);
+interface RequestBody {
+	repoName: string;
+	serviceName: string;
+	force?: boolean;
 }
 
-async function isPreviewGatewayError(targetUrl: string): Promise<boolean> {
-	try {
-		const res = await fetch(targetUrl, {
-			method: "GET",
-			redirect: "follow",
-			cache: "no-store",
-			signal: AbortSignal.timeout(10000),
-		});
-
-		if (GATEWAY_HTTP_STATUSES.has(res.status)) return true;
-		if (!res.ok) return false;
-
-		const contentType = res.headers.get("content-type") || "";
-		if (!contentType.toLowerCase().includes("text/html")) return false;
-
-		const text = await res.text();
-		return looksLikeGatewayErrorPage(text);
-	} catch (err) {
-		console.warn("preview health probe failed before screenshot capture:", err);
-		return false;
-	}
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
+	const start = Date.now();
 	try {
 		const session = await getServerSession(authOptions);
-		const userID = session?.userID as string | undefined;
+		const userID = (session as { userID?: string })?.userID;
 		if (!userID) {
-			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+			return NextResponse.json(
+				{ error: "Unauthorized" },
+				{ status: 401 }
+			);
 		}
 
-		const body = await req.json();
-		const repoName = String(body?.repoName || "").trim();
-		const serviceName = String(body?.serviceName || "").trim();
-		const force = Boolean(body?.force);
+		const body: RequestBody = await request.json();
+		const { repoName, serviceName, force = false } = body;
 
 		if (!repoName || !serviceName) {
-			return NextResponse.json({ error: "repoName and serviceName are required" }, { status: 400 });
+			return NextResponse.json(
+				{ error: "Missing repoName or serviceName" },
+				{ status: 400 }
+			);
 		}
 
-		const supabase = getSupabaseServer();
-		const { data: row, error: fetchError } = await supabase
-			.from("deployments")
-			.select("id, data, status")
-			.eq("owner_id", userID)
-			.eq("repo_name", repoName)
-			.eq("service_name", serviceName)
-			.order("last_deployment", { ascending: false })
-			.limit(1)
-			.maybeSingle();
-
-		if (fetchError) {
-			return NextResponse.json({ error: fetchError.message }, { status: 500 });
-		}
-		if (!row) {
-			return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
+		// Fetch the deployment from database
+		const { deployments, error: fetchError } = await dbHelper.getDeploymentsByRepo(userID, repoName);
+		if (fetchError || !deployments) {
+			return NextResponse.json(
+				{ error: fetchError || "Failed to fetch deployment" },
+				{ status: 500 }
+			);
 		}
 
-		const data = (row.data || {}) as Record<string, unknown>;
-		const existingScreenshotUrl = String(data.screenshot_url || "").trim();
-		if (existingScreenshotUrl && !force) {
-			return NextResponse.json({ status: "success", screenshotUrl: existingScreenshotUrl });
+		// Find the specific service deployment
+		const deployment = deployments.find((d: any) => d.serviceName === serviceName);
+		if (!deployment) {
+			return NextResponse.json(
+				{ error: "Deployment not found" },
+				{ status: 404 }
+			);
 		}
 
-		const deployUrl = String(data.deployUrl || "").trim();
-		const customUrl = String(data.custom_url || "").trim();
-		const targetUrl = customUrl || deployUrl;
-		if (!targetUrl) {
-			return NextResponse.json({ error: "No live URL available for this deployment" }, { status: 400 });
+		// Determine the URL to screenshot
+		const displayUrl = getDeploymentDisplayUrl(deployment);
+		if (!displayUrl) {
+			return NextResponse.json(
+				{
+					status: "skipped",
+					error: "No live URL available for this deployment",
+				}
+			);
 		}
 
-		const gatewayErrorPreview = await isPreviewGatewayError(targetUrl);
-		if (gatewayErrorPreview) {
-			return NextResponse.json({
-				status: "skipped",
-				reason: "Preview URL is returning a gateway error page",
-			});
-		}
+		// Capture and upload screenshot
+		console.debug(
+			`[Screenshot] Starting capture for ${repoName}/${serviceName} at ${displayUrl}`
+		);
 
-		const screenshotPublicUrl = await captureDeploymentScreenshotAndUpload({
-			url: targetUrl,
+		const screenshotUrl = await captureDeploymentScreenshotAndUpload({
+			url: displayUrl,
 			ownerID: userID,
-			repoName,
-			serviceName,
+			repoName: repoName,
+			serviceName: serviceName,
 		});
 
-		const patch = await dbHelper.patchDeploymentData(repoName, serviceName, userID, {
-			screenshot_url: screenshotPublicUrl,
-		});
-		if ("error" in patch && patch.error) {
-			return NextResponse.json({ error: patch.error }, { status: 500 });
+		// Update deployment with new screenshot URL
+		const { error: updateError } = await dbHelper.updateDeployments(
+			{
+				...deployment,
+				screenshotUrl: screenshotUrl,
+			},
+			userID
+		);
+
+		if (updateError) {
+			console.error("Failed to update deployment with screenshot URL:", updateError);
+			// Still return success since screenshot was captured, just couldn't save it
+			// The frontend will refresh deployments anyway
 		}
 
-		return NextResponse.json({ status: "success", screenshotUrl: screenshotPublicUrl });
-	} catch (err: unknown) {
-		console.error("deployment-preview-screenshot error:", err);
-		const message = err instanceof Error ? err.message : String(err);
-		return NextResponse.json({ error: message }, { status: 500 });
+		console.debug(
+			`[Screenshot] Completed for ${repoName}/${serviceName} in ${Date.now() - start}ms`
+		);
+
+		return NextResponse.json({
+			status: "success",
+			screenshotUrl: screenshotUrl,
+		});
+	} catch (err) {
+		console.error("[Screenshot] Error:", err);
+		const errorMessage = err instanceof Error ? err.message : "Unknown error";
+
+		// Check if it's a gateway timeout or similar error (501, 502, 503, 504)
+		if (
+			errorMessage.includes("502") ||
+			errorMessage.includes("503") ||
+			errorMessage.includes("504") ||
+			errorMessage.includes("gateway") ||
+			errorMessage.includes("timeout")
+		) {
+			return NextResponse.json(
+				{
+					status: "skipped",
+					error: "Gateway error - screenshot service temporarily unavailable",
+				}
+			);
+		}
+
+		return NextResponse.json(
+			{ error: errorMessage || "Failed to generate screenshot" },
+			{ status: 500 }
+		);
 	}
 }
-

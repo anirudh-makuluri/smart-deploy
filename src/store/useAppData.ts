@@ -1,5 +1,12 @@
 import { DeployConfig, repoType, RepoServicesRecord, DetectedServiceInfo } from '@/app/types';
 import { create } from 'zustand';
+import {
+	fetchAppOverview,
+	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
+	fetchRepoServices,
+	refreshRepos,
+	updateDeployment as graphQLUpdateDeployment,
+} from '@/lib/graphqlClient';
 
 export type DetectedRepoCacheEntry = {
 	services: DetectedServiceInfo[];
@@ -17,8 +24,8 @@ const sortRepos = (list: repoType[]) =>
 
 const sortDeployments = (list: DeployConfig[]) =>
 	[...list].sort((a, b) => {
-		const dateA = a.last_deployment ? new Date(a.last_deployment).getTime() : 0;
-		const dateB = b.last_deployment ? new Date(b.last_deployment).getTime() : 0;
+		const dateA = a.lastDeployment ? new Date(a.lastDeployment).getTime() : 0;
+		const dateB = b.lastDeployment ? new Date(b.lastDeployment).getTime() : 0;
 		return dateB - dateA;
 	});
 
@@ -50,7 +57,7 @@ type AppState = {
 	getDetectedRepoCache: (repoUrl: string) => DetectedRepoCacheEntry | undefined;
 	/** Set cached detect-services result for a repo. */
 	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
-	updateDeploymentById: (deployment: Partial<DeployConfig> & { repo_name: string; service_name: string }) => Promise<void>;
+	updateDeploymentById: (deployment: Partial<DeployConfig> & { repoName: string; serviceName: string }) => Promise<void>;
 	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
 	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
@@ -93,19 +100,14 @@ export const useAppData = create<AppState>((set, get) => ({
 		if (hasFetched) return; // Already have data; avoid refetching on every navigation
 		set({ isLoading: true });
 		try {
-			const [res1, res2, res3] = await Promise.all([
-				fetch('/api/session').then((r) => r.json()),
-				fetch('/api/get-deployments').then((r) => r.json()),
-				fetch('/api/repos/services').then((r) => r.json()),
-			]);
-
-			let repoList: repoType[] = res1.repoList ?? [];
-			let deployments: DeployConfig[] = res2.deployments ?? [];
-			const repoServices: RepoServicesRecord[] = res3.services ?? [];
-			repoList = sortRepos(repoList);
-			deployments = sortDeployments(deployments);
-
-			set({ repoList, deployments, repoServices, isLoading: false, hasFetched: true });
+			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			set({
+				repoList: sortRepos(repoList),
+				deployments: sortDeployments(deployments),
+				repoServices: repoServices ?? [],
+				isLoading: false,
+				hasFetched: true,
+			});
 		} catch (err) {
 			console.error('API fetch failed', err);
 			set({ isLoading: false });
@@ -115,19 +117,14 @@ export const useAppData = create<AppState>((set, get) => ({
 	refetchAll: async () => {
 		set({ isLoading: true });
 		try {
-			const [res1, res2, res3] = await Promise.all([
-				fetch('/api/session').then((r) => r.json()),
-				fetch('/api/get-deployments').then((r) => r.json()),
-				fetch('/api/repos/services').then((r) => r.json()),
-			]);
-
-			let repoList: repoType[] = res1.repoList ?? [];
-			let deployments: DeployConfig[] = res2.deployments ?? [];
-			const repoServices: RepoServicesRecord[] = res3.services ?? [];
-			repoList = sortRepos(repoList);
-			deployments = sortDeployments(deployments);
-
-			set({ repoList, deployments, repoServices, isLoading: false, hasFetched: true });
+			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			set({
+				repoList: sortRepos(repoList),
+				deployments: sortDeployments(deployments),
+				repoServices: repoServices ?? [],
+				isLoading: false,
+				hasFetched: true,
+			});
 		} catch (err) {
 			console.error('Refetch failed', err);
 			set({ isLoading: false });
@@ -136,8 +133,8 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	refetchDeployments: async () => {
 		try {
-			const res = await fetch('/api/get-deployments').then((r) => r.json());
-			const list = res.deployments ?? [];
+			const { deployments } = await fetchAppOverview();
+			const list = deployments ?? [];
 			set({ deployments: sortDeployments(list) });
 		} catch (err) {
 			console.error('Refetch deployments failed', err);
@@ -146,12 +143,12 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	fetchRepoDeployments: async (repoName: string) => {
 		try {
-			const res = await fetch(`/api/get-repo-deployments?repoName=${encodeURIComponent(repoName)}`).then((r) => r.json());
-			const fetchedList: DeployConfig[] = res.deployments ?? [];
+			console.log(`Fetching deployments for ${repoName}...`);
+			const fetchedList = await fetchRepoDeploymentsGraphql(repoName);
 
 			// Upsert fetched deployments without erasing others in the store
 			set((state) => {
-				const otherDeployments = state.deployments.filter(d => d.repo_name !== repoName);
+				const otherDeployments = state.deployments.filter((d) => d.repoName !== repoName);
 				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
 			});
 		} catch (err) {
@@ -161,8 +158,8 @@ export const useAppData = create<AppState>((set, get) => ({
 
 	refetchRepoServices: async () => {
 		try {
-			const res = await fetch('/api/repos/services').then((r) => r.json());
-			set({ repoServices: res.services ?? [] });
+			const services = await fetchRepoServices();
+			set({ repoServices: services ?? [] });
 		} catch (err) {
 			console.error('Refetch repo services failed', err);
 		}
@@ -180,21 +177,17 @@ export const useAppData = create<AppState>((set, get) => ({
 		}));
 	},
 
-	updateDeploymentById: async (partial: Partial<DeployConfig> & { repo_name: string; service_name: string }) => {
-		const response = await fetch('/api/update-deployments', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(partial),
-		}).then((res) => res.json());
-
-		if (response.status === 'error') {
-			console.log(response.message);
+	updateDeploymentById: async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
+		try {
+			await graphQLUpdateDeployment(partial as DeployConfig);
+		} catch (err) {
+			console.log((err as Error).message);
 			return;
 		}
 
 		const deployments = get().deployments;
 		const matchKey = (dep: DeployConfig) =>
-			dep.repo_name === partial.repo_name && dep.service_name === partial.service_name;
+			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existing = deployments.find(matchKey);
 		const merged: DeployConfig = {
@@ -218,7 +211,7 @@ export const useAppData = create<AppState>((set, get) => ({
 	removeDeployment: (repoName: string, serviceName: string) => {
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => !(dep.repo_name === repoName && dep.service_name === serviceName))
+				state.deployments.filter((dep) => !(dep.repoName === repoName && dep.serviceName === serviceName))
 			),
 		}));
 	},
@@ -227,19 +220,20 @@ export const useAppData = create<AppState>((set, get) => ({
 		if (keys.length === 0) return;
 		set((state) => ({
 			deployments: sortDeployments(
-				state.deployments.filter((dep) => !keys.some((k) => k.repoName === dep.repo_name && k.serviceName === dep.service_name))
+				state.deployments.filter((dep) => !keys.some((k) => k.repoName === dep.repoName && k.serviceName === dep.serviceName))
 			),
 		}));
 	},
 
 	refreshRepoList: async () => {
-		const response = await fetch('/api/repos/refresh', { method: 'GET' }).then((res) =>
-			res.json()
-		);
-		if (response.status === 'success' && response.repoList) {
-			set({ repoList: sortRepos(response.repoList) });
+		try {
+			const repoList = await refreshRepos();
+			set({ repoList: sortRepos(repoList) });
+			return { status: 'success', message: 'Repos refreshed' };
+		} catch (err) {
+			console.error('Refresh repo list failed', err);
+			return { status: 'error', message: (err as Error).message };
 		}
-		return { status: response.status ?? 'error', message: response.message ?? '' };
 	},
 	setActiveRepo: (repo) => set({ activeRepo: repo }),
 	setActiveServiceName: (name) => set({ activeServiceName: name }),

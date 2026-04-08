@@ -88,16 +88,21 @@ export default function RepoServicesList({
 							resolvedRepo.name
 						);
 						const status = deployment?.status;
-						const hasStoredLiveUrl = Boolean(deployment?.deployUrl || deployment?.custom_url);
-						// Never show "Online" based on "running" alone; require an actual stored live URL.
-						const effectiveStatus =
-							status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (status ?? "didnt_deploy");
-						const isOnline = effectiveStatus === "running";
-						const isDraft = effectiveStatus === "didnt_deploy" || !deployment;
+						const isOnline = status === "running";
+						const isDraft = deployment && status !== "running" && status !== "failed";
+						const hasNoDeployment = !deployment;
 						const isFailed = status === "failed";
+						const liveUrl = deployment?.liveUrl;
 
 						const handleCardClick = () => {
 							openWorkspaceForService(svc);
+						};
+
+						const handleLiveUrlClick = (e: React.MouseEvent) => {
+							e.stopPropagation();
+							if (liveUrl) {
+								window.open(liveUrl, "_blank");
+							}
 						};
 
 						return (
@@ -114,27 +119,42 @@ export default function RepoServicesList({
 										@{repoName}/{svc.name}
 									</span>
 								</div>
-								<div className="mt-3 flex items-center gap-2">
-									{isDraft && (
-										<span className="text-sm text-muted-foreground">
-											Draft (Not deployed)
-										</span>
-									)}
-									{isFailed && (
-										<>
-											<span className="text-sm text-destructive flex items-center gap-1">
-												Failed
+								<div className="mt-3 flex flex-col gap-2">
+									<div className="flex items-center gap-2">
+										{isDraft && (
+											<span className="text-sm text-muted-foreground">
+												Draft (Not Deployed)
 											</span>
-											<span className="flex items-center gap-0.5 text-destructive/80">
-												<AlertTriangle className="size-4" />
+										)}
+										{hasNoDeployment && (
+											<span className="text-sm text-muted-foreground">
+												Not Deployed
 											</span>
-										</>
-									)}
-									{isOnline && (
-										<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
-											<span className="size-2 rounded-full bg-green-500" />
-											Online
-										</span>
+										)}
+										{isFailed && (
+											<>
+												<span className="text-sm text-destructive flex items-center gap-1">
+													Failed
+												</span>
+												<span className="flex items-center gap-0.5 text-destructive/80">
+													<AlertTriangle className="size-4" />
+												</span>
+											</>
+										)}
+										{isOnline && (
+											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+												<span className="size-2 rounded-full bg-green-500" />
+												Online
+											</span>
+										)}
+									</div>
+									{liveUrl && isOnline && (
+										<button
+											onClick={handleLiveUrlClick}
+											className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
+										>
+											{liveUrl}
+										</button>
 									)}
 								</div>
 							</button>

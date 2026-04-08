@@ -33,6 +33,7 @@ export default function RootLayout({
 		<html lang="en" className="dark" data-accent="blue">
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} landing-bg text-foreground antialiased`}
+				suppressHydrationWarning
 			>
 				<Providers>
 					<AccentSync />

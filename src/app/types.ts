@@ -3,22 +3,14 @@ export type repoType = {
 	name: string;
 	full_name: string;
 	html_url: string;
-	language: string;
+	language: string | null;
 	languages_url: string;
 	created_at: string;
 	updated_at: string;
 	pushed_at: string;
 	default_branch: string;
 	private: boolean;
-	description: string | null;
 	visibility: 'public' | 'private' | 'internal';
-	license: {
-		spdx_id: string;
-	} | null;
-
-	forks_count: number;
-	watchers_count: number;
-	open_issues_count: number;
 	owner: {
 		login: string;
 	};
@@ -41,11 +33,11 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type DeploymentTarget = 'ec2' | 'cloud-run';
+export type DeploymentTarget = 'ec2' | 'cloud_run';
 
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
-export type EC2DeployDetails = {
+export type EC2Details = {
 	success: boolean;
 	baseUrl: string;
 	instanceId: string;
@@ -54,44 +46,52 @@ export type EC2DeployDetails = {
 	subnetId: string;
 	securityGroupId: string;
 	amiId: string;
-	sharedAlbDns?: string;
+	sharedAlbDns: string;
+	instanceType: string;
 };
 
-export type CloudRunDeployDetails = {
-	// Expand with service name, region, etc. when needed
+export type CloudRunDetails = {
+	serviceId: string;
+	region: string;
+	projectId: string;
 };
 
 // ── Main deployment config ──
 
 export type DeployConfig = {
 	id: string;
-	repo_name: string;
+	repoName: string;
 	url: string;
 	branch: string;
-	commitSha?: string;
-	env_vars?: string;
-	deployUrl?: string;
-	custom_url?: string;
-	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage). */
-	screenshot_url?: string;
-	service_name: string;
-	status?: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
-	first_deployment?: string;
-	last_deployment?: string;
-	revision?: number;
-	token_usage?: {
-		input_tokens: number;
-		output_tokens: number;
-		total_tokens: number;
-	};
-	cloudProvider?: CloudProvider;
-	deploymentTarget?: DeploymentTarget;
-	awsRegion?: string;
-	/** EC2 instance type for new instances (e.g. t3.small). Defaults to t3.micro. */
-	awsEc2InstanceType?: string;
-	ec2?: EC2DeployDetails;
-	cloudRun?: CloudRunDeployDetails;
-	scan_results?: SDArtifactsResponse;
+	/** Commit SHA that was deployed; null if never deployed */
+	commitSha: string | null;
+	/** Environment variables as JSON string (optional for deployment) */
+	envVars: string | null;
+	/** Live deployment URL (either auto-deployed or custom); null if didnt_deploy */
+	liveUrl: string | null;
+	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage); null if didnt_deploy */
+	screenshotUrl: string | null;
+	serviceName: string;
+	/** Deployment status */
+	status: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
+	/** ISO timestamp when first deployed; null if never deployed */
+	firstDeployment: string | null;
+	/** ISO timestamp of most recent deployment; null if never deployed */
+	lastDeployment: string | null;
+	/** Deployment revision counter; increments after each successful deploy */
+	revision: number | null;
+	/** Cloud provider (defaults to 'aws') */
+	cloudProvider: CloudProvider;
+	/** Deployment target (defaults to 'ec2' for AWS) */
+	deploymentTarget: DeploymentTarget;
+	/** AWS region (defaults to value from config) */
+	awsRegion: string;
+	/** AWS EC2 deployment details (null if not deployed to EC2 or status === didnt_deploy) */
+	ec2: EC2Details | null;
+	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
+	cloudRun: CloudRunDetails | null;
+	/** Analysis/scan results from detectServices */
+	scanResults: SDArtifactsResponse | {};
 }
 
 export type DeployStep = {
@@ -116,7 +116,7 @@ export type DeployStep = {
 
 
 
-/** Service info detected by /api/repos/detect-services and persisted in repo_services. */
+/** Service info detected via GraphQL detectServices and persisted in repo_services. */
 export type DetectedServiceInfo = {
 	name: string;
 	path: string;

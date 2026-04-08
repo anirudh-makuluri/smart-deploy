@@ -25,9 +25,12 @@ export async function DELETE(req: Request) {
 
 	try {
 		console.log("Deleting cache for", repo_url, commit_sha || "(all)");
-		const response = await fetch("http://localhost:8080/cache", {
+		const response = await fetch(`${process.env.SD_API_BASE_URL}/cache`, {
 			method: "DELETE",
-			headers: { "Content-Type": "application/json" },
+			headers: {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
+			},
 			body: JSON.stringify({ repo_url, commit_sha })
 		});
 
