@@ -1,16 +1,16 @@
 # SmartDeploy
 
-A DevOps dashboard built with Next.js. Connect your GitHub account, scan a repository, configure build settings and environment variables, and deploy to **AWS EC2** or **Google Cloud Run** — all from a single UI with real-time streaming logs.
+A deployment workspace built with Next.js. Connect a GitHub repo, generate a release blueprint, and ship with live logs and rollout visibility in one place.
 
 ---
 
 ## Features
 
 - **GitHub sign-in** — OAuth via NextAuth; your token is used to clone private repos.
-- **AI-powered repo scan** — Gemini (or a local LLM) analyses the repo and suggests a Dockerfile, build commands, and stack info.
+- **Release blueprinting** — Gemini (or a local LLM) analyses the repo and suggests a Dockerfile, build commands, and stack info.
+- **Live deploy visibility** — A WebSocket worker runs the pipeline and streams every step to the browser.
 - **AWS EC2 deploys** — Provisions an instance, builds a Docker image (locally or via CodeBuild + ECR), runs the container, and optionally wires up an ALB with HTTPS and custom-domain routing.
 - **Google Cloud Run deploys** — Builds via Cloud Build and deploys to Cloud Run, with multi-service support.
-- **Live deploy logs** — A WebSocket worker runs the pipeline and streams every step to the browser.
 - **Deployment management** — Start, stop, and delete deployments from the dashboard.
 - **Custom domains** — Visit links use `https://{service}.{your-domain}`; optional Vercel DNS integration creates CNAME records automatically.
 
