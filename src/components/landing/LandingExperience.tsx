@@ -10,7 +10,6 @@ import {
 	ExternalLink,
 	Github,
 	ImageOff,
-	Layers3,
 	type LucideIcon,
 	Rocket,
 	ScanSearch,
@@ -55,23 +54,23 @@ type ProductMetric = {
 const productPillars: ProductPillar[] = [
 	{
 		eyebrow: "Repo Intelligence",
-		title: "Understand services, runtimes, and deployment shape automatically.",
+		title: "Map services, runtimes, and deployment shape automatically.",
 		description:
-			"SmartDeploy turns a raw repository into a readable deployment surface by detecting services, runtimes, branch state, and the pieces that need to ship together.",
+			"SmartDeploy turns a raw repository into a deploy-ready surface by detecting services, runtimes, branch state, and what has to ship together.",
 		icon: Github,
 	},
 	{
 		eyebrow: "Decision Support",
-		title: "Surface the constraints that usually show up too late.",
+		title: "Surface release blockers before rollout starts.",
 		description:
-			"Blueprints, runtime checks, and dependency signals give engineers the technical context to choose the right release path before they start provisioning.",
+			"Blueprints, runtime checks, and dependency signals help engineers pick the right release path before provisioning anything.",
 		icon: ScanSearch,
 	},
 	{
 		eyebrow: "Operational Visibility",
-		title: "Keep rollout state, logs, and preview tied to the release.",
+		title: "Keep rollout state, logs, and preview in one live view.",
 		description:
-			"Build output, runtime feedback, and the live application remain connected in one place so validation happens with context instead of tab switching.",
+			"Build output, runtime feedback, and the live app stay connected so validation happens with context, not tab switching.",
 		icon: SquareTerminal,
 	},
 ];
@@ -467,6 +466,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
 						<Link href="#capabilities" className="transition-colors hover:text-foreground">Capabilities</Link>
 						<Link href="#workflow" className="transition-colors hover:text-foreground">Workflow</Link>
+						<Link href="/docs" className="transition-colors hover:text-foreground">Docs</Link>
+						<Link href="/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
 						<Link href="#product" className="hidden transition-colors hover:text-foreground">Product</Link>
 					</nav>
 					<div className="flex items-center gap-3">
@@ -495,13 +496,13 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 								className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem] lg:leading-[0.95]"
 								variants={heroItemVariants}
 							>
-								Turn a GitHub repo into a deployable application.
+								Ship from GitHub to production in one focused workflow.
 							</motion.h1>
 							<motion.p
 								className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg"
 								variants={heroItemVariants}
 							>
-								Connect a repo, let Smart Analysis map the runtime and service layout, then deploy with logs, status, and preview still in view.
+								Connect a repo, let Smart Analysis map runtime and service layout, then deploy with logs, status, and preview still in frame.
 							</motion.p>
 							<motion.div className="mt-7 flex flex-wrap gap-3" variants={heroItemVariants}>
 								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.9)]">
@@ -548,8 +549,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<div className="mx-auto max-w-7xl">
 						<SectionIntro
 							eyebrow="Capabilities"
-							title="Built around the hard parts of deployment work."
-							description="These are the platform capabilities SmartDeploy brings to every project: repository intelligence, better release decisions, and operational visibility once code is moving."
+							title="Built for the hard parts of shipping."
+							description="SmartDeploy focuses on the real bottlenecks: repository intelligence, better release decisions, and live operational visibility once code is moving."
 							align="center"
 						/>
 
@@ -596,8 +597,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<div className="mx-auto max-w-7xl">
 						<SectionIntro
 							eyebrow="Workflow"
-							title="Four steps from source code to production."
-							description="Once those capabilities are in place, the day-to-day workflow stays simple: connect the repo, generate the blueprint, deploy with context, and validate the release."
+							title="Four steps from code to live release."
+							description="The day-to-day flow stays simple: connect the repo, generate the blueprint, deploy with context, and validate the rollout."
 						/>
 
 						<div className="mt-14">
@@ -663,13 +664,24 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<div>
 						<SmartDeployLogo href="/" className="mb-3" />
 						<p className="max-w-xl text-sm text-muted-foreground">
-							SmartDeploy gives developers a repo-first path to analyze, deploy, and verify applications from one workspace.
+							SmartDeploy gives teams a repo-first path to analyze, deploy, and verify applications from one workspace.
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
 						<Link href="#capabilities" className="transition-colors hover:text-foreground">Capabilities</Link>
 						<Link href="#workflow" className="transition-colors hover:text-foreground">Workflow</Link>
+						<Link href="/docs" className="transition-colors hover:text-foreground">Docs</Link>
+						<Link href="/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
 						<Link href={primaryHref} className="transition-colors hover:text-foreground">Open SmartDeploy</Link>
+						<a
+							href="https://github.com/anirudh-makuluri/smart-deploy"
+							target="_blank"
+							rel="noreferrer"
+							className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-foreground transition-all hover:border-primary/40 hover:shadow-sm"
+						>
+							<Github className="size-4" />
+							<span>GitHub</span>
+						</a>
 					</div>
 				</div>
 			</footer>

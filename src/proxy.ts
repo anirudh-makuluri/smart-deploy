@@ -7,12 +7,13 @@ export async function proxy(req : NextRequest) {
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
 	const isLanding = req.nextUrl.pathname === "/"
+	const isDocsPage = req.nextUrl.pathname === "/docs"
+	const isChangelogPage = req.nextUrl.pathname === "/changelog"
 	const isWaitingList = req.nextUrl.pathname === "/waiting-list"
-	const isAuthError = req.nextUrl.pathname === "/api/auth/error"
 	const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth")
 
-	// Allow unauthenticated access to landing (/), auth, waiting list, and auth API routes
-	if (!token && !isAuthPage && !isLanding && !isWaitingList && !isAuthApi) {
+	// Allow unauthenticated access to public pages and auth API routes.
+	if (!token && !isAuthPage && !isLanding && !isDocsPage && !isChangelogPage && !isWaitingList && !isAuthApi) {
 		return NextResponse.redirect(new URL("/auth", req.url))
 	}
 

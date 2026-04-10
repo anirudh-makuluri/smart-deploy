@@ -226,11 +226,15 @@ button {
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
+    overflow-x: clip;
   }
 }
 
 .landing-bg {
   background-color: var(--background);
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .landing-hero-bg {
