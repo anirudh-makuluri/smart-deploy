@@ -74,6 +74,27 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 	};
 }
 
+function normalizeRepoIdentifier(value: string): string {
+	return value
+		.trim()
+		.replace(/\.git$/, "")
+		.replace(/^https?:\/\//, "")
+		.replace(/^github\.com\//, "")
+		.replace(/\/$/, "")
+		.toLowerCase();
+}
+
+function matchesRepoIdentifier(row: Record<string, unknown>, repoIdentifier: string): boolean {
+	const target = normalizeRepoIdentifier(repoIdentifier);
+	if (!target) return false;
+
+	const rowUrl = normalizeRepoIdentifier(String(row.url ?? ""));
+	const rowRepoName = normalizeRepoIdentifier(String(row.repo_name ?? ""));
+	const rowUrlTail = rowUrl.split("/").slice(-2).join("/");
+
+	return rowUrl === target || rowRepoName === target || rowUrlTail === target;
+}
+
 export const dbHelper = {
 	upsertUser: async function (
 		userID: string,
@@ -256,19 +277,20 @@ export const dbHelper = {
 		}
 	},
 
-	getDeploymentsByRepo: async function (userID: string, repoName: string) {
+	getDeploymentsByRepo: async function (userID: string, repoIdentifier: string) {
 		try {
 			const supabase = getSupabaseServer();
 
 			const { data: rows, error } = await supabase
 				.from("deployments")
 				.select("*")
-				.eq("owner_id", userID)
-				.eq("repo_name", repoName);
+				.eq("owner_id", userID);
 
 			if (error) return { error: error.message };
 
-		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			const deployments = (rows || [])
+				.filter((row: Record<string, unknown>) => matchesRepoIdentifier(row, repoIdentifier))
+				.map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getDeploymentsByRepo error:", error);

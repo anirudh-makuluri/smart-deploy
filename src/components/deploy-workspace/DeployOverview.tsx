@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { ExternalLink, Link2, RefreshCw, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeployConfig, EC2Details, repoType } from "@/app/types";
@@ -199,9 +200,11 @@ export default function DeployOverview({
 						</div>
 						{screenshotUrl ? (
 							<div className="relative h-80 md:h-96">
-								<img
+								<Image
 									src={screenshotUrl}
 									alt={`Screenshot of ${deployment.serviceName}`}
+									fill
+									unoptimized
 									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
 								/>
 							</div>

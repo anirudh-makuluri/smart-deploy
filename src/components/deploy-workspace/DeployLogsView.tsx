@@ -255,6 +255,7 @@ export default function DeployLogsView({
 
 			<div ref={logsContainerRef} className="min-h-0 flex-1 rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
 			<ServiceLogs
+				key={`${repoNameForLogs ?? ""}:${serviceNameForLogs ?? ""}`}
 				{...((
 					{
 						logs: logsToRender,

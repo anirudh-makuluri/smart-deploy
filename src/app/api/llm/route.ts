@@ -15,7 +15,8 @@ export async function POST(req: Request) {
 	}
 
 	const body = await req.json();
-	let { full_name, branch, include_extra_info, target_workdir } = body;
+	const { full_name, branch, target_workdir } = body;
+	let { include_extra_info } = body;
 
 	if (include_extra_info === undefined) include_extra_info = false;
 
@@ -25,12 +26,12 @@ export async function POST(req: Request) {
 	try {
 		const text = await callLLMWithFallback(prompt);
 		return NextResponse.json({ response: text, filePaths, fileContents });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		console.error("LLM error (Gemini and local fallback failed):", error);
 		return NextResponse.json(
 			{
 				error: "LLM request failed",
-				details: error?.message || "Unknown error",
+				details: error instanceof Error ? error.message : "Unknown error",
 			},
 			{ status: 502 }
 		);

@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Circle, Loader2, XCircle, Terminal, RefreshCw } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, XCircle, RefreshCw } from "lucide-react";
 import { SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,12 +34,16 @@ export default function FeedbackProgress({ payload, onComplete, onCancel }: Feed
 	const [progress, setProgress] = useState(0);
 	const logsEndRef = useRef<HTMLDivElement>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
+	const activeNodeRef = useRef(activeNode);
+	const onCompleteRef = useRef(onComplete);
 
 	useEffect(() => {
-		if (logsEndRef.current) {
-			logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-		}
-	}, [logs]);
+		activeNodeRef.current = activeNode;
+	}, [activeNode]);
+
+	useEffect(() => {
+		onCompleteRef.current = onComplete;
+	}, [onComplete]);
 
 	useEffect(() => {
 		abortControllerRef.current = new AbortController();
@@ -72,6 +76,9 @@ export default function FeedbackProgress({ payload, onComplete, onCancel }: Feed
 
 				const appendLog = (msg: string) => {
 					setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+					window.requestAnimationFrame(() => {
+						logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+					});
 				};
 
 				appendLog("info: feedback workflow started");
@@ -112,11 +119,11 @@ export default function FeedbackProgress({ payload, onComplete, onCancel }: Feed
 							} else if (eventType === "complete") {
 								appendLog("event: feedback complete");
 								setProgress(100);
-								onComplete(data as SDArtifactsResponse);
+								onCompleteRef.current(data as SDArtifactsResponse);
 							} else if (eventType === "error") {
 								const errorMsg = data.detail || data.message || "Unknown error";
 								appendLog(`error: ${errorMsg}`);
-								setFailedNode(activeNode);
+								setFailedNode(activeNodeRef.current);
 							}
 						} catch (e) {
 							console.error("Failed to parse SSE JSON data", e, dataStr);

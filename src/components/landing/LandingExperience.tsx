@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
 	ArrowRight,
 	CheckCircle2,
@@ -226,46 +227,9 @@ function SectionIntro({
 }
 
 function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
-	const [displayValue, setDisplayValue] = useState(0);
-	const prefersReducedMotion = useReducedMotion();
-	const ref = React.useRef<HTMLSpanElement | null>(null);
-	const hasAnimatedRef = React.useRef(false);
-	const inView = useInView(ref, { once: true, amount: 0.6 });
-
-	useEffect(() => {
-		if (!inView || prefersReducedMotion || hasAnimatedRef.current) {
-			return;
-		}
-		hasAnimatedRef.current = true;
-
-		const duration = 900;
-		const start = performance.now();
-
-		const frame = (timestamp: number) => {
-			const progress = Math.min((timestamp - start) / duration, 1);
-			const eased = 1 - (1 - progress) * (1 - progress);
-			setDisplayValue(Math.round(value * eased));
-
-			if (progress < 1) {
-				window.requestAnimationFrame(frame);
-			}
-		};
-
-		window.requestAnimationFrame(frame);
-	}, [inView, prefersReducedMotion, value]);
-
-	if (prefersReducedMotion) {
-		return (
-			<span ref={ref}>
-				{value}
-				{suffix}
-			</span>
-		);
-	}
-
 	return (
-		<span ref={ref}>
-			{displayValue}
+		<span>
+			{value}
 			{suffix}
 		</span>
 	);
@@ -289,13 +253,16 @@ function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 	}
 
 	return (
-		<img
-			src={src}
-			alt={alt}
-			onError={() => setFailed(true)}
-			className="w-full rounded-[20px] border border-border/40 object-cover"
-			loading="lazy"
-		/>
+		<div className="relative overflow-hidden rounded-[20px] border border-border/40">
+			<Image
+				src={src}
+				alt={alt}
+				width={1600}
+				height={1000}
+				onError={() => setFailed(true)}
+				className="w-full object-cover"
+			/>
+		</div>
 	);
 }
 

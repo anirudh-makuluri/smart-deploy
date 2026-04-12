@@ -33,10 +33,10 @@ export async function GET(req: NextRequest) {
 		const response = await executeGraphQLOperation(
 			"serviceLogs",
 			{ repoName, serviceName, limit },
-			session as any
-		);
+			session as { userID?: string; accessToken?: string } | null
+		) as { serviceLogs?: { logs?: unknown[] } };
 
-		const logs = (response?.serviceLogs as any)?.logs ?? [];
+		const logs = response.serviceLogs?.logs ?? [];
 		return NextResponse.json({ logs });
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);

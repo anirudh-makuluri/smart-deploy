@@ -5,12 +5,6 @@ import { SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-type StreamEvent = {
-	node: string;
-	status: "started" | "completed" | "error";
-	message?: string;
-};
-
 type ScanProgressProps = {
 	repoFullName: string;
 	/** Repo-relative package root for this service (monorepo); forwarded as package_path. */
@@ -37,12 +31,16 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 	const [progress, setProgress] = useState(0);
 	const logsEndRef = useRef<HTMLDivElement>(null);
 	const abortControllerRef = useRef<AbortController | null>(null);
+	const activeNodeRef = useRef(activeNode);
+	const onCompleteRef = useRef(onComplete);
 
 	useEffect(() => {
-		if (logsEndRef.current) {
-			logsEndRef.current.scrollIntoView({ behavior: "smooth" });
-		}
-	}, [logs]);
+		activeNodeRef.current = activeNode;
+	}, [activeNode]);
+
+	useEffect(() => {
+		onCompleteRef.current = onComplete;
+	}, [onComplete]);
 
 	useEffect(() => {
 		abortControllerRef.current = new AbortController();
@@ -73,6 +71,9 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 
 				const appendLog = (msg: string) => {
 					setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+					window.requestAnimationFrame(() => {
+						logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+					});
 				};
 
 				appendLog("info: initialized langgraph workflow engine");
@@ -120,12 +121,12 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 							} else if (eventType === "complete") {
 								appendLog("event: analysis complete");
 								setProgress(100);
-								onComplete(data);
+								onCompleteRef.current(data);
 							} else if (eventType === "error") {
 								const errorMsg = data.detail || data.message || "Unknown error";
 								console.error("SSE Error event received:", errorMsg);
 								appendLog(`error: ${errorMsg}`);
-								setFailedNode(activeNode);
+								setFailedNode(activeNodeRef.current);
 							}
 						} catch (e) {
 							console.error("Failed to parse SSE JSON data", e, dataStr);
@@ -162,10 +163,11 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 						break;
 					}
 				}
-			} catch (error: any) {
-				if (error.name !== "AbortError") {
+			} catch (error: unknown) {
+				if (!(error instanceof Error) || error.name !== "AbortError") {
 					console.error("Stream error:", error);
-					setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] error: ${error.message}`]);
+					const message = error instanceof Error ? error.message : String(error);
+					setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] error: ${message}`]);
 				}
 			}
 		};
@@ -195,11 +197,10 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 				<div className="w-full lg:w-1/3 flex flex-col gap-4">
 					<h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Workflow Chain</h3>
 					<div className="flex flex-col gap-3">
-						{NODES.map((node, i) => {
+						{NODES.map((node) => {
 							const isCompleted = completedNodes.includes(node.id);
 							const isActive = activeNode === node.id && !isCompleted && !failedNode;
 							const isFailed = failedNode === node.id;
-							const isPending = !isCompleted && !isActive && !isFailed;
 
 							return (
 								<Card key={node.id} className={`p-4 border transition-all duration-300 ${isActive ? 'border-primary/50 shadow-[0_0_15px_rgba(var(--primary),0.1)] bg-card/80' :

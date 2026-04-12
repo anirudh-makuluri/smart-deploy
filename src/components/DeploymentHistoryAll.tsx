@@ -14,6 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, GitBranch, GitCommit, History, Loader2 } from "lucide-react";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
+import { useQuery } from "@tanstack/react-query";
 
 type DeploymentHistoryAllEntry = {
 	id: string;
@@ -30,24 +31,18 @@ type DeploymentHistoryAllEntry = {
 };
 
 export default function DeploymentHistoryAll() {
-	const [history, setHistory] = React.useState<DeploymentHistoryAllEntry[]>([]);
-	const [loading, setLoading] = React.useState(true);
-	const [error, setError] = React.useState<string | null>(null);
 	const [page, setPage] = React.useState(1);
-	const [total, setTotal] = React.useState(0);
 	const limit = 10;
 
-	React.useEffect(() => {
-		setLoading(true);
-		setError(null);
-		fetchDeploymentHistoryAllPage(page, limit)
-			.then((data) => {
-				setHistory(data.history as DeploymentHistoryAllEntry[]);
-				setTotal(data.total ?? 0);
-			})
-			.catch((err) => setError(err?.message || "Failed to load history"))
-			.finally(() => setLoading(false));
-	}, [page]);
+	const historyQuery = useQuery({
+		queryKey: ["deployment-history-all", page, limit],
+		queryFn: async () => fetchDeploymentHistoryAllPage(page, limit),
+	});
+
+	const history = (historyQuery.data?.history ?? []) as DeploymentHistoryAllEntry[];
+	const total = historyQuery.data?.total ?? 0;
+	const loading = historyQuery.isLoading;
+	const error = historyQuery.error ? (historyQuery.error as Error).message || "Failed to load history" : null;
 
 	if (loading) {
 		return (

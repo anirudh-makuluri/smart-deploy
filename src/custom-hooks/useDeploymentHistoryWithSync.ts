@@ -3,11 +3,13 @@
  * Manages deployment history fetching and refetching on deploy complete
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
+import { useQuery } from "@tanstack/react-query";
+import type { DeploymentHistoryEntry } from "@/app/types";
 
 interface DeploymentHistoryState {
-	history: unknown[];
+	history: DeploymentHistoryEntry[];
 	total: number;
 }
 
@@ -22,56 +24,30 @@ export function useDeploymentHistoryWithSync({
 	serviceName,
 	deployStatus,
 }: UseDeploymentHistoryWithSyncProps) {
-	const [history, setHistory] = useState<DeploymentHistoryState | null>(null);
-	const [isLoading, setIsLoading] = useState(false);
-	const prevDeployStatusRef = useRef<typeof deployStatus>("not-started");
-
-	const fetchHistory = useCallback(async () => {
-		if (!repoName || !serviceName) return;
-		setIsLoading(true);
-		try {
-			const data = await fetchDeploymentHistoryPage(repoName, serviceName, 1, 10);
-			setHistory({
-				history: data.history,
-				total: data.total ?? data.history.length,
-			});
-			console.debug(`[History] Fetched ${data.history.length} entries for ${repoName}/${serviceName}`);
-		} catch (err) {
-			console.error("Failed to fetch deployment history:", err);
-		} finally {
-			setIsLoading(false);
+	const fetchHistory = useCallback(async (): Promise<DeploymentHistoryState> => {
+		if (!repoName || !serviceName) {
+			throw new Error("Missing repository context for deployment history");
 		}
+		const data = await fetchDeploymentHistoryPage(repoName, serviceName, 1, 10);
+		console.debug(`[History] Fetched ${data.history.length} entries for ${repoName}/${serviceName}`);
+		return {
+			history: data.history as DeploymentHistoryEntry[],
+			total: data.total ?? data.history.length,
+		};
 	}, [repoName, serviceName]);
 
-	// Auto-fetch on mount or when repo/service changes
-	useEffect(() => {
-		setHistory(null);
-		prevDeployStatusRef.current = "not-started";
-	}, [repoName, serviceName]);
+	const deployRefreshBucket = deployStatus === "success" || deployStatus === "error" ? "post-deploy" : "normal";
 
-	// Re-fetch when deployment completes
-	useEffect(() => {
-		const prevStatus = prevDeployStatusRef.current;
-		const deployFinished =
-			prevStatus === "running" &&
-			(deployStatus === "success" || deployStatus === "error");
-
-		if (!history) {
-			// First time - fetch
-			void fetchHistory();
-		} else if (deployFinished) {
-			// Deployment just completed - refetch
-			console.debug("[History] Deploy completed, refetching history");
-			void fetchHistory();
-		}
-
-		prevDeployStatusRef.current = deployStatus;
-	}, [deployStatus, history, fetchHistory]);
+	const historyQuery = useQuery({
+		queryKey: ["deployment-history-sync", repoName, serviceName, deployRefreshBucket],
+		enabled: Boolean(repoName && serviceName),
+		queryFn: fetchHistory,
+	});
 
 	return {
-		history: history?.history ?? [],
-		total: history?.total ?? 0,
-		isLoading,
-		refetch: fetchHistory,
+		history: historyQuery.data?.history ?? [],
+		total: historyQuery.data?.total ?? 0,
+		isLoading: historyQuery.isLoading,
+		refetch: historyQuery.refetch,
 	};
 }

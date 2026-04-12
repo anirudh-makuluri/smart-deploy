@@ -1,6 +1,7 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import type { DeployConfig } from "@/app/types";
 
@@ -86,6 +87,22 @@ const baseDeployment: DeployConfig = {
 	scanResults: {},
 };
 
+function renderWithQueryClient(ui: React.ReactElement) {
+	const queryClient = new QueryClient({
+		defaultOptions: {
+			queries: {
+				retry: false,
+			},
+		},
+	});
+
+	return render(
+		<QueryClientProvider client={queryClient}>
+			{ui}
+		</QueryClientProvider>
+	);
+}
+
 describe("DeployWorkspace", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -119,7 +136,7 @@ describe("DeployWorkspace", () => {
 	});
 
 	it("shows service-not-found state when no active repo", () => {
-		render(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace />);
 		expect(screen.getByText("Service not found")).toBeInTheDocument();
 	});
 
@@ -130,7 +147,7 @@ describe("DeployWorkspace", () => {
 			activeServiceName: "web",
 			deployments: [baseDeployment],
 		};
-		render(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace />);
 		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
 		expect(screen.queryByText("DeployOverview")).not.toBeInTheDocument();
 	});
@@ -141,7 +158,7 @@ describe("DeployWorkspace", () => {
 				ok: true,
 				json: async () => ({ status: "success", history: [] }),
 			})
-			.mockResolvedValueOnce({
+			.mockResolvedValue({
 				ok: true,
 				json: async () => ({ status: "success", screenshotUrl: "https://cdn.example.com/new.png" }),
 			});
@@ -154,7 +171,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, liveUrl: "https://web.example.com" }],
 		};
 
-		render(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace />);
 
 		await waitFor(() =>
 			expect(fetchMock).toHaveBeenCalledWith(
@@ -162,6 +179,6 @@ describe("DeployWorkspace", () => {
 				expect.objectContaining({ method: "POST" })
 			)
 		);
-		expect(fetchRepoDeployments).toHaveBeenCalledWith("smart-deploy");
+		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
 	});
 });

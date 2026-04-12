@@ -71,6 +71,27 @@ function normalizeRepoUrlForCache(url: string): string {
 	return url.replace(/\.git$/, '').toLowerCase().trim();
 }
 
+function normalizeRepoIdentifier(value: string): string {
+	return value
+		.trim()
+		.replace(/\.git$/, "")
+		.replace(/^https?:\/\//, "")
+		.replace(/^github\.com\//, "")
+		.replace(/\/$/, "")
+		.toLowerCase();
+}
+
+function matchesRepoIdentifier(deployment: DeployConfig, repoIdentifier: string): boolean {
+	const target = normalizeRepoIdentifier(repoIdentifier);
+	if (!target) return false;
+
+	const deploymentUrl = normalizeRepoIdentifier(deployment.url ?? "");
+	const deploymentRepoName = normalizeRepoIdentifier(deployment.repoName ?? "");
+	const deploymentUrlTail = deploymentUrl.split("/").slice(-2).join("/");
+
+	return deploymentUrl === target || deploymentRepoName === target || deploymentUrlTail === target;
+}
+
 export const useAppData = create<AppState>((set, get) => ({
 	repoList: [],
 	deployments: [],
@@ -141,14 +162,14 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 	},
 
-	fetchRepoDeployments: async (repoName: string) => {
+	fetchRepoDeployments: async (repoIdentifier: string) => {
 		try {
-			console.log(`Fetching deployments for ${repoName}...`);
-			const fetchedList = await fetchRepoDeploymentsGraphql(repoName);
+			console.log(`Fetching deployments for ${repoIdentifier}...`);
+			const fetchedList = await fetchRepoDeploymentsGraphql(repoIdentifier);
 
 			// Upsert fetched deployments without erasing others in the store
 			set((state) => {
-				const otherDeployments = state.deployments.filter((d) => d.repoName !== repoName);
+				const otherDeployments = state.deployments.filter((d) => !matchesRepoIdentifier(d, repoIdentifier));
 				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
 			});
 		} catch (err) {

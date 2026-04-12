@@ -9,6 +9,8 @@ import { createYoga } from "graphql-yoga";
 import { NextRequest, NextResponse } from "next/server";
 import { schema } from "@/lib/graphql/schema";
 import { buildContext } from "@/lib/graphql/context";
+import type * as QueryResolvers from "@/lib/graphql/resolvers/query";
+import type * as MutationResolvers from "@/lib/graphql/resolvers/mutation";
 
 /**
  * NOTE: All operation handlers, helper functions, and resolver logic
@@ -22,7 +24,7 @@ const yoga = createYoga({
 	schema,
 	context: async ({ request }) => buildContext(request as NextRequest),
 	fetchAPI: {
-		Response: NextResponse as any,
+		Response: NextResponse as unknown as typeof Response,
 	},
 });
 
@@ -37,7 +39,7 @@ export const OPTIONS = yoga;
 export async function executeGraphQLOperation(
 	operation: string,
 	variables: Record<string, unknown>,
-	session: any,
+	session: { userID?: string; accessToken?: string } | null,
 ) {
 	const context = {
 		session,
@@ -46,15 +48,25 @@ export async function executeGraphQLOperation(
 	};
 
 	// Import resolvers
-	const Query = require("@/lib/graphql/resolvers/query");
-	const Mutation = require("@/lib/graphql/resolvers/mutation");
+	const Query: typeof QueryResolvers = await import("@/lib/graphql/resolvers/query");
+	const Mutation: typeof MutationResolvers = await import("@/lib/graphql/resolvers/mutation");
+	type ResolverContext = typeof context;
+	type ResolverFunction = (
+		parent: null,
+		args: Record<string, unknown>,
+		context: ResolverContext,
+	) => Promise<unknown>;
+	const queryResolvers = Query as unknown as Record<string, unknown>;
+	const mutationResolvers = Mutation as unknown as Record<string, unknown>;
 
 	// Get the resolver function
-	const resolver = Query[operation] || Mutation[operation];
+	const resolverCandidate = queryResolvers[operation] || mutationResolvers[operation];
 
-	if (!resolver) {
+	if (typeof resolverCandidate !== "function") {
 		throw new Error(`Unknown GraphQL operation: ${operation}`);
 	}
+
+	const resolver = resolverCandidate as ResolverFunction;
 
 	// Call the resolver directly with null for parent and root, variables, and context
 	try {
