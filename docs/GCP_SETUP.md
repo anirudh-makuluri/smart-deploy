@@ -81,7 +81,7 @@ gcloud auth activate-service-account --key-file=path/to/key.json
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-Inside the Docker Compose stack the worker container has `gcloud` available if you build from the provided `Dockerfile.websocket`.
+Inside the Docker Compose stack, `gcloud` is only available if you extend the worker image to install the Google Cloud CLI.
 
 ---
 
@@ -92,4 +92,4 @@ Inside the Docker Compose stack the worker container has `gcloud` available if y
 | "Permission denied on Cloud Run" | Ensure the service account has **Cloud Run Admin** and **Service Account User** roles. |
 | "Cloud Build API not enabled" | Enable it in the API library or via `gcloud services enable cloudbuild.googleapis.com`. |
 | Logs not showing | Add **Logs Viewer** role to the service account. |
-| `gcloud` not found | Install the CLI or use the Docker Compose worker which bundles it. |
+| `gcloud` not found | Install the Google Cloud CLI in the worker environment or extend `Dockerfile.websocket` to include it. |

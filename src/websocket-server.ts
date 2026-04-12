@@ -50,7 +50,7 @@ const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer((req, res) => {
-	if (req.url === "/health") {
+	if (req.url === "/health" || req.url === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
 		res.end(JSON.stringify({ ok: true, service: "websocket", port }));
 		return;
@@ -130,17 +130,6 @@ wss.on("connection", (ws) => {
 		deployLogsStore.removeSubscriberFromAll(ws);
 	});
 });
-
-// When the process is about to crash, notify connected clients so they can show "connection lost"
-function broadcastDeployFailed(reason: string) {
-	const payload = JSON.stringify({
-		type: "deploy_complete",
-		payload: { success: false, deployUrl: null, error: reason, time: new Date().toISOString() },
-	});
-	wss.clients.forEach((client) => {
-		if (client.readyState === 1) client.send(payload);
-	});
-}
 
 server.listen(port, () => {
 	console.log(`WebSocket server running on port ${port}`);

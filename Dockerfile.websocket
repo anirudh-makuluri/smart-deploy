@@ -3,24 +3,10 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install dependencies for CLI tools
+# Install the minimal OS package set used by current worker shell commands.
 RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
     curl \
-    bash \
-    git \
-    zip \
-    unzip \
-    groff \
-    less \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Google Cloud SDK
-# RUN curl -sSL https://sdk.cloud.google.com > /tmp/gcl \
-#     && bash /tmp/gcl --install-dir=/root --disable-prompts \
-#     && rm /tmp/gcl
-# ENV PATH $PATH:/root/google-cloud-sdk/bin
 
 # Copy package files
 COPY package.json package-lock.json ./
