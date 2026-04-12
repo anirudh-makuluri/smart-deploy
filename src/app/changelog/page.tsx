@@ -3,18 +3,15 @@ import { ChangelogFromGit } from "@/components/public/ChangelogFromGit";
 import { PublicPageFooter } from "@/components/public/PublicPageFooter";
 import { PublicPageScroll } from "@/components/public/PublicPageScroll";
 import { PublicSiteHeader } from "@/components/public/PublicSiteHeader";
-import { getGithubRepoSlug, getRecentGitCommits } from "@/lib/changelog-from-git";
+import { getChangelogCommits, getGithubRepoSlug } from "@/lib/changelog-from-git";
 
 export const metadata: Metadata = {
 	title: "Changelog | Smart Deploy",
-	description: "Recent commits from git log",
+	description: "Recent commits from a checked-in git log snapshot (src/data/changelog-commits.json).",
 };
 
-/** Refresh periodically so deploys without a rebuild still pick up new commits (when .git exists). */
-export const revalidate = 120;
-
 export default function ChangelogPage() {
-	const commits = getRecentGitCommits(80);
+	const commits = getChangelogCommits();
 	const repo = getGithubRepoSlug();
 
 	return (
@@ -28,9 +25,19 @@ export default function ChangelogPage() {
 
 					<div className="mt-6 space-y-4 text-sm leading-7 text-muted-foreground">
 						<p>
-							Generated from <strong className="font-medium text-foreground">real git history</strong> (
-							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>
-							)
+							Shows a <strong className="font-medium text-foreground">checked-in snapshot</strong> of{" "}
+							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>{" "}
+							at{" "}
+							<code className="rounded bg-muted/80 px-1 py-0.5 font-mono text-[11px] text-foreground">
+								src/data/changelog-commits.json
+							</code>
+							. Production images do not include <code className="font-mono text-xs">.git</code>, so commits are not read at
+							runtime from git. No curated marketing layer on top of the subjects below.
+						</p>
+						<p>
+							After meaningful work, regenerate from a dev clone:{" "}
+							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">npm run changelog:snapshot</code>{" "}
+							then commit the updated JSON.
 						</p>
 						<p className="font-mono text-xs text-foreground/90">
 							Repository: <span className="text-foreground">{repo}</span>
@@ -42,6 +49,15 @@ export default function ChangelogPage() {
 							) : null}
 						</p>
 					</div>
+
+					<blockquote className="mt-8 border-l-2 border-primary/35 bg-muted/15 py-3 pl-4 pr-3 text-sm leading-6 text-muted-foreground">
+						<p className="font-medium text-foreground">Same idea as the rest of the product</p>
+						<p className="mt-2">
+							Docs render repo markdown as-is; this page surfaces commit metadata from a repo-native snapshot, not a
+							rewritten release feed. Blueprint and deploy views apply the same rule to infrastructure and execution state:
+							show the artifact, do not replace it with a second narrative.
+						</p>
+					</blockquote>
 
 					<ChangelogFromGit commits={commits} />
 				</main>

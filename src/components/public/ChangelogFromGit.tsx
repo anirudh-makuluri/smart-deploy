@@ -5,10 +5,11 @@ export function ChangelogFromGit({ commits }: { commits: GitChangelogCommit[] })
 	if (commits.length === 0) {
 		return (
 			<div className="mt-10 rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm leading-6 text-muted-foreground">
-				<p className="font-medium text-foreground">No git history in this environment</p>
+				<p className="font-medium text-foreground">Changelog snapshot missing or empty</p>
 				<p className="mt-2">
-					This build does not include a <code className="font-mono text-xs">.git</code> directory, so commit data cannot be read here.
-					Clone the repository and run <code className="font-mono text-xs">git log</code> locally for the same view.
+					Expected <code className="font-mono text-xs">src/data/changelog-commits.json</code>. From a clone with{" "}
+					<code className="font-mono text-xs">git</code>, run{" "}
+					<code className="font-mono text-xs">npm run changelog:snapshot</code> and commit the updated JSON.
 				</p>
 			</div>
 		);

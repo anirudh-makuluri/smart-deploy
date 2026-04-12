@@ -1,0 +1,966 @@
+{
+	"generatedAt": "2026-04-12T20:04:36.482Z",
+	"commitCount": 120,
+	"commits": [
+		{
+			"hash": "cea221950f5098d7f16ac77d048a28bde283499f",
+			"shortHash": "cea2219",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "feat: implement changelog page using git history and remove static changelog entries",
+			"prNumber": null
+		},
+		{
+			"hash": "c80df5ae6dc2617ea2431da6df8d042bdb868f4d",
+			"shortHash": "c80df5a",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "feat: enhance sidebar and navigation components for improved mobile experience",
+			"prNumber": null
+		},
+		{
+			"hash": "dd182b558a7afcb5545640408dfe9b2fd2495761",
+			"shortHash": "dd182b5",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "updated changelog UI",
+			"prNumber": null
+		},
+		{
+			"hash": "c78d77df71bd9b1ac299d7d744c590aa0648dd2c",
+			"shortHash": "c78d77d",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "updated docs",
+			"prNumber": null
+		},
+		{
+			"hash": "fd80b2dea92d8d11c7ae63154caba33fa3bbd1c7",
+			"shortHash": "fd80b2d",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "updated landing page",
+			"prNumber": null
+		},
+		{
+			"hash": "34b0d771b0bdb682e2555bba03e4cd2fd334abe4",
+			"shortHash": "34b0d77",
+			"date": "2026-04-12",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #8 from anirudh-makuluri/backend-fixing",
+			"prNumber": 8
+		},
+		{
+			"hash": "4da43ba7fffaf2ebccb8d89a3dbade94da56dfbf",
+			"shortHash": "4da43ba",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "added approved users table",
+			"prNumber": null
+		},
+		{
+			"hash": "614664bf7fed735d8af666fa2548932d0f1ed39b",
+			"shortHash": "614664b",
+			"date": "2026-04-12",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #7 from anirudh-makuluri/backend-fixing",
+			"prNumber": 7
+		},
+		{
+			"hash": "e2f0e0244cfc44655ee5aa990fd74803d6a7f979",
+			"shortHash": "e2f0e02",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "feat: implement system health check API and integrate with WebSocket health endpoints",
+			"prNumber": null
+		},
+		{
+			"hash": "073600ce80bc8c145a7bc33f046839307b24a844",
+			"shortHash": "073600c",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "feat: implement WebSocket authentication and health check functionality",
+			"prNumber": null
+		},
+		{
+			"hash": "982589d16b97b0659ec5a92f725d721e064e2776",
+			"shortHash": "982589d",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "update dockerfile.websocket",
+			"prNumber": null
+		},
+		{
+			"hash": "93685029bbb9b204600e17bc86cf578a4acd25e9",
+			"shortHash": "9368502",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "add 0.0.0.0",
+			"prNumber": null
+		},
+		{
+			"hash": "1d2217cc2e00c533c25c7029ac6544a0c0b0e393",
+			"shortHash": "1d2217c",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "refactor: simplify Dockerfile and update GCP setup documentation for Google Cloud CLI",
+			"prNumber": null
+		},
+		{
+			"hash": "f16d0dd0ad0a8bb29318d1f054b8580ece96afd7",
+			"shortHash": "f16d0dd",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "feat: add health check endpoint to WebSocket server and update server response message",
+			"prNumber": null
+		},
+		{
+			"hash": "7b44142b63935cc48a71ebaaa08430e94a90b551",
+			"shortHash": "7b44142",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "feat: enhance DashboardMain with repository search functionality and add LanguageIcon component",
+			"prNumber": null
+		},
+		{
+			"hash": "792bea5c18f6b3081b579546f2d1d3159ce56622",
+			"shortHash": "792bea5",
+			"date": "2026-04-11",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #6 from anirudh-makuluri/refactoring",
+			"prNumber": 6
+		},
+		{
+			"hash": "64ff580fecb52e17e807f83c23f9b4082c1ed51b",
+			"shortHash": "64ff580",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "feat: implement repository synchronization and deduplication logic",
+			"prNumber": null
+		},
+		{
+			"hash": "3a7d317d11247adae0d6714f8ff7af3470b01989",
+			"shortHash": "3a7d317",
+			"date": "2026-04-11",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #5 from anirudh-makuluri/refactoring",
+			"prNumber": 5
+		},
+		{
+			"hash": "519a651d721926bd3ac0e0986f266be894001934",
+			"shortHash": "519a651",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "feat: add pause/resume functionality and confirmation dialog in DeployWorkspace fix: update RepoServicesList to show button only when multiple services are available",
+			"prNumber": null
+		},
+		{
+			"hash": "5b2862af5bdf016dbc90802c3b7d39912c2ce23a",
+			"shortHash": "5b2862a",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "add delete/pause button in deploy workspace",
+			"prNumber": null
+		},
+		{
+			"hash": "a180a4bffbfd8b510ccb93974cf50969a3e46b19",
+			"shortHash": "a180a4b",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "chore: refactor",
+			"prNumber": null
+		},
+		{
+			"hash": "487c65d6e143f0fbc3e14268b3027df1a62c1549",
+			"shortHash": "487c65d",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "chore: refactor",
+			"prNumber": null
+		},
+		{
+			"hash": "f491774e873baf9484d2a7d488dd6a2e4def8b42",
+			"shortHash": "f491774",
+			"date": "2026-04-11",
+			"author": "amakulur",
+			"subject": "chore: refactor",
+			"prNumber": null
+		},
+		{
+			"hash": "5d4ff26e071878e49557036897ebe1648da1c840",
+			"shortHash": "5d4ff26",
+			"date": "2026-04-10",
+			"author": "amakulur",
+			"subject": "updated readme",
+			"prNumber": null
+		},
+		{
+			"hash": "01116bc1d1de7a94cf8a425661d110d06c80b1b8",
+			"shortHash": "01116bc",
+			"date": "2026-04-10",
+			"author": "amakulur",
+			"subject": "feat(changelog): add changelog page with recent updates and milestones",
+			"prNumber": null
+		},
+		{
+			"hash": "fbfcebf421e59886f003acd1c3fac9b9436a3505",
+			"shortHash": "fbfcebf",
+			"date": "2026-04-08",
+			"author": "amakulur",
+			"subject": "updated landing page",
+			"prNumber": null
+		},
+		{
+			"hash": "5af4cad2d3b648ab19b412f12c031adb562e8911",
+			"shortHash": "5af4cad",
+			"date": "2026-04-08",
+			"author": "amakulur",
+			"subject": "Added Blueprint section in DeployWorkspace",
+			"prNumber": null
+		},
+		{
+			"hash": "ea2e117152d9cd907578ff6d2eccdee25e45492e",
+			"shortHash": "ea2e117",
+			"date": "2026-04-07",
+			"author": "amakulur",
+			"subject": "feat(ScanProgress): add Commands Generator node to deployment process",
+			"prNumber": null
+		},
+		{
+			"hash": "4200876c69856315315d72a7a46a2faf4261a5a9",
+			"shortHash": "4200876",
+			"date": "2026-04-07",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #4 from anirudh-makuluri/migrate-graphql",
+			"prNumber": 4
+		},
+		{
+			"hash": "1cf599ba18aa928eb2d27be57e493ad2aef0ba0e",
+			"shortHash": "1cf599b",
+			"date": "2026-04-07",
+			"author": "amakulur",
+			"subject": "feat(api): add endpoint to generate deployment preview screenshots",
+			"prNumber": null
+		},
+		{
+			"hash": "818d856c644f3661bbfb67f7820f9fc561d4963e",
+			"shortHash": "818d856",
+			"date": "2026-04-07",
+			"author": "amakulur",
+			"subject": "refactor(websocket): enhance deployment status checks and improve handling of draft states",
+			"prNumber": null
+		},
+		{
+			"hash": "5b86819be7f5d232a7913822b0d45ac4092e4a53",
+			"shortHash": "5b86819",
+			"date": "2026-04-07",
+			"author": "amakulur",
+			"subject": "refactor(deployment): streamline deployment data access and improve default handling in hooks",
+			"prNumber": null
+		},
+		{
+			"hash": "19d6bb595fb50e3a29dc1e43ac14b1350dbab1f6",
+			"shortHash": "19d6bb5",
+			"date": "2026-04-03",
+			"author": "amakulur",
+			"subject": "refactor(types): update property names to snake_case for consistency across the codebase",
+			"prNumber": null
+		},
+		{
+			"hash": "b1ce933648e864c684562478ba569a36b7e99659",
+			"shortHash": "b1ce933",
+			"date": "2026-04-03",
+			"author": "amakulur",
+			"subject": "refactor(types): standardize property naming in RepoServicesRecord for consistency",
+			"prNumber": null
+		},
+		{
+			"hash": "a87148feb97907457c47886b79dcaa5bd77973d6",
+			"shortHash": "a87148f",
+			"date": "2026-04-03",
+			"author": "amakulur",
+			"subject": "refactor(types): update EC2 and CloudRun deployment types for improved null handling and denormalization fix(DashboardMain): handle potential undefined URL in normalizeUrl function refactor(deployment): streamline user repo syncing with denormalized fields in database fix(graphql): update EC2 details type and ensure proper null handling in queries",
+			"prNumber": null
+		},
+		{
+			"hash": "acea60c2148d977b4c41d15f265c57a00ddc9dd1",
+			"shortHash": "acea60c",
+			"date": "2026-04-03",
+			"author": "amakulur",
+			"subject": "fix id of history",
+			"prNumber": null
+		},
+		{
+			"hash": "d23e8cf299c4ceb6d37c1986a772b7442cf6fcae",
+			"shortHash": "d23e8cf",
+			"date": "2026-04-03",
+			"author": "amakulur",
+			"subject": "Refactor deployment handling and improve GraphQL integration",
+			"prNumber": null
+		},
+		{
+			"hash": "eb65447e81be94bc54aaaf11af3207c8c0da3b6d",
+			"shortHash": "eb65447",
+			"date": "2026-04-02",
+			"author": "amakulur",
+			"subject": "feat(api): Update fetch requests to use environment variables for API base URL and authorization token",
+			"prNumber": null
+		},
+		{
+			"hash": "00e5a9ebe6149e8189b12233bf4d2cfe9b1e897f",
+			"shortHash": "00e5a9e",
+			"date": "2026-04-02",
+			"author": "amakulur",
+			"subject": "Refactor deployment configuration properties and update related logic",
+			"prNumber": null
+		},
+		{
+			"hash": "4f41ea6b60e9652928ae98ce918ca95963202e21",
+			"shortHash": "4f41ea6",
+			"date": "2026-04-02",
+			"author": "amakulur",
+			"subject": "feat(graphql): Refactor DeployWorkspace component and introduce custom hooks for deployment management",
+			"prNumber": null
+		},
+		{
+			"hash": "3f8306b2a0c9e247e084579428269f2cbe3523a7",
+			"shortHash": "3f8306b",
+			"date": "2026-04-02",
+			"author": "amakulur",
+			"subject": "feat(graphql): Implement GraphQL schema, resolvers, and types for deployment management",
+			"prNumber": null
+		},
+		{
+			"hash": "3cd6af773a1574e432afac9ffca0205dbf018425",
+			"shortHash": "3cd6af7",
+			"date": "2026-04-01",
+			"author": "amakulur",
+			"subject": "implement graphql entirely",
+			"prNumber": null
+		},
+		{
+			"hash": "5f77e189bab27edc3edea0a143338a6816923f9a",
+			"shortHash": "5f77e18",
+			"date": "2026-04-01",
+			"author": "amakulur",
+			"subject": "added tests",
+			"prNumber": null
+		},
+		{
+			"hash": "727a6e6f8ead8272abbbd0682cda448454e6dfad",
+			"shortHash": "727a6e6",
+			"date": "2026-04-01",
+			"author": "amakulur",
+			"subject": "migrate-ql-1",
+			"prNumber": null
+		},
+		{
+			"hash": "f465cc1f413934f289e7f5e799818e993bef2216",
+			"shortHash": "f465cc1",
+			"date": "2026-03-28",
+			"author": "amakulur",
+			"subject": "fixed ts error",
+			"prNumber": null
+		},
+		{
+			"hash": "bbe8e3919dde278118c98c89ddd4f22b47963b06",
+			"shortHash": "bbe8e39",
+			"date": "2026-03-28",
+			"author": "amakulur",
+			"subject": "feat: implement custom domain configuration for deployments with Vercel DNS integration",
+			"prNumber": null
+		},
+		{
+			"hash": "fae2d98cccbe4c4b402de282c10a10f73715fc44",
+			"shortHash": "fae2d98",
+			"date": "2026-03-28",
+			"author": "amakulur",
+			"subject": "feat: add frontend-design and react-useeffect skills with comprehensive guidelines and best practices",
+			"prNumber": null
+		},
+		{
+			"hash": "e51c7e4b09b3dd52a4de996e9e02e80977e2a882",
+			"shortHash": "e51c7e4",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "updated favicons",
+			"prNumber": null
+		},
+		{
+			"hash": "4b5ae902ffc9a91e746363b263473b39f5a40b1f",
+			"shortHash": "4b5ae90",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "change document title and icon using deployState",
+			"prNumber": null
+		},
+		{
+			"hash": "9d79c5b63fd0ba6b5de80ae3ff13c3688caf7fd4",
+			"shortHash": "9d79c5b",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "fixed compse deploy",
+			"prNumber": null
+		},
+		{
+			"hash": "b4f25c8c1b8b058c6edc35b7b7bfc7abd2bd15c5",
+			"shortHash": "b4f25c8",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "refactor: enhance AWS command handling with improved IAM instance profile management and type safety",
+			"prNumber": null
+		},
+		{
+			"hash": "b8ca87b70624038955f642dabf536fc60beab4c7",
+			"shortHash": "b8ca87b",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "Enhance ECR authentication and CodeBuild integration",
+			"prNumber": null
+		},
+		{
+			"hash": "5b80cf0446a5fa74f263fe0dcc84a61858b9ca5a",
+			"shortHash": "5b80cf0",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "refactor: update default domain to \"smart-deploy.xyz\" in config and components",
+			"prNumber": null
+		},
+		{
+			"hash": "c2d87c9e2b68adfdd4555b94101ba6873355e4cb",
+			"shortHash": "c2d87c9",
+			"date": "2026-03-27",
+			"author": "amakulur",
+			"subject": "implement prefill infrastructure feature with Dockerfile and nginx.conf validation",
+			"prNumber": null
+		},
+		{
+			"hash": "18270bf1170792fd36dfced7f6276f20786d06bf",
+			"shortHash": "18270bf",
+			"date": "2026-03-26",
+			"author": "amakulur",
+			"subject": "updated docs",
+			"prNumber": null
+		},
+		{
+			"hash": "dcac10a33992a3ac6ac8006870ab0a758bf48cea",
+			"shortHash": "dcac10a",
+			"date": "2026-03-24",
+			"author": "amakulur",
+			"subject": "exclude static files from proxy",
+			"prNumber": null
+		},
+		{
+			"hash": "e529c4058bd75d746dca6011f4b84ddf5ba31ab6",
+			"shortHash": "e529c40",
+			"date": "2026-03-24",
+			"author": "amakulur",
+			"subject": "revamped landing page",
+			"prNumber": null
+		},
+		{
+			"hash": "0a2c54d60dc24c159eb9433641789e97136a485f",
+			"shortHash": "0a2c54d",
+			"date": "2026-03-24",
+			"author": "amakulur",
+			"subject": "enhance compose file handling in build scripts",
+			"prNumber": null
+		},
+		{
+			"hash": "7f12798ff78120a48cfa783416b6fa93e8a81285",
+			"shortHash": "7f12798",
+			"date": "2026-03-23",
+			"author": "amakulur",
+			"subject": "enhance ServiceLogs component to display appropriate messages based on deployment status; restrict log streaming to Cloud Run deployments only",
+			"prNumber": null
+		},
+		{
+			"hash": "42504e2e804423135cf49f5e57568f232c78ed9a",
+			"shortHash": "42504e2",
+			"date": "2026-03-23",
+			"author": "amakulur",
+			"subject": "add support for AWS CodeBuild and ECR integration",
+			"prNumber": null
+		},
+		{
+			"hash": "90aaa98140962ed63f9eb9638803151b2456bc61",
+			"shortHash": "90aaa98",
+			"date": "2026-03-23",
+			"author": "amakulur",
+			"subject": "implement gateway error handling in deployment preview screenshot API; enhance DeployWorkspace to support refreshing previews and improve service settings management in PostScanResults",
+			"prNumber": null
+		},
+		{
+			"hash": "5e9567d740e4688b53756f56c84678f6be2b7270",
+			"shortHash": "5e9567d",
+			"date": "2026-03-22",
+			"author": "amakulur",
+			"subject": "enhance DeployWorkspace and useDeployLogs to support deployment completion handling",
+			"prNumber": null
+		},
+		{
+			"hash": "f83982e1c78f0286d16dd22cfc967f6020ec0f75",
+			"shortHash": "f83982e",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "refactor RepoPageClient, DeployWorkspace, and ScanProgress components to replace branch and target_workdir with package_path; enhance deployment handling for monorepos and improve service path normalization",
+			"prNumber": null
+		},
+		{
+			"hash": "5bcd7f99c5307e711aff623fa83386079fdebd99",
+			"shortHash": "5bcd7f9",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "implement Dockerfile path management improvements in PostScanResults component; add utility functions for canonical path handling and validation, enhance deployment path editing functionality, and ensure synchronization with docker-compose references",
+			"prNumber": null
+		},
+		{
+			"hash": "16c694f407d6e24deb76906c1907c2108197b5d1",
+			"shortHash": "16c694f",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "refactor RepoPageClient and related components to improve branch handling; introduce utility functions for branch resolution and repository metadata fetching, ensuring accurate branch selection during deployments",
+			"prNumber": null
+		},
+		{
+			"hash": "233385176123079bbbf6d219b709a633229eb496",
+			"shortHash": "2333851",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "update DashboardSideBar to filter active deployments based on running status and presence of live URLs; adjust unit tests to reflect new logic and expected counts",
+			"prNumber": null
+		},
+		{
+			"hash": "a1eae62326178f63f061292832db28a66dcf76d4",
+			"shortHash": "a1eae62",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "refactor Dashboard components to support new repositories view",
+			"prNumber": null
+		},
+		{
+			"hash": "912dd23be7abdc48c7bf3171ae323f0287d37d99",
+			"shortHash": "912dd23",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "add documentation for deploy improvements, GitHub App setup, t3.micro deployment, and update handling of EC2 instance states in the codebase",
+			"prNumber": null
+		},
+		{
+			"hash": "edf5e9fed7f905065dab147749641ece4372592f",
+			"shortHash": "edf5e9f",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "update readme.md",
+			"prNumber": null
+		},
+		{
+			"hash": "e1ddc488e819208eef81032d631ba2ed1b2098bb",
+			"shortHash": "e1ddc48",
+			"date": "2026-03-21",
+			"author": "amakulur",
+			"subject": "update readme.md",
+			"prNumber": null
+		},
+		{
+			"hash": "b74e31ef38b2adfda09a9b3c610b6f6337df8b97",
+			"shortHash": "b74e31e",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "add session status handling in DashboardSideBar to trigger repository list refresh upon authentication; improve user experience by ensuring up-to-date data display",
+			"prNumber": null
+		},
+		{
+			"hash": "f312e7261f4f49231a4b39369838effd5551a950",
+			"shortHash": "f312e72",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "refactor DashboardMain component to simplify state management by removing bulk delete and pause/resume functionalities; streamline deployment data handling and improve rendering logic for repository cards",
+			"prNumber": null
+		},
+		{
+			"hash": "5b41e7ba9e2257d9c7054d5c827b6aec2d05a49f",
+			"shortHash": "5b41e7b",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "implement countDeployedServicesForRepo utility function to accurately count deployed services based on deployment status; update DashboardMain component to utilize this new function, and add unit tests for the utility",
+			"prNumber": null
+		},
+		{
+			"hash": "70baf70f75d99feb44fe1d0e3014f9c12cb97dab",
+			"shortHash": "70baf70",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "add Playwright and Vitest for testing; configure test scripts and setup files, implement end-to-end and unit tests for deployment features, and update .gitignore to include test results",
+			"prNumber": null
+		},
+		{
+			"hash": "22d999934039b46ea171e0b20c6404d52c550d9b",
+			"shortHash": "22d9999",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "implement service logs history API endpoint, enhance ServiceLogs component for pagination and loading older logs, and update related components to pass repository and service names for log retrieval",
+			"prNumber": null
+		},
+		{
+			"hash": "af372d5731cf957cc4420a48ed7c162573cf6829",
+			"shortHash": "af372d5",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "refactor DeployOverview component to improve endpoint handling, add custom URL and instance IP display, and enhance deployment target summary presentation",
+			"prNumber": null
+		},
+		{
+			"hash": "9b787247f2c7a82b1f52a1343b65f4c0206ffcd3",
+			"shortHash": "9b78724",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "add screenshot functionality for deployments, integrating Playwright for screenshot capture and storage in Supabase; update deployment data with screenshot URLs and enhance deployment overview components to display screenshots",
+			"prNumber": null
+		},
+		{
+			"hash": "6af936a04b111c0c6f64e07660ca3a3835a64619",
+			"shortHash": "6af936a",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "implement logic to remove legacy HTTP forward rules from ALB listener when ACM is configured, ensuring traffic is redirected to HTTPS only",
+			"prNumber": null
+		},
+		{
+			"hash": "da0913442d57b05b1460b020fdb4cde2938c07a7",
+			"shortHash": "da09134",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "update deployment status handling across components to treat missing URLs as \"didnt_deploy\", ensuring accurate representation of deployment states",
+			"prNumber": null
+		},
+		{
+			"hash": "550f677fc276cd6a3d99328b18eaf747278c76f2",
+			"shortHash": "550f677",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "update websocket-server and useDeployLogs to handle deployment log states more accurately, replacing error messages with appropriate status updates",
+			"prNumber": null
+		},
+		{
+			"hash": "9e7accdc3bf8f2656ec68fb0f20f336081080cd1",
+			"shortHash": "9e7accd",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "enhance getSubnetIds function to support multi-AZ subnet creation, improve error handling, and ensure fallback logic for non-default VPCs",
+			"prNumber": null
+		},
+		{
+			"hash": "702d5b4b6fe7d144835838a2a0beeecc15ab487e",
+			"shortHash": "702d5b4",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "refactor RepoPageClient and DeployWorkspace components to integrate activeRepo state management, streamline deployment fetching, and enhance cleanup logic",
+			"prNumber": null
+		},
+		{
+			"hash": "4eaf50bb210a2d6cb7494a30a0b101a50a44a89e",
+			"shortHash": "4eaf50b",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "refactor RepoPageClient to streamline state management",
+			"prNumber": null
+		},
+		{
+			"hash": "b28a38bde85895b3c65575c335e0c3225e213e77",
+			"shortHash": "b28a38b",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "enhance Dockerfile generation logic to handle single Dockerfile cases and improve script output formatting",
+			"prNumber": null
+		},
+		{
+			"hash": "6af114bab51c64ec6c2d04848f2c92912035f407",
+			"shortHash": "6af114b",
+			"date": "2026-03-20",
+			"author": "amakulur",
+			"subject": "refactor DeployWorkspace component to ensure required fields are present in deployment object, improve URL handling, and streamline authentication checks",
+			"prNumber": null
+		},
+		{
+			"hash": "bff902841986f5c0781d1645c5da4e5c4a2f6c9f",
+			"shortHash": "bff9028",
+			"date": "2026-03-19",
+			"author": "amakulur",
+			"subject": "implement repo resolution API and enhance RepoPageClient logic for fetching repository details",
+			"prNumber": null
+		},
+		{
+			"hash": "9efa91afb7e56db901072d72121be4ff6a7efbea",
+			"shortHash": "9efa91a",
+			"date": "2026-03-19",
+			"author": "amakulur",
+			"subject": "add repoUrl prop to DeployWorkspace component and enhance repo resolution logic",
+			"prNumber": null
+		},
+		{
+			"hash": "475ea11ddca6e4e5c4de56e0c17db7e60c61bd5a",
+			"shortHash": "475ea11",
+			"date": "2026-03-19",
+			"author": "amakulur",
+			"subject": "add EC2 instance type selection to deployment configuration, enhance pricing estimates, and update related components",
+			"prNumber": null
+		},
+		{
+			"hash": "e342021a1a9d6b7dad36ed9b76dac84744b355d3",
+			"shortHash": "e342021",
+			"date": "2026-03-19",
+			"author": "amakulur",
+			"subject": "add unzipper package and related types, refactor GitHub URL handling for repository cloning",
+			"prNumber": null
+		},
+		{
+			"hash": "8451df08742b3ef7d43cf411fbdba3e9433396cd",
+			"shortHash": "8451df0",
+			"date": "2026-03-19",
+			"author": "amakulur",
+			"subject": "refactor PostScanResults component, update Dockerfile generation logic, and enhance EC2 instance handling",
+			"prNumber": null
+		},
+		{
+			"hash": "390193469143bc6dbf24c9c52c56b5e777edaccc",
+			"shortHash": "3901934",
+			"date": "2026-03-10",
+			"author": "amakulur",
+			"subject": "implemented feedback stream",
+			"prNumber": null
+		},
+		{
+			"hash": "dd563602b3b0c6769336824522d3814688df61da",
+			"shortHash": "dd56360",
+			"date": "2026-03-10",
+			"author": "amakulur",
+			"subject": "some changes",
+			"prNumber": null
+		},
+		{
+			"hash": "b729f73d0f56a88a484f6392b0ac9c624abc81f8",
+			"shortHash": "b729f73",
+			"date": "2026-03-10",
+			"author": "amakulur",
+			"subject": "revamped flow of deployments",
+			"prNumber": null
+		},
+		{
+			"hash": "c4aa2d0618202c425d712f90aaa603adf69fea26",
+			"shortHash": "c4aa2d0",
+			"date": "2026-03-09",
+			"author": "amakulur",
+			"subject": "improve env var input UI",
+			"prNumber": null
+		},
+		{
+			"hash": "051e1e8ad59e1bc815d03d7054d4b3587c1f804f",
+			"shortHash": "051e1e8",
+			"date": "2026-03-09",
+			"author": "amakulur",
+			"subject": "fix custom_domain autofill",
+			"prNumber": null
+		},
+		{
+			"hash": "3ebde6ad1d3db890965a66b352cdbd969f40ae12",
+			"shortHash": "3ebde6a",
+			"date": "2026-03-08",
+			"author": "amakulur",
+			"subject": "remove core_deployment_info usage",
+			"prNumber": null
+		},
+		{
+			"hash": "a18ab8ee3571c47cbef0be06f2794c79acd42fd0",
+			"shortHash": "a18ab8e",
+			"date": "2026-03-08",
+			"author": "amakulur",
+			"subject": "update README",
+			"prNumber": null
+		},
+		{
+			"hash": "28fa6ab8d8b7d425b9c9ef2364ed071a18cbb9a4",
+			"shortHash": "28fa6ab",
+			"date": "2026-03-07",
+			"author": "amakulur",
+			"subject": "use the scan results for deployment",
+			"prNumber": null
+		},
+		{
+			"hash": "9e32ee0ce77fc7f448a0e4cbc825cd8efe1ee2b8",
+			"shortHash": "9e32ee0",
+			"date": "2026-03-07",
+			"author": "amakulur",
+			"subject": "feat: Create ConfigTabs component for deployment configuration, including branch, custom URL, environment variables, and AI scan integration.",
+			"prNumber": null
+		},
+		{
+			"hash": "c2e52a695edd6363f841a3d73423272921d36246",
+			"shortHash": "c2e52a6",
+			"date": "2026-03-07",
+			"author": "amakulur",
+			"subject": "refactored the code",
+			"prNumber": null
+		},
+		{
+			"hash": "dd55da2ebbb15395fd0c49a317db45afccc537a0",
+			"shortHash": "dd55da2",
+			"date": "2026-03-06",
+			"author": "amakulur",
+			"subject": "integrated sd-artifacts",
+			"prNumber": null
+		},
+		{
+			"hash": "9aeed26314d24ad1418a5678fe332d3b4500466c",
+			"shortHash": "9aeed26",
+			"date": "2026-03-05",
+			"author": "amakulur",
+			"subject": "feat: Implement API endpoint and database logic to retrieve deployments for a given repository.",
+			"prNumber": null
+		},
+		{
+			"hash": "345cc4fc2ae4f5b6df968946688553fd96921404",
+			"shortHash": "345cc4f",
+			"date": "2026-03-05",
+			"author": "amakulur",
+			"subject": "feat: Introduce comprehensive deployment management with real-time logs, history, and control APIs.",
+			"prNumber": null
+		},
+		{
+			"hash": "12707a8d5a4c8c5495b9d9ce287a169dd989ccda",
+			"shortHash": "12707a8",
+			"date": "2026-03-05",
+			"author": "amakulur",
+			"subject": "add repo_name and service_name to deployment table",
+			"prNumber": null
+		},
+		{
+			"hash": "243e124bc5718698d4e03db26fac767436ab069d",
+			"shortHash": "243e124",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "added failed status",
+			"prNumber": null
+		},
+		{
+			"hash": "acbd6d33dab7a007dc9094f68d129b428e6e960d",
+			"shortHash": "acbd6d3",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "feat: Upgrade Next.js and React, migrate to new ESLint flat configuration, and configure Next.js devtools.",
+			"prNumber": null
+		},
+		{
+			"hash": "a974d02f79e69a36f43c5a6681b9ca4de5113b93",
+			"shortHash": "a974d02",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "add repo_id column to deployments",
+			"prNumber": null
+		},
+		{
+			"hash": "0a8969006b2b1f7e8b2bfe95e0906116a4f2016d",
+			"shortHash": "0a89690",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "improve flow after deployment",
+			"prNumber": null
+		},
+		{
+			"hash": "c8803a95175d41b72fdce9b9b9faf8b91754cc47",
+			"shortHash": "c8803a9",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "configure alb everytime",
+			"prNumber": null
+		},
+		{
+			"hash": "75664821534887f0c96d40c92ccdecdf4c5bf5b3",
+			"shortHash": "7566482",
+			"date": "2026-03-04",
+			"author": "amakulur",
+			"subject": "changes",
+			"prNumber": null
+		},
+		{
+			"hash": "4207b7b9885d09beea4e826fc4cd880d8669818e",
+			"shortHash": "4207b7b",
+			"date": "2026-03-02",
+			"author": "amakulur",
+			"subject": "Fix deployment history",
+			"prNumber": null
+		},
+		{
+			"hash": "ace548b973d7d9c1c7ed22f94cd98caf3306bee4",
+			"shortHash": "ace548b",
+			"date": "2026-03-02",
+			"author": "amakulur",
+			"subject": "removed useless code",
+			"prNumber": null
+		},
+		{
+			"hash": "928903556129b213505dad1e9129edf20bc33b7c",
+			"shortHash": "9289035",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "Refactor deployment logging and history retrieval for improved snapshot handling",
+			"prNumber": null
+		},
+		{
+			"hash": "60fa14705fe0d91500b241044172fe17d301de00",
+			"shortHash": "60fa147",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "Enhance deployment handling and service detection",
+			"prNumber": null
+		},
+		{
+			"hash": "aa9e7d95a29c112c78ab838919c571b1787f353f",
+			"shortHash": "aa9e7d9",
+			"date": "2026-03-01",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #3 from anirudh-makuluri/develop",
+			"prNumber": 3
+		},
+		{
+			"hash": "0640891c335427465999c738260f193afd20a672",
+			"shortHash": "0640891",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "Refactor deployment handling and improve cloud provider support",
+			"prNumber": null
+		},
+		{
+			"hash": "397c86ee4033bb58c75cd9c7f1e9875b5927727b",
+			"shortHash": "397c86e",
+			"date": "2026-03-01",
+			"author": "Anirudh Makuluri",
+			"subject": "Merge pull request #2 from anirudh-makuluri/develop",
+			"prNumber": 2
+		},
+		{
+			"hash": "b0e8493ffae3a59da8e21c2bfa147e636b0a13bb",
+			"shortHash": "b0e8493",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "add commit message to deployment history",
+			"prNumber": null
+		},
+		{
+			"hash": "fd86bf517f5f06cafc5a2d023162aee6343466fe",
+			"shortHash": "fd86bf5",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "delete, pause deployment",
+			"prNumber": null
+		},
+		{
+			"hash": "a050ea5c4ff3d34f0e4b7855e9167a47b4d47af5",
+			"shortHash": "a050ea5",
+			"date": "2026-03-01",
+			"author": "amakulur",
+			"subject": "show deploy notif when deployment is going on",
+			"prNumber": null
+		}
+	]
+}

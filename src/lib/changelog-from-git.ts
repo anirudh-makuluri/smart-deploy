@@ -1,5 +1,4 @@
 import "server-only";
-import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -15,6 +14,14 @@ export type GitChangelogCommit = {
 	prNumber: number | null;
 };
 
+type ChangelogSnapshotFile = {
+	generatedAt?: string;
+	commitCount?: number;
+	commits: GitChangelogCommit[];
+};
+
+const SNAPSHOT_PATH = path.join(process.cwd(), "src", "data", "changelog-commits.json");
+
 /** `owner/repo` for GitHub commit and PR links. */
 export function getGithubRepoSlug(): string {
 	const fromEnv = process.env.GITHUB_REPOSITORY?.trim();
@@ -22,54 +29,34 @@ export function getGithubRepoSlug(): string {
 	return "anirudh-makuluri/smart-deploy";
 }
 
-function parsePrNumber(subject: string): number | null {
+/**
+ * Commits shown on the public changelog. Sourced from a checked-in JSON snapshot
+ * (`src/data/changelog-commits.json`) so production builds without `.git` still render history.
+ * Regenerate locally: `npm run changelog:snapshot`
+ */
+export function getChangelogCommits(): GitChangelogCommit[] {
+	try {
+		const raw = fs.readFileSync(SNAPSHOT_PATH, "utf-8");
+		const data = JSON.parse(raw) as ChangelogSnapshotFile;
+		if (!Array.isArray(data.commits)) return [];
+		return data.commits.map((c) => ({
+			...c,
+			prNumber:
+				typeof c.prNumber === "number"
+					? c.prNumber
+					: parsePrNumberFromSubject(c.subject),
+		}));
+	} catch {
+		return [];
+	}
+}
+
+function parsePrNumberFromSubject(subject: string): number | null {
 	const merge = subject.match(MERGE_PR_RE);
 	if (merge) return Number.parseInt(merge[1], 10);
 	const suffix = subject.match(SUBJECT_PR_SUFFIX_RE);
 	if (suffix) return Number.parseInt(suffix[1], 10);
 	return null;
-}
-
-/**
- * Reads recent commits from the repository git log (newest first).
- * Returns an empty array when `.git` is missing or `git` fails (e.g. some deploy images).
- */
-export function getRecentGitCommits(limit = 80): GitChangelogCommit[] {
-	const cwd = process.cwd();
-	if (!fs.existsSync(path.join(cwd, ".git"))) {
-		return [];
-	}
-	const RS = "\u001e";
-	try {
-		const out = execFileSync(
-			"git",
-			["log", `-${limit}`, `--pretty=format:%H${RS}%h${RS}%ad${RS}%aN${RS}%s`, "--date=short"],
-			{
-				encoding: "utf-8",
-				cwd,
-				maxBuffer: 10 * 1024 * 1024,
-			},
-		);
-		const lines = out.trim().split("\n").filter(Boolean);
-		const commits: GitChangelogCommit[] = [];
-		for (const line of lines) {
-			const parts = line.split(RS);
-			if (parts.length < 5) continue;
-			const [hash, shortHash, date, author, ...rest] = parts;
-			const subject = rest.join(RS);
-			commits.push({
-				hash,
-				shortHash,
-				date,
-				author,
-				subject,
-				prNumber: parsePrNumber(subject),
-			});
-		}
-		return commits;
-	} catch {
-		return [];
-	}
 }
 
 export function groupCommitsByDate(commits: GitChangelogCommit[]): { date: string; commits: GitChangelogCommit[] }[] {
