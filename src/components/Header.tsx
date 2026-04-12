@@ -30,6 +30,13 @@ export default function Header() {
 		setActiveServiceName(null);
 	}
 
+	function handleAvatarKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			event.currentTarget.click();
+		}
+	}
+
 	return (
 		<header className="shrink-0 w-full border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-50">
 			<div className="px-6 py-3 flex flex-row justify-between items-center max-w-[1600px] mx-auto">
@@ -79,7 +86,10 @@ export default function Header() {
 					{session?.user && (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
-								<button className="flex items-center gap-2 p-1 rounded-full hover:bg-white/5 transition-colors focus:outline-none">
+								<button
+									className="flex items-center gap-2 p-1 rounded-full hover:bg-white/5 transition-colors focus:outline-none"
+									onKeyDown={handleAvatarKeyDown}
+								>
 									<div className="size-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden">
 										{session.user.image ? (
 											<Image
@@ -87,7 +97,7 @@ export default function Header() {
 												alt={session.user.name || ""}
 												width={32}
 												height={32}
-												className="size-8"
+												className="w-8 h-auto"
 												unoptimized
 											/>
 										) : (

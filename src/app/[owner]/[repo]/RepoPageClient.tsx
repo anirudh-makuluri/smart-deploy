@@ -35,10 +35,11 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		activeRepo,
 		deployments,
 		repoServices,
-		refetchRepoServices,
 		getDetectedRepoCache,
 		setDetectedRepoCache,
 		removeDeployments,
+		mergeDeployments,
+		mergeRepoServices,
 		activeServiceName: storeActiveService,
 		setActiveServiceName,
 		setActiveRepo,
@@ -112,20 +113,29 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
+			const nextRecord = {
+				repo_url: repoUrl,
+				branch: repo?.default_branch ?? "",
+				repo_owner: owner,
+				repo_name: repoName,
+				is_monorepo: data.isMonorepo ?? false,
+				updated_at: new Date().toISOString(),
+				services: list,
+			};
 			setDetectedRepoCache(repoUrl, {
 				services: list,
 				isMonorepo: data.isMonorepo ?? false,
 				isMultiService: data.isMultiService ?? false,
 				packageManager: data.packageManager ?? undefined,
 			});
-			void refetchRepoServices();
-			return list;
+			mergeRepoServices([nextRecord]);
+			return nextRecord;
 		},
 	});
 
 	const services = React.useMemo(
-		() => cachedServices ?? servicesQuery.data ?? [],
-		[cachedServices, servicesQuery.data]
+		() => cachedServices ?? [],
+		[cachedServices]
 	);
 	const loading = !cachedServices && servicesQuery.isLoading;
 	const error = servicesQuery.error
@@ -146,15 +156,20 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const repoDeploymentsQuery = useQuery({
 		queryKey: ["repo-deployments", repo?.full_name ?? repoFullName],
 		enabled: shouldLoadDeployments && Boolean(repo),
+		refetchOnMount: "always",
+		refetchOnWindowFocus: true,
 		queryFn: async () => {
 			if (!repo) return [];
 			return fetchRepoDeploymentsGraphql(repo.full_name);
 		},
 	});
 
-	const repoDeployments = shouldLoadDeployments
-		? repoDeploymentsQuery.data ?? repoDeploymentsFromStore
-		: repoDeploymentsFromStore;
+	React.useEffect(() => {
+		if (!repoDeploymentsQuery.data || repoDeploymentsQuery.data.length === 0) return;
+		mergeDeployments(repoDeploymentsQuery.data);
+	}, [mergeDeployments, repoDeploymentsQuery.data]);
+
+	const repoDeployments = repoDeploymentsFromStore;
 
 	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
 		if (activeRepo?.full_name?.toLowerCase() !== routeRepoLower) return null;
@@ -185,6 +200,16 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	React.useEffect(() => {
 		scheduleLazyDeploymentFetch();
 	}, [scheduleLazyDeploymentFetch]);
+
+	React.useEffect(() => {
+		if (!repo) return;
+		if (activeRepo?.full_name?.toLowerCase() !== repo.full_name.toLowerCase()) {
+			setActiveRepo(repo as repoType);
+		}
+		if (!shouldLoadDeployments) {
+			setShouldLoadDeployments(true);
+		}
+	}, [activeRepo, repo, setActiveRepo, shouldLoadDeployments]);
 
 	React.useEffect(() => {
 		setActiveServiceName(null);

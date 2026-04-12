@@ -1,6 +1,7 @@
 import { DeployConfig } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import config from "@/config";
+import { getDeploymentForService } from "@/lib/utils";
 
 function createDefaultDeployment(repoName: string, serviceName: string, repoUrl?: string, branch?: string): DeployConfig {
 	return {
@@ -35,8 +36,11 @@ export function useActiveDeployment(): DeployConfig {
 		return createDefaultDeployment("", "", "");
 	}
 
-	const found = deployments.find(
-		(dep) => dep.repoName === activeRepo.name && dep.serviceName === activeServiceName
+	const found = getDeploymentForService(
+		deployments,
+		activeRepo.html_url,
+		activeServiceName,
+		activeRepo.name
 	);
 
 	if (found) return found;

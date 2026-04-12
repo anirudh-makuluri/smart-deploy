@@ -81,6 +81,7 @@ export default function DeployWorkspace() {
 	// ============== CALLBACKS ==============
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
+			setIsDeploying(false);
 			const ec2 = p.ec2 as { instanceId?: string } | null;
 			if (p.success) {
 				const url = p.customUrl || p.deployUrl;
@@ -88,6 +89,22 @@ export default function DeployWorkspace() {
 					description: url ? `Live at ${url}` : "Your application is now running.",
 					duration: 8000,
 				});
+
+				if (repoName && serviceName) {
+					void updateDeploymentById({
+						repoName,
+						serviceName,
+						url: deployment.url || repoUrl || "",
+						status: "running",
+						lastDeployment: new Date().toISOString(),
+						liveUrl: url || deployment.liveUrl || null,
+						...(p.ec2 != null ? { ec2: p.ec2 } : {}),
+						...(p.deploymentTarget && {
+							deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
+						}),
+					});
+					void fetchRepoDeployments(repoIdentifier);
+				}
 			} else {
 				toast.error("Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
@@ -107,7 +124,7 @@ export default function DeployWorkspace() {
 				});
 			}
 		},
-		[repoName, serviceName, updateDeploymentById]
+		[deployment.liveUrl, deployment.url, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
 	);
 
 	const effectiveBranch = React.useMemo(
@@ -199,6 +216,12 @@ export default function DeployWorkspace() {
 		() => effectiveDeploymentStatus === "didnt_deploy",
 		[effectiveDeploymentStatus]
 	);
+
+	React.useEffect(() => {
+		if (activeSection !== "setup") return;
+		if (isDraft) return;
+		setActiveSection("overview");
+	}, [activeSection, isDraft, deployment.id]);
 
 	if (!activeRepo || !serviceName) {
 		return (

@@ -34,7 +34,7 @@ vi.mock("@/store/useAppData", () => ({
 }));
 
 vi.mock("@/custom-hooks/useDeployLogs", () => ({
-	useDeployLogs: () => mockUseDeployLogs(),
+	useDeployLogs: (...args: unknown[]) => mockUseDeployLogs(...args),
 }));
 
 vi.mock("@/components/ConfigTabs", () => ({
@@ -116,6 +116,21 @@ describe("DeployWorkspace", () => {
 			serviceLogs: [],
 			deployLogEntries: [],
 		});
+		updateDeploymentById.mockImplementation(async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
+			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
+			const next = deployments.find(
+				(dep) => dep.repoName === partial.repoName && dep.serviceName === partial.serviceName
+			);
+			const merged = { ...(next ?? {}), ...partial } as DeployConfig;
+			appState = {
+				...appState,
+				deployments: next
+					? deployments.map((dep) =>
+						dep.repoName === partial.repoName && dep.serviceName === partial.serviceName ? merged : dep
+					)
+					: [...deployments, merged],
+			};
+		});
 		appState = {
 			deployments: [],
 			updateDeploymentById,
@@ -152,6 +167,21 @@ describe("DeployWorkspace", () => {
 		expect(screen.queryByText("DeployOverview")).not.toBeInTheDocument();
 	});
 
+	it("opens overview first when the selected service already has a live deployment", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{ ...baseDeployment, liveUrl: "https://web.example.com" }],
+		};
+
+		renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(screen.getByText("DeployOverview")).toBeInTheDocument();
+		});
+	});
+
 	it("requests screenshot generation when running deployment has live URL and no screenshot", async () => {
 		const fetchMock = vi.fn()
 			.mockResolvedValueOnce({
@@ -180,5 +210,47 @@ describe("DeployWorkspace", () => {
 			)
 		);
 		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
+	});
+
+	it("updates the workspace immediately after a successful deploy completes", async () => {
+		mockUseDeployLogs.mockImplementation((_serviceName: string, _repoName: string, options?: { onDeployFinished?: (payload: { success: boolean; deployUrl?: string | null }) => void }) => {
+			queueMicrotask(() => {
+				options?.onDeployFinished?.({
+					success: true,
+					deployUrl: "https://web.example.com",
+				});
+			});
+
+			return {
+				steps: [],
+				sendDeployConfig: vi.fn(),
+				deployConfigRef: { current: null },
+				deployStatus: "success",
+				deployError: null,
+				serviceLogs: [],
+				deployLogEntries: [],
+			};
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [baseDeployment],
+		};
+
+		renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "running",
+					liveUrl: "https://web.example.com",
+				})
+			);
+		});
+		expect(document.title).toContain("Deployment succeeded");
 	});
 });
