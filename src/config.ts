@@ -27,7 +27,7 @@ const config = {
 	DOCKERHUB_TOKEN: process.env.DOCKERHUB_TOKEN || "",
 
 	// Deployment domain (for host-based routing with shared ALB)
-	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "anirudh-makuluri.xyz",
+	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz",
 
 	// Vercel DNS (for custom domain management)
 	VERCEL_TOKEN: process.env.VERCEL_TOKEN || "",

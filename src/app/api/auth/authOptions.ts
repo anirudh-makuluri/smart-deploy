@@ -24,7 +24,8 @@ export const authOptions : AuthOptions = {
 		async signIn({ user, account, profile }) {
 			const email = user.email || (profile as { email?: string })?.email || "";
 			const name = user.name || (profile as { name?: string })?.name || "";
-			if (!email.toLowerCase().includes("anirudh")) {
+			const { approved } = await dbHelper.isApprovedUser(email);
+			if (!approved) {
 				// Store in waiting list and deny sign-in (redirects to waiting-list page)
 				await dbHelper.addToWaitingList(email, name || undefined);
 				return false;
