@@ -41,8 +41,8 @@ gcloud services enable \
 3. Grant these roles:
    - **Cloud Run Admin** (`roles/run.admin`)
    - **Cloud Build Editor** (`roles/cloudbuild.builds.editor`)
-   - **Storage Admin** (`roles/storage.admin`) — needed for Cloud Build to push images
-   - **Service Account User** (`roles/iam.serviceAccountUser`) — needed to deploy to Cloud Run
+   - **Storage Admin** (`roles/storage.admin`): needed for Cloud Build to push images
+   - **Service Account User** (`roles/iam.serviceAccountUser`): needed to deploy to Cloud Run
    - **Logs Viewer** (`roles/logging.viewer`)
 4. Click **Done**.
 

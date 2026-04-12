@@ -99,7 +99,7 @@ export async function getEcrAuthToken(region: string): Promise<{ username: strin
 /**
  * Grants ECR read-only pull access to the EC2 SSM instance role so
  * ECR-authenticated `docker pull` works on the instance.
- * Idempotent — attaching a policy that is already attached is a no-op.
+ * Idempotent: attaching a policy that is already attached is a no-op.
  */
 export async function ensureEc2EcrPullPolicy(
 	ssmRoleName: string,
@@ -114,6 +114,6 @@ export async function ensureEc2EcrPullPolicy(
 			}),
 		);
 	} catch {
-		// Ignore — policy may already be attached or role may not exist yet
+		// Ignore: policy may already be attached or role may not exist yet
 	}
 }

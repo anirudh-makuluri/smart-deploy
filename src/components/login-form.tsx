@@ -47,7 +47,7 @@ export function LoginForm({
 					</div>
 				</div>
 
-				{/* Sign in with email and password (UI only — functionality later) */}
+				{/* Sign in with email and password (UI only; functionality later) */}
 				<form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
 					<div className="space-y-2">
 						<Label htmlFor="auth-email" className="text-foreground text-sm">

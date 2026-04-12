@@ -1801,7 +1801,7 @@ export async function registerInstanceToTargetGroup(
 
 /**
  * When ACM is configured, the HTTP listener's default action must redirect to HTTPS.
- * Host-based *forward* rules on port 80 match before the default and would still serve plain HTTP — remove them
+ * Host-based *forward* rules on port 80 match before the default and would still serve plain HTTP; remove them
  * so app traffic uses TLS on 443 (host rules belong on the HTTPS listener only).
  */
 async function stripForwardRulesFromListener(listenerArn: string, region: string, ws: any): Promise<void> {

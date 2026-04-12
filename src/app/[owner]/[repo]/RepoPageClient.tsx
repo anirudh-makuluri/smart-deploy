@@ -171,7 +171,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
 		if (activeRepo?.full_name?.toLowerCase() !== routeRepoLower) return null;
 		if (!storeActiveService) return null;
-		// "Deploy all on one instance" sets activeServiceName to "." — that row is not in detected services.
+		// "Deploy all on one instance" sets activeServiceName to "."; that row is not in detected services.
 		if (storeActiveService === "." && services.length > 0) {
 			return { name: ".", path: ".", language: "unknown" };
 		}

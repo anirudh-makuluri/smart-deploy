@@ -8,8 +8,8 @@ export const DEFAULT_EC2_INSTANCE_TYPE = "t3.micro";
 export const EC2_PRICING_MONTHLY_HOURS = 730;
 
 /**
- * Approximate Linux on-demand USD/hour in **US West (Oregon) — us-west-2**.
- * Source ballpark: https://aws.amazon.com/ec2/pricing/on-demand/ — refresh when AWS changes list prices.
+ * Approximate Linux on-demand USD/hour in **US West (Oregon), us-west-2**.
+ * Source ballpark: https://aws.amazon.com/ec2/pricing/on-demand/; refresh when AWS changes list prices.
  * Does not include EBS, data transfer, or taxes; other regions differ.
  */
 export const EC2_ON_DEMAND_HOURLY_USD_US_WEST_2: Record<string, number> = {
@@ -49,7 +49,7 @@ export function formatApproxEc2PriceCompact(instanceType: string): string | null
 	return `~$${p.hourlyUsd.toFixed(3)}/hr · ~$${Math.round(p.monthlyUsd)}/mo`;
 }
 
-/** Curated x86 types — AMI selection uses x86_64; avoid Graviton (e.g. c7g) here. */
+/** Curated x86 types. AMI selection uses x86_64; avoid Graviton (e.g. c7g) here. */
 export const EC2_INSTANCE_TYPE_PRESETS = [
 	"t3.micro",
 	"t3.small",

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowRight, FileText, Layers3, Radar, Sparkles } from "lucide-react";
+import { ArrowRight, FileText, Layers3, Radar, ScrollText } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { MobileNavMenu } from "@/components/public/MobileNavMenu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -47,28 +48,49 @@ export function PublicPageShell({
 	children,
 }: PublicPageShellProps) {
 	return (
-		<div className="landing-bg min-h-svh overflow-x-hidden text-foreground">
+		<div className="landing-bg overflow-x-hidden text-foreground">
 			<div className="landing-hero-wave pointer-events-none absolute inset-x-0 top-0 h-96 opacity-60" aria-hidden />
 			<header className="sticky top-0 z-50 border-b border-border/60 bg-background/82 backdrop-blur-xl">
-				<div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 lg:px-8">
-					<SmartDeployLogo href="/" />
-					<nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
+				<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-4 py-3 sm:gap-3 sm:py-4 lg:px-8">
+					<div className="min-w-0 shrink">
+						<SmartDeployLogo href="/" />
+					</div>
+					<nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex" aria-label="Primary">
 						{navLinks.map((link) => (
-							<Link key={link.href} href={link.href} className="transition-colors hover:text-foreground">
+							<Link
+								key={link.href}
+								href={link.href}
+								className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+							>
 								{link.label}
 							</Link>
 						))}
 					</nav>
-					<div className="flex shrink-0 items-center gap-2">
-						{showMilestonesButton && (
-							<Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
-								<Link href="/changelog">Recent Milestones</Link>
-							</Button>
-						)}
-						{showDocsButton && (
-							<Button asChild size="sm" className="shadow-[0_18px_40px_-20px_rgba(59,130,246,0.85)]">
-								<Link href="/docs">Read the Docs</Link>
-							</Button>
+					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+						<MobileNavMenu links={navLinks} className="md:hidden" />
+						{(showMilestonesButton || showDocsButton) && (
+							<div className="flex items-center gap-1.5 sm:gap-2">
+								{showMilestonesButton && (
+									<Button asChild variant="outline" size="sm" className="whitespace-nowrap">
+										<Link href="/changelog">
+											<span className="sm:hidden">Updates</span>
+											<span className="hidden sm:inline">Site updates</span>
+										</Link>
+									</Button>
+								)}
+								{showDocsButton && (
+									<Button
+										asChild
+										size="sm"
+										className="whitespace-nowrap shadow-[0_18px_40px_-20px_rgba(37,244,106,0.45)]"
+									>
+										<Link href="/docs">
+											<span className="inline sm:hidden">Docs</span>
+											<span className="hidden sm:inline">Read the Docs</span>
+										</Link>
+									</Button>
+								)}
+							</div>
 						)}
 					</div>
 				</div>
@@ -77,13 +99,13 @@ export function PublicPageShell({
 			<main className="relative px-4 pb-20 pt-10 lg:px-8 lg:pb-28 lg:pt-14">
 				<div className="mx-auto max-w-7xl">
 					<section className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-						<div className="landing-panel landing-shell overflow-hidden p-8 sm:p-10">
+						<div className="landing-panel landing-shell overflow-hidden p-7 sm:p-10">
 							<div className="landing-grid-overlay absolute inset-0 opacity-30" aria-hidden />
 							<div className="relative z-10">
 								<p className="text-xs font-semibold uppercase tracking-[0.26em] text-primary">{eyebrow}</p>
 								<div className="mt-4 flex flex-wrap items-center gap-3">
 									<Badge className="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em]">
-										<Sparkles className="size-3.5" />
+										<ScrollText className="size-3.5" />
 										{badge}
 									</Badge>
 								</div>
@@ -125,7 +147,7 @@ export function PublicPageShell({
 										<Link
 											key={link.href}
 											href={link.href}
-											className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/40 px-4 py-3 text-sm text-foreground transition-colors hover:border-primary/45 hover:bg-primary/5"
+											className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/40 px-4 py-3 text-sm text-foreground transition-colors hover:border-primary/45 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 										>
 											<span>{link.label}</span>
 											<ArrowRight className="size-4 text-primary" />
@@ -144,8 +166,8 @@ export function PublicPageShell({
 										<FileText className="size-5" />
 									</div>
 									<div>
-										<p className="text-sm font-semibold text-foreground">Docs that get you shipping</p>
-										<p className="text-sm text-muted-foreground">Architecture, deploy flow, and product context in one place.</p>
+										<p className="text-sm font-semibold text-foreground">Docs that read like a briefing</p>
+										<p className="text-sm text-muted-foreground">Short sections, clear headings, and no wall of configuration before you understand the model.</p>
 									</div>
 								</div>
 							</div>
@@ -155,8 +177,8 @@ export function PublicPageShell({
 										<Layers3 className="size-5" />
 									</div>
 									<div>
-										<p className="text-sm font-semibold text-foreground">Built for teams that ship</p>
-										<p className="text-sm text-muted-foreground">Content is structured for quick decisions, not long internal writeups.</p>
+										<p className="text-sm font-semibold text-foreground">Same story as the product</p>
+										<p className="text-sm text-muted-foreground">Landing, docs, and changelog share one visual language so the site feels intentional, not bolted on.</p>
 									</div>
 								</div>
 							</div>

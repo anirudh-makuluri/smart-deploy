@@ -276,7 +276,7 @@ export default function ConfigTabs({
 							EC2 instance type
 						</div>
 						<p className="text-[10px] text-muted-foreground/40 leading-relaxed">
-							Size for new EC2 instances. Redeploying to an existing instance does not resize it—change type in AWS or replace the instance.
+							Size for new EC2 instances. Redeploying to an existing instance does not resize it. Change type in AWS or replace the instance.
 						</p>
 						<p className="text-[10px] text-muted-foreground/30 leading-relaxed mt-1">
 							Prices are approximate on-demand Linux in <span className="text-muted-foreground/50">us-west-2</span> (EBS &amp; transfer extra; other regions differ).
@@ -319,7 +319,7 @@ export default function ConfigTabs({
 													<span className="text-[10px] text-muted-foreground/80 font-normal">{priceLine}</span>
 												) : (
 													<span className="text-[10px] text-muted-foreground/50 font-normal">
-														Estimate unavailable — see AWS pricing
+														Estimate unavailable. See AWS pricing
 													</span>
 												)}
 											</div>

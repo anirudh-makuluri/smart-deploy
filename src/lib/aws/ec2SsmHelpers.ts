@@ -543,15 +543,15 @@ async function getSsmRegistrationDiagnostics(
 		const hasOutbound = hasIgw || hasNat;
 
 		if (publicIp === "none" && !hasOutbound) {
-			return ` Instance has no public IP and subnet has no 0.0.0.0/0 route to IGW/NAT — add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages) in this VPC.`;
+			return ` Instance has no public IP and subnet has no 0.0.0.0/0 route to IGW/NAT. Add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages) in this VPC.`;
 		}
 		if (publicIp === "none" && hasOutbound) {
 			return ` Instance has no public IP (private subnet). Subnet has default route (NAT/IGW). If using private subnet, create VPC endpoints for SSM (ssm, ec2messages, ssmmessages) so the instance can reach SSM without internet.`;
 		}
 		if (hasOutbound) {
-			return ` Instance has public IP ${publicIp} and subnet has internet route. SSM agent may not be running — reboot the instance in EC2 console (Instance state → Reboot), wait 2–3 min, then redeploy.`;
+			return ` Instance has public IP ${publicIp} and subnet has internet route. SSM agent may not be running. Reboot the instance in EC2 console (Instance state → Reboot), wait 2-3 min, then redeploy.`;
 		}
-		return ` Instance has public IP ${publicIp} but subnet has no 0.0.0.0/0 route — check subnet route table and add IGW or NAT.`;
+		return ` Instance has public IP ${publicIp} but subnet has no 0.0.0.0/0 route. Check subnet route table and add IGW or NAT.`;
 	} catch {
 		return "";
 	}
@@ -651,7 +651,7 @@ export async function ensureInstanceSsmReady(
 	const diagnostics = await getSsmRegistrationDiagnostics(instanceId, region, ws);
 	if (diagnostics) send("SSM diagnostic:" + diagnostics, "deploy");
 	throw new Error(
-		"Instance did not register with SSM. Common causes: (1) Instance has no outbound internet (e.g. private subnet without NAT). Add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages). (2) SSM agent not running — in EC2 console, reboot the instance and redeploy. (3) Wrong account/region. Fix network or reboot the instance in EC2 console, then redeploy." +
+		"Instance did not register with SSM. Common causes: (1) Instance has no outbound internet (e.g. private subnet without NAT). Add a NAT Gateway or create VPC endpoints for SSM (ssm, ec2messages, ssmmessages). (2) SSM agent not running: in EC2 console, reboot the instance and redeploy. (3) Wrong account/region. Fix network or reboot the instance in EC2 console, then redeploy." +
 		(diagnostics ? diagnostics : "")
 	);
 }

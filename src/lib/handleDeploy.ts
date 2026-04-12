@@ -410,7 +410,7 @@ async function handleAWSDeploy(
 
 /**
  * Handles AWS deployment using CodeBuild + ECR pipeline.
- * No local clone required — CodeBuild pulls source directly from GitHub.
+ * No local clone required: CodeBuild pulls source directly from GitHub.
  */
 async function handleAWSCodeBuildDeploy(
 	deployConfig: DeployConfig,
@@ -512,7 +512,7 @@ async function handleAWSCodeBuildDeploy(
 	const dockerHub =
 		dockerHubUser && dockerHubToken ? { username: dockerHubUser, token: dockerHubToken } : undefined;
 	if (!dockerHub && dockerHubUser && !dockerHubToken) {
-		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing — Docker Hub login will be skipped.", "build");
+		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing. Docker Hub login will be skipped.", "build");
 	}
 
 	if (!hasCommit || !allTagsExist) {
@@ -548,7 +548,7 @@ async function handleAWSCodeBuildDeploy(
 		const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
 		if (!buildResult.success) {
 			send("❌ Docker image build failed. Check build logs above.", "build");
-			throw new Error("CodeBuild failed — Docker image build did not succeed");
+			throw new Error("CodeBuild failed: Docker image build did not succeed");
 		}
 	} else {
 		send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");

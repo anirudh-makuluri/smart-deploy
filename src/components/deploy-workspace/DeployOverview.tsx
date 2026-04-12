@@ -42,7 +42,7 @@ function EndpointRow({ label, value }: { label: string; value: string | undefine
 		return (
 			<div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
 				<span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-				<span className="text-sm text-muted-foreground/70">—</span>
+				<span className="text-sm text-muted-foreground/70">-</span>
 			</div>
 		);
 	}

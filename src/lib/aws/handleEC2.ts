@@ -898,7 +898,7 @@ export async function handleEC2(
 			);
 		} else {
 			send(
-				`Could not find instance ${existingInstanceId} in region ${region}. Launching a new instance — if the instance still exists, set the deployment AWS region to match.`,
+				`Could not find instance ${existingInstanceId} in region ${region}. Launching a new instance. If the instance still exists, set the deployment AWS region to match.`,
 				"deploy"
 			);
 		}
@@ -1120,7 +1120,7 @@ export async function handleEC2FromEcr(params: {
 	const publicIp = (await runAWSCommand(["ec2", "describe-instances", "--instance-ids", instanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")).trim();
 	send(`Instance public IP: ${publicIp}`, "deploy");
 
-	// Wait for user-data (package install only) — look for "Instance setup complete!"
+	// Wait for user-data (package install only); look for "Instance setup complete!"
 	await waitForUserData(instanceId, region, ws, send);
 
 	send("Waiting for SSM agent...", "deploy");

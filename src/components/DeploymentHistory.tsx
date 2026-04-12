@@ -188,7 +188,8 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 														{step.label} ({step.status})
 														{(step.startedAt || step.endedAt) && (
 															<span className="text-muted-foreground font-normal ml-1">
-																— {step.endedAt
+																{" · "}
+																{step.endedAt
 																	? new Date(step.endedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 																	: new Date(step.startedAt!).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
 															</span>

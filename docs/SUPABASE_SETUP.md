@@ -43,7 +43,7 @@ To grant someone access, insert their email into `approved_users`. If someone si
 1. In the Supabase dashboard, go to **Project Settings -> API**.
 2. Copy:
    - **Project URL** (e.g. `https://abcdefgh.supabase.co`)
-   - **service_role key** (under "Project API keys" -> `service_role` — the secret one, not the `anon` key)
+   - **service_role key** (under "Project API keys" -> `service_role`, the secret one, not the `anon` key)
 
 Add them to your `.env`:
 

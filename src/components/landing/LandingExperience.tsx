@@ -1,33 +1,32 @@
 "use client";
 
 import React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
 	ArrowRight,
 	CheckCircle2,
-	ExternalLink,
+	FileCode2,
 	Github,
 	ImageOff,
+	Layers3,
+	ServerCog,
 	type LucideIcon,
-	Rocket,
-	ScanSearch,
-	SquareTerminal,
 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { MobileNavMenu, type MobileNavLink } from "@/components/public/MobileNavMenu";
 import { Button } from "@/components/ui/button";
 
 type LandingExperienceProps = {
 	isSignedIn: boolean;
 };
 
-type ProductPillar = {
+type StoryCard = {
 	eyebrow: string;
 	title: string;
 	description: string;
-	icon: LucideIcon;
 };
 
 type WorkflowStep = {
@@ -37,115 +36,83 @@ type WorkflowStep = {
 	icon: LucideIcon;
 };
 
-type ScreenshotSlot = {
-	eyebrow: string;
-	title: string;
-	description: string;
-	imageSrc: string;
-	imageAlt: string;
+type ComparisonRow = {
+	platform: string;
+	ease: string;
+	visibility: string;
+	highlight?: boolean;
 };
 
-type ProductMetric = {
-	value: number;
-	suffix?: string;
-	label: string;
-	description: string;
-};
-
-const productPillars: ProductPillar[] = [
+const storyCards: StoryCard[] = [
 	{
-		eyebrow: "Repository Intake",
-		title: "Turn a GitHub repo into a deployable surface.",
+		eyebrow: "PaaS",
+		title: "Easy to ship, hard to inspect.",
 		description:
-			"SmartDeploy inspects the repo, detects the moving parts, and shows what needs to ship before you touch infrastructure.",
-		icon: Github,
+			"Platforms like Vercel, Netlify, Render, and Railway get you moving quickly, but they rarely show the full deploy path or the exact infrastructure files behind it.",
 	},
 	{
-		eyebrow: "Release Blueprint",
-		title: "Surface the rollout path before you deploy.",
+		eyebrow: "Cloud",
+		title: "Full control, full surface area.",
 		description:
-			"Blueprints, runtime checks, and dependency signals keep the release plan visible before provisioning starts.",
-		icon: ScanSearch,
+			"Raw AWS and GCP give you the pieces, but you are the one stitching together containers, networking, health checks, logs, and deploy orchestration.",
 	},
 	{
-		eyebrow: "Live Operations",
-		title: "Keep rollout state, logs, and preview in one live view.",
+		eyebrow: "Smart Deploy",
+		title: "A middle path built for solo developers.",
 		description:
-			"Build output, runtime feedback, and the live app stay connected so validation happens in one place instead of across tabs.",
-		icon: SquareTerminal,
+			"Bring your own Docker, Compose, and Nginx or generate a starting point, open the blueprint once it makes sense, then ship with the same files you already inspected.",
 	},
 ];
 
 const workflowSteps: WorkflowStep[] = [
 	{
 		id: "01",
-		title: "Connect a repository",
-		description: "Import a GitHub repo, detect services, and establish the deployable surface in seconds.",
-		icon: Github,
+		title: "Write it or generate it",
+		description:
+			"Bring your own Dockerfile, docker-compose.yml, and Nginx config, or let Smart Deploy generate a starting point for you.",
+		icon: FileCode2,
 	},
 	{
 		id: "02",
-		title: "Generate the blueprint",
-		description: "Run Smart Analysis to inspect runtime needs, service layout, and deployment constraints before rollout.",
-		icon: ScanSearch,
+		title: "Inspect the blueprint",
+		description:
+			"Open that plan in one place: services, ports, containers, and how traffic moves, before the deploy starts.",
+		icon: Layers3,
 	},
 	{
 		id: "03",
-		title: "Deploy with context",
-		description: "Configure the release path with the blueprint, branches, and operational details already attached.",
-		icon: Rocket,
+		title: "Review the actual files",
+		description:
+			"Check the generated or existing Docker, Compose, and Nginx artifacts and see how each one is used in the deploy.",
+		icon: ServerCog,
 	},
 	{
 		id: "04",
-		title: "Validate the release",
-		description: "Watch logs, rollout status, and preview output without bouncing across separate tools.",
+		title: "Deploy with confidence",
+		description:
+			"Start the deploy once the plan makes sense, then follow logs, status, health, and preview output from the same workspace.",
 		icon: CheckCircle2,
 	},
 ];
 
-const screenshotSlots: ScreenshotSlot[] = [
-	{
-		eyebrow: "Workspace",
-		title: "Repository intake and service detection",
-		description:
-			"Import GitHub repositories and let SmartDeploy automatically detect services, runtimes, and branch-level status across your workspace.",
-		imageSrc: "/screenshots/repo-overview.png",
-		imageAlt: "SmartDeploy workspace showing imported repositories and detected services",
-	},
-	{
-		eyebrow: "Analysis",
-		title: "Smart Analysis and deployment blueprint",
-		description:
-			"Inspect runtime requirements, service dependencies, and deployment constraints before a single resource is provisioned.",
-		imageSrc: "/screenshots/smart-analysis.png",
-		imageAlt: "SmartDeploy analysis output showing the generated deployment blueprint",
-	},
-	{
-		eyebrow: "Deploy",
-		title: "Deployment logs and live preview",
-		description:
-			"Monitor rollout status, stream build and runtime logs, and preview the live application from one operational surface.",
-		imageSrc: "/screenshots/deploy-preview.png",
-		imageAlt: "SmartDeploy deployment view with logs and live preview side by side",
-	},
+const comparisonRows: ComparisonRow[] = [
+	{ platform: "Vercel / Netlify", ease: "High", visibility: "Low" },
+	{ platform: "Render / Railway", ease: "Medium", visibility: "Low-Medium" },
+	{ platform: "AWS / GCP", ease: "Low", visibility: "High" },
+	{ platform: "Dokku / Coolify", ease: "Medium", visibility: "High" },
+	{ platform: "Smart Deploy", ease: "High", visibility: "High", highlight: true },
 ];
 
-const productMetrics: ProductMetric[] = [
-	{
-		value: 4,
-		label: "Workflow steps",
-		description: "A short path from repository intake through release validation.",
-	},
-	{
-		value: 1,
-		label: "Shared workspace",
-		description: "Blueprints, deploy state, logs, and preview stay connected in one view.",
-	},
-	{
-		value: 3,
-		label: "Core surfaces",
-		description: "Repository intelligence, decision support, and operational visibility.",
-	},
+/** Offset for in-page anchors so sticky header does not cover section titles */
+const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
+
+const landingMobileNavLinks: MobileNavLink[] = [
+	{ href: "#start-your-way", label: "Your way" },
+	{ href: "#problem-solution", label: "Why it exists" },
+	{ href: "#comparison", label: "Comparison" },
+	{ href: "#workflow", label: "How it works" },
+	{ href: "/docs", label: "Docs" },
+	{ href: "/changelog", label: "Changelog" },
 ];
 
 const containerVariants: Variants = {
@@ -226,15 +193,6 @@ function SectionIntro({
 	);
 }
 
-function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
-	return (
-		<span>
-			{value}
-			{suffix}
-		</span>
-	);
-}
-
 function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 	const [failed, setFailed] = useState(false);
 
@@ -245,8 +203,8 @@ function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 					<ImageOff className="size-6" />
 				</div>
 				<div className="text-center">
-					<p className="text-sm font-medium text-muted-foreground">Screenshot coming soon</p>
-					<p className="mt-1 text-xs text-muted-foreground/70">Product capture will appear here</p>
+					<p className="text-sm font-medium text-muted-foreground">Screenshot unavailable</p>
+					<p className="mt-1 text-xs text-muted-foreground/70">Add a current product capture to replace this fallback</p>
 				</div>
 			</div>
 		);
@@ -282,37 +240,31 @@ function HeroPreview() {
 				animate={prefersReducedMotion ? undefined : { x: [0, 10, -6, 0], y: [0, 8, -4, 0], scale: [1, 1.08, 0.98, 1] }}
 				transition={prefersReducedMotion ? undefined : { duration: 12, repeat: Infinity, ease: "easeInOut" }}
 			/>
-			<motion.div
-				className="landing-panel landing-shell relative overflow-hidden p-3 sm:p-4"
-				whileHover={prefersReducedMotion ? undefined : { y: -6, rotateX: -2, rotateY: 2 }}
-				transition={{ duration: 0.35, ease: "easeOut" }}
-			>
-				<div className="landing-grid-overlay absolute inset-0 opacity-40" aria-hidden />
-				<div className="landing-orbital-ring absolute inset-6 rounded-[28px] opacity-70" aria-hidden />
-				<div className="relative z-10">
-					<div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/60 px-4 py-3">
-						<div className="flex items-center gap-2">
-							<span className="size-2.5 rounded-full bg-rose-400/80" />
-							<span className="size-2.5 rounded-full bg-amber-300/80" />
-							<span className="size-2.5 rounded-full bg-emerald-400/80" />
+			<div className="landing-panel landing-shell relative overflow-hidden p-3 sm:p-4">
+				<div className="landing-grid-overlay absolute inset-0 opacity-30" aria-hidden />
+				<div className="relative z-10 rounded-[26px] border border-border/70 bg-background/70 p-4 sm:p-5">
+					<div className="flex items-center justify-between gap-4 border-b border-border/70 pb-4">
+						<div>
+							<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Blueprint preview</p>
+							<h3 className="mt-2 text-xl font-semibold text-foreground">Define it. Preview it. Deploy it.</h3>
 						</div>
-						<span className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary">
-							<span className="size-2 rounded-full bg-primary" />
-							SmartDeploy
-						</span>
+						<div className="hidden rounded-2xl border border-border/70 bg-card/80 px-3 py-2 text-right sm:block">
+							<p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Visibility</p>
+							<p className="mt-1 text-sm font-medium text-foreground">Docker + Compose + Nginx</p>
+						</div>
 					</div>
 					<motion.div
-						className="mt-3"
-						animate={prefersReducedMotion ? undefined : { y: [0, -5, 0] }}
+						className="mt-4"
+						animate={prefersReducedMotion ? undefined : { y: [0, -4, 0] }}
 						transition={prefersReducedMotion ? undefined : { duration: 7, repeat: Infinity, ease: "easeInOut" }}
 					>
 						<ScreenshotImage
 							src="/screenshots/dashboard.png"
-							alt="SmartDeploy dashboard overview"
+							alt="Smart Deploy dashboard overview"
 						/>
 					</motion.div>
 				</div>
-			</motion.div>
+			</div>
 		</motion.div>
 	);
 }
@@ -332,117 +284,101 @@ function WorkflowRail() {
 			/>
 			<div className="grid gap-4 lg:grid-cols-4">
 				{workflowSteps.map((step, index) => {
-				const Icon = step.icon;
+					const Icon = step.icon;
 
-				return (
-					<motion.div
-						key={step.id}
-						initial={prefersReducedMotion ? false : { opacity: 0, y: 26, scale: 0.98 }}
-						whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
-						viewport={{ once: true, amount: 0.25 }}
-						transition={prefersReducedMotion ? undefined : { duration: 0.6, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
-					>
+					return (
 						<motion.div
-							className="group landing-panel landing-shell relative h-full overflow-hidden p-5"
-							whileHover={prefersReducedMotion ? undefined : { y: -6 }}
-							transition={{ duration: 0.25, ease: "easeOut" }}
+							key={step.id}
+							initial={prefersReducedMotion ? false : { opacity: 0, y: 26, scale: 0.98 }}
+							whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+							viewport={{ once: true, amount: 0.25 }}
+							transition={prefersReducedMotion ? undefined : { duration: 0.6, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
 						>
-							<div className="landing-grid-overlay absolute inset-0 opacity-25" aria-hidden />
-							<div className="landing-card-glow absolute inset-x-6 top-0 h-24 opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden />
-							<div className="relative z-10">
-								<div className="flex items-center justify-between gap-4">
-									<motion.div
-										className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-										whileHover={prefersReducedMotion ? undefined : { scale: 1.08, rotate: -4 }}
-										transition={{ duration: 0.25, ease: "easeOut" }}
-									>
-										<Icon className="size-5" />
-									</motion.div>
-									<span className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">{step.id}</span>
+							<div className="group landing-panel landing-shell relative h-full overflow-hidden p-5">
+								<div className="landing-grid-overlay absolute inset-0 opacity-20" aria-hidden />
+								<div className="relative z-10">
+									<div className="flex items-center justify-between gap-4">
+										<div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+											<Icon className="size-5" />
+										</div>
+										<span className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">{step.id}</span>
+									</div>
+									<h3 className="mt-5 text-xl font-semibold tracking-tight text-foreground">{step.title}</h3>
+									<p className="mt-3 text-sm leading-6 text-muted-foreground">{step.description}</p>
 								</div>
-								<h3 className="mt-5 text-xl font-semibold tracking-tight text-foreground">{step.title}</h3>
-								<p className="mt-3 text-sm leading-6 text-muted-foreground">{step.description}</p>
 							</div>
 						</motion.div>
-					</motion.div>
-				);
+					);
 				})}
 			</div>
 		</div>
 	);
 }
 
-function ScreenshotCard({
-	slot,
-	index,
-}: {
-	slot: ScreenshotSlot;
-	index: number;
-}) {
-	const prefersReducedMotion = useReducedMotion();
-
-	return (
-		<motion.div
-			initial={prefersReducedMotion ? false : { opacity: 0, y: 26 }}
-			whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-			viewport={{ once: true, amount: 0.2 }}
-			transition={prefersReducedMotion ? undefined : { duration: 0.65, delay: index * 0.08, ease: [0.22, 1, 0.36, 1] }}
-		>
-			<motion.div
-				className="landing-panel landing-shell overflow-hidden p-5 lg:p-6"
-				whileHover={prefersReducedMotion ? undefined : { y: -4 }}
-				transition={{ duration: 0.25, ease: "easeOut" }}
-			>
-				<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">{slot.eyebrow}</p>
-				<div className="mt-5 landing-shot relative overflow-hidden rounded-[28px] border border-border/75 bg-card/80 p-3">
-					<div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/70 px-4 py-3">
-						<div className="flex items-center gap-2">
-							<span className="size-2.5 rounded-full bg-rose-400/80" />
-							<span className="size-2.5 rounded-full bg-amber-300/80" />
-							<span className="size-2.5 rounded-full bg-emerald-400/80" />
-						</div>
-						<span className="rounded-full border border-border/70 bg-card/80 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
-							{slot.eyebrow}
-						</span>
-					</div>
-					<motion.div
-						className="mt-3"
-						whileHover={prefersReducedMotion ? undefined : { y: -4, scale: 1.01 }}
-						transition={{ duration: 0.25, ease: "easeOut" }}
-					>
-						<ScreenshotImage src={slot.imageSrc} alt={slot.imageAlt} />
-					</motion.div>
-				</div>
-				<h3 className="mt-6 text-2xl font-semibold tracking-tight text-foreground">{slot.title}</h3>
-				<p className="mt-3 text-base leading-7 text-muted-foreground">{slot.description}</p>
-			</motion.div>
-		</motion.div>
-	);
-}
-
 export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 	const primaryHref = isSignedIn ? "/home" : "/auth";
-	const primaryCopy = isSignedIn ? "Open Dashboard" : "Start Deploying";
+	const primaryCopy = isSignedIn ? "Open Dashboard" : "Open Smart Deploy";
 	const prefersReducedMotion = useReducedMotion();
 
+	useEffect(() => {
+		const hash = window.location.hash;
+		if (!hash) return;
+		const targetId = decodeURIComponent(hash.slice(1));
+		let canceled = false;
+		const run = () => {
+			if (canceled) return;
+			const el = document.getElementById(targetId);
+			if (!el) return;
+			el.scrollIntoView({
+				behavior: prefersReducedMotion ? "auto" : "smooth",
+				block: "start",
+			});
+		};
+		const rafId = requestAnimationFrame(() => requestAnimationFrame(run));
+		return () => {
+			canceled = true;
+			cancelAnimationFrame(rafId);
+		};
+	}, [prefersReducedMotion]);
+
 	return (
-		<div className="landing-bg min-h-svh text-foreground">
+		<div className="landing-bg h-svh overflow-x-hidden overflow-y-auto scroll-smooth stealth-scrollbar text-foreground">
 			<header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
-				<div className="mx-auto flex max-w-7xl items-center justify-between px-3 py-4">
-					<SmartDeployLogo href="/" />
-					<nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
-						<Link href="#capabilities" className="transition-colors hover:text-foreground">Capabilities</Link>
-						<Link href="#workflow" className="transition-colors hover:text-foreground">Workflow</Link>
-						<Link href="/docs" className="transition-colors hover:text-foreground">Docs</Link>
-						<Link href="/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
-						<Link href="#product" className="hidden transition-colors hover:text-foreground">Product</Link>
+				<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
+					<div className="min-w-0 shrink">
+						<SmartDeployLogo href="/" />
+					</div>
+					<nav className="hidden items-center gap-6 text-sm text-muted-foreground lg:gap-8 md:flex" aria-label="Primary">
+						<a href="#start-your-way" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Your way</a>
+						<a href="#problem-solution" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Why it exists</a>
+						<a href="#comparison" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Comparison</a>
+						<a href="#workflow" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">How it works</a>
+						<Link href="/docs" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Docs</Link>
+						<Link href="/changelog" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Changelog</Link>
 					</nav>
-					<div className="flex items-center gap-3">
-						<Button asChild variant="outline" className="hidden">
-							<Link href="#product">See the product</Link>
+					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+						<MobileNavMenu links={landingMobileNavLinks} className="md:hidden" />
+						<Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
+							<Link href="/docs">Docs</Link>
 						</Button>
-						<Button asChild className="shadow-[0_18px_40px_-20px_rgba(59,130,246,0.85)]">
-							<Link href={primaryHref}>{primaryCopy}</Link>
+						<Button
+							asChild
+							size="sm"
+							className="shadow-[0_18px_40px_-20px_rgba(37,244,106,0.45)] sm:h-9 sm:px-4 sm:text-sm"
+						>
+							<Link href={primaryHref}>
+								{isSignedIn ? (
+									<>
+										<span className="sm:hidden">Dashboard</span>
+										<span className="hidden sm:inline">{primaryCopy}</span>
+									</>
+								) : (
+									<>
+										<span className="sm:hidden">Get started</span>
+										<span className="hidden sm:inline">{primaryCopy}</span>
+									</>
+								)}
+							</Link>
 						</Button>
 					</div>
 				</div>
@@ -450,8 +386,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 
 			<main>
 				<section className="landing-hero-bg relative overflow-hidden px-6 pb-12 pt-10 lg:px-10 lg:pb-16 lg:pt-12">
-					<div className="landing-hero-wave absolute inset-x-0 top-0 h-112 opacity-70" aria-hidden />
-					<div className="landing-grid-overlay absolute inset-0 opacity-45" aria-hidden />
+					<div className="landing-hero-wave absolute inset-x-0 top-0 h-112 opacity-55" aria-hidden />
+					<div className="landing-grid-overlay absolute inset-0 opacity-30" aria-hidden />
 					<div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
 						<motion.div
 							className="relative z-10"
@@ -459,20 +395,26 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 							animate={prefersReducedMotion ? undefined : "show"}
 							variants={containerVariants}
 						>
-							<motion.h1
-								className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem] lg:leading-[0.95]"
+							<motion.p
+								className="text-xs font-semibold uppercase tracking-[0.28em] text-primary"
 								variants={heroItemVariants}
 							>
-								Turn a GitHub repo into a production release without losing context.
+								For solo developers
+							</motion.p>
+							<motion.h1
+								className="mt-4 max-w-xl text-[2rem] font-semibold leading-[1.12] tracking-tight text-foreground sm:max-w-2xl sm:text-4xl sm:leading-[1.1] lg:text-[2.65rem] lg:leading-[1.08]"
+								variants={heroItemVariants}
+							>
+								Deploy your app without the black box.
 							</motion.h1>
 							<motion.p
-								className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg"
+								className="mt-4 max-w-lg text-base leading-7 text-muted-foreground sm:text-lg"
 								variants={heroItemVariants}
 							>
-								Connect a repo, let Smart Analysis map runtime and service layout, then deploy with logs, status, and preview still in frame.
+								Bring or generate Docker, Compose, and Nginx. Preview the blueprint (your services and routing) before anything runs.
 							</motion.p>
-							<motion.div className="mt-7 flex flex-wrap gap-3" variants={heroItemVariants}>
-								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.9)]">
+							<motion.div className="mt-8 flex flex-wrap gap-3" variants={heroItemVariants}>
+								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(37,244,106,0.45)]">
 									<Link href={primaryHref}>
 										{primaryCopy}
 										<motion.span
@@ -484,25 +426,8 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 									</Link>
 								</Button>
 								<Button asChild size="lg" variant="outline">
-									<Link href="#capabilities">Learn more</Link>
+									<a href="#start-your-way">Start your way</a>
 								</Button>
-							</motion.div>
-
-							<motion.div className="mt-7 grid gap-3 sm:grid-cols-3" variants={heroItemVariants}>
-								{productMetrics.map((metric) => (
-									<div key={metric.label} className="landing-panel landing-shell group overflow-hidden px-4 py-3 sm:px-5">
-										<div className="landing-card-glow absolute inset-x-6 top-0 h-16 opacity-70" aria-hidden />
-										<p className="relative z-10 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-											<CountUp value={metric.value} suffix={metric.suffix} />
-										</p>
-										<p className="relative z-10 mt-2 text-xs font-semibold uppercase tracking-[0.24em] text-primary">
-											{metric.label}
-										</p>
-										<p className="relative z-10 mt-1.5 text-sm leading-5 text-muted-foreground">
-											{metric.description}
-										</p>
-									</div>
-								))}
 							</motion.div>
 						</motion.div>
 
@@ -512,116 +437,134 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					</div>
 				</section>
 
-				<section id="capabilities" className="border-y border-border/60 bg-muted/20 px-6 py-20 lg:px-10">
+				<section id="start-your-way" className={`border-b border-border/60 px-6 py-16 lg:px-10 ${sectionAnchorClass}`}>
 					<div className="mx-auto max-w-7xl">
 						<SectionIntro
-							eyebrow="Capabilities"
-							title="Built for the hard parts of shipping."
-							description="SmartDeploy focuses on the real bottlenecks: repo intake, release planning, and live operational visibility once code is moving."
+							eyebrow="Start your way"
+							title="Bring your own config, or generate it"
+							description="Either path ends the same way: real files, a blueprint you can read, and a deploy you choose, not one the platform surprises you with."
 							align="center"
 						/>
-
-						<div className="mt-14 grid gap-5 lg:grid-cols-3">
-							{productPillars.map((pillar, index) => {
-								const Icon = pillar.icon;
-
-								return (
-									<motion.div
-										key={pillar.title}
-										initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
-										whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-										viewport={{ once: true, amount: 0.2 }}
-										transition={prefersReducedMotion ? undefined : { duration: 0.55, delay: index * 0.08, ease: "easeOut" }}
-									>
-										<motion.div
-											className="group landing-panel landing-shell relative h-full overflow-hidden p-6"
-											whileHover={prefersReducedMotion ? undefined : { y: -8, scale: 1.01 }}
-											transition={{ duration: 0.25, ease: "easeOut" }}
-										>
-											<div className="landing-grid-overlay absolute inset-0 opacity-25" aria-hidden />
-											<div className="landing-card-glow absolute inset-x-8 top-0 h-24 opacity-0 transition-opacity duration-300 group-hover:opacity-100" aria-hidden />
-											<div className="relative z-10">
-												<motion.div
-													className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary"
-													whileHover={prefersReducedMotion ? undefined : { scale: 1.08, rotate: -5 }}
-													transition={{ duration: 0.2, ease: "easeOut" }}
-												>
-													<Icon className="size-5" />
-												</motion.div>
-												<p className="mt-5 text-xs font-semibold uppercase tracking-[0.24em] text-primary">{pillar.eyebrow}</p>
-												<h3 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{pillar.title}</h3>
-												<p className="mt-4 text-sm leading-6 text-muted-foreground">{pillar.description}</p>
-											</div>
-										</motion.div>
-									</motion.div>
-								);
-							})}
+						<div className="mt-10 grid gap-5 md:grid-cols-2">
+							<motion.div
+								initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
+								whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+								viewport={{ once: true, amount: 0.2 }}
+								transition={prefersReducedMotion ? undefined : { duration: 0.55, ease: "easeOut" }}
+							>
+								<div className="landing-panel landing-shell h-full overflow-hidden p-6 sm:p-7">
+									<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Your stack</p>
+									<h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Bring your own Docker / Compose / Nginx</h3>
+									<p className="mt-4 text-sm leading-6 text-muted-foreground">
+										Already have a Dockerfile, `docker-compose.yml`, and routing config? Smart Deploy detects them and maps them into the blueprint so you can sanity-check the plan before anything runs.
+									</p>
+								</div>
+							</motion.div>
+							<motion.div
+								initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
+								whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+								viewport={{ once: true, amount: 0.2 }}
+								transition={prefersReducedMotion ? undefined : { duration: 0.55, delay: 0.06, ease: "easeOut" }}
+							>
+								<div className="landing-panel landing-shell h-full overflow-hidden p-6 sm:p-7">
+									<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">From the repo</p>
+									<h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Or let Smart Deploy generate a starting point</h3>
+									<p className="mt-4 text-sm leading-6 text-muted-foreground">
+										No files yet? Generate a baseline, then edit like normal code. Either way you inspect and control everything before deploy. Nothing stays trapped behind the UI.
+									</p>
+								</div>
+							</motion.div>
 						</div>
 					</div>
 				</section>
 
-				<section id="workflow" className="px-6 py-20 lg:px-10">
+				<section id="problem-solution" className={`border-y border-border/60 bg-muted/20 px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
 					<div className="mx-auto max-w-7xl">
 						<SectionIntro
-							eyebrow="Workflow"
-							title="Four steps from code to live release."
-							description="The day-to-day flow stays simple: connect the repo, generate the blueprint, deploy with context, and validate the rollout."
+							eyebrow="Problem and solution"
+							title="PaaS hides too much. Raw cloud exposes too much."
+							description="Smart Deploy sits in the middle for solo developers, indie hackers, and small teams who want a simpler path to production without losing sight of how the app actually runs."
+						/>
+
+						<div className="mt-14 grid gap-5 lg:grid-cols-3">
+							{storyCards.map((card, index) => (
+								<motion.div
+									key={card.title}
+									initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+									whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+									viewport={{ once: true, amount: 0.2 }}
+									transition={prefersReducedMotion ? undefined : { duration: 0.55, delay: index * 0.08, ease: "easeOut" }}
+								>
+									<div className="group landing-panel landing-shell relative h-full overflow-hidden p-6">
+										<div className="landing-grid-overlay absolute inset-0 opacity-20" aria-hidden />
+										<div className="relative z-10">
+											<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">{card.eyebrow}</p>
+											<h3 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{card.title}</h3>
+											<p className="mt-4 text-sm leading-6 text-muted-foreground">{card.description}</p>
+										</div>
+									</div>
+								</motion.div>
+							))}
+						</div>
+					</div>
+				</section>
+
+				<section id="comparison" className={`px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
+					<div className="mx-auto max-w-7xl">
+						<SectionIntro
+							eyebrow="Comparison"
+							title="Where Smart Deploy fits"
+							description="Most deployment platforms force a tradeoff between simplicity and control. Smart Deploy is built to give you both - without hiding how your app runs."
+							align="center"
+						/>
+
+						<MotionDiv className="mt-10">
+							<div className="landing-panel landing-shell overflow-hidden">
+								<div className="overflow-x-auto stealth-scrollbar">
+									<table className="min-w-full border-collapse text-left text-sm">
+										<thead>
+											<tr className="border-b border-border/70 bg-background/60">
+												<th className="px-5 py-4 font-semibold text-foreground">Platform</th>
+												<th className="px-5 py-4 font-semibold text-foreground">Ease of use</th>
+												<th className="px-5 py-4 font-semibold text-foreground">Visibility into infrastructure</th>
+											</tr>
+										</thead>
+										<tbody>
+											{comparisonRows.map((row) => (
+												<tr
+													key={row.platform}
+													className={row.highlight
+														? "border-b border-border/60 bg-primary/8 last:border-b-0"
+														: "border-b border-border/60 bg-background/30 last:border-b-0"}
+												>
+													<td className="px-5 py-4 font-medium text-foreground">{row.platform}</td>
+													<td className="px-5 py-4 text-muted-foreground">{row.ease}</td>
+													<td className="px-5 py-4 text-muted-foreground">{row.visibility}</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+							</div>
+						</MotionDiv>
+
+						<p className="mt-6 text-sm font-medium text-foreground">
+							Deploy like a PaaS. Understand it like the cloud.
+						</p>
+					</div>
+				</section>
+
+				<section id="workflow" className={`border-t border-border/60 bg-muted/20 px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
+					<div className="mx-auto max-w-7xl">
+						<SectionIntro
+							eyebrow="How it works"
+							title="A deployment flow you can actually read"
+							description="One loop: write or generate files, preview the blueprint, open the real Docker / Compose / Nginx artifacts, then deploy from the same workspace."
 						/>
 
 						<div className="mt-14">
 							<WorkflowRail />
 						</div>
-					</div>
-				</section>
-
-				<section id="product" className="hidden border-t border-border/60 px-6 py-20 lg:px-10">
-					<div className="mx-auto max-w-7xl">
-						<SectionIntro
-							eyebrow="Product"
-							title="See SmartDeploy in action."
-							description="Each step of the workflow has a dedicated surface designed for clarity. Explore the key views that developers use every day."
-							align="center"
-						/>
-
-						<div className="mt-14 space-y-8">
-							{screenshotSlots.map((slot, index) => (
-								<ScreenshotCard
-									key={slot.title}
-									slot={slot}
-									index={index}
-								/>
-							))}
-						</div>
-
-						<MotionDiv className="mt-16">
-							<div className="landing-panel landing-shell overflow-hidden p-6 lg:p-8">
-								<div className="grid gap-8 lg:grid-cols-[1fr_auto] lg:items-center">
-									<div>
-										<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Ready to ship</p>
-										<h3 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-											Deploy with the same precision you put into your code.
-										</h3>
-										<p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-											SmartDeploy gives developers a clear path from repository to live application with operational visibility at every step.
-										</p>
-									</div>
-									<div className="flex flex-wrap gap-3">
-										<Button asChild size="lg">
-											<Link href={primaryHref}>
-												{primaryCopy}
-												<ArrowRight className="size-4" />
-											</Link>
-										</Button>
-										<Button asChild size="lg" variant="outline">
-											<Link href="#workflow">
-												Review workflow
-												<ExternalLink className="size-4" />
-											</Link>
-										</Button>
-									</div>
-								</div>
-							</div>
-						</MotionDiv>
 					</div>
 				</section>
 			</main>
@@ -631,15 +574,17 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					<div>
 						<SmartDeployLogo href="/" className="mb-3" />
 						<p className="max-w-xl text-sm text-muted-foreground">
-							SmartDeploy gives teams a repo-first path to analyze, deploy, and verify applications from one workspace.
+							Smart Deploy is a transparent deployment platform for solo developers who want to ship quickly without hiding Docker, Compose, Nginx, or the deploy path.
 						</p>
 					</div>
 					<div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
-						<Link href="#capabilities" className="transition-colors hover:text-foreground">Capabilities</Link>
-						<Link href="#workflow" className="transition-colors hover:text-foreground">Workflow</Link>
+						<a href="#start-your-way" className="transition-colors hover:text-foreground">Your way</a>
+						<a href="#problem-solution" className="transition-colors hover:text-foreground">Why it exists</a>
+						<a href="#comparison" className="transition-colors hover:text-foreground">Comparison</a>
+						<a href="#workflow" className="transition-colors hover:text-foreground">How it works</a>
 						<Link href="/docs" className="transition-colors hover:text-foreground">Docs</Link>
 						<Link href="/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
-						<Link href={primaryHref} className="transition-colors hover:text-foreground">Open SmartDeploy</Link>
+						<Link href={primaryHref} className="transition-colors hover:text-foreground">Open Smart Deploy</Link>
 						<a
 							href="https://github.com/anirudh-makuluri/smart-deploy"
 							target="_blank"

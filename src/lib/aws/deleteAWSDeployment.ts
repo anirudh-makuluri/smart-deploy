@@ -175,7 +175,7 @@ export async function deleteEC2Instance(
 			if (!isNotFoundError(err)) throw err;
 		}
 	} else {
-		console.warn("deleteEC2Instance: no instanceId found in deployConfig.ec2 — nothing to delete");
+		console.warn("deleteEC2Instance: no instanceId found in deployConfig.ec2; nothing to delete");
 	}
 
 	// Note: Security Groups, Key Pairs, and other resources are not automatically deleted

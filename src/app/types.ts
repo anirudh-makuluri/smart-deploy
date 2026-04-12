@@ -101,7 +101,7 @@ export type DeployStep = {
 	status: 'pending' | 'in_progress' | "success" | "error",
 	/** When this step first received a log (ISO string) */
 	startedAt?: string,
-	/** When this step completed — success or error (ISO string) */
+	/** When this step completed: success or error (ISO string) */
 	endedAt?: string,
 }
 
@@ -146,7 +146,7 @@ export type ServiceCompatibility = {
 /** One deployment attempt: success or failure, with logs for history and "Why did it fail?". */
 export type DeploymentHistoryEntry = {
 	id: string;
-	/** Repository name (e.g. "my-app") — together with service_name identifies the deployment. */
+	/** Repository name (e.g. "my-app"); together with service_name identifies the deployment. */
 	repo_name: string;
 	/** Service name (e.g. "api" or "." for repo-level). */
 	service_name: string;

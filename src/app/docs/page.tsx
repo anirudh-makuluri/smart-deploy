@@ -1,328 +1,198 @@
 import type { Metadata } from "next";
-import { ArrowRight, Bot, Boxes, Check, Cloud, GitBranch, Minus, ShieldCheck, Workflow } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { PublicPageScroll } from "@/components/public/PublicPageScroll";
 import { PublicPageShell } from "@/components/public/PublicPageShell";
 import { PublicPageFooter } from "@/components/public/PublicPageFooter";
 
 export const metadata: Metadata = {
 	title: "Docs | Smart Deploy",
-	description: "Builder docs for SmartDeploy: how it works, how it ships, and why we built it this way.",
+	description: "Product overview for Smart Deploy: audience, define-preview-deploy flow, blueprint view, and infrastructure files.",
 };
 
 const quickFacts = [
-	{ value: "2", label: "core layers" },
-	{ value: "AWS + GCP", label: "cloud providers" },
-	{ value: "repo-first", label: "ship model" },
+	{ value: "Define → Preview → Deploy", label: "core loop" },
+	{ value: "Blueprint first", label: "before you ship" },
+	{ value: "Files stay visible", label: "Docker, Compose, Nginx" },
 ];
 
-const capabilityCards = [
+const fitCards = [
 	{
-		title: "Repo onboarding + preflight",
-		description:
-			"Connect a repo and SmartDeploy maps services, runtimes, and dependencies, then creates a deployment blueprint before anything runs.",
-		icon: GitBranch,
+		title: "What Smart Deploy is",
+		body: "A transparent deployment platform that helps you define infrastructure, preview the deploy path, and ship from one workspace.",
 	},
 	{
-		title: "One deploy workspace",
-		description:
-			"Config, logs, deployment history, and service controls are in one place so you can ship fast without tab hopping.",
-		icon: Boxes,
+		title: "Who it is for",
+		body: "Solo developers, indie hackers, and small teams who want a simpler deploy path without giving up visibility into how the app runs.",
 	},
 	{
-		title: "Cloud-native execution",
-		description:
-			"Deploy to AWS EC2 or Google Cloud Run, with deeper AWS paths through ALB, ECR, CodeBuild, IAM, and SSM.",
-		icon: Cloud,
+		title: "What it is not",
+		body: "It is not a fully managed black box, and it is not raw cloud setup with no guidance. It sits in the middle on purpose.",
 	},
 ];
 
-const architectureSections = [
+const workflowSteps = [
 	{
-		title: "App + API layer",
-		body:
-			"Next.js powers the public site, auth flow, dashboard UX, and API surface (GraphQL + REST) for deployment workflows.",
+		title: "1. Define it",
+		body: "Bring your own Dockerfile, `docker-compose.yml`, and Nginx config, or let Smart Deploy generate a starting point from the repository.",
 	},
 	{
-		title: "Deployment worker",
-		body:
-			"A dedicated WebSocket worker handles long-running jobs: cloning repos, building containers, running cloud ops, and streaming progress live.",
+		title: "2. Preview it",
+		body: "Open the blueprint view to see which services will run, how they connect, which ports are exposed, and how traffic will move through the deploy.",
 	},
 	{
-		title: "State and persistence",
-		body:
-			"Supabase stores repo metadata and deployment records so teams can recover history and keep operating from a reliable release surface.",
+		title: "3. Deploy it",
+		body: "Once the blueprint and files make sense, start the deploy and follow logs, health, status, and preview output from the same workspace.",
 	},
 ];
 
-const flowSteps = [
-	"Connect GitHub and import your repository.",
-	"Run a scan to detect services, runtime requirements, and deployment shape.",
-	"Generate a blueprint with recommended defaults and safety checks.",
-	"Pick your cloud target, set env config, and start rollout.",
-	"Watch build logs, rollout events, and preview output in real time.",
+const blueprintPoints = [
+	"The services Smart Deploy detected in the repository",
+	"How containers are built and started",
+	"Which ports and internal connections matter",
+	"How Nginx routes external traffic to the right service",
+	"What generated artifacts will be used during deploy",
 ];
 
-const tradeoffs = [
+const infraSections = [
 	{
-		label: "Why a separate worker",
-		text: "Deployments are long-running, so we isolate them from the web app to keep the UI fast while still streaming live progress.",
+		title: "Dockerfile",
+		body: "The Dockerfile describes how each image is built. Smart Deploy keeps that file visible so you can inspect the actual build steps instead of trusting a hidden build pipeline.",
 	},
 	{
-		label: "Why AWS + GCP",
-		text: "You get cross-cloud flexibility without hiding provider-specific controls that matter in real deployments.",
+		title: "docker-compose.yml",
+		body: "The compose file defines how multiple services run together. Smart Deploy shows how those services map into the deployment plan so the relationship between app, worker, proxy, and supporting services stays readable.",
 	},
 	{
-		label: "Why AI is scoped",
-		text: "AI helps with analysis and command generation, but deployment control stays in explicit code paths.",
-	},
-];
-
-const comparisonRows = [
-	{
-		feature: "Repository-aware preflight before deploy",
-		smartDeploy: "Built-in",
-		vercel: "Limited",
-		render: "Limited",
-		ciCd: "Scripted",
-	},
-	{
-		feature: "Deploy workspace with logs plus preview plus state",
-		smartDeploy: "Unified",
-		vercel: "Partial",
-		render: "Partial",
-		ciCd: "Split across tools",
-	},
-	{
-		feature: "Blueprint-driven deploy decisions",
-		smartDeploy: "Built-in",
-		vercel: "No",
-		render: "No",
-		ciCd: "Manual",
-	},
-	{
-		feature: "AWS and GCP support",
-		smartDeploy: "Yes",
-		vercel: "No",
-		render: "Partial",
-		ciCd: "Depends on setup",
-	},
-	{
-		feature: "Live release validation during rollout",
-		smartDeploy: "Yes",
-		vercel: "Partial",
-		render: "Partial",
-		ciCd: "Custom",
+		title: "Nginx",
+		body: "Nginx handles routing and proxy behavior. Smart Deploy makes the routing layer explicit so you can see how incoming traffic reaches your application before deploy starts.",
 	},
 ];
 
-function ComparisonCell({ value }: { value: string }) {
-	if (value === "Yes") {
-		return (
-			<span className="inline-flex items-center gap-1.5 text-foreground">
-				<Check className="size-4 text-primary" />
-				Yes
-			</span>
-		);
-	}
-
-	if (value === "No") {
-		return (
-			<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-				<Minus className="size-4" />
-				No
-			</span>
-		);
-	}
-
-	return <span className="text-muted-foreground">{value}</span>;
-}
+const faqItems = [
+	{
+		question: "Do I have to write the infrastructure files myself?",
+		answer: "No. You can provide your own files or use Smart Deploy to generate a starting point, then review and adjust the results before deploy.",
+	},
+	{
+		question: "What is the blueprint view for?",
+		answer: "It is the place where Smart Deploy explains the deployment path before anything runs. You can see the planned services, containers, routing, and file usage in one view.",
+	},
+	{
+		question: "Why show the generated files at all?",
+		answer: "Because the files are the deployment. Showing the Dockerfile, compose file, and Nginx config makes the deploy understandable and easier to debug.",
+	},
+	{
+		question: "Is Smart Deploy only for experts?",
+		answer: "No. The goal is to help less infrastructure-heavy teams ship while still learning the real concepts behind containers, routing, and multi-service deploys.",
+	},
+	{
+		question: "What should I read next?",
+		answer: "After this overview, the setup guides in `docs/` cover Supabase, AWS IAM, GCP, self-hosting, custom domains, and other environment-specific details.",
+	},
+];
 
 export default async function DocsPage() {
 	return (
-		<>
+		<PublicPageScroll>
 			<PublicPageShell
-			eyebrow="SmartDeploy Docs"
-			badge="Technical Overview"
-			title="From repo to prod in one flow."
-			description="This doc breaks down how SmartDeploy is built, how deployments run, and the tradeoffs behind the current architecture."
-			stats={quickFacts}
-			showDocsButton={false}
-			asideTitle="Documentation at a glance"
-			asideDescription="Start with the product snapshot, then jump into architecture, deploy flow, and key engineering decisions."
-			asideLinks={[
-				{ href: "/changelog", label: "Browse milestone history" },
-				{ href: "/", label: "Return to the landing page" },
-			]}
-		>
-			<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-				<div className="flex flex-wrap items-start justify-between gap-4">
-					<div>
-						<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">System snapshot</p>
-						<h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">What you get on day one</h2>
-					</div>
-					<Badge variant="outline" className="rounded-full border-primary/30 bg-primary/10 px-3 py-1 text-primary">
-						<Bot className="size-3.5" />
-						AI-assisted deploy workflow
-					</Badge>
-				</div>
-				<div className="mt-6 grid gap-4 lg:grid-cols-3">
-					{capabilityCards.map((card) => {
-						const Icon = card.icon;
-
-						return (
+				eyebrow="Smart Deploy Docs"
+				badge="Product overview"
+				title="Ship with clarity, not with a black box."
+				description="This page is the on-site briefing: who Smart Deploy is for, how the define–preview–deploy loop works, what the blueprint is meant to answer, and how Docker, Compose, and Nginx stay in the story end to end."
+				stats={quickFacts}
+				showDocsButton={false}
+				asideTitle="Start here"
+				asideDescription="Read this overview once, then jump into the setup guides in the `docs/` folder when you are wiring Supabase, cloud accounts, or domains."
+				asideLinks={[
+					{ href: "/changelog", label: "Website and docs changelog" },
+					{ href: "/", label: "Back to the landing page" },
+				]}
+			>
+				<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
+					<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Product overview</p>
+					<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">What Smart Deploy is for</h2>
+					<div className="mt-6 grid gap-4 lg:grid-cols-3">
+						{fitCards.map((card) => (
 							<div key={card.title} className="rounded-[1.6rem] border border-border/70 bg-background/45 p-5">
-								<div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-									<Icon className="size-5" />
-								</div>
-								<h3 className="mt-5 text-xl font-semibold tracking-tight text-foreground">{card.title}</h3>
-								<p className="mt-3 text-sm leading-6 text-muted-foreground">{card.description}</p>
+								<h3 className="text-xl font-semibold tracking-tight text-foreground">{card.title}</h3>
+								<p className="mt-3 text-sm leading-6 text-muted-foreground">{card.body}</p>
 							</div>
-						);
-					})}
-				</div>
-			</div>
-
-			<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-				<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Architecture</p>
-				<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">How it is wired</h2>
-				<div className="mt-6 space-y-4">
-					{architectureSections.map((section) => (
-						<div key={section.title} className="rounded-3xl border border-border/70 bg-background/40 p-5">
-							<h3 className="text-lg font-semibold text-foreground">{section.title}</h3>
-							<p className="mt-2 text-sm leading-6 text-muted-foreground">{section.body}</p>
-						</div>
-					))}
-				</div>
-			</div>
-
-			<div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-				<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-					<div className="flex items-center gap-3 text-primary">
-						<div className="rounded-2xl bg-primary/10 p-3">
-							<Workflow className="size-5" />
-						</div>
-						<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Deployment flow</p>
-					</div>
-					<ol className="mt-6 space-y-3">
-						{flowSteps.map((step, index) => (
-							<li key={step} className="flex gap-4 rounded-[1.35rem] border border-border/70 bg-background/40 p-4">
-								<span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/12 text-sm font-semibold text-primary">
-									{index + 1}
-								</span>
-								<p className="text-sm leading-6 text-muted-foreground">{step}</p>
-							</li>
 						))}
-					</ol>
+					</div>
 				</div>
 
 				<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-					<div className="flex items-center gap-3 text-primary">
-						<div className="rounded-2xl bg-primary/10 p-3">
-							<ShieldCheck className="size-5" />
-						</div>
-						<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Engineering decisions</p>
-					</div>
+					<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Workflow</p>
+					<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Define it. Preview it. Deploy it.</h2>
 					<div className="mt-6 space-y-4">
-						{tradeoffs.map((item) => (
-							<div key={item.label} className="rounded-[1.4rem] border border-border/70 bg-background/40 p-5">
-								<h3 className="text-base font-semibold text-foreground">{item.label}</h3>
-								<p className="mt-2 text-sm leading-6 text-muted-foreground">{item.text}</p>
+						{workflowSteps.map((step) => (
+							<div key={step.title} className="rounded-3xl border border-border/70 bg-background/40 p-5">
+								<h3 className="text-lg font-semibold text-foreground">{step.title}</h3>
+								<p className="mt-2 text-sm leading-6 text-muted-foreground">{step.body}</p>
 							</div>
 						))}
 					</div>
-					<div className="mt-6 rounded-[1.6rem] border border-primary/20 bg-primary/8 p-5">
-						<p className="text-sm font-semibold text-foreground">Setup guides are in the repo.</p>
-						<p className="mt-2 text-sm leading-6 text-muted-foreground">
-							You will find deeper docs for Supabase, self-hosting, AWS IAM, GCP setup, SSL, and custom domains.
+				</div>
+
+				<div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+					<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
+						<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Blueprint view</p>
+						<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">What the blueprint shows</h2>
+						<p className="mt-4 text-sm leading-6 text-muted-foreground">
+							The blueprint view exists so you can review the deployment path before the deploy starts. It turns the plan into something you can inspect instead of guess at.
 						</p>
+						<ul className="mt-6 space-y-3">
+							{blueprintPoints.map((point) => (
+								<li key={point} className="rounded-[1.35rem] border border-border/70 bg-background/40 px-4 py-3 text-sm leading-6 text-muted-foreground">
+									{point}
+								</li>
+							))}
+						</ul>
+					</div>
+
+					<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
+						<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Generated infrastructure</p>
+						<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">How the infrastructure files fit together</h2>
+						<div className="mt-6 space-y-4">
+							{infraSections.map((section) => (
+								<div key={section.title} className="rounded-[1.4rem] border border-border/70 bg-background/40 p-5">
+									<h3 className="text-base font-semibold text-foreground">{section.title}</h3>
+									<p className="mt-2 text-sm leading-6 text-muted-foreground">{section.body}</p>
+								</div>
+							))}
+						</div>
 					</div>
 				</div>
-			</div>
 
-			<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-				<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Positioning</p>
-				<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">How SmartDeploy compares</h2>
-				<p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
-					SmartDeploy is not a universal replacement for every platform. It is stronger for multi-service, repo-first workflows where
-					teams want deploy decisions, rollout state, and validation in one surface.
-				</p>
-
-				<div className="mt-6 space-y-3 md:hidden">
-					{comparisonRows.map((row) => (
-						<div key={row.feature} className="rounded-2xl border border-border/70 bg-background/45 p-4">
-							<p className="text-sm font-semibold text-foreground">{row.feature}</p>
-							<div className="mt-3 space-y-2 text-sm">
-								<div className="flex items-center justify-between gap-3">
-									<span className="text-muted-foreground">SmartDeploy</span>
-									<ComparisonCell value={row.smartDeploy} />
-								</div>
-								<div className="flex items-center justify-between gap-3">
-									<span className="text-muted-foreground">Vercel</span>
-									<ComparisonCell value={row.vercel} />
-								</div>
-								<div className="flex items-center justify-between gap-3">
-									<span className="text-muted-foreground">Render</span>
-									<ComparisonCell value={row.render} />
-								</div>
-								<div className="flex items-center justify-between gap-3">
-									<span className="text-muted-foreground">DIY CI/CD Stack</span>
-									<ComparisonCell value={row.ciCd} />
-								</div>
+				<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
+					<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Preview before deploy</p>
+					<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Why the preview step matters</h2>
+					<div className="mt-6 grid gap-4 lg:grid-cols-3">
+						{[
+							"Catch mismatched ports, missing services, or routing assumptions before a deploy fails.",
+							"See how generated files map onto the final deployment path instead of treating generation as a hidden step.",
+							"Use the platform as a learning surface: you can ship now and still understand more about Docker, Compose, and reverse proxies over time.",
+						].map((point) => (
+							<div key={point} className="rounded-3xl border border-border/70 bg-background/40 p-5">
+								<p className="text-sm leading-6 text-muted-foreground">{point}</p>
 							</div>
-						</div>
-					))}
+						))}
+					</div>
 				</div>
 
-				<div className="mt-6 hidden overflow-x-auto rounded-3xl border border-border/70 bg-background/40 md:block">
-					<table className="min-w-245 w-full text-sm">
-						<thead>
-							<tr className="border-b border-border/70 bg-background/60 text-left">
-								<th className="px-4 py-3 font-semibold text-foreground">Capability</th>
-								<th className="px-4 py-3 font-semibold text-foreground">SmartDeploy</th>
-								<th className="px-4 py-3 font-semibold text-foreground">Vercel</th>
-								<th className="px-4 py-3 font-semibold text-foreground">Render</th>
-								<th className="px-4 py-3 font-semibold text-foreground">DIY CI/CD Stack</th>
-							</tr>
-						</thead>
-						<tbody>
-							{comparisonRows.map((row) => (
-								<tr key={row.feature} className="border-b border-border/60 last:border-b-0">
-									<td className="px-4 py-3 font-medium text-foreground">{row.feature}</td>
-									<td className="px-4 py-3"><ComparisonCell value={row.smartDeploy} /></td>
-									<td className="px-4 py-3"><ComparisonCell value={row.vercel} /></td>
-									<td className="px-4 py-3"><ComparisonCell value={row.render} /></td>
-									<td className="px-4 py-3"><ComparisonCell value={row.ciCd} /></td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				</div>
-				<p className="mt-3 text-xs leading-5 text-muted-foreground">
-					Capabilities evolve over time. This comparison reflects current product positioning and typical usage patterns.
-				</p>
-			</div>
-
-			<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
-				<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Platform qualities</p>
-				<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Why it feels product-grade</h2>
-				<div className="mt-6 grid gap-4 lg:grid-cols-3">
-					{[
-						"One product surface: public site, authenticated dashboard, APIs, worker runtime, and deploy UX all move together.",
-						"Real cloud depth: EC2, ALB, ECR, CodeBuild, SSM, Cloud Run, Cloud Build, and runtime logs are part of the actual implementation.",
-						"Feedback-first UX: teams see live status and context during rollout instead of guessing what happened in another console.",
-					].map((point) => (
-						<div key={point} className="rounded-3xl border border-border/70 bg-background/40 p-5">
-							<div className="flex items-center gap-2 text-primary">
-								<ArrowRight className="size-4" />
-								<p className="text-sm font-semibold text-foreground">Key characteristic</p>
+				<div className="landing-panel landing-shell overflow-hidden p-6 sm:p-8">
+					<p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">FAQ</p>
+					<h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Common questions</h2>
+					<div className="mt-6 space-y-4">
+						{faqItems.map((item) => (
+							<div key={item.question} className="rounded-3xl border border-border/70 bg-background/40 p-5">
+								<h3 className="text-base font-semibold text-foreground">{item.question}</h3>
+								<p className="mt-2 text-sm leading-6 text-muted-foreground">{item.answer}</p>
 							</div>
-							<p className="mt-3 text-sm leading-6 text-muted-foreground">{point}</p>
-						</div>
-					))}
+						))}
+					</div>
 				</div>
-			</div>
-		</PublicPageShell>
-		<PublicPageFooter />
-		</>
+			</PublicPageShell>
+			<PublicPageFooter />
+		</PublicPageScroll>
 	);
 }

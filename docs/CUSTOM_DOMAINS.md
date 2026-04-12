@@ -13,7 +13,7 @@ https://myapp.yourdomain.com
 ```
 
 The actual routing target depends on the cloud provider:
-- **AWS EC2 (ALB)**: The ALB uses **host-based routing** — each service gets a listener rule that matches `myapp.yourdomain.com` and forwards to the correct target group.
+- **AWS EC2 (ALB)**: The ALB uses **host-based routing**: each service gets a listener rule that matches `myapp.yourdomain.com` and forwards to the correct target group.
 - **GCP Cloud Run**: Each Cloud Run service gets its own URL; the CNAME points to that URL.
 
 ---
