@@ -7,6 +7,8 @@ import { SmartDeployLogo } from "./SmartDeployLogo";
 import { useParams, usePathname } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
 import { ChevronRight, LogOut, User } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useWebsocketHealth } from "@/custom-hooks/useWebsocketHealth";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -19,6 +21,7 @@ export default function Header() {
 	const params = useParams();
 	const pathname = usePathname();
 	const { activeServiceName, setActiveServiceName } = useAppData();
+	const workerHealth = useWebsocketHealth();
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;
@@ -36,6 +39,13 @@ export default function Header() {
 			event.currentTarget.click();
 		}
 	}
+
+	const workerStatusClass =
+		workerHealth.status === "healthy"
+			? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+			: workerHealth.status === "unavailable"
+				? "border-destructive/30 bg-destructive/10 text-destructive"
+				: "border-border/60 bg-secondary/40 text-muted-foreground";
 
 	return (
 		<header className="shrink-0 w-full border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-50">
@@ -83,6 +93,20 @@ export default function Header() {
 				</div>
 
 				<div className="flex flex-row gap-3 items-center">
+					<Badge
+						variant="outline"
+						className={`hidden sm:inline-flex gap-2 px-2.5 py-1 ${workerStatusClass}`}
+						title={workerHealth.message}
+					>
+						<span className={`size-2 rounded-full ${
+							workerHealth.status === "healthy"
+								? "bg-emerald-400"
+								: workerHealth.status === "unavailable"
+									? "bg-destructive"
+									: "bg-muted-foreground/70"
+						}`} />
+						Worker {workerHealth.status === "healthy" ? "Online" : workerHealth.status === "unavailable" ? "Offline" : "Checking"}
+					</Badge>
 					{session?.user && (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>

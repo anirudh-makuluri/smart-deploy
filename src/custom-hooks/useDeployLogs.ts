@@ -54,10 +54,41 @@ export function getWebSocketUrl(): string {
 	if (typeof env === "string" && env) {
 		return env.replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"));
 	}
-	if (typeof window !== "undefined" && window.location.protocol === "https:") {
-		return `wss://${window.location.host}/ws`;
+	if (typeof window !== "undefined" && window.location.host) {
+		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+		return `${protocol}://${window.location.host}/ws`;
 	}
 	return "ws://localhost:4001";
+}
+
+export function getWebSocketHealthUrl(): string {
+	const wsUrl = getWebSocketUrl();
+	return wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/ws$/, "/health");
+}
+
+export function getAuthenticatedWebSocketHealthUrl(token: string): string {
+	const wsUrl = getWebSocketUrl();
+	const healthUrl = new URL(wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/ws$/, "/healthz"));
+	healthUrl.searchParams.set("auth", token);
+	return healthUrl.toString();
+}
+
+export async function fetchWebSocketAuthToken(): Promise<string> {
+	const response = await fetch("/api/ws-token", {
+		method: "GET",
+		cache: "no-store",
+	});
+
+	if (!response.ok) {
+		throw new Error("Failed to authenticate websocket connection");
+	}
+
+	const payload = (await response.json()) as { token?: string };
+	if (!payload.token) {
+		throw new Error("Missing websocket auth token");
+	}
+
+	return payload.token;
 }
 
 export function useDeployLogs(serviceName: string, repoName: string, options: UseDeployLogsOptions) {
@@ -129,169 +160,180 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 	}, [repoName, serviceName]);
 
 	const createWebSocket = useCallback((onReady?: () => void) => {
-		const ws = new WebSocket(getWebSocketUrl());
-		wsRef.current = ws;
 		setSocketStatus("connecting");
-
-		ws.onopen = () => {
-			setSocketStatus("open");
-			initiateServiceLogs();
-			onReady?.();
-		};
-
-		ws.onmessage = (event) => {
-			let data: { type: string; payload?: unknown };
+		void (async () => {
 			try {
-				data = JSON.parse(event.data);
-			} catch {
-				const message = typeof event.data === "string" ? event.data : "Deployment failed";
-				setDeployStatus("error");
-				setDeployError(message.startsWith("Error:") ? message.slice(6).trim() : message);
-				return;
-			}
+				const authToken = await fetchWebSocketAuthToken();
+				const wsUrl = new URL(getWebSocketUrl());
+				wsUrl.searchParams.set("auth", authToken);
 
-			const payload = data.payload;
-			switch (data.type) {
-				case "initial_logs":
-					processServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
-					break;
-				case "stream_logs": {
-					const log = (payload as { log?: ServiceLogEntry } | undefined)?.log;
-					processServiceLogs(log ? [log] : []);
-					break;
-				}
-				case "deploy_logs":
-					if (payload && typeof payload === "object") {
-						deployLogs(payload as { id: string; msg: string; time?: string });
+				const ws = new WebSocket(wsUrl.toString());
+				wsRef.current = ws;
+
+				ws.onopen = () => {
+					setSocketStatus("open");
+					initiateServiceLogs();
+					onReady?.();
+				};
+
+				ws.onmessage = (event) => {
+					let data: { type: string; payload?: unknown };
+					try {
+						data = JSON.parse(event.data);
+					} catch {
+						const message = typeof event.data === "string" ? event.data : "Deployment failed";
+						setDeployStatus("error");
+						setDeployError(message.startsWith("Error:") ? message.slice(6).trim() : message);
+						return;
 					}
-					break;
-				case "deploy_steps": {
-					const nextSteps = (payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? [];
-					setSteps((prev) => {
-						const byId = new Map(prev.map((step) => [step.id, step]));
-						return nextSteps.map((step) => ({
-							id: step.id,
-							label: step.label,
-							logs: byId.get(step.id)?.logs ?? [],
-							status: byId.get(step.id)?.status ?? "pending",
-						}));
-					});
-					break;
-				}
-				case "deploy_logs_snapshot": {
-					const snapshot = (payload as { steps?: DeployStep[]; status?: DeployStatus; error?: string | null } | undefined) ?? {};
-					const hasNoStoredLogsError = snapshot.error === "No logs found for this deployment";
-					if (Array.isArray(snapshot.steps) && snapshot.steps.length > 0) {
-						setSteps(snapshot.steps);
-						const entries: DeployLogEntry[] = [];
-						snapshot.steps.forEach((step) => {
-							step.logs.forEach((log) => {
-								entries.push({
-									timestamp: step.startedAt,
-									message: log,
-								});
+
+					const payload = data.payload;
+					switch (data.type) {
+						case "initial_logs":
+							processServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
+							break;
+						case "stream_logs": {
+							const log = (payload as { log?: ServiceLogEntry } | undefined)?.log;
+							processServiceLogs(log ? [log] : []);
+							break;
+						}
+						case "deploy_logs":
+							if (payload && typeof payload === "object") {
+								deployLogs(payload as { id: string; msg: string; time?: string });
+							}
+							break;
+						case "deploy_steps": {
+							const nextSteps = (payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? [];
+							setSteps((prev) => {
+								const byId = new Map(prev.map((step) => [step.id, step]));
+								return nextSteps.map((step) => ({
+									id: step.id,
+									label: step.label,
+									logs: byId.get(step.id)?.logs ?? [],
+									status: byId.get(step.id)?.status ?? "pending",
+								}));
 							});
-						});
-						setDeployLogEntries(entries);
-					}
-					if (snapshot.status && !hasNoStoredLogsError) {
-						setDeployStatus(snapshot.status);
-						if (snapshot.status === "running") {
-							wasDeployingRef.current = true;
+							break;
 						}
-					} else if (hasNoStoredLogsError) {
-						setDeployStatus("not-started");
+						case "deploy_logs_snapshot": {
+							const snapshot = (payload as { steps?: DeployStep[]; status?: DeployStatus; error?: string | null } | undefined) ?? {};
+							const hasNoStoredLogsError = snapshot.error === "No logs found for this deployment";
+							if (Array.isArray(snapshot.steps) && snapshot.steps.length > 0) {
+								setSteps(snapshot.steps);
+								const entries: DeployLogEntry[] = [];
+								snapshot.steps.forEach((step) => {
+									step.logs.forEach((log) => {
+										entries.push({
+											timestamp: step.startedAt,
+											message: log,
+										});
+									});
+								});
+								setDeployLogEntries(entries);
+							}
+							if (snapshot.status && !hasNoStoredLogsError) {
+								setDeployStatus(snapshot.status);
+								if (snapshot.status === "running") {
+									wasDeployingRef.current = true;
+								}
+							} else if (hasNoStoredLogsError) {
+								setDeployStatus("not-started");
+							}
+							setDeployError(snapshot.error != null && !hasNoStoredLogsError ? snapshot.error : null);
+							if (snapshot.status === "success" || snapshot.status === "error") {
+								clearActiveDeployment();
+							}
+							break;
+						}
+						case "deploy_complete": {
+							const completePayload = (payload as DeployCompleteWsPayload | undefined) ?? { success: false, error: "Deployment failed" };
+							wasDeployingRef.current = false;
+							clearActiveDeployment();
+							setDeployStatus(completePayload.success ? "success" : "error");
+
+							if (!completePayload.success) {
+								setDeployError(completePayload.error ?? "Deployment failed");
+								setVercelDnsStatus("idle");
+								setVercelDnsError(null);
+								if (deployConfigRef.current && completePayload.ec2 != null) {
+									const currentConfig = deployConfigRef.current;
+									const deploymentTarget = completePayload.deploymentTarget;
+									deployConfigRef.current = {
+										...currentConfig,
+										...(typeof deploymentTarget === "string" && deploymentTarget
+											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
+											: {}),
+										ec2: completePayload.ec2,
+										status: "failed",
+									};
+								}
+							} else {
+								setDeployError(null);
+								if (deployConfigRef.current) {
+									const currentConfig = deployConfigRef.current;
+									const deployUrlFromPayload =
+										typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
+											? completePayload.deployUrl.trim()
+											: undefined;
+									const deploymentTarget =
+										(completePayload.deploymentTarget as DeployConfig["deploymentTarget"] | null | undefined) ??
+										currentConfig.deploymentTarget;
+									const updated: DeployConfig = {
+										...currentConfig,
+										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
+										status: "running",
+										...(deploymentTarget ? { deploymentTarget } : {}),
+										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
+									};
+									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
+									const displayUrl = getDeploymentDisplayUrl(updated)?.trim() ?? "";
+									updated.liveUrl = customUrl || displayUrl || deployUrlFromPayload || currentConfig.liveUrl || null;
+									deployConfigRef.current = updated;
+								}
+								setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));
+								if (completePayload.vercelDnsAdded === true) {
+									setVercelDnsStatus("success");
+									setVercelDnsError(null);
+								} else if (completePayload.vercelDnsError) {
+									setVercelDnsStatus("error");
+									setVercelDnsError(completePayload.vercelDnsError);
+								} else {
+									setVercelDnsStatus("idle");
+									setVercelDnsError(null);
+								}
+							}
+
+							onDeployFinishedRef.current?.(completePayload);
+							break;
+						}
+						default:
+							break;
 					}
-					setDeployError(snapshot.error != null && !hasNoStoredLogsError ? snapshot.error : null);
-					if (snapshot.status === "success" || snapshot.status === "error") {
-						clearActiveDeployment();
+				};
+
+				ws.onerror = () => {
+					setSocketStatus("error");
+					if (wasDeployingRef.current) {
+						setDeployStatus("error");
+						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
 					}
-					break;
-				}
-				case "deploy_complete": {
-					const completePayload = (payload as DeployCompleteWsPayload | undefined) ?? { success: false, error: "Deployment failed" };
+				};
+
+				ws.onclose = () => {
+					setSocketStatus("closed");
+					if (wasDeployingRef.current) {
+						setDeployStatus("error");
+						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
+					}
 					wasDeployingRef.current = false;
-					clearActiveDeployment();
-					setDeployStatus(completePayload.success ? "success" : "error");
-
-					if (!completePayload.success) {
-						setDeployError(completePayload.error ?? "Deployment failed");
-						setVercelDnsStatus("idle");
-						setVercelDnsError(null);
-						if (deployConfigRef.current && completePayload.ec2 != null) {
-							const currentConfig = deployConfigRef.current;
-							const deploymentTarget = completePayload.deploymentTarget;
-							deployConfigRef.current = {
-								...currentConfig,
-								...(typeof deploymentTarget === "string" && deploymentTarget
-									? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
-									: {}),
-								ec2: completePayload.ec2,
-								status: "failed",
-							};
-						}
-					} else {
-						setDeployError(null);
-						if (deployConfigRef.current) {
-							const currentConfig = deployConfigRef.current;
-							const deployUrlFromPayload =
-								typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
-									? completePayload.deployUrl.trim()
-									: undefined;
-							const deploymentTarget =
-								(completePayload.deploymentTarget as DeployConfig["deploymentTarget"] | null | undefined) ??
-								currentConfig.deploymentTarget;
-							const updated: DeployConfig = {
-								...currentConfig,
-								...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
-								status: "running",
-								...(deploymentTarget ? { deploymentTarget } : {}),
-								...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
-							};
-							const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
-							const displayUrl = getDeploymentDisplayUrl(updated)?.trim() ?? "";
-							updated.liveUrl = customUrl || displayUrl || deployUrlFromPayload || currentConfig.liveUrl || null;
-							deployConfigRef.current = updated;
-						}
-						setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));
-						if (completePayload.vercelDnsAdded === true) {
-							setVercelDnsStatus("success");
-							setVercelDnsError(null);
-						} else if (completePayload.vercelDnsError) {
-							setVercelDnsStatus("error");
-							setVercelDnsError(completePayload.vercelDnsError);
-						} else {
-							setVercelDnsStatus("idle");
-							setVercelDnsError(null);
-						}
-					}
-
-					onDeployFinishedRef.current?.(completePayload);
-					break;
-				}
-				default:
-					break;
+				};
+			} catch (error) {
+				setSocketStatus("error");
+				setDeployError(error instanceof Error ? error.message : "Failed to authenticate websocket connection");
 			}
-		};
+		})();
 
-		ws.onerror = () => {
-			setSocketStatus("error");
-			if (wasDeployingRef.current) {
-				setDeployStatus("error");
-				setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
-			}
-		};
-
-		ws.onclose = () => {
-			setSocketStatus("closed");
-			if (wasDeployingRef.current) {
-				setDeployStatus("error");
-				setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
-			}
-			wasDeployingRef.current = false;
-		};
-
-		return ws;
+		return null;
 	}, [deployLogs, initiateServiceLogs, processServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
