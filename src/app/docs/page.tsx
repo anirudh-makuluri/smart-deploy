@@ -7,7 +7,7 @@ import { listDocMarkdownFiles, readProjectReadme } from "@/lib/public-docs";
 
 export const metadata: Metadata = {
 	title: "Docs | Smart Deploy",
-	description: "Project README and documentation from the repository docs folder.",
+	description: "Renders the repository README and docs/ markdown from disk. No separate docs CMS.",
 };
 
 export default async function DocsPage() {
@@ -15,7 +15,11 @@ export default async function DocsPage() {
 
 	return (
 		<PublicPageScroll>
-			<DocsSimpleLayout guideLinks={guideLinks} activeSlug={null}>
+			<DocsSimpleLayout
+				guideLinks={guideLinks}
+				activeSlug={null}
+				contentSourcePath="README.md (repository root)"
+			>
 				<DocsMarkdown source={readme} />
 			</DocsSimpleLayout>
 			<PublicPageFooter />

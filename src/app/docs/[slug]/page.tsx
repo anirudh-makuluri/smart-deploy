@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 	}
 	return {
 		title: `${doc.title} | Docs | Smart Deploy`,
-		description: `Documentation: ${doc.filename}`,
+		description: `Rendered from docs/${doc.filename} in the repository.`,
 	};
 }
 
@@ -35,10 +35,11 @@ export default async function DocsGuidePage({ params }: PageProps) {
 
 	return (
 		<PublicPageScroll>
-			<DocsSimpleLayout guideLinks={guideLinks} activeSlug={slug}>
-				<p className="text-xs text-muted-foreground">
-					<code className="font-mono">{doc.filename}</code>
-				</p>
+			<DocsSimpleLayout
+				guideLinks={guideLinks}
+				activeSlug={slug}
+				contentSourcePath={`docs/${doc.filename}`}
+			>
 				<DocsMarkdown source={doc.content} />
 			</DocsSimpleLayout>
 			<PublicPageFooter />

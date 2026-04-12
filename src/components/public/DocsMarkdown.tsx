@@ -78,7 +78,7 @@ const components: Components = {
 
 export function DocsMarkdown({ source }: { source: string }) {
 	return (
-		<article className="max-w-none">
+		<article className="max-w-none [&>:first-child]:mt-0">
 			<ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
 				{source}
 			</ReactMarkdown>

@@ -1,34 +1,49 @@
 import type { Metadata } from "next";
+import { ChangelogFromGit } from "@/components/public/ChangelogFromGit";
 import { PublicPageFooter } from "@/components/public/PublicPageFooter";
 import { PublicPageScroll } from "@/components/public/PublicPageScroll";
 import { PublicSiteHeader } from "@/components/public/PublicSiteHeader";
-import { CHANGELOG_ENTRIES } from "@/lib/changelog-entries";
+import { getGithubRepoSlug, getRecentGitCommits } from "@/lib/changelog-from-git";
 
 export const metadata: Metadata = {
 	title: "Changelog | Smart Deploy",
-	description: "Recent updates to the public site, documentation, and related services.",
+	description: "Recent commits from git log",
 };
 
+/** Refresh periodically so deploys without a rebuild still pick up new commits (when .git exists). */
+export const revalidate = 120;
+
 export default function ChangelogPage() {
+	const commits = getRecentGitCommits(80);
+	const repo = getGithubRepoSlug();
+
 	return (
 		<PublicPageScroll>
 			<div className="min-h-0 bg-background text-foreground">
 				<PublicSiteHeader active="changelog" />
 
-				<main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-					<h1 className="text-2xl font-semibold tracking-tight text-foreground">Changelog</h1>
-					<p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-						Last ten updates we care to highlight here. For the full record, use the repository commit history.
-					</p>
+				<main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
+					<p className="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Changelog</p>
+					<h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Commit history</h1>
 
-					<ul className="mt-10 space-y-0 divide-y divide-border border-y border-border">
-						{CHANGELOG_ENTRIES.map((entry) => (
-							<li key={`${entry.date}-${entry.summary}`} className="py-5 first:pt-0">
-								<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{entry.date}</p>
-								<p className="mt-2 text-sm leading-7 text-foreground">{entry.summary}</p>
-							</li>
-						))}
-					</ul>
+					<div className="mt-6 space-y-4 text-sm leading-7 text-muted-foreground">
+						<p>
+							Generated from <strong className="font-medium text-foreground">real git history</strong> (
+							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>
+							)
+						</p>
+						<p className="font-mono text-xs text-foreground/90">
+							Repository: <span className="text-foreground">{repo}</span>
+							{commits.length > 0 ? (
+								<span className="text-muted-foreground">
+									{" "}
+									· {commits.length} commits below (newest first)
+								</span>
+							) : null}
+						</p>
+					</div>
+
+					<ChangelogFromGit commits={commits} />
 				</main>
 			</div>
 			<PublicPageFooter />
