@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import DeploymentHistoryTable from "./DeploymentHistoryTable";
 import { useAppData } from "@/store/useAppData";
-import { Boxes, Github, Plus, RefreshCcw, ExternalLink } from "lucide-react";
+import { Boxes, Plus, RefreshCcw, ExternalLink } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { countDeployedServicesForRepo, formatTimestamp } from "@/lib/utils";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import { Input } from "./ui/input";
 import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
 import { RepoServicesRecord } from "@/app/types";
+import LanguageIcon from "./LanguageIcon";
 
 function normalizeUrl(url: string): string {
 	return url?.replace(/\.git$/, "").toLowerCase().trim();
@@ -36,12 +37,16 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const [showAddRepo, setShowAddRepo] = React.useState(false);
 	const [repoUrl, setRepoUrl] = React.useState("");
 	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
+	const [repoSearch, setRepoSearch] = React.useState("");
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
 	const repoCards = repoServices
 		.filter((record: RepoServicesRecord) => (record.services?.length ?? 0) > 0)
 		.map((record : RepoServicesRecord) => {
 		const repoUrlNorm = normalizeUrl(record.repo_url);
+		const matchingRepo = repoList.find(
+			(repo) => normalizeUrl(repo.html_url) === repoUrlNorm || repo.full_name === `${record.repo_owner}/${record.repo_name}`
+		);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
@@ -62,6 +67,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 			name: record.repo_name,
 			subtitle,
 			hasFailed,
+			language: matchingRepo?.language,
 		};
 		if (totalServices > 0) {
 			return {
@@ -123,6 +129,21 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		}
 	}
 
+	const filteredRepositories = React.useMemo(() => {
+		const query = repoSearch.trim().toLowerCase();
+		if (!query) return repoList;
+		return repoList.filter((repo) =>
+			`${repo.full_name} ${repo.name} ${repo.owner?.login ?? ""} ${repo.latest_commit?.message ?? ""}`
+				.toLowerCase()
+				.includes(query)
+		);
+	}, [repoList, repoSearch]);
+
+	const visibleRepositories = React.useMemo(
+		() => (repoSearch.trim() ? filteredRepositories : filteredRepositories.slice(0, 10)),
+		[filteredRepositories, repoSearch]
+	);
+
 	return (
 		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
 			<div className="p-6 border-b border-border/60">
@@ -157,17 +178,17 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 							</div>
 						) : (
 							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoCards.map(({ owner, name, subtitle, hasFailed }) => (
+								{repoCards.map(({ owner, name, subtitle, hasFailed, language }) => (
 									<div
 										key={`${owner}/${name}`}
 										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${hasFailed ? "border-destructive/50" : "border-border"
 											}`}
 									>
 										<Link
-											href={`/${owner}/${name}`}
-											className="flex items-center gap-3 min-w-0"
-										>
-											<Github className="size-6 shrink-0 text-muted-foreground" />
+										href={`/${owner}/${name}`}
+										className="flex items-center gap-3 min-w-0"
+									>
+											<LanguageIcon language={language} />
 											<div className="min-w-0">
 												<p className="font-semibold text-foreground truncate">
 													{owner} / {name}
@@ -259,6 +280,20 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 								</p>
 							</div>
 						)}
+						<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+							<Input
+								type="text"
+								placeholder="Search repositories..."
+								value={repoSearch}
+								onChange={(e) => setRepoSearch(e.target.value)}
+								className="max-w-md border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary text-sm"
+							/>
+							<p className="text-xs text-muted-foreground">
+								{repoSearch.trim()
+									? `${visibleRepositories.length} result${visibleRepositories.length !== 1 ? "s" : ""}`
+									: `Showing latest ${Math.min(10, repoList.length)} of ${repoList.length} repositories`}
+							</p>
+						</div>
 						{repoList.length === 0 ? (
 							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
 								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
@@ -266,16 +301,22 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 									{isLoading ? "Loading…" : "No repositories yet"}
 								</p>
 							</div>
+						) : visibleRepositories.length === 0 ? (
+							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
+								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
+								<p className="text-foreground font-medium">No repositories match your search</p>
+								<p className="text-sm text-muted-foreground mt-1">Try a different owner, name, or commit keyword.</p>
+							</div>
 						) : (
 							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoList.map((repo) => (
+								{visibleRepositories.map((repo) => (
 									<Link
 										key={repo.id}
 										href={`/${repo.full_name}`}
 										className="rounded-xl border border-border p-4 bg-card hover:border-primary/40 transition-colors"
 									>
 										<div className="flex items-center gap-3 min-w-0">
-											<Github className="size-6 shrink-0 text-muted-foreground" />
+											<LanguageIcon language={repo.language} />
 											<div className="min-w-0">
 												<p className="font-semibold text-foreground truncate">{repo.full_name}</p>
 												{repo.latest_commit && (

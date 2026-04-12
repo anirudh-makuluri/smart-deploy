@@ -95,8 +95,8 @@ function matchesRepoIdentifier(row: Record<string, unknown>, repoIdentifier: str
 	return rowUrl === target || rowRepoName === target || rowUrlTail === target;
 }
 
-function repoSyncKey(row: { user_id: string; repo_name: string }): string {
-	return `${row.user_id}::${row.repo_name}`.toLowerCase();
+function repoSyncKey(row: { user_id: string; full_name?: string; repo_name?: string }): string {
+	return `${row.user_id}::${String(row.full_name ?? row.repo_name ?? "")}`.toLowerCase();
 }
 
 function repoSyncSortValue(value: unknown): number {
@@ -111,6 +111,7 @@ function dedupeRepoSyncRows(rows: Record<string, unknown>[]) {
 	for (const row of rows) {
 		const key = repoSyncKey({
 			user_id: String(row.user_id ?? ""),
+			full_name: String(row.full_name ?? ""),
 			repo_name: String(row.repo_name ?? ""),
 		});
 		const existing = deduped.get(key);
@@ -387,7 +388,7 @@ export const dbHelper = {
 		
 		const rows = dedupeRepoSyncRows(repoList.map(repo => ({
 			user_id: userID,
-			repo_name: repo.name,
+			repo_name: repo.full_name,
 			id: repo.id,
 			full_name: repo.full_name,
 			repo_owner: repo.owner.login,
@@ -427,10 +428,11 @@ export const dbHelper = {
 				.eq("user_id", userID);
 
 			if (error) return { error: error.message };
-			
-			const repos = (rows || []).map((r) => ({
+
+			const dedupedRows = dedupeRepoSyncRows((rows || []) as Record<string, unknown>[]);
+			const repos = dedupedRows.map((r) => ({
 				id: r.id,
-				name: r.repo_name,
+				name: (r.full_name as string)?.split("/").pop() || (r.repo_name as string),
 				full_name: r.full_name,
 				html_url: r.html_url,
 				language: r.language,

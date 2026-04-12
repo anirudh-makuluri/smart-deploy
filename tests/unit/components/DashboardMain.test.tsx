@@ -46,8 +46,8 @@ describe("DashboardMain", () => {
 				{ status: "failed", url: "https://github.com/acme/repo-two" },
 			],
 			repoServices: [
-				{ repo_owner: "acme", repo_name: "repo-one", repo_url: "https://github.com/acme/repo-one", services: [] },
-				{ repo_owner: "acme", repo_name: "repo-two", repo_url: "https://github.com/acme/repo-two", services: [] },
+				{ repo_owner: "acme", repo_name: "repo-one", repo_url: "https://github.com/acme/repo-one", services: [{ name: "web", path: ".", language: "node" }] },
+				{ repo_owner: "acme", repo_name: "repo-two", repo_url: "https://github.com/acme/repo-two", services: [{ name: "api", path: ".", language: "node" }] },
 			],
 			repoList: [
 				{

@@ -2,19 +2,28 @@ import { repoType } from "./app/types";
 
 export async function getGithubRepos(token: string) {
 	try {
-		const res = await fetch("https://api.github.com/user/repos", {
-			headers: {
-				Authorization: `token ${token}`,
-				Accept: "application/vnd.github+json",
-			},
-		});
+		const repos: repoType[] = [];
+		let page = 1;
 
-		if (!res.ok) {
-			const error = await res.json();
-			return { error: error.toString() };
+		while (true) {
+			const res = await fetch(`https://api.github.com/user/repos?per_page=100&page=${page}`, {
+				headers: {
+					Authorization: `token ${token}`,
+					Accept: "application/vnd.github+json",
+				},
+			});
+
+			if (!res.ok) {
+				const error = await res.json();
+				return { error: error.toString() };
+			}
+
+			const pageRepos = (await res.json()) as repoType[];
+			repos.push(...pageRepos);
+
+			if (pageRepos.length < 100) break;
+			page += 1;
 		}
-
-		const repos = await res.json();
 
 		// Fetch extra data per repo in parallel
 		const data: repoType[] = await Promise.all(
