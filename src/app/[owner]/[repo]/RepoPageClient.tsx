@@ -45,6 +45,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [shouldLoadDeployments, setShouldLoadDeployments] = React.useState(false);
+	const [mobileWorkspaceNavOpen, setMobileWorkspaceNavOpen] = React.useState(false);
 
 	const repoFullName = `${owner}/${repoName}`;
 	const routeRepoLower = repoFullName.toLowerCase();
@@ -213,6 +214,10 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [routeRepoLower, setActiveServiceName]);
 
 	React.useEffect(() => {
+		if (!activeService) setMobileWorkspaceNavOpen(false);
+	}, [activeService]);
+
+	React.useEffect(() => {
 		return () => {
 			setActiveServiceName(null);
 			setActiveRepo(null);
@@ -265,11 +270,21 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 							<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
 						</div>
 					)}
-					<Header />
+					<Header
+						workspaceNav={
+							activeService
+								? { onOpenMobileSidebar: () => setMobileWorkspaceNavOpen(true) }
+								: undefined
+						}
+					/>
 
 					<main className={activeService ? "flex-1 min-h-0 overflow-hidden" : "flex-1 min-h-0 overflow-auto"}>
 						{activeService ? (
-							<DeployWorkspace key={`${repo.full_name}:${activeService.name}`} />
+							<DeployWorkspace
+								key={`${repo.full_name}:${activeService.name}`}
+								mobileNavOpen={mobileWorkspaceNavOpen}
+								onMobileNavOpenChange={setMobileWorkspaceNavOpen}
+							/>
 						) : (
 							<RepoServicesList
 								owner={owner}

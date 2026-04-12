@@ -26,6 +26,7 @@ import ScanProgress from "@/components/ScanProgress";
 import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
 import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { controlDeployment, deleteDeployment, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
 
@@ -35,7 +36,15 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 	return p;
 }
 
-export default function DeployWorkspace() {
+export type DeployWorkspaceProps = {
+	mobileNavOpen?: boolean;
+	onMobileNavOpenChange?: (open: boolean) => void;
+};
+
+export default function DeployWorkspace({
+	mobileNavOpen = false,
+	onMobileNavOpenChange,
+}: DeployWorkspaceProps = {}) {
 	// ============== STORE SELECTIONS ==============
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
 	const activeRepo = useAppData((s) => s.activeRepo);
@@ -771,18 +780,34 @@ export default function DeployWorkspace() {
 						onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
 					/>
 				</aside>
-				<div className="flex min-w-0 min-h-0 flex-1 flex-col">
-					<div className="border-b border-white/5 px-4 py-3 md:hidden">
-						<DeployWorkspaceMenu
-							activeSection={activeSection}
-							onChange={setActiveSection}
-						/>
-					</div>
+				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 					<main className={activeSection === "blueprint" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto stealth-scrollbar"}>
 						{renderActiveSection()}
 					</main>
 				</div>
 			</div>
+
+			{onMobileNavOpenChange ? (
+				<Sheet open={mobileNavOpen} onOpenChange={onMobileNavOpenChange}>
+					<SheetContent
+						side="left"
+						className="z-100 flex w-[min(20rem,calc(100vw-2rem))] max-w-[20rem] flex-col gap-0 border-r border-white/10 bg-background/95 p-0 backdrop-blur-xl [&>button]:text-foreground"
+					>
+						<SheetTitle className="sr-only">Deploy workspace navigation</SheetTitle>
+						<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+							<DeployWorkspaceMenu
+								activeSection={activeSection}
+								onChange={(section) => {
+									setActiveSection(section);
+									onMobileNavOpenChange(false);
+								}}
+								footer={deployAction}
+								collapsed={false}
+							/>
+						</div>
+					</SheetContent>
+				</Sheet>
+			) : null}
 
 			<ConfirmDialog
 				open={showRejectConfirm}

@@ -6,9 +6,11 @@ import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
 import { useParams, usePathname } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
-import { Activity, ChevronRight, LogOut, User } from "lucide-react";
+import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useSystemHealth } from "@/custom-hooks/useSystemHealth";
+import { cn } from "@/lib/utils";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -17,7 +19,19 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export default function Header() {
+export type HeaderHomeNavProps = {
+	onOpenMobileSidebar: () => void;
+};
+
+/** Same shape as `homeNav`: opens the deploy workspace menu sheet on small screens. */
+export type HeaderWorkspaceNavProps = HeaderHomeNavProps;
+
+type HeaderProps = {
+	homeNav?: HeaderHomeNavProps;
+	workspaceNav?: HeaderWorkspaceNavProps;
+};
+
+export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const { data: session } = useSession();
 	const params = useParams();
 	const pathname = usePathname();
@@ -48,20 +62,44 @@ export default function Header() {
 				? "border-destructive/30 bg-destructive/10 text-destructive"
 				: "border-border/60 bg-secondary/40 text-muted-foreground";
 
+	const showMobileNavMenu = Boolean((isHome && homeNav) || (isRepoPage && workspaceNav));
+
 	return (
-		<header className="shrink-0 w-full border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-50">
-			<div className="px-6 py-3 flex flex-row justify-between items-center max-w-[1600px] mx-auto">
-				<div className="flex items-center gap-4">
-					<SmartDeployLogo href="/home" showText size="sm" />
+		<header className="sticky top-0 z-50 w-full shrink-0 border-b border-white/5 bg-background/50 backdrop-blur-md">
+			<div className="mx-auto flex max-w-[1600px] flex-row items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
+				<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+					<SmartDeployLogo
+						href="/home"
+						showText
+						size="sm"
+						className={cn(showMobileNavMenu && "hidden md:flex")}
+					/>
+					{showMobileNavMenu ? (
+						<div className="flex shrink-0 items-center gap-0.5">
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								className="h-9 w-9 shrink-0 md:hidden"
+								onClick={() => {
+									homeNav?.onOpenMobileSidebar();
+									workspaceNav?.onOpenMobileSidebar();
+								}}
+								aria-label="Open navigation menu"
+							>
+								<Menu className="size-5" />
+							</Button>
+						</div>
+					) : null}
 
 					{(isHome || isRepoPage) && (
-						<nav className="flex items-center gap-2 text-sm font-medium">
+						<nav className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-sm font-medium">
 							<ChevronRight className="size-4 text-muted-foreground/30" />
 
 							{isHome ? (
-								<div className="flex items-center gap-2 text-foreground/80">
-									<User className="size-3.5" />
-									<span>{session?.user?.name || "User Dashboard"}</span>
+								<div className="flex min-w-0 items-center gap-2 text-foreground/80">
+									<User className="size-3.5 shrink-0" />
+									<span className="truncate">{session?.user?.name || "User Dashboard"}</span>
 								</div>
 							) : (
 								<div className="flex items-center gap-2 overflow-hidden">
@@ -93,12 +131,12 @@ export default function Header() {
 					)}
 				</div>
 
-				<div className="flex flex-row gap-3 items-center">
+				<div className="flex shrink-0 flex-row items-center gap-2 sm:gap-3">
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
 							<button
 								type="button"
-								className="hidden sm:inline-flex focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+								className="inline-flex focus:outline-none focus-visible:outline-none focus-visible:ring-0"
 								aria-label="View system health"
 								title={systemHealth.message}
 							>

@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Boxes, FileSearch, LayoutDashboard, Logs, PanelLeftClose, PanelLeftOpen, Settings2, History } from "lucide-react";
+import { Boxes, FileSearch, LayoutDashboard, Logs, Settings2, History } from "lucide-react";
+import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 
 type MenuItem = { id: "overview" | "setup" | "scan" | "blueprint" | "logs" | "history"; label: string };
 
@@ -46,14 +47,7 @@ export default function DeployWorkspaceMenu({
 						<p className="text-[10px] font-bold uppercase tracking-[0.24em] text-muted-foreground/65">Workspace</p>
 					) : null}
 					{onToggleCollapsed ? (
-						<button
-							type="button"
-							onClick={onToggleCollapsed}
-							className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-white/[0.04] hover:text-foreground"
-							aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-						>
-							{collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-						</button>
+						<SidebarCollapseToggle collapsed={collapsed} onToggle={onToggleCollapsed} />
 					) : null}
 				</div>
 			</div>

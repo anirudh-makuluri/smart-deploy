@@ -145,8 +145,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 	);
 
 	return (
-		<main className="flex-1 min-h-0 flex flex-col overflow-hidden">
-			<div className="p-6 border-b border-border/60">
+		<main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+			<div className="border-b border-border/60 p-4 sm:p-6">
 				<div className="flex flex-wrap items-center justify-between gap-4">
 					<div>
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -162,7 +162,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 					</div>
 				</div>
 			</div>
-			<div className="flex-1 min-h-0 overflow-y-auto p-6">
+			<div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
 				{/* Deployments: repo cards with deployed/undeployed/crashed */}
 				<div className={activeView === "overview" ? "" : "hidden"}>
 					<div className="space-y-6">
@@ -172,8 +172,10 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 								<p className="text-foreground font-medium">
 									{isLoading ? "Loading…" : "No detected repositories yet"}
 								</p>
-								<p className="text-sm text-muted-foreground mt-1 max-w-sm">
-									{isLoading ? "Fetching your data." : "Click a repository in the sidebar to open its page; we'll detect and save its services there."}
+								<p className="mt-1 max-w-sm text-sm text-muted-foreground">
+									{isLoading
+										? "Fetching your data."
+										: "Open Repositories from the menu (phone) or sidebar (desktop), pick a repo, and we will detect and save its services there."}
 								</p>
 							</div>
 						) : (
