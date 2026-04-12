@@ -18,6 +18,12 @@ function normalizeUrl(url: string): string {
 	return url?.replace(/\.git$/, "").toLowerCase().trim();
 }
 
+function getErrorMessage(error?: Error | { message?: string } | null): string {
+	if (!error) return "Failed to fetch repository";
+	if (error instanceof Error) return error.message;
+	return error.message || "Failed to fetch repository";
+}
+
 type DashboardMainProps = {
 	activeView: "overview" | "deployments" | "repositories";
 };
@@ -108,8 +114,8 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 			setAppData([repo, ...repoList], deployments, isLoading, repoServices);
 			toast.success(`Added ${repo.full_name}`);
 			router.push(`/${repo.owner.login}/${repo.name}`);
-		} catch (error: any) {
-			toast.error(error.message || "Failed to fetch repository");
+		} catch (error) {
+			toast.error(getErrorMessage(error as Error | { message?: string } | null));
 		} finally {
 			setIsLoadingRepo(false);
 		}

@@ -1,4 +1,5 @@
-import { ExternalLink, Link2, RefreshCw, Settings } from "lucide-react";
+import Image from "next/image";
+import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeployConfig, EC2Details, repoType } from "@/app/types";
 import {
@@ -19,6 +20,9 @@ type DeployOverviewProps = {
 	onRedeploy?: (commitSha?: string) => void;
 	onRefreshPreview?: () => void;
 	onEditConfiguration?: () => void;
+	onPauseResumeDeployment?: () => void;
+	onDeleteDeployment?: () => void;
+	isChangingDeploymentState?: boolean;
 	repo?: repoType;
 };
 
@@ -110,6 +114,9 @@ export default function DeployOverview({
 	onRedeploy,
 	onRefreshPreview,
 	onEditConfiguration,
+	onPauseResumeDeployment,
+	onDeleteDeployment,
+	isChangingDeploymentState = false,
 	repo,
 }: DeployOverviewProps) {
 	const hasStoredLiveUrl = Boolean(deployment.liveUrl);
@@ -132,6 +139,10 @@ export default function DeployOverview({
 		: null;
 
 	const regionDisplay = (deployment.awsRegion || region).trim() || region;
+	const canManageDeployment =
+		effectiveStatus === "running" || effectiveStatus === "paused";
+	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
+	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
 
 	return (
 		<div className="space-y-6">
@@ -199,9 +210,11 @@ export default function DeployOverview({
 						</div>
 						{screenshotUrl ? (
 							<div className="relative h-80 md:h-96">
-								<img
+								<Image
 									src={screenshotUrl}
 									alt={`Screenshot of ${deployment.serviceName}`}
+									fill
+									unoptimized
 									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
 								/>
 							</div>
@@ -247,6 +260,59 @@ export default function DeployOverview({
 							</div>
 						</div>
 					</div>
+
+					{canManageDeployment && (onPauseResumeDeployment || onDeleteDeployment) ? (
+						<div className="rounded-xl border border-destructive/20 bg-card p-5">
+							<div className="space-y-1">
+								<p className="text-xs uppercase tracking-wider text-muted-foreground">Deployment Controls</p>
+								<p className="text-sm text-muted-foreground">
+									Manage runtime state for this deployment. These actions affect the live service.
+								</p>
+							</div>
+							<div className="mt-4 space-y-3">
+								{onPauseResumeDeployment ? (
+									<div className="flex flex-col gap-3 rounded-lg border border-border/70 p-4 md:flex-row md:items-center md:justify-between">
+										<div className="space-y-1">
+											<p className="font-medium text-foreground">{pauseResumeLabel}</p>
+											<p className="text-sm text-muted-foreground">
+												{effectiveStatus === "paused"
+													? "Bring the deployment back online without changing configuration."
+													: "Temporarily stop the deployment while keeping its configuration intact."}
+											</p>
+										</div>
+										<Button
+											variant="outline"
+											onClick={onPauseResumeDeployment}
+											disabled={isChangingDeploymentState}
+											className="gap-2"
+										>
+											<PauseResumeIcon className="size-4" />
+											{pauseResumeLabel}
+										</Button>
+									</div>
+								) : null}
+								{onDeleteDeployment ? (
+									<div className="flex flex-col gap-3 rounded-lg border border-destructive/20 p-4 md:flex-row md:items-center md:justify-between">
+										<div className="space-y-1">
+											<p className="font-medium text-foreground">Delete Deployment</p>
+											<p className="text-sm text-muted-foreground">
+												Permanently remove this deployment record and its runtime association.
+											</p>
+										</div>
+										<Button
+											variant="destructive"
+											onClick={onDeleteDeployment}
+											disabled={isChangingDeploymentState}
+											className="gap-2"
+										>
+											<Trash2 className="size-4" />
+											Delete Deployment
+										</Button>
+									</div>
+								) : null}
+							</div>
+						</div>
+					) : null}
 				</div>
 
 				<div className="space-y-4">

@@ -15,8 +15,6 @@ type RepoServicesListProps = {
 	error: string | null;
 	repoDeployments: DeployConfig[];
 	resolvedRepo: repoType;
-	setActiveService: (svc: DetectedServiceInfo) => void;
-	handleDeleteAllDeployments: () => void;
 	openWorkspaceForService: (svc: DetectedServiceInfo) => void;
 };
 
@@ -29,8 +27,6 @@ export default function RepoServicesList({
 	error,
 	repoDeployments,
 	resolvedRepo,
-	setActiveService,
-	handleDeleteAllDeployments,
 	openWorkspaceForService,
 }: RepoServicesListProps) {
 	return (
@@ -44,23 +40,14 @@ export default function RepoServicesList({
 						{services.length} service{services.length !== 1 ? "s" : ""}
 					</p>
 				</div>
-				{!loading && !error && services.length > 0 && (
+				{!loading && !error && services.length > 1 && (
 					<div className="flex items-center gap-2">
 						<Button
 							onClick={() => openWorkspaceForService({ name: ".", path: ".", language: "unknown" })}
 							className="shrink-0"
 						>
-							Deploy all on one instance
+							Open whole app workspace
 						</Button>
-						{repoDeployments.length > 0 && (
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={handleDeleteAllDeployments}
-							>
-								Delete all deployments
-							</Button>
-						)}
 					</div>
 				)}
 			</div>
@@ -98,6 +85,13 @@ export default function RepoServicesList({
 							openWorkspaceForService(svc);
 						};
 
+						const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								handleCardClick();
+							}
+						};
+
 						const handleLiveUrlClick = (e: React.MouseEvent) => {
 							e.stopPropagation();
 							if (liveUrl) {
@@ -106,10 +100,12 @@ export default function RepoServicesList({
 						};
 
 						return (
-							<button
+							<div
 								key={svc.name}
-								type="button"
+								role="button"
+								tabIndex={0}
 								onClick={handleCardClick}
+								onKeyDown={handleCardKeyDown}
 								className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
 									}`}
 							>
@@ -149,15 +145,18 @@ export default function RepoServicesList({
 										)}
 									</div>
 									{liveUrl && isOnline && (
-										<button
+										<a
+											href={liveUrl}
+											target="_blank"
+											rel="noopener noreferrer"
 											onClick={handleLiveUrlClick}
 											className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
 										>
 											{liveUrl}
-										</button>
+										</a>
 									)}
 								</div>
-							</button>
+							</div>
 						);
 					})}
 				</div>

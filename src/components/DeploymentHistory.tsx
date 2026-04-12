@@ -15,44 +15,54 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
 import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
+import { useQuery } from "@tanstack/react-query";
 
-export default function DeploymentHistory({ repoName, serviceName, prefetchedData, isPrefetching }: { repoName: string; serviceName: string; prefetchedData?: any; isPrefetching?: boolean }) {
-	const [history, setHistory] = React.useState<DeploymentHistoryEntry[]>(prefetchedData?.history || prefetchedData || []);
-	const [loading, setLoading] = React.useState(isPrefetching ? true : !prefetchedData);
-	const [error, setError] = React.useState<string | null>(null);
+type DeploymentHistoryPageData = {
+	history: DeploymentHistoryEntry[];
+	total: number;
+};
+
+type DeploymentHistoryProps = {
+	repoName: string;
+	serviceName: string;
+	prefetchedData?: DeploymentHistoryPageData | DeploymentHistoryEntry[] | null;
+	isPrefetching?: boolean;
+};
+
+export default function DeploymentHistory({ repoName, serviceName, prefetchedData, isPrefetching }: DeploymentHistoryProps) {
 	const [analyzingId, setAnalyzingId] = React.useState<string | null>(null);
 	const [analysisByEntryId, setAnalysisByEntryId] = React.useState<Record<string, string>>({});
 	const [page, setPage] = React.useState(1);
-	const [total, setTotal] = React.useState(prefetchedData?.total ?? 0);
 	const limit = 10;
 
-	React.useEffect(() => {
-		// Use prefetched data only for the first page.
-		if (prefetchedData && page === 1) {
-			setHistory(prefetchedData.history || prefetchedData);
-			setTotal(prefetchedData.total ?? (Array.isArray(prefetchedData) ? prefetchedData.length : 0));
-			setLoading(false);
-			return;
+	const initialPageData = React.useMemo<DeploymentHistoryPageData | undefined>(() => {
+		if (!prefetchedData) return undefined;
+		if (Array.isArray(prefetchedData)) {
+			return { history: prefetchedData, total: prefetchedData.length };
 		}
+		return {
+			history: prefetchedData.history ?? [],
+			total: prefetchedData.total ?? prefetchedData.history?.length ?? 0,
+		};
+	}, [prefetchedData]);
 
-		// Otherwise fetch it
-		if (!repoName || !serviceName) return;
-		setLoading(true);
-		setError(null);
-		fetchDeploymentHistoryPage(repoName, serviceName, page, limit)
-			.then((data) => {
-				setHistory(data.history ?? []);
-				setTotal(data.total ?? 0);
-			})
-			.catch((err) => {
-				setError(err?.message || "Failed to load history");
-			})
-			.finally(() => setLoading(false));
-	}, [repoName, serviceName, prefetchedData, page]);
+	const historyQuery = useQuery({
+		queryKey: ["deployment-history", repoName, serviceName, page, limit],
+		enabled: Boolean(repoName && serviceName),
+		queryFn: async () => {
+			const data = await fetchDeploymentHistoryPage(repoName, serviceName, page, limit);
+			return {
+				history: (data.history ?? []) as DeploymentHistoryEntry[],
+				total: data.total ?? 0,
+			};
+		},
+		initialData: page === 1 ? initialPageData : undefined,
+	});
 
-	React.useEffect(() => {
-		setPage(1);
-	}, [repoName, serviceName]);
+	const history = historyQuery.data?.history ?? [];
+	const total = historyQuery.data?.total ?? 0;
+	const loading = historyQuery.isLoading || (isPrefetching === true && page === 1 && !historyQuery.data);
+	const error = historyQuery.error instanceof Error ? historyQuery.error.message : null;
 
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);
@@ -173,7 +183,7 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 									<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
 										<div className="space-y-3 text-xs font-mono text-muted-foreground">
 											{entry.steps.map((step) => (
-												<div key={Math.random().toString(36).substring(2)} className="bg-background/50 p-2 rounded border border-border/50">
+												<div key={step.id} className="bg-background/50 p-2 rounded border border-border/50">
 													<p className="font-semibold text-foreground mb-1">
 														{step.label} ({step.status})
 														{(step.startedAt || step.endedAt) && (

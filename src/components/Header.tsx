@@ -1,6 +1,7 @@
 "use client";
 
 import { signOut, useSession } from "next-auth/react";
+import Image from "next/image";
 import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
 import { useParams, usePathname } from "next/navigation";
@@ -27,6 +28,13 @@ export default function Header() {
 
 	function handleRepoClick() {
 		setActiveServiceName(null);
+	}
+
+	function handleAvatarKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+		if (event.key === "Enter" || event.key === " ") {
+			event.preventDefault();
+			event.currentTarget.click();
+		}
 	}
 
 	return (
@@ -78,10 +86,20 @@ export default function Header() {
 					{session?.user && (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
-								<button className="flex items-center gap-2 p-1 rounded-full hover:bg-white/5 transition-colors focus:outline-none">
+								<button
+									className="flex items-center gap-2 p-1 rounded-full hover:bg-white/5 transition-colors focus:outline-none"
+									onKeyDown={handleAvatarKeyDown}
+								>
 									<div className="size-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden">
 										{session.user.image ? (
-											<img src={session.user.image} alt={session.user.name || ""} className="size-8" />
+											<Image
+												src={session.user.image}
+												alt={session.user.name || ""}
+												width={32}
+												height={32}
+												className="w-8 h-auto"
+												unoptimized
+											/>
 										) : (
 											<User className="size-4 text-primary" />
 										)}

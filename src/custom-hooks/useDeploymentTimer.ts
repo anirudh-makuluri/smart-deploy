@@ -3,7 +3,7 @@
  * Tracks elapsed time during deployment
  */
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 interface UseDeploymentTimerProps {
 	isActive: boolean;
@@ -14,21 +14,30 @@ export function useDeploymentTimer({ isActive, deployStatus }: UseDeploymentTime
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
 	useEffect(() => {
+		let resetTimeout: ReturnType<typeof setTimeout> | null = null;
+		let interval: ReturnType<typeof setInterval> | null = null;
+
 		if (!isActive || deployStatus === "not-started") {
-			setElapsedSeconds(0);
-			return;
+			resetTimeout = setTimeout(() => {
+				setElapsedSeconds(0);
+			}, 0);
+		} else if (deployStatus === "running") {
+			resetTimeout = setTimeout(() => {
+				setElapsedSeconds(0);
+			}, 0);
+			interval = setInterval(() => {
+				setElapsedSeconds((prev) => prev + 1);
+			}, 1000);
 		}
 
-		const interval = setInterval(() => {
-			setElapsedSeconds((prev) => prev + 1);
-		}, 1000);
-
-		// Stop timer when deployment completes
-		if (deployStatus === "success" || deployStatus === "error") {
-			clearInterval(interval);
-		}
-
-		return () => clearInterval(interval);
+		return () => {
+			if (resetTimeout) {
+				clearTimeout(resetTimeout);
+			}
+			if (interval) {
+				clearInterval(interval);
+			}
+		};
 	}, [isActive, deployStatus]);
 
 	const formatTime = (seconds: number) => {
@@ -40,9 +49,9 @@ export function useDeploymentTimer({ isActive, deployStatus }: UseDeploymentTime
 			return `${hrs}h ${mins}m ${secs}s`;
 		} else if (mins > 0) {
 			return `${mins}m ${secs}s`;
-		} else {
-			return `${secs}s`;
 		}
+
+		return `${secs}s`;
 	};
 
 	return {

@@ -5,16 +5,10 @@ import DashboardMain from "@/components/DashboardMain";
 import DashboardSideBar from "@/components/DashboardSideBar";
 import Header from "@/components/Header";
 import { useAppDataQuery } from "@/hooks/useAppDataQuery";
-import { useAppData } from "@/store/useAppData";
 
 export default function HomePage() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
-	const { setActiveServiceName } = useAppData();
 	const [activeView, setActiveView] = React.useState<"overview" | "deployments" | "repositories">("overview");
-
-	React.useEffect(() => {
-		setActiveServiceName(null);
-	}, [setActiveServiceName]);
 
 	return (
 		<div className="landing-bg h-svh overflow-hidden flex flex-col text-foreground">

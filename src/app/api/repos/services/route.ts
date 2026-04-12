@@ -15,8 +15,12 @@ export async function GET() {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const response = await executeGraphQLOperation("repoServices", {}, session as any);
-		const services = (response?.repoServices as any) ?? [];
+		const response = await executeGraphQLOperation(
+			"repoServices",
+			{},
+			session as { userID?: string; accessToken?: string } | null
+		) as { repoServices?: unknown[] };
+		const services = response.repoServices ?? [];
 		return NextResponse.json({ services });
 	} catch (err) {
 		console.error("GET /api/repos/services error:", err);

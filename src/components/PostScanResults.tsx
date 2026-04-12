@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { DeployConfig, SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -42,7 +42,8 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		);
 	}, [results.dockerfiles]);
 
-	const [activeTab, setActiveTab] = useState<string>(dockerfileNames.length > 0 ? dockerfileNames[0] : "");
+	const initialActiveTab = dockerfileNames[0] ?? "";
+	const [activeTab, setActiveTab] = useState<string>(initialActiveTab);
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState("");
 	const [deployPathDraft, setDeployPathDraft] = useState("");
@@ -55,37 +56,45 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 	const [serviceDrafts, setServiceDrafts] = useState<Array<{ build_context: string; port: string }>>([]);
 	const [editingServiceIndex, setEditingServiceIndex] = useState<number | null>(null);
 
-	useEffect(() => {
-		setIsEditing(false);
-		setEditContent("");
-	}, [activeTab]);
+	const selectedTab = useMemo(() => {
+		if (activeTab === "compose" || activeTab === "nginx") return activeTab;
+		if (dockerfileNames.includes(activeTab)) return activeTab;
+		return initialActiveTab;
+	}, [activeTab, dockerfileNames, initialActiveTab]);
 
-	useEffect(() => {
-		if (dockerfileNames.length > 0 && activeTab !== "compose" && activeTab !== "nginx" && !dockerfileNames.includes(activeTab)) {
-			setActiveTab(dockerfileNames[0]);
-		}
-	}, [dockerfileNames, activeTab]);
+	const isEditingCurrentTab = isEditing && selectedTab === activeTab;
+	const deployPathValue = useMemo(() => {
+		if (selectedTab === "compose" || selectedTab === "nginx") return "";
+		return deployPathDraft || canonicalDockerfileDeployPath(selectedTab);
+	}, [deployPathDraft, selectedTab]);
 
-	useEffect(() => {
-		if (activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.includes(activeTab)) {
-			setDeployPathDraft(canonicalDockerfileDeployPath(activeTab));
-		}
-	}, [activeTab, dockerfileNames]);
-
-	useEffect(() => {
-		setServiceDrafts(
+	const serviceDraftSeed = useMemo(
+		() =>
 			(results.services || []).map((svc) => ({
 				build_context: svc.build_context || ".",
 				port: String(svc.port || 8080),
-			}))
-		);
-	}, [results.services]);
+			})),
+		[results.services]
+	);
+
+	const effectiveServiceDrafts = serviceDrafts.length === serviceDraftSeed.length ? serviceDrafts : serviceDraftSeed;
+
+	const selectTab = (nextTab: string) => {
+		setActiveTab(nextTab);
+		setIsEditing(false);
+		setEditContent("");
+		if (nextTab === "compose" || nextTab === "nginx") {
+			setDeployPathDraft("");
+		} else {
+			setDeployPathDraft(canonicalDockerfileDeployPath(nextTab));
+		}
+	};
 
 	const handleEdit = () => {
 		let content = "";
-		if (activeTab === "compose") content = results.docker_compose || "";
-		else if (activeTab === "nginx") content = results.nginx_conf || "";
-		else content = results.dockerfiles?.[activeTab] || "";
+		if (selectedTab === "compose") content = results.docker_compose || "";
+		else if (selectedTab === "nginx") content = results.nginx_conf || "";
+		else content = results.dockerfiles?.[selectedTab] || "";
 
 		setEditContent(content);
 		setIsEditing(true);
@@ -95,13 +104,13 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		if (!onUpdateResults) return;
 
 		const updatedResults = { ...results };
-		if (activeTab === "compose") {
+		if (selectedTab === "compose") {
 			updatedResults.docker_compose = editContent;
-		} else if (activeTab === "nginx") {
+		} else if (selectedTab === "nginx") {
 			updatedResults.nginx_conf = editContent;
 		} else {
 			if (!updatedResults.dockerfiles) updatedResults.dockerfiles = {};
-			updatedResults.dockerfiles[activeTab] = editContent;
+			updatedResults.dockerfiles[selectedTab] = editContent;
 		}
 
 		onUpdateResults(updatedResults);
@@ -111,7 +120,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleDelete = () => {
 		if (!onUpdateResults) return;
-		if (activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.length <= 1) {
+		if (selectedTab !== "compose" && selectedTab !== "nginx" && dockerfileNames.length <= 1) {
 			toast.error("At least one Dockerfile is required. Add another Dockerfile before deleting this one.");
 			return;
 		}
@@ -119,13 +128,13 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		const updatedResults = { ...results };
 		let nextTab = "";
 
-		if (activeTab === "compose") {
+		if (selectedTab === "compose") {
 			updatedResults.docker_compose = "";
-		} else if (activeTab === "nginx") {
+		} else if (selectedTab === "nginx") {
 			updatedResults.nginx_conf = "";
 		} else {
 			if (updatedResults.dockerfiles) {
-				delete updatedResults.dockerfiles[activeTab];
+				delete updatedResults.dockerfiles[selectedTab];
 			}
 		}
 
@@ -140,7 +149,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		}
 
 		onUpdateResults(updatedResults);
-		setActiveTab(nextTab);
+		selectTab(nextTab);
 		toast.success("File deleted successfully");
 	};
 
@@ -166,7 +175,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 			updatedResults.docker_compose = addFileContent;
 			onUpdateResults(updatedResults);
-			setActiveTab("compose");
+			selectTab("compose");
 			setAddFileDialogOpen(false);
 			resetAddFileForm();
 			toast.success("Compose file added successfully");
@@ -187,7 +196,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 		updatedResults.dockerfiles[dockerfilePath] = addFileContent;
 		onUpdateResults(updatedResults);
-		setActiveTab(dockerfilePath);
+		selectTab(dockerfilePath);
 		setAddFileDialogOpen(false);
 		resetAddFileForm();
 		toast.success("Dockerfile added successfully");
@@ -200,7 +209,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleUpdateDeployPath = () => {
 		if (!onUpdateResults) return;
-		if (activeTab === "compose" || activeTab === "nginx") return;
+		if (selectedTab === "compose" || selectedTab === "nginx") return;
 
 		const raw = deployPathDraft.trim();
 		if (!isValidRepoRelativeDockerfilePath(raw)) {
@@ -209,7 +218,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		}
 
 		const newKey = canonicalDockerfileDeployPath(raw);
-		const oldKey = activeTab;
+		const oldKey = selectedTab;
 		if (newKey === oldKey) {
 			toast.message("Deploy path already matches this Dockerfile.");
 			return;
@@ -253,7 +262,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		}
 
 		onUpdateResults(updated);
-		setActiveTab(newKey);
+		selectTab(newKey);
 		toast.success("Deploy path updated; this path is used when writing files on the server.");
 	};
 
@@ -265,7 +274,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleSaveServiceSettings = (index: number) => {
 		if (!onUpdateResults || !results.services?.[index]) return;
-		const draft = serviceDrafts[index];
+		const draft = effectiveServiceDrafts[index];
 		if (!draft) return;
 
 		const nextBuildContext = draft.build_context.trim() || ".";
@@ -634,7 +643,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 														<div className="min-w-[150px]">
 															<p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wide mb-1">ctx</p>
 															<Input
-																value={serviceDrafts[i]?.build_context ?? svc.build_context ?? "."}
+																value={effectiveServiceDrafts[i]?.build_context ?? svc.build_context ?? "."}
 																onChange={(e) => handleServiceDraftChange(i, "build_context", e.target.value)}
 																placeholder="."
 																spellCheck={false}
@@ -648,7 +657,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 																type="number"
 																min={1}
 																max={65535}
-																value={serviceDrafts[i]?.port ?? String(svc.port || 8080)}
+																value={effectiveServiceDrafts[i]?.port ?? String(svc.port || 8080)}
 																onChange={(e) => handleServiceDraftChange(i, "port", e.target.value)}
 																className="h-8 text-[11px] font-mono bg-white/[0.04] border-white/10 text-white/90"
 															/>
@@ -751,9 +760,9 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 							)}
 							<div className="w-px h-4 bg-white/10 mx-1" />
 							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => copyToClipboard(
-								results.dockerfiles && results.dockerfiles[activeTab] ? results.dockerfiles[activeTab] :
-									activeTab === "compose" ? results.docker_compose || "" :
-										activeTab === "nginx" ? results.nginx_conf || "" : ""
+								results.dockerfiles && results.dockerfiles[selectedTab] ? results.dockerfiles[selectedTab] :
+									selectedTab === "compose" ? results.docker_compose || "" :
+										selectedTab === "nginx" ? results.nginx_conf || "" : ""
 							)}>
 								<Copy className="size-3.5 mr-2" />
 								Copy
@@ -761,7 +770,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 						</div>
 					</div>
 
-					{activeTab !== "compose" && activeTab !== "nginx" && dockerfileNames.includes(activeTab) && (
+					{selectedTab !== "compose" && selectedTab !== "nginx" && dockerfileNames.includes(selectedTab) && (
 						<div className="flex flex-wrap items-end gap-3 mb-4 px-1">
 							<div className="flex-1 min-w-[min(100%,220px)]">
 								<label htmlFor="deploy-dockerfile-path" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 mb-1.5">
@@ -770,7 +779,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 								</label>
 								<Input
 									id="deploy-dockerfile-path"
-									value={deployPathDraft}
+									value={deployPathValue}
 									onChange={(e) => setDeployPathDraft(e.target.value)}
 									className="font-mono text-xs h-9 bg-white/[0.04] border-white/10 text-white/90 placeholder:text-muted-foreground/40"
 									placeholder="client/Dockerfile"
@@ -799,13 +808,13 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 						<div className="flex items-center bg-[#0a0a0a] border-b border-white/5 h-11 px-2.5 gap-1 overflow-x-auto no-scrollbar shrink-0">
 							{dockerfileNames.map((name) => {
 								const tabLabel = canonicalDockerfileDeployPath(name);
-								const isActive = activeTab === name;
+								const isActive = selectedTab === name;
 								return (
 									<button
 										key={name}
 										type="button"
 										title={tabLabel}
-										onClick={() => setActiveTab(name)}
+										onClick={() => selectTab(name)}
 										className={`relative flex items-center gap-2 px-3 h-8 text-[11px] font-mono font-semibold tracking-tight rounded-md transition-all whitespace-nowrap max-w-[min(100%,280px)] truncate ${isActive ? 'bg-white/5 text-primary shadow-sm' : 'text-muted-foreground/60 hover:text-white hover:bg-white/[0.03]'}`}
 									>
 										{isActive && <div className="absolute bottom-1 left-3 right-3 h-0.5 bg-primary rounded-full" />}
@@ -817,20 +826,20 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 							{(results.docker_compose || results.nginx_conf) && <div className="w-px h-4 bg-white/10 mx-2" />}
 							{results.docker_compose && (
 								<button
-									onClick={() => setActiveTab("compose")}
-									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'compose' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
+									onClick={() => selectTab("compose")}
+									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${selectedTab === 'compose' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
 								>
-									{activeTab === 'compose' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+									{selectedTab === 'compose' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
 									<Layers className="size-3.5" />
 									docker-compose.yml
 								</button>
 							)}
 							{results.nginx_conf && (
 								<button
-									onClick={() => setActiveTab("nginx")}
-									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${activeTab === 'nginx' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
+									onClick={() => selectTab("nginx")}
+									className={`relative flex items-center gap-2 px-4 h-8 text-[11px] font-bold rounded-md transition-all ${selectedTab === 'nginx' ? 'bg-white/5 text-primary' : 'text-muted-foreground/60 hover:text-white'}`}
 								>
-									{activeTab === 'nginx' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
+									{selectedTab === 'nginx' && <div className="absolute bottom-1 left-4 right-4 h-0.5 bg-primary rounded-full" />}
 									<Globe className="size-3.5" />
 									nginx.conf
 								</button>
@@ -839,7 +848,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 						{/* Code Content */}
 						<div className="relative overflow-y-auto flex-1 flex flex-col group/code stealth-scrollbar">
-							{isEditing ? (
+							{isEditingCurrentTab ? (
 								<textarea
 									value={editContent}
 									onChange={(e) => setEditContent(e.target.value)}
@@ -848,21 +857,21 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 								/>
 							) : (
 								<div className="flex-1 p-6 font-mono text-[13px] text-white/80 overflow-y-auto whitespace-pre-wrap leading-[1.7] stealth-scrollbar selection:bg-primary/20 bg-grid-white/[0.02]">
-									{activeTab !== "compose" && activeTab !== "nginx" && (
-										results.dockerfiles && results.dockerfiles[activeTab] ? (
-											<div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.dockerfiles[activeTab]) }} />
+									{selectedTab !== "compose" && selectedTab !== "nginx" && (
+										results.dockerfiles && results.dockerfiles[selectedTab] ? (
+											<div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.dockerfiles[selectedTab]) }} />
 										) : <span className="text-white/20 italic">No instructions generated for this module.</span>
 									)}
-									{activeTab === "compose" && (
+									{selectedTab === "compose" && (
 										results.docker_compose ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.docker_compose) }} /> : <span className="text-white/20 italic">No docker-compose.yml generated.</span>
 									)}
-									{activeTab === "nginx" && (
+									{selectedTab === "nginx" && (
 										results.nginx_conf ? <div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.nginx_conf) }} /> : <span className="text-white/20 italic">No nginx.conf generated.</span>
 									)}
 								</div>
 							)}
 							{/* Floating Line Indicator */}
-							{!isEditing && (
+							{!isEditingCurrentTab && (
 								<div className="absolute bottom-6 right-6 px-3 py-1.5 rounded-md bg-white/5 border border-white/10 backdrop-blur-md opacity-0 group-hover/code:opacity-100 transition-opacity">
 									<span className="text-[10px] font-mono text-muted-foreground tracking-tighter uppercase whitespace-nowrap">Mode: PROD-READY</span>
 								</div>

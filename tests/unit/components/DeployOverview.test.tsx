@@ -104,4 +104,23 @@ describe("DeployOverview", () => {
 		fireEvent.click(btn);
 		expect(onRefreshPreview).toHaveBeenCalledTimes(1);
 	});
+
+	it("renders deployment controls in overview and triggers handlers", () => {
+		const onPauseResumeDeployment = vi.fn();
+		const onDeleteDeployment = vi.fn();
+
+		render(
+			<DeployOverview
+				deployment={makeDeployment()}
+				onPauseResumeDeployment={onPauseResumeDeployment}
+				onDeleteDeployment={onDeleteDeployment}
+			/>
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /pause deployment/i }));
+		fireEvent.click(screen.getByRole("button", { name: /delete deployment/i }));
+
+		expect(onPauseResumeDeployment).toHaveBeenCalledTimes(1);
+		expect(onDeleteDeployment).toHaveBeenCalledTimes(1);
+	});
 });

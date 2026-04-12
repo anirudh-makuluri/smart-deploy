@@ -17,11 +17,11 @@ export default function WaitingListPage() {
 					</div>
 					
 					<h1 className="text-2xl font-semibold text-foreground mb-3">
-						You're on the waiting list
+						You&apos;re on the waiting list
 					</h1>
 					
 					<p className="text-muted-foreground mb-6 leading-relaxed">
-						Thanks for your interest in Smart Deploy! We're currently in a limited beta phase and 
+						Thanks for your interest in Smart Deploy! We&apos;re currently in a limited beta phase and 
 						are gradually rolling out access to users.
 					</p>
 					
@@ -33,7 +33,7 @@ export default function WaitingListPage() {
 						>
 							anirudh.makuluri@gmail.com
 						</a>
-						{" "}and let him know you'd like to be added to the platform.
+						{" "}and let him know you&apos;d like to be added to the platform.
 					</p>
 					
 					<div className="flex flex-col gap-3 mt-6">

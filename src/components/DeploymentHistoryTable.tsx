@@ -23,6 +23,7 @@ import { Download, Loader2, Search } from "lucide-react";
 import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import type { DeployStep } from "@/app/types";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
+import { useQuery } from "@tanstack/react-query";
 
 const statusOptions = ["all", "success", "failed"] as const;
 const envOptions = ["all", "production", "staging", "development"] as const;
@@ -86,26 +87,23 @@ function downloadCsv(rows: DeploymentHistoryRow[]) {
 
 export default function DeploymentHistoryTable() {
 	const { openLogsModal } = useActiveDeployment();
-	const [history, setHistory] = React.useState<DeploymentHistoryRow[]>([]);
-	const [loading, setLoading] = React.useState(true);
 	const [query, setQuery] = React.useState("");
 	const [statusFilter, setStatusFilter] = React.useState<(typeof statusOptions)[number]>("all");
 	const [envFilter, setEnvFilter] = React.useState<(typeof envOptions)[number]>("all");
 	const [page, setPage] = React.useState(1);
-	const [total, setTotal] = React.useState(0);
 	const limit = 10;
 
-	React.useEffect(() => {
-		setLoading(true);
-		fetchDeploymentHistoryAllPage(page, limit)
-			.then((data) => {
-				setHistory(data.history as DeploymentHistoryRow[]);
-				setTotal(data.total ?? 0);
-			})
-			.finally(() => setLoading(false));
-	}, [page]);
+	const historyQuery = useQuery({
+		queryKey: ["deployment-history-table", page, limit],
+		queryFn: async () => fetchDeploymentHistoryAllPage(page, limit),
+	});
+
+	const total = historyQuery.data?.total ?? 0;
+	const loading = historyQuery.isLoading;
 
 	const filtered = React.useMemo(() => {
+		const history = (historyQuery.data?.history ?? []) as DeploymentHistoryRow[];
+
 		return history.filter((row) => {
 			const matchQuery = query
 				? `${row.service_name} ${row.repo_name ?? ""} ${row.branch ?? ""} ${row.commitSha ?? ""} ${row.commitMessage ?? ""}`
@@ -120,7 +118,7 @@ export default function DeploymentHistoryTable() {
 			const matchEnv = envFilter === "all" || env === envFilter;
 			return matchQuery && matchStatus && matchEnv;
 		});
-	}, [history, query, statusFilter, envFilter]);
+	}, [historyQuery.data?.history, query, statusFilter, envFilter]);
 
 	return (
 		<div className="rounded-xl border border-border bg-card/60 p-4">

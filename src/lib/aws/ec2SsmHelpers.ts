@@ -498,8 +498,7 @@ async function getSsmRegistrationDiagnostics(
 		if (!subnetId) return ` Instance: ${publicIp}; subnet unknown.`;
 
 		// Get route table for this subnet (explicit association or VPC main)
-		let routesRaw: string;
-		const rtBySubnet = await runAWSCommand(
+		const routesRaw = await runAWSCommand(
 			[
 				"ec2",
 				"describe-route-tables",
@@ -515,7 +514,6 @@ async function getSsmRegistrationDiagnostics(
 			ws,
 			"deploy"
 		);
-		routesRaw = rtBySubnet;
 		const parsed = JSON.parse(routesRaw.trim());
 		const routesArray = Array.isArray(parsed) ? parsed : [parsed];
 		let flat = routesArray.flat(2).filter(Boolean) as string[];

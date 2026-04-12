@@ -91,26 +91,34 @@ export default function ServiceLogs({
 		}
 	});
 
-	React.useEffect(() => {
+	const persistKeywordRules = (rules: KeywordRule[]) => {
 		try {
-			if (keywordRules.length > 0) {
-				localStorage.setItem(LOG_FILTER_STORAGE_KEY, JSON.stringify(keywordRules));
+			if (rules.length > 0) {
+				localStorage.setItem(LOG_FILTER_STORAGE_KEY, JSON.stringify(rules));
 			} else {
 				localStorage.removeItem(LOG_FILTER_STORAGE_KEY);
 			}
 		} catch { /* quota or SSR */ }
-	}, [keywordRules]);
+	};
 
 	const addKeywordRule = () => {
 		const trimmed = ruleInput.trim();
 		if (!trimmed) return;
 		if (keywordRules.some((r) => r.keyword.toLowerCase() === trimmed.toLowerCase() && r.mode === ruleMode)) return;
-		setKeywordRules((prev) => [...prev, { mode: ruleMode, keyword: trimmed }]);
+		setKeywordRules((prev) => {
+			const next = [...prev, { mode: ruleMode, keyword: trimmed }];
+			persistKeywordRules(next);
+			return next;
+		});
 		setRuleInput("");
 	};
 
 	const removeKeywordRule = (index: number) => {
-		setKeywordRules((prev) => prev.filter((_, i) => i !== index));
+		setKeywordRules((prev) => {
+			const next = prev.filter((_, i) => i !== index);
+			persistKeywordRules(next);
+			return next;
+		});
 	};
 
 	// Prepend older history as the user scrolls to the top.
@@ -123,19 +131,10 @@ export default function ServiceLogs({
 	const [hasMoreHistory, setHasMoreHistory] = React.useState(true);
 	const [isLoadingOlderLogs, setIsLoadingOlderLogs] = React.useState(false);
 
-	React.useEffect(() => {
-		logsRef.current = logs;
-	}, [logs]);
+	logsRef.current = logs;
+	extraHistoryRef.current = extraHistory;
+	hasMoreHistoryRef.current = hasMoreHistory;
 
-	React.useEffect(() => {
-		extraHistoryRef.current = extraHistory;
-	}, [extraHistory]);
-
-	React.useEffect(() => {
-		hasMoreHistoryRef.current = hasMoreHistory;
-	}, [hasMoreHistory]);
-
-	// Reset paginated history when switching services.
 	React.useEffect(() => {
 		setExtraHistory([]);
 		setHasMoreHistory(true);
@@ -309,7 +308,7 @@ export default function ServiceLogs({
 		prevLogsLengthRef.current = currentLength;
 	}, [logs.length]);
 
-	async function loadMoreOlderLogs() {
+	const loadMoreOlderLogs = React.useCallback(async () => {
 		if (!serviceName) return;
 		if (displayLimit && displayLimit > 0) return;
 		if (!hasMoreHistoryRef.current) return;
@@ -372,7 +371,7 @@ export default function ServiceLogs({
 			isLoadingHistoryRef.current = false;
 			setIsLoadingOlderLogs(false);
 		}
-	}
+	}, [displayLimit, repoName, serviceName]);
 
 	// When the user scrolls near the very top, fetch the next chunk of older logs.
 	React.useEffect(() => {
@@ -389,11 +388,11 @@ export default function ServiceLogs({
 
 		viewport.addEventListener("scroll", onScroll, { passive: true });
 		return () => viewport.removeEventListener("scroll", onScroll);
-	}, [serviceName, repoName]);
+	}, [displayLimit, loadMoreOlderLogs, serviceName]);
 
 	return (
 		<>
-			<div ref={containerRef} className="relative">
+			<div ref={containerRef} className={`relative ${scrollable ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : ""}`}>
 				{isLoadingOlderLogs && (
 					<div
 						className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1.5 rounded-full border border-border/60 bg-background/80 text-xs font-medium text-muted-foreground shadow-sm"
@@ -531,7 +530,10 @@ export default function ServiceLogs({
 								<button
 									type="button"
 									className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1"
-									onClick={() => setKeywordRules([])}
+									onClick={() => {
+										persistKeywordRules([]);
+										setKeywordRules([]);
+									}}
 								>
 									Clear all
 								</button>
@@ -541,7 +543,10 @@ export default function ServiceLogs({
 				)}
 			</div>
 
-			<ScrollArea className={`${scrollable ? "h-[70vh]" : "h-auto"} w-full rounded-md border border-border bg-card`} data-logs-scroll>
+			<ScrollArea
+				className={`${scrollable ? "min-h-0 flex-1 overflow-hidden" : "h-auto"} w-full rounded-md border border-border bg-card`}
+				data-logs-scroll
+			>
 				<div className="min-w-full font-mono text-sm text-muted-foreground">
 				{filteredLogs.length === 0 ? (
 					<div className="flex flex-col items-center justify-center py-20 px-4 text-center">

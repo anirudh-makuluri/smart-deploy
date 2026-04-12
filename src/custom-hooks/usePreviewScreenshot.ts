@@ -12,6 +12,7 @@ interface UsePreviewScreenshotProps {
 	screenshotUrl: string | undefined;
 	deploymentStatus: string;
 	hasStoredLiveUrl: boolean;
+	onScreenshotUpdated?: (screenshotUrl: string) => Promise<void> | void;
 	onDeploymentsRefetch: (repo: string) => Promise<void>;
 }
 
@@ -21,10 +22,11 @@ export function usePreviewScreenshot({
 	screenshotUrl,
 	deploymentStatus,
 	hasStoredLiveUrl,
+	onScreenshotUpdated,
 	onDeploymentsRefetch,
 }: UsePreviewScreenshotProps) {
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [didRequestAuto, setDidRequestAuto] = useState(false);
+	const [lastAutoRequestKey, setLastAutoRequestKey] = useState<string | null>(null);
 
 	const requestScreenshot = useCallback(
 		async (force = false) => {
@@ -49,7 +51,13 @@ export function usePreviewScreenshot({
 					return;
 				}
 
-				// Refresh deployments to get updated screenshot URL
+				const nextScreenshotUrl = data.screenshotUrl.trim()
+
+				if (nextScreenshotUrl) {
+					await onScreenshotUpdated?.(nextScreenshotUrl);
+				}
+
+				// Refresh deployments to reconcile local state with the server.
 				await onDeploymentsRefetch(repoName);
 				if (force) toast.success("Created a new preview");
 
@@ -59,7 +67,7 @@ export function usePreviewScreenshot({
 				if (force) toast.error("Failed to create preview");
 			}
 		},
-		[repoName, serviceName, onDeploymentsRefetch]
+		[onDeploymentsRefetch, onScreenshotUpdated, repoName, serviceName]
 	);
 
 	// User manually requests a preview
@@ -76,15 +84,16 @@ export function usePreviewScreenshot({
 	// Auto-generate screenshot if service is running but we don't have one yet
 	useEffect(() => {
 		if (!repoName || !serviceName) return;
-		if (didRequestAuto) return; // Only request once per mount
+		const autoRequestKey = `${repoName}::${serviceName}`;
+		if (lastAutoRequestKey === autoRequestKey) return; // Only request once per repo/service
 		if (deploymentStatus !== "running") return;
 		if (screenshotUrl) return; // Already have one
 		if (!hasStoredLiveUrl) return; // Can't generate without a live URL
 
-		setDidRequestAuto(true);
+		setLastAutoRequestKey(autoRequestKey);
 		console.debug(`[Screenshot] Auto-generating for ${repoName}/${serviceName}`);
 		void requestScreenshot(false);
-	}, [repoName, serviceName, didRequestAuto, deploymentStatus, screenshotUrl, hasStoredLiveUrl, requestScreenshot]);
+	}, [deploymentStatus, hasStoredLiveUrl, lastAutoRequestKey, repoName, requestScreenshot, screenshotUrl, serviceName]);
 
 	return {
 		isRefreshing,

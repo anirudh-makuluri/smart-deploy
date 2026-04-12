@@ -91,7 +91,7 @@ export type DeployConfig = {
 	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
 	cloudRun: CloudRunDetails | null;
 	/** Analysis/scan results from detectServices */
-	scanResults: SDArtifactsResponse | {};
+	scanResults: SDArtifactsResponse | Record<string, never>;
 }
 
 export type DeployStep = {

@@ -271,6 +271,7 @@ export default function BlueprintView({
 	const [savingFieldId, setSavingFieldId] = React.useState<string | null>(null);
 	const [draftData, setDraftData] = React.useState<Record<string, string>>({});
 	const [envDraft, setEnvDraft] = React.useState<EnvVarEntry[]>([]);
+	const [draftNodeId, setDraftNodeId] = React.useState<string | null>(null);
 	const [showUnsavedDialog, setShowUnsavedDialog] = React.useState(false);
 	const canvasRef = React.useRef<HTMLDivElement>(null);
 	const envFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -278,34 +279,13 @@ export default function BlueprintView({
 	const dragStartRef = React.useRef<{ pointerX: number; pointerY: number; nodeX: number; nodeY: number } | null>(null);
 	const dragMovedRef = React.useRef(false);
 
-	React.useEffect(() => {
-		if (!model.nodes.length) {
-			setSelectedNodeId(null);
-			return;
+	const effectiveSelectedNodeId = React.useMemo(() => {
+		if (model.nodes.length === 0) return null;
+		if (selectedNodeId && model.nodes.some((node) => node.id === selectedNodeId)) {
+			return selectedNodeId;
 		}
-
-		if (!selectedNodeId || !model.nodes.some((node) => node.id === selectedNodeId)) {
-			setSelectedNodeId(model.nodes[0].id);
-		}
+		return model.nodes[0].id;
 	}, [model.nodes, selectedNodeId]);
-
-	const defaultNodePositions = React.useMemo(
-		() =>
-			Object.fromEntries(
-				model.nodes.map((node) => [
-					node.id,
-					{
-						x: node.x,
-						y: node.y,
-					},
-				])
-			),
-		[model.nodes]
-	);
-
-	React.useEffect(() => {
-		setNodePositions(defaultNodePositions);
-	}, [defaultNodePositions]);
 
 	const nodesWithPositions = React.useMemo(
 		() =>
@@ -317,31 +297,10 @@ export default function BlueprintView({
 		[model.nodes, nodePositions]
 	);
 	const selectedNode = React.useMemo(
-		() => nodesWithPositions.find((node) => node.id === selectedNodeId) ?? null,
-		[nodesWithPositions, selectedNodeId]
+		() => nodesWithPositions.find((node) => node.id === effectiveSelectedNodeId) ?? null,
+		[nodesWithPositions, effectiveSelectedNodeId]
 	);
 	const selectedNodeIsDirty = isDirty(selectedNode);
-
-	React.useEffect(() => {
-		if (selectedNode?.kind === "envVars") {
-			const value = String(selectedNode.data?.value ?? "");
-			const entries = parseEnvVarsToDisplay(value);
-			setDraftData(buildDraftDataFromNode(selectedNode));
-			setEnvDraft(entries.length > 0 ? entries : [{ name: "", value: "" }]);
-			return;
-		}
-		setDraftData(buildDraftDataFromNode(selectedNode));
-	}, [selectedNode]);
-
-	React.useEffect(() => {
-		if (selectedNode?.kind === "envVars") {
-			const value = String(selectedNode.data?.value ?? "");
-			const entries = parseEnvVarsToDisplay(value);
-			setEnvDraft(entries.length > 0 ? entries : [{ name: "", value: "" }]);
-			return;
-		}
-		setEnvDraft([]);
-	}, [selectedNode]);
 
 	const surfaceWidth = Math.max(1680, ...nodesWithPositions.map((node) => node.x + (node.width ?? 220) + 180));
 	const surfaceHeight = Math.max(1040, ...nodesWithPositions.map((node) => node.y + (node.height ?? 150) + 180));
@@ -435,6 +394,9 @@ export default function BlueprintView({
 		setDraggingNodeId(null);
 		setIsPanning(false);
 		if (releasedNodeId && shouldOpenDetails) {
+			if (releasedNode) {
+				resetDrafts(releasedNode);
+			}
 			setSelectedNodeId(releasedNodeId);
 			setIsDetailOpen(true);
 		}
@@ -453,7 +415,7 @@ export default function BlueprintView({
 	}
 
 	function handleResetView() {
-		setNodePositions(defaultNodePositions);
+		setNodePositions({});
 		requestAnimationFrame(() => {
 			requestAnimationFrame(() => {
 				fitToView();
@@ -462,6 +424,7 @@ export default function BlueprintView({
 	}
 
 	function resetDrafts(node: BlueprintNode | null) {
+		setDraftNodeId(node?.id ?? null);
 		setDraftData(buildDraftDataFromNode(node));
 		if (node?.kind === "envVars") {
 			const entries = parseEnvVarsToDisplay(String(node.data?.value ?? ""));
@@ -472,22 +435,35 @@ export default function BlueprintView({
 	}
 
 	function getCurrentFieldValue(node: BlueprintNode, key: string) {
+		const isDraftForNode = draftNodeId === node.id;
 		if (node.kind === "envVars" && key === "value") {
-			return buildEnvVarsString(envDraft.filter((entry) => entry.name.trim() || entry.value.trim()));
+			const entries = isDraftForNode
+				? envDraft
+				: parseEnvVarsToDisplay(String(node.data?.value ?? ""));
+			return buildEnvVarsString(entries.filter((entry) => entry.name.trim() || entry.value.trim()));
+		}
+		if (!isDraftForNode) {
+			return String(node.data?.[key] ?? "");
 		}
 		return draftData[key] ?? String(node.data?.[key] ?? "");
 	}
 
 	function isDirty(node: BlueprintNode | null) {
 		if (!node) return false;
+		const isDraftForNode = draftNodeId === node.id;
 		if (node.kind === "envVars") {
 			const original = String(node.data?.value ?? "");
-			const current = buildEnvVarsString(envDraft.filter((entry) => entry.name.trim() || entry.value.trim()));
+			const entries = isDraftForNode
+				? envDraft
+				: parseEnvVarsToDisplay(String(node.data?.value ?? ""));
+			const current = buildEnvVarsString(entries.filter((entry) => entry.name.trim() || entry.value.trim()));
 			return current !== original;
 		}
 		if (node.kind === "customDomain") {
-			return getSubdomainFromCustomUrl(String(node.data?.url ?? "")) !== (draftData.url ?? "");
+			const currentUrl = isDraftForNode ? (draftData.url ?? "") : getSubdomainFromCustomUrl(String(node.data?.url ?? ""));
+			return getSubdomainFromCustomUrl(String(node.data?.url ?? "")) !== currentUrl;
 		}
+		if (!isDraftForNode) return false;
 		return BLUEPRINT_NODE_FIELDS[node.kind]
 			.filter((field) => field.editable)
 			.some((field) => String(node.data?.[field.key] ?? "") !== (draftData[field.key] ?? ""));
@@ -765,7 +741,7 @@ export default function BlueprintView({
 						{nodesWithPositions.map((node) => {
 							const styles = KIND_STYLES[node.kind];
 							const Icon = styles.icon;
-							const isSelected = node.id === selectedNodeId;
+							const isSelected = node.id === effectiveSelectedNodeId;
 							const isInteractive = isInteractiveNode(node);
 							const showDirtyBadge = isSelected && isInteractive && selectedNodeIsDirty;
 

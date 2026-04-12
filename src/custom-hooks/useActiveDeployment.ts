@@ -1,13 +1,7 @@
-/**
- * useActiveDeployment
- * Derives the active deployment based on selected repo and service
- * Returns either the found deployment or a default one with empty/null values
- */
-
-import { useMemo } from "react";
 import { DeployConfig } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import config from "@/config";
+import { getDeploymentForService } from "@/lib/utils";
 
 function createDefaultDeployment(repoName: string, serviceName: string, repoUrl?: string, branch?: string): DeployConfig {
 	return {
@@ -38,17 +32,18 @@ export function useActiveDeployment(): DeployConfig {
 	const activeServiceName = useAppData((s) => s.activeServiceName);
 	const deployments = useAppData((s) => s.deployments);
 
-	return useMemo(() => {
-		if (!activeRepo?.name || !activeServiceName) {
-			return createDefaultDeployment("", "", "");
-		}
+	if (!activeRepo?.name || !activeServiceName) {
+		return createDefaultDeployment("", "", "");
+	}
 
-		const found = deployments.find(
-			(dep) => dep.repoName === activeRepo.name && dep.serviceName === activeServiceName
-		);
+	const found = getDeploymentForService(
+		deployments,
+		activeRepo.html_url,
+		activeServiceName,
+		activeRepo.name
+	);
 
-		if (found) return found;
+	if (found) return found;
 
-		return createDefaultDeployment(activeRepo.name, activeServiceName, activeRepo.html_url, activeRepo.default_branch);
-	}, [deployments, activeRepo?.name, activeRepo?.html_url, activeRepo?.default_branch, activeServiceName]);
+	return createDefaultDeployment(activeRepo.name, activeServiceName, activeRepo.html_url, activeRepo.default_branch);
 }

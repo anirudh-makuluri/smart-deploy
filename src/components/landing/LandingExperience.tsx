@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { motion, useInView, useReducedMotion, type Variants } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
 	ArrowRight,
 	CheckCircle2,
@@ -53,24 +54,24 @@ type ProductMetric = {
 
 const productPillars: ProductPillar[] = [
 	{
-		eyebrow: "Repo Intelligence",
-		title: "Map services, runtimes, and deployment shape automatically.",
+		eyebrow: "Repository Intake",
+		title: "Turn a GitHub repo into a deployable surface.",
 		description:
-			"SmartDeploy turns a raw repository into a deploy-ready surface by detecting services, runtimes, branch state, and what has to ship together.",
+			"SmartDeploy inspects the repo, detects the moving parts, and shows what needs to ship before you touch infrastructure.",
 		icon: Github,
 	},
 	{
-		eyebrow: "Decision Support",
-		title: "Surface release blockers before rollout starts.",
+		eyebrow: "Release Blueprint",
+		title: "Surface the rollout path before you deploy.",
 		description:
-			"Blueprints, runtime checks, and dependency signals help engineers pick the right release path before provisioning anything.",
+			"Blueprints, runtime checks, and dependency signals keep the release plan visible before provisioning starts.",
 		icon: ScanSearch,
 	},
 	{
-		eyebrow: "Operational Visibility",
+		eyebrow: "Live Operations",
 		title: "Keep rollout state, logs, and preview in one live view.",
 		description:
-			"Build output, runtime feedback, and the live app stay connected so validation happens with context, not tab switching.",
+			"Build output, runtime feedback, and the live app stay connected so validation happens in one place instead of across tabs.",
 		icon: SquareTerminal,
 	},
 ];
@@ -79,13 +80,13 @@ const workflowSteps: WorkflowStep[] = [
 	{
 		id: "01",
 		title: "Connect a repository",
-		description: "Import a GitHub repo, detect services, and establish the deployment surface in seconds.",
+		description: "Import a GitHub repo, detect services, and establish the deployable surface in seconds.",
 		icon: Github,
 	},
 	{
 		id: "02",
 		title: "Generate the blueprint",
-		description: "Run Smart Analysis to inspect runtime needs, service layout, and deployment constraints.",
+		description: "Run Smart Analysis to inspect runtime needs, service layout, and deployment constraints before rollout.",
 		icon: ScanSearch,
 	},
 	{
@@ -226,46 +227,9 @@ function SectionIntro({
 }
 
 function CountUp({ value, suffix = "" }: { value: number; suffix?: string }) {
-	const [displayValue, setDisplayValue] = useState(0);
-	const prefersReducedMotion = useReducedMotion();
-	const ref = React.useRef<HTMLSpanElement | null>(null);
-	const hasAnimatedRef = React.useRef(false);
-	const inView = useInView(ref, { once: true, amount: 0.6 });
-
-	useEffect(() => {
-		if (!inView || prefersReducedMotion || hasAnimatedRef.current) {
-			return;
-		}
-		hasAnimatedRef.current = true;
-
-		const duration = 900;
-		const start = performance.now();
-
-		const frame = (timestamp: number) => {
-			const progress = Math.min((timestamp - start) / duration, 1);
-			const eased = 1 - (1 - progress) * (1 - progress);
-			setDisplayValue(Math.round(value * eased));
-
-			if (progress < 1) {
-				window.requestAnimationFrame(frame);
-			}
-		};
-
-		window.requestAnimationFrame(frame);
-	}, [inView, prefersReducedMotion, value]);
-
-	if (prefersReducedMotion) {
-		return (
-			<span ref={ref}>
-				{value}
-				{suffix}
-			</span>
-		);
-	}
-
 	return (
-		<span ref={ref}>
-			{displayValue}
+		<span>
+			{value}
 			{suffix}
 		</span>
 	);
@@ -276,7 +240,7 @@ function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 
 	if (failed) {
 		return (
-			<div className="flex min-h-[280px] flex-col items-center justify-center gap-4 rounded-[20px] border border-dashed border-border/70 bg-muted/30 p-8 sm:min-h-[360px]">
+			<div className="flex min-h-70 flex-col items-center justify-center gap-4 rounded-[20px] border border-dashed border-border/70 bg-muted/30 p-8 sm:min-h-90">
 				<div className="flex size-14 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
 					<ImageOff className="size-6" />
 				</div>
@@ -289,13 +253,16 @@ function ScreenshotImage({ src, alt }: { src: string; alt: string }) {
 	}
 
 	return (
-		<img
-			src={src}
-			alt={alt}
-			onError={() => setFailed(true)}
-			className="w-full rounded-[20px] border border-border/40 object-cover"
-			loading="lazy"
-		/>
+		<div className="relative overflow-hidden rounded-[20px] border border-border/40">
+			<Image
+				src={src}
+				alt={alt}
+				width={1600}
+				height={1000}
+				onError={() => setFailed(true)}
+				className="w-full object-cover"
+			/>
+		</div>
 	);
 }
 
@@ -364,7 +331,7 @@ function WorkflowRail() {
 				variants={drawLineVariants}
 			/>
 			<div className="grid gap-4 lg:grid-cols-4">
-			{workflowSteps.map((step, index) => {
+				{workflowSteps.map((step, index) => {
 				const Icon = step.icon;
 
 				return (
@@ -399,7 +366,7 @@ function WorkflowRail() {
 						</motion.div>
 					</motion.div>
 				);
-			})}
+				})}
 			</div>
 		</div>
 	);
@@ -483,7 +450,7 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 
 			<main>
 				<section className="landing-hero-bg relative overflow-hidden px-6 pb-12 pt-10 lg:px-10 lg:pb-16 lg:pt-12">
-					<div className="landing-hero-wave absolute inset-x-0 top-0 h-[28rem] opacity-70" aria-hidden />
+					<div className="landing-hero-wave absolute inset-x-0 top-0 h-112 opacity-70" aria-hidden />
 					<div className="landing-grid-overlay absolute inset-0 opacity-45" aria-hidden />
 					<div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
 						<motion.div
@@ -496,7 +463,7 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 								className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-[3.25rem] lg:leading-[0.95]"
 								variants={heroItemVariants}
 							>
-								Ship from GitHub to production in one focused workflow.
+								Turn a GitHub repo into a production release without losing context.
 							</motion.h1>
 							<motion.p
 								className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg"
@@ -550,7 +517,7 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 						<SectionIntro
 							eyebrow="Capabilities"
 							title="Built for the hard parts of shipping."
-							description="SmartDeploy focuses on the real bottlenecks: repository intelligence, better release decisions, and live operational visibility once code is moving."
+							description="SmartDeploy focuses on the real bottlenecks: repo intake, release planning, and live operational visibility once code is moving."
 							align="center"
 						/>
 

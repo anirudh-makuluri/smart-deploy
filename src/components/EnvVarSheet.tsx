@@ -133,7 +133,7 @@ export default function EnvVarSheet({
 							Environment Variables
 						</SheetTitle>
 						<SheetDescription className="text-muted-foreground/60">
-							Manage your application's environment variables. You can add them manually, upload a .env file, or paste content into the key field.
+							Manage your application&apos;s environment variables. You can add them manually, upload a .env file, or paste content into the key field.
 						</SheetDescription>
 					</SheetHeader>
 

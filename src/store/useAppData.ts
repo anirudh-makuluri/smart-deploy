@@ -51,6 +51,10 @@ type AppState = {
 	refetchDeployments: () => Promise<void>;
 	/** Fetch deployments for a specific repository. Useful when navigating to a repo page before full fetch. */
 	fetchRepoDeployments: (repoName: string) => Promise<void>;
+	/** Merge fetched deployments into the local store without writing back to the server. */
+	mergeDeployments: (deployments: DeployConfig[]) => void;
+	/** Merge fetched repo service records into the local store without replacing unrelated repos. */
+	mergeRepoServices: (records: RepoServicesRecord[]) => void;
 	/** Refetch repo services only (e.g. after visiting a repo page that ran detect-services). */
 	refetchRepoServices: () => Promise<void>;
 	/** Get cached detect-services result for a repo (normalized URL). */
@@ -71,6 +75,66 @@ function normalizeRepoUrlForCache(url: string): string {
 	return url.replace(/\.git$/, '').toLowerCase().trim();
 }
 
+function normalizeRepoIdentifier(value: string): string {
+	return value
+		.trim()
+		.replace(/\.git$/, "")
+		.replace(/^https?:\/\//, "")
+		.replace(/^github\.com\//, "")
+		.replace(/\/$/, "")
+		.toLowerCase();
+}
+
+function matchesRepoIdentifier(deployment: DeployConfig, repoIdentifier: string): boolean {
+	const target = normalizeRepoIdentifier(repoIdentifier);
+	if (!target) return false;
+
+	const deploymentUrl = normalizeRepoIdentifier(deployment.url ?? "");
+	const deploymentRepoName = normalizeRepoIdentifier(deployment.repoName ?? "");
+	const deploymentUrlTail = deploymentUrl.split("/").slice(-2).join("/");
+
+	return deploymentUrl === target || deploymentRepoName === target || deploymentUrlTail === target;
+}
+
+function deploymentKey(deployment: Pick<DeployConfig, "repoName" | "serviceName">): string {
+	return `${deployment.repoName}::${deployment.serviceName}`.toLowerCase();
+}
+
+function mergeDeploymentLists(existing: DeployConfig[], incoming: DeployConfig[]): DeployConfig[] {
+	const merged = new Map<string, DeployConfig>();
+
+	for (const deployment of existing) {
+		merged.set(deploymentKey(deployment), deployment);
+	}
+
+	for (const deployment of incoming) {
+		merged.set(deploymentKey(deployment), deployment);
+	}
+
+	return sortDeployments(Array.from(merged.values()));
+}
+
+function repoServicesKey(record: Pick<RepoServicesRecord, "repo_url">): string {
+	return normalizeRepoUrlForCache(record.repo_url);
+}
+
+function mergeRepoServicesLists(
+	existing: RepoServicesRecord[],
+	incoming: RepoServicesRecord[]
+): RepoServicesRecord[] {
+	const merged = new Map<string, RepoServicesRecord>();
+
+	for (const record of existing) {
+		merged.set(repoServicesKey(record), record);
+	}
+
+	for (const record of incoming) {
+		merged.set(repoServicesKey(record), record);
+	}
+
+	return Array.from(merged.values());
+}
+
 export const useAppData = create<AppState>((set, get) => ({
 	repoList: [],
 	deployments: [],
@@ -88,8 +152,8 @@ export const useAppData = create<AppState>((set, get) => ({
 	setAppData: (repoList, deployments, isLoading = false, repoServicesPayload = []) => {
 		set({
 			repoList: sortRepos(repoList),
-			deployments: sortDeployments(deployments),
-			repoServices: repoServicesPayload,
+			deployments: mergeDeploymentLists([], deployments),
+			repoServices: mergeRepoServicesLists([], repoServicesPayload),
 			isLoading,
 			hasFetched: !isLoading,
 		});
@@ -103,8 +167,8 @@ export const useAppData = create<AppState>((set, get) => ({
 			const { repoList, deployments, repoServices } = await fetchAppOverview();
 			set({
 				repoList: sortRepos(repoList),
-				deployments: sortDeployments(deployments),
-				repoServices: repoServices ?? [],
+				deployments: mergeDeploymentLists([], deployments),
+				repoServices: mergeRepoServicesLists([], repoServices ?? []),
 				isLoading: false,
 				hasFetched: true,
 			});
@@ -120,8 +184,8 @@ export const useAppData = create<AppState>((set, get) => ({
 			const { repoList, deployments, repoServices } = await fetchAppOverview();
 			set({
 				repoList: sortRepos(repoList),
-				deployments: sortDeployments(deployments),
-				repoServices: repoServices ?? [],
+				deployments: mergeDeploymentLists([], deployments),
+				repoServices: mergeRepoServicesLists([], repoServices ?? []),
 				isLoading: false,
 				hasFetched: true,
 			});
@@ -135,31 +199,45 @@ export const useAppData = create<AppState>((set, get) => ({
 		try {
 			const { deployments } = await fetchAppOverview();
 			const list = deployments ?? [];
-			set({ deployments: sortDeployments(list) });
+			set((state) => ({ deployments: mergeDeploymentLists(state.deployments, list) }));
 		} catch (err) {
 			console.error('Refetch deployments failed', err);
 		}
 	},
 
-	fetchRepoDeployments: async (repoName: string) => {
+	fetchRepoDeployments: async (repoIdentifier: string) => {
 		try {
-			console.log(`Fetching deployments for ${repoName}...`);
-			const fetchedList = await fetchRepoDeploymentsGraphql(repoName);
-
-			// Upsert fetched deployments without erasing others in the store
-			set((state) => {
-				const otherDeployments = state.deployments.filter((d) => d.repoName !== repoName);
-				return { deployments: sortDeployments([...otherDeployments, ...fetchedList]) };
-			});
+			console.log(`Fetching deployments for ${repoIdentifier}...`);
+			const fetchedList = await fetchRepoDeploymentsGraphql(repoIdentifier);
+			set((state) => ({
+				deployments: mergeDeploymentLists(
+					state.deployments.filter((d) => !matchesRepoIdentifier(d, repoIdentifier)),
+					fetchedList
+				),
+			}));
 		} catch (err) {
 			console.error('Fetch repo deployments failed', err);
 		}
 	},
 
+	mergeDeployments: (incomingDeployments) => {
+		set((state) => ({
+			deployments: mergeDeploymentLists(state.deployments, incomingDeployments),
+		}));
+	},
+
+	mergeRepoServices: (incomingRecords) => {
+		set((state) => ({
+			repoServices: mergeRepoServicesLists(state.repoServices, incomingRecords),
+		}));
+	},
+
 	refetchRepoServices: async () => {
 		try {
 			const services = await fetchRepoServices();
-			set({ repoServices: services ?? [] });
+			set((state) => ({
+				repoServices: mergeRepoServicesLists(state.repoServices, services ?? []),
+			}));
 		} catch (err) {
 			console.error('Refetch repo services failed', err);
 		}
@@ -205,7 +283,7 @@ export const useAppData = create<AppState>((set, get) => ({
 				: [...deployments, merged];
 		}
 
-		set({ deployments: sortDeployments(updatedList) });
+		set({ deployments: mergeDeploymentLists([], updatedList) });
 	},
 
 	removeDeployment: (repoName: string, serviceName: string) => {

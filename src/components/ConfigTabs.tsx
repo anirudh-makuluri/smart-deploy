@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { parseEnvVarsToDisplay, buildEnvVarsString, parseEnvVarsToStore } from "@/lib/utils";
+import { parseEnvVarsToDisplay, buildEnvVarsString } from "@/lib/utils";
 import { toast } from "sonner";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import * as React from "react"
 import { z } from "zod"
@@ -28,7 +28,7 @@ import {
 	EC2_INSTANCE_TYPE_PRESETS,
 	formatApproxEc2PriceCompact,
 } from "@/lib/aws/ec2InstanceTypes";
-import { updateCustomDomain, verifyDns } from "@/lib/graphqlClient";
+import { updateCustomDomain } from "@/lib/graphqlClient";
 import { useAppData } from "@/store/useAppData";
 
 export type FormSchemaType = z.infer<typeof formSchema>
@@ -62,11 +62,10 @@ export default function ConfigTabs({
 
 	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
 	const [isEnvSheetOpen, setIsEnvSheetOpen] = useState(false);
-	const [customUrlVerifying, setCustomUrlVerifying] = useState(false);
+	const customUrlVerifying = false;
 	const [customUrlStatus, setCustomUrlStatus] = useState<{ type: 'success' | 'error' | 'owned' | null; message?: string; alternatives?: string[] }>({ type: null });
-
-	const onConfigChangeRef = React.useRef(onConfigChange);
-	onConfigChangeRef.current = onConfigChange;
+	const envSyncTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+	const deploymentEc2 = deployment.ec2;
 
 	const initialSubdomain = React.useMemo(() => {
 		let raw = deployment.liveUrl;
@@ -78,7 +77,7 @@ export default function ConfigTabs({
 			return raw.slice(0, -(DOMAIN_SUFFIX.length + 1));
 		}
 		return raw.split(".")[0];
-	}, [deployment, DOMAIN_SUFFIX]);
+	}, [deployment]);
 
 	const form = useForm<FormSchemaType>({
 		resolver: zodResolver(formSchema),
@@ -91,32 +90,18 @@ export default function ConfigTabs({
 
 	const liveUrlValue = form.watch("liveUrl");
 	const [customUrlSaving, setCustomUrlSaving] = useState(false);
-	const [isCustomUrlDirty, setIsCustomUrlDirty] = useState(false);
-
-
-	useEffect(() => {
-		setIsCustomUrlDirty(liveUrlValue !== initialSubdomain);
-	}, [liveUrlValue, initialSubdomain]);
-
-	useEffect(() => {
-		form.setValue("liveUrl", initialSubdomain, { shouldDirty: false });
-		setIsCustomUrlDirty(false);
-		setCustomUrlStatus({ type: null });
-	}, [initialSubdomain, form]);
+	const isCustomUrlDirty = liveUrlValue !== initialSubdomain;
 
 	const getCustomUrlFromSubdomain = (subdomain: string) =>
 		subdomain ? `https://${subdomain}.${DOMAIN_SUFFIX}` : "";
 
 	const handleSaveCustomUrl = async () => {
 		if (!deployment) return;
-		const raw = form.getValues("liveUrl");
-		if (!raw) {
-			return
-		}
-		const finalUrl = getCustomUrlFromSubdomain(raw.trim());
+		const raw = form.getValues("liveUrl") ?? "";
+		const trimmedValue = raw.trim();
+		const finalUrl = trimmedValue ? getCustomUrlFromSubdomain(trimmedValue) : "";
 		const previousUrl = (deployment.liveUrl || "").trim();
 		if (finalUrl === previousUrl) {
-			setIsCustomUrlDirty(false);
 			return;
 		}
 
@@ -129,7 +114,6 @@ export default function ConfigTabs({
 		serviceName: deployment.serviceName,
 			liveUrl: finalUrl,
 			});
-			setIsCustomUrlDirty(false);
 			setCustomUrlStatus({
 				type: finalUrl ? "success" : null,
 				message: finalUrl ? data?.message || `Custom domain saved: ${finalUrl}` : undefined,
@@ -139,8 +123,8 @@ export default function ConfigTabs({
 			} else {
 				toast.success("Custom domain cleared");
 			}
-		} catch (error: any) {
-			const message = error?.message ?? "Failed to update custom domain";
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Failed to update custom domain";
 			setCustomUrlStatus({ type: "error", message });
 			toast.error(message);
 		} finally {
@@ -150,95 +134,43 @@ export default function ConfigTabs({
 
 	const handleCancelCustomUrl = () => {
 		form.setValue("liveUrl", initialSubdomain, { shouldDirty: false });
-		setIsCustomUrlDirty(false);
 		setCustomUrlStatus({ type: null });
 	};
 
-	// Auto-save logic
-	const watchedBranch = form.watch("branch");
+	const handleEnvEntriesChange = React.useCallback(
+		(entries: { name: string; value: string }[]) => {
+			setEnvEntries(entries);
+			const envString = buildEnvVarsString(entries);
+			if (envString === deployment.envVars) return;
 
-	const isMounted = React.useRef(false);
-	useEffect(() => {
-		if (!isMounted.current) {
-			isMounted.current = true;
-			return;
-		}
-		if (watchedBranch !== deployment.branch) {
-			onConfigChangeRef.current({ branch: watchedBranch });
-		}
-	}, [watchedBranch, deployment.branch]);
-
-	useEffect(() => {
-		const envString = buildEnvVarsString(envEntries);
-		if (envString === deployment.envVars) return;
-
-		const timeoutId = setTimeout(() => {
-			onConfigChangeRef.current({ envVars: envString });
-		}, 500);
-
-		return () => clearTimeout(timeoutId);
-	}, [envEntries, deployment.envVars]);
-
-	const verifySubdomain = async (subdomain: string) => {
-		if (!subdomain) return;
-
-		setCustomUrlVerifying(true);
-		try {
-			const data = await verifyDns(subdomain, deployment.repoName, deployment.serviceName);
-
-			if (data.available) {
-				const availableSubdomain = (data.customUrl || "").replace(/^https?:\/\//, "").split(".")[0];
-				if (data.isOwned) {
-					setCustomUrlStatus({
-						type: 'owned',
-						message: `Current: ${data.customUrl}`
-					});
-				} else {
-					setCustomUrlStatus({
-						type: 'success',
-						message: `Available: ${data.customUrl}`
-					});
-				}
-				form.setValue("liveUrl", availableSubdomain);
-			} else {
-				setCustomUrlStatus({
-					type: 'error',
-					message: data.message || "Subdomain is already taken",
-					alternatives: data.alternatives || []
-				});
+			if (envSyncTimeoutRef.current) {
+				clearTimeout(envSyncTimeoutRef.current);
 			}
-		} catch (error) {
-			setCustomUrlStatus({
-				type: 'error',
-				message: "Failed to verify subdomain"
-			});
-		} finally {
-			setCustomUrlVerifying(false);
-		}
-	};
+			envSyncTimeoutRef.current = setTimeout(() => {
+				onConfigChange({ envVars: envString });
+			}, 500);
+		},
+		[deployment.envVars, onConfigChange]
+	);
 
-	useEffect(() => {
-		const currentSub = form.getValues("liveUrl");
-		if (!currentSub) {
-		const serviceSub = `-${Math.random().toString(36).substring(2, 6)}`;
-		const defaultSubdomain = `${deployment.repoName}${serviceSub}`;
-			form.setValue("liveUrl", defaultSubdomain);
-			verifySubdomain(defaultSubdomain);
-		} else {
-			verifySubdomain(currentSub);
-		}
+	React.useEffect(() => {
+		return () => {
+			if (envSyncTimeoutRef.current) {
+				clearTimeout(envSyncTimeoutRef.current);
+			}
+		};
 	}, []);
 
 	const hasScanResults = !!deployment.scanResults;
 
 	const ec2InstanceOptions = React.useMemo(() => {
-		const v = (deployment.ec2 as any)?.instanceType?.trim?.();
+		const v = deploymentEc2?.instanceType?.trim();
 		const list: string[] = [...EC2_INSTANCE_TYPE_PRESETS];
 		if (v && !list.some((x) => x === v)) list.unshift(v);
 		return list;
-	}, [deployment.ec2]);
+	}, [deploymentEc2]);
 
-	const ec2InstanceValue = (deployment.ec2 as any)?.instanceType?.trim?.() || DEFAULT_EC2_INSTANCE_TYPE;
+	const ec2InstanceValue = deploymentEc2?.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
 
 	const branchSelectOptions = React.useMemo(() => {
 		const fromRepo = (branchesProp ?? []).filter(Boolean);
@@ -249,18 +181,8 @@ export default function ConfigTabs({
 		return fromRepo.length > 0 ? fromRepo : current ? [current] : [];
 	}, [branchesProp, deployment.branch]);
 
-	React.useEffect(() => {
-		form.setValue("branch", deployment.branch ?? "", { shouldDirty: false });
-	}, [deployment.branch, deployment.repoName, deployment.serviceName, form]);
-
-	React.useEffect(() => {
-		if (envEntries.length === 0 && deployment.envVars) {
-			setEnvEntries(parseEnvVarsToDisplay(deployment.envVars));
-		}
-	}, [deployment.envVars, deployment.repoName, deployment.serviceName]);
-
 	return (
-		<Form {...form}>
+		<Form key={`${deployment.repoName}:${deployment.serviceName}`} {...form}>
 			<div className="flex flex-col gap-10 max-w-2xl mx-auto">
 
 				{/* PROJECT SOURCE */}
@@ -313,7 +235,15 @@ export default function ConfigTabs({
 										{branchSelectOptions.length === 0 ? (
 											<p className="text-sm text-muted-foreground py-2.5 px-1">Loading branches…</p>
 										) : (
-											<Select value={field.value} onValueChange={field.onChange}>
+											<Select
+												value={field.value}
+												onValueChange={(value) => {
+													field.onChange(value);
+													if (value !== deployment.branch) {
+														onConfigChange({ branch: value });
+													}
+												}}
+											>
 												<SelectTrigger className="w-full h-11 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4">
 													<div className="flex items-center gap-2.5 w-full">
 														<GitBranch className="size-3.5 text-muted-foreground/40 shrink-0" />
@@ -355,7 +285,22 @@ export default function ConfigTabs({
 					<div className="w-full max-w-sm space-y-2">
 						<Select
 							value={ec2InstanceValue}
-							onValueChange={(value) => onConfigChange({ ec2: { ...(deployment.ec2 as any), instanceType: value } })}
+							onValueChange={(value) =>
+								onConfigChange({
+									ec2: {
+										success: deploymentEc2?.success ?? false,
+										baseUrl: deploymentEc2?.baseUrl ?? "",
+										instanceId: deploymentEc2?.instanceId ?? "",
+										publicIp: deploymentEc2?.publicIp ?? "",
+										vpcId: deploymentEc2?.vpcId ?? "",
+										subnetId: deploymentEc2?.subnetId ?? "",
+										securityGroupId: deploymentEc2?.securityGroupId ?? "",
+										amiId: deploymentEc2?.amiId ?? "",
+										sharedAlbDns: deploymentEc2?.sharedAlbDns ?? "",
+										instanceType: value,
+									},
+								})
+							}
 						>
 							<SelectTrigger className="w-full h-auto min-h-11 py-2 bg-white/[0.02] border-white/5 text-foreground rounded-xl focus:ring-primary/20 hover:border-white/10 transition-colors px-4 whitespace-normal *:data-[slot=select-value]:line-clamp-none *:data-[slot=select-value]:items-start *:data-[slot=select-value]:text-left [&_[data-slot=select-value]]:w-full">
 								<div className="flex items-start gap-2.5 w-full min-w-0 text-left">
@@ -496,7 +441,7 @@ export default function ConfigTabs({
 					open={isEnvSheetOpen}
 					onOpenChange={setIsEnvSheetOpen}
 					entries={envEntries}
-					onEntriesChange={setEnvEntries}
+					onEntriesChange={handleEnvEntriesChange}
 				/>
 
 				{/* SMART SCAN PROMPT */}

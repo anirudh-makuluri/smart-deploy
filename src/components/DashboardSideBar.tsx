@@ -1,7 +1,6 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useEffect } from "react";
 import { FolderGit2, LayoutGrid, History } from "lucide-react";
 import { useAppData } from "@/store/useAppData";
 
@@ -18,11 +17,6 @@ export default function DashboardSideBar({ activeView, onViewChange }: Dashboard
 		return d.status === "running" && hasStoredLiveUrl;
 	}).length;
 	const unhealthyDeployments = deployments.filter((d) => d.status === "failed" || d.status === "stopped" || d.status === "paused").length;
-	// Accent is fixed to blue for now; picker hidden.
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		document.documentElement.setAttribute("data-accent", "blue");
-	}, []);
 
 	return (
 		<aside className="shrink-0 w-80 lg:w-96 flex flex-col min-h-0 border-r border-border bg-card">
