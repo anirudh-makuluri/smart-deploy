@@ -676,4 +676,24 @@ export const dbHelper = {
 			return { error: error instanceof Error ? error.message : String(error) };
 		}
 	},
+
+	isApprovedUser: async function (email: string): Promise<{ approved: boolean; error?: string }> {
+		try {
+			const trimmed = (email || "").trim().toLowerCase();
+			if (!trimmed) return { approved: false, error: "Email is required" };
+
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("approved_users")
+				.select("email")
+				.eq("email", trimmed)
+				.maybeSingle();
+
+			if (error) return { approved: false, error: error.message };
+			return { approved: !!data };
+		} catch (error) {
+			console.error("isApprovedUser error:", error);
+			return { approved: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	},
 };

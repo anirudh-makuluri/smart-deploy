@@ -28,10 +28,13 @@ This creates the following tables:
 | `deployment_history` | Immutable log of every deploy attempt |
 | `user_repos` | Per-user repo metadata |
 | `repo_services` | Detected services for scanned repos |
+| `approved_users` | Emails allowed to sign in |
 | `waiting_list` | Users who tried to sign in but aren't approved yet |
 | `_health` | Simple health-check row |
 
 Row Level Security (RLS) is enabled on all tables. The **service role key** bypasses RLS, which is what the server uses.
+
+To grant someone access, insert their email into `approved_users`. If someone signs in before being approved, SmartDeploy will add them to `waiting_list` and deny access.
 
 ---
 
