@@ -131,8 +131,8 @@ wss.on("connection", (ws) => {
 	});
 });
 
-server.listen(port, () => {
-	console.log(`WebSocket server running on port ${port}`);
+server.listen(port, "0.0.0.0", () => {
+	console.log(`WebSocket server running on 0.0.0.0:${port}`);
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients
