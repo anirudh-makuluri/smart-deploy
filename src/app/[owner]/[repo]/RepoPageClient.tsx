@@ -220,11 +220,13 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	}, [setActiveRepo, setActiveServiceName]);
 
 	function openWorkspaceForService(svc: DetectedServiceInfo) {
+		const normalizedServiceName =
+			svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
 		if (repo) {
 			setActiveRepo(repo as repoType);
 		}
 		setShouldLoadDeployments(true);
-		setActiveServiceName(svc.name);
+		setActiveServiceName(normalizedServiceName);
 	}
 
 	return (

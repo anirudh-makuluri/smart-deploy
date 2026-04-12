@@ -61,6 +61,7 @@ export default function DeployWorkspace() {
 	const [scanDuration, setScanDuration] = React.useState<number>(0);
 	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
+	const [showPauseResumeConfirm, setShowPauseResumeConfirm] = React.useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
@@ -228,6 +229,20 @@ export default function DeployWorkspace() {
 		() => effectiveDeploymentStatus === "didnt_deploy",
 		[effectiveDeploymentStatus]
 	);
+	const pauseResumeAction = deployment.status === "paused" ? "resume" : "pause";
+	const pauseResumeNextStatus: DeployConfig["status"] = deployment.status === "paused" ? "running" : "paused";
+	const pauseResumeDialogTitle = deployment.status === "paused" ? "Resume Deployment?" : "Pause Deployment?";
+	const pauseResumeDialogDescription =
+		deployment.status === "paused"
+			? "This will bring the deployment back online using its current configuration."
+			: "This will temporarily stop the live deployment while keeping its configuration intact.";
+	const pauseResumeConfirmText = isChangingDeploymentState
+		? deployment.status === "paused"
+			? "Resuming..."
+			: "Pausing..."
+		: deployment.status === "paused"
+			? "Resume Deployment"
+			: "Pause Deployment";
 
 	React.useEffect(() => {
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
@@ -400,24 +415,21 @@ export default function DeployWorkspace() {
 	async function handlePauseResumeDeployment() {
 		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
 
-		const isPaused = deployment.status === "paused";
-		const action = isPaused ? "resume" : "pause";
-		const nextStatus: DeployConfig["status"] = isPaused ? "running" : "paused";
-
 		setIsChangingDeploymentState(true);
 		try {
-			await controlDeployment(action, deployment.repoName, deployment.serviceName);
+			await controlDeployment(pauseResumeAction, deployment.repoName, deployment.serviceName);
 			await updateDeploymentById({
 				repoName: deployment.repoName,
 				serviceName: deployment.serviceName,
 				url: deployment.url || repoUrl || "",
-				status: nextStatus,
+				status: pauseResumeNextStatus,
 			});
 			toast.success(
-				nextStatus === "paused"
+				pauseResumeNextStatus === "paused"
 					? "Deployment paused"
 					: "Deployment resumed"
 			);
+			setShowPauseResumeConfirm(false);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Failed to update deployment";
 			toast.error(message);
@@ -672,7 +684,7 @@ export default function DeployWorkspace() {
 								onRedeploy={handleDeploy}
 								onRefreshPreview={handleManualCreatePreview}
 								onEditConfiguration={() => { setActiveSection("setup"); }}
-								onPauseResumeDeployment={handlePauseResumeDeployment}
+								onPauseResumeDeployment={() => setShowPauseResumeConfirm(true)}
 								onDeleteDeployment={() => setShowDeleteConfirm(true)}
 								isChangingDeploymentState={isChangingDeploymentState}
 								repo={activeRepo as repoType}
@@ -789,6 +801,15 @@ export default function DeployWorkspace() {
 				description="This permanently removes the deployment and its tracked runtime state. You can deploy again later, but this current deployment record will be deleted."
 				confirmText={isChangingDeploymentState ? "Deleting..." : "Delete Deployment"}
 				variant="destructive"
+			/>
+			<ConfirmDialog
+				open={showPauseResumeConfirm}
+				onOpenChange={setShowPauseResumeConfirm}
+				onConfirm={handlePauseResumeDeployment}
+				title={pauseResumeDialogTitle}
+				description={pauseResumeDialogDescription}
+				confirmText={pauseResumeConfirmText}
+				variant="default"
 			/>
 		</div>
 	);

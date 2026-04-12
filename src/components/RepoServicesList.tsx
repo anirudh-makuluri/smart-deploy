@@ -40,7 +40,7 @@ export default function RepoServicesList({
 						{services.length} service{services.length !== 1 ? "s" : ""}
 					</p>
 				</div>
-				{!loading && !error && services.length > 0 && (
+				{!loading && !error && services.length > 1 && (
 					<div className="flex items-center gap-2">
 						<Button
 							onClick={() => openWorkspaceForService({ name: ".", path: ".", language: "unknown" })}
