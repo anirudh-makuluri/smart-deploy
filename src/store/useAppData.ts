@@ -51,6 +51,8 @@ type AppState = {
 	refetchDeployments: () => Promise<void>;
 	/** Fetch deployments for a specific repository. Useful when navigating to a repo page before full fetch. */
 	fetchRepoDeployments: (repoName: string) => Promise<void>;
+	/** Replace deployments for a specific repository with a fresh repo-scoped result set. */
+	syncRepoDeployments: (repoName: string, deployments: DeployConfig[]) => void;
 	/** Merge fetched deployments into the local store without writing back to the server. */
 	mergeDeployments: (deployments: DeployConfig[]) => void;
 	/** Merge fetched repo service records into the local store without replacing unrelated repos. */
@@ -218,6 +220,15 @@ export const useAppData = create<AppState>((set, get) => ({
 		} catch (err) {
 			console.error('Fetch repo deployments failed', err);
 		}
+	},
+
+	syncRepoDeployments: (repoIdentifier, fetchedList) => {
+		set((state) => ({
+			deployments: mergeDeploymentLists(
+				state.deployments.filter((d) => !matchesRepoIdentifier(d, repoIdentifier)),
+				fetchedList
+			),
+		}));
 	},
 
 	mergeDeployments: (incomingDeployments) => {

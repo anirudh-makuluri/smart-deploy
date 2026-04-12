@@ -36,8 +36,8 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		repoServices,
 		getDetectedRepoCache,
 		setDetectedRepoCache,
-		mergeDeployments,
 		mergeRepoServices,
+		syncRepoDeployments,
 		activeServiceName: storeActiveService,
 		setActiveServiceName,
 		setActiveRepo,
@@ -162,9 +162,9 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	});
 
 	React.useEffect(() => {
-		if (!repoDeploymentsQuery.data || repoDeploymentsQuery.data.length === 0) return;
-		mergeDeployments(repoDeploymentsQuery.data);
-	}, [mergeDeployments, repoDeploymentsQuery.data]);
+		if (!repo || repoDeploymentsQuery.data === undefined) return;
+		syncRepoDeployments(repo.full_name, repoDeploymentsQuery.data);
+	}, [repo, repoDeploymentsQuery.data, syncRepoDeployments]);
 
 	const repoDeployments = repoDeploymentsFromStore;
 

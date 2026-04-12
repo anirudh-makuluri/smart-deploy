@@ -173,10 +173,7 @@ export async function detectServices(
 			);
 
 			const multiServiceConfig = detectMultiService(repoRoot);
-			const services =
-				multiServiceConfig.services.length > 0
-					? multiServiceConfig.services.map((s: any) => toDetectedService(s, repoRoot))
-					: [{ name: "app", path: ".", language: "node", port: 3000 }];
+			const services = multiServiceConfig.services.map((s: any) => toDetectedService(s, repoRoot));
 
 			await dbHelper.upsertRepoServices(userID, repoUrl, {
 				branch: effectiveBranch,
@@ -185,6 +182,12 @@ export async function detectServices(
 				services,
 				is_monorepo: multiServiceConfig.isMonorepo ?? false,
 			});
+			if (services.length === 0) {
+				const deleteResult = await dbHelper.deleteDeploymentsByRepo(userID, repoUrl);
+				if (deleteResult.error) {
+					throw new Error(String(deleteResult.error));
+				}
+			}
 
 			return {
 				isMonorepo: multiServiceConfig.isMonorepo ?? false,
