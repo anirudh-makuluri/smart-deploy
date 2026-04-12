@@ -6,16 +6,6 @@ It sits between a PaaS and raw cloud infrastructure. You can write your own depl
 
 Deploy like a PaaS. Understand it like the cloud.
 
-## Public website
-
-The Next.js app includes a small public marketing layer:
-
-- **`/`**: Landing page with product positioning, comparison, workflow, and screenshot sections.
-- **`/docs`**: On-site product overview (audience, loop, blueprint, FAQ). Provider-specific setup still lives in the [`docs/`](docs/) Markdown guides.
-- **`/changelog`**: Notes for **site and documentation** updates (layout, copy, README). For application or worker changes, use git history and pull requests.
-
-Shared header, overview panels, and footer styling keep those routes feeling like one surface.
-
 ## The problem
 
 Most deployment tools force an uncomfortable tradeoff:
@@ -45,19 +35,19 @@ Smart Deploy is organized around three steps:
 3. Deploy it
    Start the deploy once the plan makes sense, then follow logs, health, and preview output.
 
-## Key product surfaces
+## Core experience
 
-### Landing page (`/`)
+### Where it fits
 
-The landing page explains the product model quickly:
+Smart Deploy targets the gap between convenience and control:
 
-- PaaS hides too much
-- Cloud exposes too much
-- Smart Deploy sits in the middle
+- A PaaS is easy to use, but it hides too much of the real deploy.
+- Raw cloud infrastructure gives full control, but it exposes too much surface at once.
+- Smart Deploy sits in the middle: ship from a guided workflow without losing sight of containers, compose, and routing.
 
 ### Blueprint view
 
-The blueprint view is the most important product surface. It exists to answer one question before deploy:
+The blueprint view is the center of the product. It exists to answer one question before deploy:
 
 What exactly is going to happen to this app?
 
@@ -79,25 +69,16 @@ Smart Deploy treats infrastructure files as first-class product output, not hidd
 
 The product makes these files visible so the deployment stays inspectable.
 
-## Screenshots
-
-Current screenshots live in [`public/screenshots/`](public/screenshots/).
-
-- Repository overview: [`public/screenshots/repo-overview.png`](public/screenshots/repo-overview.png)
-- Blueprint view: [`public/screenshots/smart-analysis.png`](public/screenshots/smart-analysis.png)
-- Deploy logs and preview: [`public/screenshots/deploy-preview.png`](public/screenshots/deploy-preview.png)
-- Dashboard overview: [`public/screenshots/dashboard.png`](public/screenshots/dashboard.png)
-
 ## Architecture overview
 
 | Component | Role |
 |-----------|------|
-| Next.js app | Public site, auth flow, dashboard UI, API routes, and deploy orchestration |
+| Next.js app | Auth, dashboard UI, API routes, and deploy orchestration |
 | WebSocket worker | Long-running deploy jobs, log streaming, and worker health endpoints |
 | Supabase | User access control, repo metadata, and deployment records |
 | SD Artifacts backend | Scan, feedback, artifact, and cache flows used by the app |
 
-This repo is not only a marketing site: it contains the public routes above plus the full application logic behind deployment workflows.
+The Next.js app hosts sign-in, the repository and dashboard UI, API routes, and the orchestration that drives deploys end to end.
 
 ## Tech stack
 

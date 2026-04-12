@@ -57,7 +57,7 @@ export async function proxy(req : NextRequest) {
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
 	const isLanding = req.nextUrl.pathname === "/"
-	const isDocsPage = req.nextUrl.pathname === "/docs"
+	const isDocsPage = req.nextUrl.pathname === "/docs" || req.nextUrl.pathname.startsWith("/docs/")
 	const isChangelogPage = req.nextUrl.pathname === "/changelog"
 	const isWaitingList = req.nextUrl.pathname === "/waiting-list"
 	const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth")

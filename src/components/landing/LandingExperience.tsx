@@ -9,14 +9,14 @@ import {
 	ArrowRight,
 	CheckCircle2,
 	FileCode2,
-	Github,
 	ImageOff,
 	Layers3,
 	ServerCog,
 	type LucideIcon,
 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
-import { MobileNavMenu, type MobileNavLink } from "@/components/public/MobileNavMenu";
+import { PublicBottomNav, type MobileNavLink } from "@/components/public/PublicBottomNav";
+import { PublicPageFooterContent } from "@/components/public/PublicPageFooter";
 import { Button } from "@/components/ui/button";
 
 type LandingExperienceProps = {
@@ -108,11 +108,9 @@ const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
 
 const landingMobileNavLinks: MobileNavLink[] = [
 	{ href: "#start-your-way", label: "Your way" },
-	{ href: "#problem-solution", label: "Why it exists" },
+	{ href: "#problem-solution", label: "Problem and solution" },
 	{ href: "#comparison", label: "Comparison" },
 	{ href: "#workflow", label: "How it works" },
-	{ href: "/docs", label: "Docs" },
-	{ href: "/changelog", label: "Changelog" },
 ];
 
 const containerVariants: Variants = {
@@ -342,7 +340,7 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 	}, [prefersReducedMotion]);
 
 	return (
-		<div className="landing-bg h-svh overflow-x-hidden overflow-y-auto scroll-smooth stealth-scrollbar text-foreground">
+		<div className="landing-bg h-svh overflow-x-hidden overflow-y-auto scroll-smooth stealth-scrollbar pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] text-foreground md:pb-0">
 			<header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
 				<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
 					<div className="min-w-0 shrink">
@@ -350,14 +348,11 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 					</div>
 					<nav className="hidden items-center gap-6 text-sm text-muted-foreground lg:gap-8 md:flex" aria-label="Primary">
 						<a href="#start-your-way" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Your way</a>
-						<a href="#problem-solution" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Why it exists</a>
+						<a href="#problem-solution" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Problem and solution</a>
 						<a href="#comparison" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Comparison</a>
 						<a href="#workflow" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">How it works</a>
-						<Link href="/docs" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Docs</Link>
-						<Link href="/changelog" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Changelog</Link>
 					</nav>
 					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-						<MobileNavMenu links={landingMobileNavLinks} className="md:hidden" />
 						<Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
 							<Link href="/docs">Docs</Link>
 						</Button>
@@ -569,34 +564,9 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 				</section>
 			</main>
 
-			<footer className="border-t border-border/60 px-6 py-10 lg:px-10">
-				<div className="mx-auto flex max-w-7xl flex-col gap-5 md:flex-row md:items-center md:justify-between">
-					<div>
-						<SmartDeployLogo href="/" className="mb-3" />
-						<p className="max-w-xl text-sm text-muted-foreground">
-							Smart Deploy is a transparent deployment platform for solo developers who want to ship quickly without hiding Docker, Compose, Nginx, or the deploy path.
-						</p>
-					</div>
-					<div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground">
-						<a href="#start-your-way" className="transition-colors hover:text-foreground">Your way</a>
-						<a href="#problem-solution" className="transition-colors hover:text-foreground">Why it exists</a>
-						<a href="#comparison" className="transition-colors hover:text-foreground">Comparison</a>
-						<a href="#workflow" className="transition-colors hover:text-foreground">How it works</a>
-						<Link href="/docs" className="transition-colors hover:text-foreground">Docs</Link>
-						<Link href="/changelog" className="transition-colors hover:text-foreground">Changelog</Link>
-						<Link href={primaryHref} className="transition-colors hover:text-foreground">Open Smart Deploy</Link>
-						<a
-							href="https://github.com/anirudh-makuluri/smart-deploy"
-							target="_blank"
-							rel="noreferrer"
-							className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-foreground transition-all hover:border-primary/40 hover:shadow-sm"
-						>
-							<Github className="size-4" />
-							<span>GitHub</span>
-						</a>
-					</div>
-				</div>
-			</footer>
+			<PublicPageFooterContent primaryHref={primaryHref} />
+
+			<PublicBottomNav links={landingMobileNavLinks} />
 		</div>
 	);
 }

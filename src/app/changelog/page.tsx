@@ -40,7 +40,7 @@ export default async function ChangelogPage() {
 				asideTitle="How to use this page"
 				asideDescription="Skim the dated entry for a high-level picture of the site and docs pass. For deploy engine changes, use commits, tags, and pull requests in the repository."
 				asideLinks={[
-					{ href: "/docs", label: "Read the product overview" },
+					{ href: "/docs", label: "Read the documentation" },
 					{ href: "/", label: "Back to the landing page" },
 				]}
 			>

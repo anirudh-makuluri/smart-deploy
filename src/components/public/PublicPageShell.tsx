@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowRight, FileText, Layers3, Radar, ScrollText } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
-import { MobileNavMenu } from "@/components/public/MobileNavMenu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -28,12 +27,6 @@ type PublicPageShellProps = {
 	children: ReactNode;
 };
 
-const navLinks = [
-	{ href: "/", label: "Home" },
-	{ href: "/docs", label: "Docs" },
-	{ href: "/changelog", label: "Changelog" },
-];
-
 export function PublicPageShell({
 	badge,
 	title,
@@ -55,19 +48,7 @@ export function PublicPageShell({
 					<div className="min-w-0 shrink">
 						<SmartDeployLogo href="/" />
 					</div>
-					<nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex" aria-label="Primary">
-						{navLinks.map((link) => (
-							<Link
-								key={link.href}
-								href={link.href}
-								className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-							>
-								{link.label}
-							</Link>
-						))}
-					</nav>
 					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-						<MobileNavMenu links={navLinks} className="md:hidden" />
 						{(showMilestonesButton || showDocsButton) && (
 							<div className="flex items-center gap-1.5 sm:gap-2">
 								{showMilestonesButton && (
