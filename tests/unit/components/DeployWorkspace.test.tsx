@@ -209,6 +209,15 @@ describe("DeployWorkspace", () => {
 				expect.objectContaining({ method: "POST" })
 			)
 		);
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					screenshotUrl: "https://cdn.example.com/new.png",
+				})
+			);
+		});
 		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
 	});
 

@@ -63,6 +63,7 @@ export default function DeployWorkspace() {
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
+	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
 
 	// ============== BASIC CONTEXT ==============
 	const deployment = useActiveDeployment();
@@ -164,6 +165,15 @@ export default function DeployWorkspace() {
 		screenshotUrl: deployment.screenshotUrl || undefined,
 		deploymentStatus: effectiveDeploymentStatus,
 		hasStoredLiveUrl: hasStoredLiveUrl,
+		onScreenshotUpdated: async (nextScreenshotUrl) => {
+			if (!repoName || !serviceName) return;
+			await updateDeploymentById({
+				repoName,
+				serviceName,
+				url: deployment.url || repoUrl || "",
+				screenshotUrl: nextScreenshotUrl,
+			});
+		},
 		onDeploymentsRefetch: async () => {
 			await fetchRepoDeployments(repoIdentifier);
 		},
@@ -218,10 +228,11 @@ export default function DeployWorkspace() {
 	);
 
 	React.useEffect(() => {
-		if (activeSection !== "setup") return;
-		if (isDraft) return;
-		setActiveSection("overview");
-	}, [activeSection, isDraft, deployment.id]);
+		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
+		if (lastResolvedDeploymentKeyRef.current === deploymentKey) return;
+		lastResolvedDeploymentKeyRef.current = deploymentKey;
+		setActiveSection(isDraft ? "setup" : "overview");
+	}, [deployment.id, deployment.repoName, deployment.serviceName, isDraft]);
 
 	if (!activeRepo || !serviceName) {
 		return (
@@ -703,7 +714,7 @@ export default function DeployWorkspace() {
 							onChange={setActiveSection}
 						/>
 					</div>
-					<main className={activeSection === "blueprint" || activeSection === "logs" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto stealth-scrollbar"}>
+					<main className={activeSection === "blueprint" ? "min-h-0 flex-1 overflow-hidden" : "min-h-0 flex-1 overflow-auto stealth-scrollbar"}>
 						{renderActiveSection()}
 					</main>
 				</div>

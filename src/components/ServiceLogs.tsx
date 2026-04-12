@@ -392,7 +392,7 @@ export default function ServiceLogs({
 
 	return (
 		<>
-			<div ref={containerRef} className="relative">
+			<div ref={containerRef} className={`relative ${scrollable ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : ""}`}>
 				{isLoadingOlderLogs && (
 					<div
 						className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3 py-1.5 rounded-full border border-border/60 bg-background/80 text-xs font-medium text-muted-foreground shadow-sm"
@@ -543,7 +543,10 @@ export default function ServiceLogs({
 				)}
 			</div>
 
-			<ScrollArea className={`${scrollable ? "h-[70vh]" : "h-auto"} w-full rounded-md border border-border bg-card`} data-logs-scroll>
+			<ScrollArea
+				className={`${scrollable ? "min-h-0 flex-1 overflow-hidden" : "h-auto"} w-full rounded-md border border-border bg-card`}
+				data-logs-scroll
+			>
 				<div className="min-w-full font-mono text-sm text-muted-foreground">
 				{filteredLogs.length === 0 ? (
 					<div className="flex flex-col items-center justify-center py-20 px-4 text-center">

@@ -10,7 +10,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { captureDeploymentScreenshotAndUpload } from "@/lib/deploymentScreenshot";
-import { getDeploymentDisplayUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -61,9 +60,9 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Determine the URL to screenshot
-		const displayUrl = getDeploymentDisplayUrl(deployment);
-		if (!displayUrl) {
+		// Use the persisted live URL directly so preview capture follows the active deployment endpoint.
+		const liveUrl = typeof deployment.liveUrl === "string" ? deployment.liveUrl.trim() : "";
+		if (!liveUrl) {
 			return NextResponse.json(
 				{
 					status: "skipped",
@@ -74,11 +73,11 @@ export async function POST(request: NextRequest) {
 
 		// Capture and upload screenshot
 		console.debug(
-			`[Screenshot] Starting capture for ${repoName}/${serviceName} at ${displayUrl}`
+			`[Screenshot] Starting capture for ${repoName}/${serviceName} at ${liveUrl}`
 		);
 
 		const screenshotUrl = await captureDeploymentScreenshotAndUpload({
-			url: displayUrl,
+			url: liveUrl,
 			ownerID: userID,
 			repoName: repoName,
 			serviceName: serviceName,
