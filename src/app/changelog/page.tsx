@@ -27,17 +27,6 @@ export default function ChangelogPage() {
 						<p>
 							Shows a <strong className="font-medium text-foreground">checked-in snapshot</strong> of{" "}
 							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>{" "}
-							at{" "}
-							<code className="rounded bg-muted/80 px-1 py-0.5 font-mono text-[11px] text-foreground">
-								src/data/changelog-commits.json
-							</code>
-							. Production images do not include <code className="font-mono text-xs">.git</code>, so commits are not read at
-							runtime from git. No curated marketing layer on top of the subjects below.
-						</p>
-						<p>
-							After meaningful work, regenerate from a dev clone:{" "}
-							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">npm run changelog:snapshot</code>{" "}
-							then commit the updated JSON.
 						</p>
 						<p className="font-mono text-xs text-foreground/90">
 							Repository: <span className="text-foreground">{repo}</span>
@@ -49,15 +38,6 @@ export default function ChangelogPage() {
 							) : null}
 						</p>
 					</div>
-
-					<blockquote className="mt-8 border-l-2 border-primary/35 bg-muted/15 py-3 pl-4 pr-3 text-sm leading-6 text-muted-foreground">
-						<p className="font-medium text-foreground">Same idea as the rest of the product</p>
-						<p className="mt-2">
-							Docs render repo markdown as-is; this page surfaces commit metadata from a repo-native snapshot, not a
-							rewritten release feed. Blueprint and deploy views apply the same rule to infrastructure and execution state:
-							show the artifact, do not replace it with a second narrative.
-						</p>
-					</blockquote>
 
 					<ChangelogFromGit commits={commits} />
 				</main>
