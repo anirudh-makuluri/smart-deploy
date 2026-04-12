@@ -27,7 +27,7 @@ import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/Fee
 import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
+import { controlDeployment, deleteDeployment, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
 	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
@@ -61,9 +61,11 @@ export default function DeployWorkspace() {
 	const [scanDuration, setScanDuration] = React.useState<number>(0);
 	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
+	const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
 	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
+	const [isChangingDeploymentState, setIsChangingDeploymentState] = React.useState(false);
 
 	// ============== BASIC CONTEXT ==============
 	const deployment = useActiveDeployment();
@@ -395,6 +397,53 @@ export default function DeployWorkspace() {
 		setActiveSection("scan");
 	}
 
+	async function handlePauseResumeDeployment() {
+		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
+
+		const isPaused = deployment.status === "paused";
+		const action = isPaused ? "resume" : "pause";
+		const nextStatus: DeployConfig["status"] = isPaused ? "running" : "paused";
+
+		setIsChangingDeploymentState(true);
+		try {
+			await controlDeployment(action, deployment.repoName, deployment.serviceName);
+			await updateDeploymentById({
+				repoName: deployment.repoName,
+				serviceName: deployment.serviceName,
+				url: deployment.url || repoUrl || "",
+				status: nextStatus,
+			});
+			toast.success(
+				nextStatus === "paused"
+					? "Deployment paused"
+					: "Deployment resumed"
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to update deployment";
+			toast.error(message);
+		} finally {
+			setIsChangingDeploymentState(false);
+		}
+	}
+
+	async function handleDeleteDeployment() {
+		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
+
+		setIsChangingDeploymentState(true);
+		try {
+			await deleteDeployment(deployment.repoName, deployment.serviceName);
+			useAppData.getState().removeDeployment(deployment.repoName, deployment.serviceName);
+			toast.success("Deployment deleted.");
+			setShowDeleteConfirm(false);
+			setActiveSection("setup");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to delete deployment";
+			toast.error(message);
+		} finally {
+			setIsChangingDeploymentState(false);
+		}
+	}
+
 	function renderActiveSection() {
 		switch (activeSection) {
 			case "scan":
@@ -623,6 +672,9 @@ export default function DeployWorkspace() {
 								onRedeploy={handleDeploy}
 								onRefreshPreview={handleManualCreatePreview}
 								onEditConfiguration={() => { setActiveSection("setup"); }}
+								onPauseResumeDeployment={handlePauseResumeDeployment}
+								onDeleteDeployment={() => setShowDeleteConfirm(true)}
+								isChangingDeploymentState={isChangingDeploymentState}
 								repo={activeRepo as repoType}
 							/>
 						)}
@@ -727,6 +779,15 @@ export default function DeployWorkspace() {
 				title="Reject Analysis?"
 				description="This will clear all generated infrastructure files (Dockerfiles, Docker Compose, etc.) and revert this service to its pre-scan state. This action cannot be undone."
 				confirmText="Reject Analysis"
+				variant="destructive"
+			/>
+			<ConfirmDialog
+				open={showDeleteConfirm}
+				onOpenChange={setShowDeleteConfirm}
+				onConfirm={handleDeleteDeployment}
+				title="Delete Deployment?"
+				description="This permanently removes the deployment and its tracked runtime state. You can deploy again later, but this current deployment record will be deleted."
+				confirmText={isChangingDeploymentState ? "Deleting..." : "Delete Deployment"}
 				variant="destructive"
 			/>
 		</div>

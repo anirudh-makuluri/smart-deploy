@@ -8,9 +8,8 @@ import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import RepoServicesList from "@/components/RepoServicesList";
-import { deleteDeployment, resolveRepo, detectRepoServices, fetchRepoDeployments as fetchRepoDeploymentsGraphql } from "@/lib/graphqlClient";
+import { resolveRepo, detectRepoServices, fetchRepoDeployments as fetchRepoDeploymentsGraphql } from "@/lib/graphqlClient";
 import { normalizeRepoUrl } from "@/lib/utils";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
@@ -37,7 +36,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		repoServices,
 		getDetectedRepoCache,
 		setDetectedRepoCache,
-		removeDeployments,
 		mergeDeployments,
 		mergeRepoServices,
 		activeServiceName: storeActiveService,
@@ -46,7 +44,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	} = useAppData();
 
 	const [isDeleting, setIsDeleting] = React.useState(false);
-	const [showDeleteAllConfirm, setShowDeleteAllConfirm] = React.useState(false);
 	const [shouldLoadDeployments, setShouldLoadDeployments] = React.useState(false);
 
 	const repoFullName = `${owner}/${repoName}`;
@@ -230,44 +227,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		setActiveServiceName(svc.name);
 	}
 
-	async function handleConfirmDeleteAll() {
-		if (repoDeployments.length === 0) return;
-		setIsDeleting(true);
-		setShowDeleteAllConfirm(false);
-		const deletedKeys: { repoName: string; serviceName: string }[] = [];
-		try {
-			for (const dep of repoDeployments) {
-				try {
-				await deleteDeployment(dep.repoName, dep.serviceName);
-				deletedKeys.push({ repoName: dep.repoName, serviceName: dep.serviceName });
-				} catch (error) {
-					toast.error(getErrorMessage(error as Error | { message?: string } | string, `Failed to delete ${dep.serviceName}`));
-				}
-			}
-			if (deletedKeys.length) {
-				removeDeployments(deletedKeys);
-				await repoDeploymentsQuery.refetch();
-			}
-			toast.success("Finished deleting deployments for this repo.");
-		} finally {
-			setIsDeleting(false);
-		}
-	}
-
-	async function handleDeleteAllDeployments() {
-		setShouldLoadDeployments(true);
-		let nextDeployments = repoDeployments;
-		if (!shouldLoadDeployments) {
-			const refetchResult = await repoDeploymentsQuery.refetch();
-			nextDeployments = refetchResult.data ?? [];
-		}
-		if (nextDeployments.length === 0) {
-			toast.error("No deployments found for this repo.");
-			return;
-		}
-		setShowDeleteAllConfirm(true);
-	}
-
 	return (
 		<div className={`dot-grid-bg flex flex-col text-foreground ${activeService ? "h-svh overflow-hidden" : "min-h-svh"}`}>
 			{isLoadingRepo && (
@@ -319,22 +278,10 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 								error={error}
 								repoDeployments={repoDeployments}
 								resolvedRepo={repo}
-								setActiveService={openWorkspaceForService}
-								handleDeleteAllDeployments={handleDeleteAllDeployments}
 								openWorkspaceForService={openWorkspaceForService}
 							/>
 						)}
 					</main>
-
-					<ConfirmDialog
-						open={showDeleteAllConfirm}
-						onOpenChange={setShowDeleteAllConfirm}
-						onConfirm={handleConfirmDeleteAll}
-						title="Delete All Deployments?"
-						description={`This will permanently delete all ${repoDeployments.length} deployments associated with this repository. This action cannot be undone and will stop all running services.`}
-						confirmText="Delete All"
-						variant="destructive"
-					/>
 				</>
 			)}
 		</div>

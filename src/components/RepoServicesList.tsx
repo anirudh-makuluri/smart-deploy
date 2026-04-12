@@ -15,8 +15,6 @@ type RepoServicesListProps = {
 	error: string | null;
 	repoDeployments: DeployConfig[];
 	resolvedRepo: repoType;
-	setActiveService: (svc: DetectedServiceInfo) => void;
-	handleDeleteAllDeployments: () => void;
 	openWorkspaceForService: (svc: DetectedServiceInfo) => void;
 };
 
@@ -29,8 +27,6 @@ export default function RepoServicesList({
 	error,
 	repoDeployments,
 	resolvedRepo,
-	setActiveService,
-	handleDeleteAllDeployments,
 	openWorkspaceForService,
 }: RepoServicesListProps) {
 	return (
@@ -50,17 +46,8 @@ export default function RepoServicesList({
 							onClick={() => openWorkspaceForService({ name: ".", path: ".", language: "unknown" })}
 							className="shrink-0"
 						>
-							Deploy all on one instance
+							Open whole app workspace
 						</Button>
-						{repoDeployments.length > 0 && (
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={handleDeleteAllDeployments}
-							>
-								Delete all deployments
-							</Button>
-						)}
 					</div>
 				)}
 			</div>
