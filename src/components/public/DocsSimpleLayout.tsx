@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { PublicSiteHeader } from "@/components/public/PublicSiteHeader";
 import type { DocGuideEntry } from "@/lib/public-docs";
 
 type DocsSimpleLayoutProps = {
@@ -13,19 +13,7 @@ type DocsSimpleLayoutProps = {
 export function DocsSimpleLayout({ guideLinks, activeSlug, children }: DocsSimpleLayoutProps) {
 	return (
 		<div className="min-h-0 bg-background text-foreground">
-			<header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm">
-				<div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-					<SmartDeployLogo href="/" />
-					<nav className="flex shrink-0 items-center gap-4 text-sm">
-						<Link href="/" className="text-muted-foreground transition-colors hover:text-foreground">
-							Home
-						</Link>
-						<Link href="/changelog" className="text-muted-foreground transition-colors hover:text-foreground">
-							Changelog
-						</Link>
-					</nav>
-				</div>
-			</header>
+			<PublicSiteHeader active="docs" />
 
 			<div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
 				<h1 className="text-2xl font-semibold tracking-tight text-foreground">Documentation</h1>
