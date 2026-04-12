@@ -105,6 +105,15 @@ The Compose file starts two containers (`app` on port 3000, `websocket` on port 
 
 To deploy SmartDeploy itself on an EC2 instance with Nginx and SSL, see **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
 
+### Vercel + Render split
+
+You can deploy the frontend and Next.js API routes while running the long-lived WebSocket worker.
+
+- Deploy the main app.
+- Deploy the WebSocket worker using `Dockerfile.websocket`.
+- Set `NEXT_PUBLIC_WS_URL` in main app to your WebSocket URL, for example `wss://websocket.smartdeploy.xyz`.
+- Set health check path to `/health`.
+
 ---
 
 ## Cloud provider setup

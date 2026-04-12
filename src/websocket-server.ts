@@ -46,10 +46,20 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 	};
 }
 
+const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
+
 // Setup HTTP server to attach WebSocket to
-const server = http.createServer();
+const server = http.createServer((req, res) => {
+	if (req.url === "/health") {
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: true, service: "websocket", port }));
+		return;
+	}
+
+	res.writeHead(200, { "Content-Type": "text/plain" });
+	res.end("SmartDeploy WebSocket server is running");
+});
 const wss = new WebSocketServer({ server });
-const port = Number(process.env.WS_PORT) || 4001;
 
 function sendDeployComplete(ws: any, success: boolean, error?: string) {
 	if (ws?.readyState === 1) {
@@ -133,7 +143,7 @@ function broadcastDeployFailed(reason: string) {
 }
 
 server.listen(port, () => {
-	console.log(`WebSocket server running on ws://localhost:${port}`);
+	console.log(`WebSocket server running on port ${port}`);
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients
