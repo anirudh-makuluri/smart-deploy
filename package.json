@@ -13,6 +13,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "ws": "ts-node ./src/websocket-server.ts",
+    "ws:build": "tsc -p tsconfig.websocket.json",
+    "ws:start": "node dist/websocket-server.js",
     "start-all": "concurrently \"npm run dev\" \"npm run ws\""
   },
   "dependencies": {
