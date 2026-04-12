@@ -1,4 +1,5 @@
 import { DeployConfig, DeployStep } from "@/app/types";
+import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 import { getDeploymentDisplayUrl } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -62,13 +63,11 @@ export function getWebSocketUrl(): string {
 }
 
 export function getWebSocketHealthUrl(): string {
-	const wsUrl = getWebSocketUrl();
-	return wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/ws$/, "/health");
+	return buildWebSocketHealthUrl(getWebSocketUrl(), "/health");
 }
 
 export function getAuthenticatedWebSocketHealthUrl(token: string): string {
-	const wsUrl = getWebSocketUrl();
-	const healthUrl = new URL(wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:").replace(/\/ws$/, "/healthz"));
+	const healthUrl = new URL(buildWebSocketHealthUrl(getWebSocketUrl(), "/healthz"));
 	healthUrl.searchParams.set("auth", token);
 	return healthUrl.toString();
 }

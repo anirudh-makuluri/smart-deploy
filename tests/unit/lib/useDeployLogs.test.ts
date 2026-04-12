@@ -25,8 +25,20 @@ describe("getWebSocketUrl", () => {
 		expect(getWebSocketHealthUrl()).toBe("https://ws.example.com/health");
 	});
 
+	it("derives the worker health endpoint when the websocket URL has no /ws suffix", () => {
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
+
+		expect(getWebSocketHealthUrl()).toBe("https://ws.example.com/health");
+	});
+
 	it("derives the authenticated worker health endpoint from the websocket URL", () => {
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com/ws");
+
+		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("https://ws.example.com/healthz?auth=test-token");
+	});
+
+	it("derives the authenticated worker health endpoint when the websocket URL has no /ws suffix", () => {
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
 
 		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("https://ws.example.com/healthz?auth=test-token");
 	});
