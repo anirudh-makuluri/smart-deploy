@@ -112,7 +112,8 @@ You can deploy the frontend and Next.js API routes while running the long-lived 
 - Deploy the main app.
 - Deploy the WebSocket worker using `Dockerfile.websocket`.
 - Set `NEXT_PUBLIC_WS_URL` in main app to your WebSocket URL, for example `wss://websocket.smartdeploy.xyz`.
-- Set health check path to `/health`.
+- Set `WS_ALLOWED_ORIGINS` on the worker to the browser origins that should be allowed, for example `https://smartdeploy.xyz`.
+- Use `/health` for infrastructure liveness checks and `/healthz` for authenticated frontend health checks.
 
 ---
 
@@ -162,7 +163,7 @@ All variables are documented in [`.env.example`](.env.example). Here's a summary
 |----------|-----------|----------|
 | **Auth** | `GITHUB_ID`, `GITHUB_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | GitHub + NextAuth yes |
 | **Database** | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Yes |
-| **WebSocket** | `NEXT_PUBLIC_WS_URL`, `WS_PORT` | URL yes |
+| **WebSocket** | `NEXT_PUBLIC_WS_URL`, `WS_ALLOWED_ORIGINS`, `WS_PORT` | URL yes |
 | **AI** | `GEMINI_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `BEDROCK_MODEL_ID` | At least one |
 | **AWS** | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_ACM_CERTIFICATE_ARN`, `USE_CODEBUILD`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | If using AWS |
 | **AWS Bedrock** | `AWS_BEDROCK_ACCESS_KEY_ID`, `AWS_BEDROCK_SECRET_ACCESS_KEY` | If using Bedrock |

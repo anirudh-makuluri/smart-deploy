@@ -1,11 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
+import { verifyWebSocketAuthToken } from "./lib/wsAuth";
+import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
 
 async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
@@ -47,12 +49,54 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 }
 
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
+const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
+
+type AuthenticatedSocket = WebSocket & {
+	authUserID?: string;
+};
 
 // Setup HTTP server to attach WebSocket to
 const server = http.createServer((req, res) => {
+	const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+	const allowedOrigin = getAllowedOriginHeader(requestOrigin, allowedOrigins);
+	if (allowedOrigin) {
+		res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+		res.setHeader("Vary", "Origin");
+	}
+	res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+	if (requestOrigin && !allowedOrigin) {
+		res.writeHead(403, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: false, error: "Origin not allowed" }));
+		return;
+	}
+
+	if (req.method === "OPTIONS") {
+		res.writeHead(204);
+		res.end();
+		return;
+	}
+
 	if (req.url === "/health" || req.url === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
 		res.end(JSON.stringify({ ok: true, service: "websocket", port }));
+		return;
+	}
+
+	if (req.url?.startsWith("/healthz")) {
+		const requestUrl = new URL(req.url, "http://localhost");
+		const authToken = requestUrl.searchParams.get("auth") || "";
+		const authPayload = verifyWebSocketAuthToken(authToken);
+
+		if (!authPayload?.userID) {
+			res.writeHead(401, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+			return;
+		}
+
+		res.writeHead(200, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: true, service: "websocket", port, authenticated: true }));
 		return;
 	}
 
@@ -70,7 +114,23 @@ function sendDeployComplete(ws: any, success: boolean, error?: string) {
 	}
 }
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws: AuthenticatedSocket, req) => {
+	const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+	if (!isOriginAllowed(requestOrigin, allowedOrigins)) {
+		ws.close(1008, "Forbidden origin");
+		return;
+	}
+
+	const requestUrl = new URL(req.url || "/", "http://localhost");
+	const authToken = requestUrl.searchParams.get("auth") || "";
+	const authPayload = verifyWebSocketAuthToken(authToken);
+
+	if (!authPayload?.userID) {
+		ws.close(1008, "Unauthorized");
+		return;
+	}
+
+	ws.authUserID = authPayload.userID;
 	console.log("Client connected");
 
 	ws.on("message", async (data) => {
@@ -81,7 +141,10 @@ wss.on("connection", (ws) => {
 			switch (type) {
 				case "deploy":
 					try {
-						await deploy(response.payload, ws);
+						await deploy({
+							...response.payload,
+							userID: ws.authUserID,
+						}, ws);
 					} catch (err: any) {
 						console.error("Deploy error:", err);
 						sendDeployComplete(ws, false, err?.message ?? "Deployment failed");
@@ -91,7 +154,8 @@ wss.on("connection", (ws) => {
 					serviceLogs(response.payload, ws);
 					break;
 				case "get_deploy_logs": {
-					const { repoName, serviceName, userID } = response.payload ?? {};
+					const { repoName, serviceName } = response.payload ?? {};
+					const userID = ws.authUserID;
 					if (!repoName || !serviceName) {
 						if (ws?.readyState === 1) {
 							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "repoName and serviceName required", time: new Date().toISOString() } }));
@@ -131,8 +195,8 @@ wss.on("connection", (ws) => {
 	});
 });
 
-server.listen(port, () => {
-	console.log(`WebSocket server running on port ${port}`);
+server.listen(port, "0.0.0.0", () => {
+	console.log(`WebSocket server running on 0.0.0.0:${port}`);
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients
