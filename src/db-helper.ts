@@ -95,6 +95,49 @@ function matchesRepoIdentifier(row: Record<string, unknown>, repoIdentifier: str
 	return rowUrl === target || rowRepoName === target || rowUrlTail === target;
 }
 
+function repoSyncKey(row: { user_id: string; repo_name: string }): string {
+	return `${row.user_id}::${row.repo_name}`.toLowerCase();
+}
+
+function repoSyncSortValue(value: unknown): number {
+	if (typeof value !== "string" || !value.trim()) return 0;
+	const timestamp = new Date(value).getTime();
+	return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function dedupeRepoSyncRows(rows: Record<string, unknown>[]) {
+	const deduped = new Map<string, Record<string, unknown>>();
+
+	for (const row of rows) {
+		const key = repoSyncKey({
+			user_id: String(row.user_id ?? ""),
+			repo_name: String(row.repo_name ?? ""),
+		});
+		const existing = deduped.get(key);
+		if (!existing) {
+			deduped.set(key, row);
+			continue;
+		}
+
+		const existingScore = Math.max(
+			repoSyncSortValue(existing.pushed_at),
+			repoSyncSortValue(existing.updated_at),
+			repoSyncSortValue(existing.synced_at)
+		);
+		const nextScore = Math.max(
+			repoSyncSortValue(row.pushed_at),
+			repoSyncSortValue(row.updated_at),
+			repoSyncSortValue(row.synced_at)
+		);
+
+		if (nextScore >= existingScore) {
+			deduped.set(key, row);
+		}
+	}
+
+	return Array.from(deduped.values());
+}
+
 export const dbHelper = {
 	upsertUser: async function (
 		userID: string,
@@ -298,6 +341,27 @@ export const dbHelper = {
 		}
 	},
 
+	deleteDeploymentsByRepo: async function (userID: string, repoIdentifier: string) {
+		try {
+			const { deployments, error } = await this.getDeploymentsByRepo(userID, repoIdentifier);
+			if (error) return { error };
+			const repoDeployments = deployments ?? [];
+			if (repoDeployments.length === 0) return { deleted: 0 };
+
+			for (const deployment of repoDeployments) {
+				const result = await this.deleteDeployment(deployment.repoName, deployment.serviceName, userID);
+				if (result.error) {
+					return { error: typeof result.error === "string" ? result.error : String(result.error) };
+				}
+			}
+
+			return { deleted: repoDeployments.length };
+		} catch (error) {
+			console.error("deleteDeploymentsByRepo error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
 		try {
 			const supabase = getSupabaseServer();
@@ -321,7 +385,7 @@ export const dbHelper = {
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
 		const supabase = getSupabaseServer();
 		
-		const rows = repoList.map(repo => ({
+		const rows = dedupeRepoSyncRows(repoList.map(repo => ({
 			user_id: userID,
 			repo_name: repo.name,
 			id: repo.id,
@@ -341,14 +405,17 @@ export const dbHelper = {
 			branches: repo.branches,
 			synced_at: new Date().toISOString(),
 			sync_error: null,
-		}));
+		})));
 		
 		const { error } = await supabase
 			.from("user_repos")
 			.upsert(rows, { onConflict: "user_id,repo_name" });
 		
 		if (error) throw new Error(`Failed to sync repos: ${error.message}`);
-		console.log(`Synced ${repoList.length} repos for user: ${userID}`);
+		if (rows.length !== repoList.length) {
+			console.warn(`Deduped ${repoList.length - rows.length} repo sync rows for user: ${userID}`);
+		}
+		console.log(`Synced ${rows.length} repos for user: ${userID}`);
 	},
 
 	getUserRepos: async function (userID: string): Promise<{ error?: string; repos?: repoType[] }> {

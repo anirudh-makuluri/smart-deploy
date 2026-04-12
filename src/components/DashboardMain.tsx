@@ -38,7 +38,9 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
 
 	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
-	const repoCards = repoServices.map((record : RepoServicesRecord) => {
+	const repoCards = repoServices
+		.filter((record: RepoServicesRecord) => (record.services?.length ?? 0) > 0)
+		.map((record : RepoServicesRecord) => {
 		const repoUrlNorm = normalizeUrl(record.repo_url);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
