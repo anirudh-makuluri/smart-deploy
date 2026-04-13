@@ -631,6 +631,42 @@ export const dbHelper = {
 		}
 	},
 
+	/** One repo_services row for a user + repo URL (normalized, no .git). */
+	getRepoServicesByUrl: async function (
+		userID: string,
+		repoUrl: string
+	): Promise<{ error?: string; record?: RepoServicesRecord | null }> {
+		try {
+			const normalizedUrl = repoUrl.replace(/\.git$/, "").trim();
+			if (!userID || !normalizedUrl) return { error: "userID and repo_url are required" };
+
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("repo_services")
+				.select("repo_url, branch, repo_owner, repo_name, services, is_monorepo, updated_at")
+				.eq("user_id", userID)
+				.eq("repo_url", normalizedUrl)
+				.maybeSingle();
+
+			if (error) return { error: error.message };
+			if (!data) return { record: null };
+			const row = data as Record<string, unknown>;
+			const record: RepoServicesRecord = {
+				repo_url: row.repo_url as string,
+				branch: row.branch as string,
+				repo_owner: row.repo_owner as string,
+				repo_name: row.repo_name as string,
+				services: (row.services as DetectedServiceInfo[]) ?? [],
+				is_monorepo: (row.is_monorepo as boolean) ?? false,
+				updated_at: row.updated_at as string,
+			};
+			return { record };
+		} catch (err) {
+			console.error("getRepoServicesByUrl error:", err);
+			return { error: err instanceof Error ? err.message : String(err) };
+		}
+	},
+
 	/** Get all stored repo services for a user. */
 	getUserRepoServices: async function (userID: string): Promise<{ error?: string; records?: RepoServicesRecord[] }> {
 		try {

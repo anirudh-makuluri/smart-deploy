@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useAppData } from "@/store/useAppData";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
@@ -9,7 +9,13 @@ import { toast } from "sonner";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import Header from "@/components/Header";
 import RepoServicesList from "@/components/RepoServicesList";
-import { resolveRepo, detectRepoServices, fetchRepoDeployments as fetchRepoDeploymentsGraphql } from "@/lib/graphqlClient";
+import {
+	resolveRepo,
+	detectRepoServices,
+	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
+	addRepoServiceRoot,
+	type DetectServicesResult,
+} from "@/lib/graphqlClient";
 import { normalizeRepoUrl } from "@/lib/utils";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
@@ -29,6 +35,7 @@ function getErrorMessage(error: Error | { message?: string } | string | null | u
 
 
 export default function RepoPageClient({ owner, repoName }: RepoPageClientProps) {
+	const queryClient = useQueryClient();
 	const {
 		repoList,
 		activeRepo,
@@ -43,6 +50,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		setActiveRepo,
 	} = useAppData();
 
+	const [catalogBusy, setCatalogBusy] = React.useState(false);
 	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [shouldLoadDeployments, setShouldLoadDeployments] = React.useState(false);
 	const [mobileWorkspaceNavOpen, setMobileWorkspaceNavOpen] = React.useState(false);
@@ -105,6 +113,42 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		});
 	}, [getDetectedRepoCache, normalizedRepoUrl, repoServices, repoUrl, setDetectedRepoCache]);
 
+	const applyCatalogResult = React.useCallback(
+		(data: DetectServicesResult) => {
+			const list = data.services ?? [];
+			setDetectedRepoCache(repoUrl, {
+				services: list,
+				isMonorepo: data.isMonorepo ?? false,
+				isMultiService: data.isMultiService ?? list.length > 1,
+				packageManager: data.packageManager ?? undefined,
+			});
+			mergeRepoServices([
+				{
+					repo_url: repoUrl,
+					branch: repo?.default_branch ?? "",
+					repo_owner: owner,
+					repo_name: repoName,
+					is_monorepo: data.isMonorepo ?? false,
+					updated_at: new Date().toISOString(),
+					services: list,
+				},
+			]);
+			void queryClient.invalidateQueries({
+				queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
+			});
+		},
+		[
+			repoUrl,
+			setDetectedRepoCache,
+			mergeRepoServices,
+			queryClient,
+			repo,
+			owner,
+			repoName,
+			repoFullName,
+		]
+	);
+
 	const servicesQuery = useQuery({
 		queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
 		enabled: Boolean(repo) && !cachedServices,
@@ -130,6 +174,27 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			return nextRecord;
 		},
 	});
+
+	const catalogActions = React.useMemo(
+		() => ({
+			busy: catalogBusy,
+			onAddService: async (rootPath: string, displayName?: string) => {
+				setCatalogBusy(true);
+				try {
+					const data = await addRepoServiceRoot(repoUrl, repo?.default_branch, rootPath, displayName);
+					applyCatalogResult(data);
+					toast.success("Service added");
+					return true;
+				} catch (e) {
+					toast.error(getErrorMessage(e as Error, "Failed to add service"));
+					return false;
+				} finally {
+					setCatalogBusy(false);
+				}
+			},
+		}),
+		[catalogBusy, repoUrl, repo, applyCatalogResult]
+	);
 
 	const services = React.useMemo(
 		() => cachedServices ?? [],
@@ -296,6 +361,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 								repoDeployments={repoDeployments}
 								resolvedRepo={repo}
 								openWorkspaceForService={openWorkspaceForService}
+								catalogActions={catalogActions}
 							/>
 						)}
 					</main>

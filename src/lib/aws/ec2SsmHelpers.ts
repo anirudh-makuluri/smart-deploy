@@ -265,12 +265,13 @@ function bashSingleQuoted(s: string): string {
 
 /**
  * Generates bash commands to build and run Docker containers.
- * Uses docker-compose if a compose file exists; otherwise falls back to
- * single-service docker build + docker run.
+ * When `scanIncludesCompose` is true, uses any compose file on disk (including one written from scan_results).
+ * When false, never uses docker-compose so a repo-checked-in compose file does not override a single-service scan.
  */
 function buildDockerRunScript(
 	mainPort: string,
 	singleDocker?: { dockerfile: string; context: string } | null,
+	scanIncludesCompose = false,
 ): string {
 	const singleBuildLines =
 		singleDocker != null
@@ -292,6 +293,35 @@ function buildDockerRunScript(
     fi
     docker build -t smartdeploy-app .
 `;
+
+	const singleServiceOnly = `
+echo "Deploying from scan_results (single service, no compose from scan)..."
+${singleDocker != null
+		? `
+if [ ! -f ${bashSingleQuoted(singleDocker.dockerfile)} ]; then
+    echo "ERROR: Dockerfile not found at ${singleDocker.dockerfile}"
+    echo "Repo root: $(pwd)"
+    ls -la
+    exit 1
+fi
+docker build -f ${bashSingleQuoted(singleDocker.dockerfile)} -t smartdeploy-app ${bashSingleQuoted(singleDocker.context)}
+`
+		: `
+if [ ! -f Dockerfile ]; then
+    echo "ERROR: No Dockerfile found in repository root."
+    exit 1
+fi
+docker build -t smartdeploy-app .
+`}
+docker rm -f smartdeploy-app 2>/dev/null || true
+docker run -d --name smartdeploy-app --env-file .env -p ${mainPort || "8080"}:${mainPort || "8080"} --restart unless-stopped smartdeploy-app
+
+docker system prune -af --volumes 2>/dev/null || true
+`;
+
+	if (!scanIncludesCompose) {
+		return singleServiceOnly;
+	}
 
 	return `
 if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] || [ -f compose.yml ] || [ -f compose.yaml ]; then
@@ -351,7 +381,7 @@ export function buildFirstDeployScript(params: {
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const runScript = buildDockerRunScript(mainPort, singleDocker);
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== SSM first deploy: writing artifacts and building ==="
@@ -401,7 +431,7 @@ export function buildRedeployScript(params: {
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const runScript = buildDockerRunScript(mainPort, singleDocker);
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== Disk space before redeploy ==="

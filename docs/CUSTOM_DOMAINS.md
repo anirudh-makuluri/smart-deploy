@@ -87,7 +87,7 @@ For the ALB to serve HTTPS, you need an ACM certificate:
 EC2_ACM_CERTIFICATE_ARN=arn:aws:acm:us-west-2:123456789012:certificate/abc-123...
 ```
 
-SmartDeploy will create an HTTPS listener on the ALB and redirect HTTP to HTTPS. See [AWS IAM Setup](./AWS_IAM_SETUP.md) for more details.
+SmartDeploy will create an HTTPS listener on the ALB and redirect HTTP to HTTPS. See [AWS setup](./AWS_SETUP.md) for ACM and IAM details.
 
 ---
 

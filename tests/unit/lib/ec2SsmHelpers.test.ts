@@ -21,9 +21,9 @@ describe("ec2SsmHelpers", () => {
 			scanServices: [{ dockerfile_path: "Dockerfile", build_context: "." }],
 		});
 
-		expect(script).toContain('if [ ! -f docker-compose.yml ]; then');
+		expect(script).toContain('if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]');
 		expect(script).toContain('docker-compose up -d --build');
-		expect(script).not.toContain('if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]');
+		expect(script).not.toContain('Deploying from scan_results (single service, no compose from scan)');
 	});
 
 	it("does not fall back to repo compose files when scan_results lacks docker_compose", () => {
@@ -43,8 +43,17 @@ describe("ec2SsmHelpers", () => {
 		expect(script).not.toContain('if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]');
 	});
 
-	it("adds websocket proxying to the ECR user-data nginx config when scan_results include a websocket service port", () => {
-		const script = generateEcrUserDataScript("3000", "4001");
+	it("embeds custom nginx.conf from scan_results in ECR user-data (e.g. websocket /ws proxy)", () => {
+		const nginxFromScan = `server {
+  listen 80;
+  location /ws {
+    proxy_pass http://127.0.0.1:4001;
+  }
+  location / {
+    proxy_pass http://127.0.0.1:3000;
+  }
+}`;
+		const script = generateEcrUserDataScript("3000", nginxFromScan);
 
 		expect(script).toContain("location /ws");
 		expect(script).toContain("proxy_pass http://127.0.0.1:4001;");

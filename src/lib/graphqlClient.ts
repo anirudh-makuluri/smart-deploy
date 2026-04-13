@@ -482,6 +482,35 @@ const DETECT_SERVICES_MUTATION = `
 	}
 `;
 
+const DETECT_SERVICES_RESULT_FIELDS = `
+	isMonorepo
+	isMultiService
+	services {
+		name
+		path
+		language
+		framework
+		port
+	}
+	packageManager
+`;
+
+const ADD_REPO_SERVICE_ROOT_MUTATION = `
+	mutation AddRepoServiceRoot($url: String!, $branch: String, $rootPath: String!, $displayName: String) {
+		addRepoServiceRoot(url: $url, branch: $branch, rootPath: $rootPath, displayName: $displayName) {
+			${DETECT_SERVICES_RESULT_FIELDS}
+		}
+	}
+`;
+
+const REMOVE_REPO_SERVICE_MUTATION = `
+	mutation RemoveRepoService($url: String!, $serviceName: String!) {
+		removeRepoService(url: $url, serviceName: $serviceName) {
+			${DETECT_SERVICES_RESULT_FIELDS}
+		}
+	}
+`;
+
 const UPDATE_CUSTOM_DOMAIN_MUTATION = `
 	mutation UpdateCustomDomain($repoName: String!, $serviceName: String!, $customUrl: String) {
 		updateCustomDomain(repoName: $repoName, serviceName: $serviceName, customUrl: $customUrl) {
@@ -600,6 +629,32 @@ export async function detectRepoServices(url: string, branch?: string): Promise<
 	if (branch) variables.branch = branch;
 	const data = await graphQLRequest<{ detectServices: DetectServicesResult }>(DETECT_SERVICES_MUTATION, variables);
 	return data.detectServices;
+}
+
+export async function addRepoServiceRoot(
+	url: string,
+	branch: string | undefined,
+	rootPath: string,
+	displayName?: string | null
+): Promise<DetectServicesResult> {
+	const variables: Record<string, unknown> = { url, rootPath };
+	if (branch) variables.branch = branch;
+	if (displayName != null && String(displayName).trim()) {
+		variables.displayName = String(displayName).trim();
+	}
+	const data = await graphQLRequest<{ addRepoServiceRoot: DetectServicesResult }>(
+		ADD_REPO_SERVICE_ROOT_MUTATION,
+		variables
+	);
+	return data.addRepoServiceRoot;
+}
+
+export async function removeRepoService(url: string, serviceName: string): Promise<DetectServicesResult> {
+	const data = await graphQLRequest<{ removeRepoService: DetectServicesResult }>(REMOVE_REPO_SERVICE_MUTATION, {
+		url,
+		serviceName,
+	});
+	return data.removeRepoService;
 }
 
 export async function updateCustomDomain(

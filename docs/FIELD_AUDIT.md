@@ -1,12 +1,15 @@
-# GraphQL Yoga Migration - Field Audit
+# GraphQL Yoga migration — field audit
 
 **Created**: 2026-04-01  
-**Status**: Pre-Implementation Validation  
-**Purpose**: Map all types, identify nullability issues, and plan GraphQL schema
+**Last updated**: 2026-04-12  
+**Status**: Reference (maintainer map of types and JSON after the GraphQL Yoga migration)  
+**Purpose**: Map GraphQL-related types, nullability, and JSON usage for schema and resolver work.
+
+**See also:** [AWS setup](./AWS_SETUP.md) · [GCP setup](./GCP_SETUP.md) · [Multi-service detection](./MULTI_SERVICE_DETECTION.md) · [GraphQL Yoga migration](./GRAPHQL_YOGA_MIGRATION.md)
 
 ---
 
-## 📋 Executive Summary
+## Executive summary
 
 ### Operations Count
 - **Queries**: 10
@@ -25,7 +28,7 @@
 
 ---
 
-## 📊 Type-by-Type Field Audit
+## Type-by-type field audit
 
 ### 1. Repository (`repoType`)
 **Source**: GitHub API mapped by `mapGithubRepoToAppRepo()`  
@@ -501,7 +504,7 @@ type LogEntry {
 
 ---
 
-## ✅ Nullability - VERIFIED & CONFIRMED
+## Nullability (verified)
 
 ### Confirmed Non-Nullable Fields
 - `status` → `DeploymentStatus!` (defaults to `'didnt_deploy'`)
@@ -525,12 +528,12 @@ type LogEntry {
 - `framework` (DetectedService, ScanService)
 - `port` (DetectedService, ScanService)
 
-### Schema Impact ✅ VERIFIED
+### Schema impact (verified)
 All field nullability is now proven from production database schema
 
 ---
 
-## 🔍 Database vs TypeScript Mismatch Issues
+## Database vs TypeScript mismatches
 
 ### Issue 1: Field Storage Location - ALL NON-TABLE FIELDS IN JSONB
 **Reality verified**: ✅ Fields like `ec2`, `scan_results`, `env_vars`, etc. are in the `data` JSONB column
@@ -585,9 +588,9 @@ scan_results: JSON!  # Can be empty {} but not null
 
 ---
 
-## 📋 Pre-Implementation Checklist - UPDATED
+## Maintainer checklist
 
-### Database Schema - ✅ VERIFIED
+### Database schema (verified)
 - [x] EC2 metadata stored in `data` JSONB, not separate columns
 - [x] Status field always has value, defaults to `'didnt_deploy'`
 - [x] EC2 deployments always have `instanceId`
@@ -653,7 +656,7 @@ scan_results: JSON!  # Can be empty {} but not null
 
 ---
 
-## 📝 Implementation Notes - KEY DETAILS
+## Implementation notes
 
 ### JSONB Handling
 ```typescript

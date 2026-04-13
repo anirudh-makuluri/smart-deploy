@@ -11,7 +11,8 @@ import { deleteDeploymentForUser, controlDeploymentForUser } from "@/lib/deploym
 import { getGithubRepos } from "@/github-helper";
 import { invalidateRepoCache } from "@/lib/sessionHelpers";
 import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace, GithubApiError } from "@/lib/githubRepoArchive";
-import { detectMultiService } from "@/lib/multiServiceDetector";
+import { detectMultiService, discoverServiceCatalog, sanitizeFolderServiceId } from "@/lib/multiServiceDetector";
+import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
 import { getSubnetIds } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
@@ -26,6 +27,7 @@ import {
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
 import config from "@/config";
+import type { DetectedServiceInfo } from "@/app/types";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -127,9 +129,53 @@ export async function deploymentControl(
 	});
 }
 
+function normalizeSvcPath(p: string | undefined): string {
+	const t = String(p ?? "").trim().replace(/\\/g, "/").replace(/\/+$/, "") || ".";
+	return t;
+}
+
+function uniqueServiceName(used: Set<string>, base: string): string {
+	let n = sanitizeFolderServiceId(base) || "app";
+	if (!used.has(n)) return n;
+	let i = 2;
+	while (used.has(`${n}-${i}`)) i += 1;
+	return `${n}-${i}`;
+}
+
+async function persistRepoServiceCatalog(
+	userID: string,
+	repoUrl: string,
+	parsed: { owner: string; repo: string },
+	effectiveBranch: string,
+	services: DetectedServiceInfo[],
+	isMonorepo: boolean,
+	isMultiService: boolean,
+	packageManager?: string | null
+) {
+	await dbHelper.upsertRepoServices(userID, repoUrl, {
+		branch: effectiveBranch,
+		repo_owner: parsed.owner,
+		repo_name: parsed.repo,
+		services,
+		is_monorepo: isMonorepo,
+	});
+	if (services.length === 0) {
+		const deleteResult = await dbHelper.deleteDeploymentsByRepo(userID, repoUrl);
+		if (deleteResult.error) {
+			throw new Error(String(deleteResult.error));
+		}
+	}
+	return {
+		isMonorepo: isMonorepo,
+		isMultiService: isMultiService,
+		services,
+		packageManager: packageManager ?? null,
+	};
+}
+
 /**
  * Mutation.detectServices
- * Detects services in a repository by cloning and analyzing it
+ * Default service catalog: compose dirs, monorepo packages (incl. projects/*), Dockerfiles, root siblings, optional root app, else placeholder at ".".
  */
 export async function detectServices(
 	_: unknown,
@@ -172,29 +218,24 @@ export async function detectServices(
 				tmpDir
 			);
 
-			const multiServiceConfig = detectMultiService(repoRoot);
-			const services = multiServiceConfig.services.map((s: any) => toDetectedService(s, repoRoot));
+			const catalog = discoverServiceCatalog(repoRoot, parsed.repo);
+			const services = catalog.services.map((s: { name: string; workdir: string; language?: string; framework?: string; port?: number; relativePath?: string; build_context?: string }) =>
+				toDetectedService(s, repoRoot)
+			).map((d) => ({
+				...d,
+				language: d.language?.trim() ? d.language : "unknown",
+			}));
 
-			await dbHelper.upsertRepoServices(userID, repoUrl, {
-				branch: effectiveBranch,
-				repo_owner: parsed.owner,
-				repo_name: parsed.repo,
+			return await persistRepoServiceCatalog(
+				userID,
+				repoUrl,
+				parsed,
+				effectiveBranch,
 				services,
-				is_monorepo: multiServiceConfig.isMonorepo ?? false,
-			});
-			if (services.length === 0) {
-				const deleteResult = await dbHelper.deleteDeploymentsByRepo(userID, repoUrl);
-				if (deleteResult.error) {
-					throw new Error(String(deleteResult.error));
-				}
-			}
-
-			return {
-				isMonorepo: multiServiceConfig.isMonorepo ?? false,
-				isMultiService: multiServiceConfig.isMultiService ?? false,
-				services,
-				packageManager: multiServiceConfig.packageManager ?? null,
-			};
+				catalog.isMonorepo ?? false,
+				catalog.isMultiService ?? services.length > 1,
+				catalog.packageManager ?? null
+			);
 		} catch (inner: unknown) {
 			const message = inner instanceof GithubApiError 
 				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.token)}`
@@ -209,6 +250,170 @@ export async function detectServices(
 				// ignore cleanup errors
 			}
 		}
+	});
+}
+
+/**
+ * Mutation.addRepoServiceRoot — add one service scoped to a repo-relative subdirectory (or `.`).
+ */
+export async function addRepoServiceRoot(
+	_: unknown,
+	{
+		url,
+		branch,
+		rootPath,
+		displayName,
+	}: { url: string; branch?: string; rootPath: string; displayName?: string | null },
+	ctx: GraphQLContext
+) {
+	return withTiming("addRepoServiceRoot", async () => {
+		const userID = requireUser(ctx);
+		if (!ctx.token) throw new Error("Missing access token");
+
+		const urlTrimmed = String(url ?? "").trim();
+		let branchTrimmed = String(branch ?? "").trim();
+		let repoUrl = urlTrimmed.replace(/\.git$/, "");
+		if (!repoUrl.startsWith("http")) {
+			repoUrl = repoUrl.includes("/") ? `https://github.com/${repoUrl}` : "";
+		}
+		if (!repoUrl || !repoUrl.includes("github.com")) throw new Error("Invalid repository URL");
+
+		const parsed = parseGithubOwnerRepo(repoUrl);
+		if (!parsed) throw new Error("Could not parse GitHub owner/repo from URL");
+
+		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "add-repo-service-"));
+		try {
+			if (!branchTrimmed) {
+				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.token);
+				branchTrimmed = default_branch;
+			}
+			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(
+				parsed.owner,
+				parsed.repo,
+				branchTrimmed,
+				ctx.token,
+				tmpDir
+			);
+
+			const { absPath, relPosix } = safeResolveUnderRepoRoot(repoRoot, rootPath || ".");
+			if (!fs.statSync(absPath).isDirectory()) {
+				throw new Error("Root path must be a directory");
+			}
+
+			const existingRes = await dbHelper.getRepoServicesByUrl(userID, repoUrl);
+			if (existingRes.error) throw new Error(existingRes.error);
+			const existing = existingRes.record?.services ?? [];
+			const pathKey = normalizeSvcPath(relPosix);
+			if (existing.some((s) => normalizeSvcPath(s.path) === pathKey)) {
+				throw new Error("A service with this root path already exists");
+			}
+
+			const usedNames = new Set(existing.map((s) => s.name));
+			const baseForName =
+				(displayName && String(displayName).trim()) ||
+				(pathKey === "." ? parsed.repo : path.basename(pathKey));
+			const serviceName = uniqueServiceName(usedNames, baseForName);
+
+			const subCfg = detectMultiService(absPath, { rootServiceNameHint: serviceName });
+			let nextSvc: DetectedServiceInfo;
+			const first = subCfg.services[0];
+			if (!first) {
+				nextSvc = { name: serviceName, path: pathKey, language: "unknown" };
+			} else {
+				const mapped = toDetectedService(
+					{ ...first, name: serviceName, relativePath: pathKey },
+					repoRoot
+				);
+				nextSvc = {
+					...mapped,
+					language: mapped.language?.trim() ? mapped.language : "unknown",
+				};
+			}
+
+			const next = [...existing, nextSvc];
+			const isMonorepo = Boolean(existingRes.record?.is_monorepo) || next.length > 1;
+
+			return await persistRepoServiceCatalog(
+				userID,
+				repoUrl,
+				parsed,
+				effectiveBranch,
+				next,
+				isMonorepo,
+				next.length > 1,
+				null
+			);
+		} catch (inner: unknown) {
+			const message = inner instanceof GithubApiError
+				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.token)}`
+				: inner instanceof Error
+					? inner.message
+					: "Failed to add service";
+			throw new Error(message);
+		} finally {
+			try {
+				fs.rmSync(tmpDir, { recursive: true, force: true });
+			} catch {
+				/* ignore */
+			}
+		}
+	});
+}
+
+/**
+ * Mutation.removeRepoService — remove one service row by name from the stored catalog.
+ */
+export async function removeRepoService(
+	_: unknown,
+	{ url, serviceName }: { url: string; serviceName: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("removeRepoService", async () => {
+		const userID = requireUser(ctx);
+		if (!ctx.token) throw new Error("Missing access token");
+
+		let repoUrl = String(url ?? "").trim().replace(/\.git$/, "");
+		if (!repoUrl.startsWith("http")) {
+			repoUrl = repoUrl.includes("/") ? `https://github.com/${repoUrl}` : "";
+		}
+		if (!repoUrl || !repoUrl.includes("github.com")) throw new Error("Invalid repository URL");
+
+		const parsed = parseGithubOwnerRepo(repoUrl);
+		if (!parsed) throw new Error("Could not parse GitHub owner/repo from URL");
+
+		const svc = String(serviceName ?? "").trim();
+		if (!svc) throw new Error("serviceName is required");
+
+		const existingRes = await dbHelper.getRepoServicesByUrl(userID, repoUrl);
+		if (existingRes.error) throw new Error(existingRes.error);
+		const record = existingRes.record;
+		if (!record) throw new Error("No saved services for this repository");
+
+		const next = record.services.filter((s) => s.name !== svc);
+		if (next.length === record.services.length) {
+			throw new Error("Service not found");
+		}
+
+		await dbHelper.upsertRepoServices(userID, repoUrl, {
+			branch: record.branch,
+			repo_owner: record.repo_owner,
+			repo_name: record.repo_name,
+			services: next,
+			is_monorepo: next.length > 1 ? record.is_monorepo : false,
+		});
+		if (next.length === 0) {
+			const deleteResult = await dbHelper.deleteDeploymentsByRepo(userID, repoUrl);
+			if (deleteResult.error) {
+				throw new Error(String(deleteResult.error));
+			}
+		}
+
+		return {
+			isMonorepo: next.length > 1 ? record.is_monorepo : false,
+			isMultiService: next.length > 1,
+			services: next,
+			packageManager: null,
+		};
 	});
 }
 

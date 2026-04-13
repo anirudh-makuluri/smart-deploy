@@ -261,7 +261,7 @@ export async function handleMultiServiceDeploy(
 
 	// Detect multi-service configuration from the repo root so docker-compose at root is honored
 	send("🔍 Detecting application structure...", 'detect');
-	const multiServiceConfig = detectMultiService(cloneDir);
+	const multiServiceConfig = detectMultiService(cloneDir, { rootServiceNameHint: repoName });
 
 	if (!multiServiceConfig.isMultiService || multiServiceConfig.services.length === 0) {
 		throw new Error("Multi-service deployment called but no services detected");

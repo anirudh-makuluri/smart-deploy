@@ -388,6 +388,17 @@ export const typeDefs = `
     # Detect services in a repository
     detectServices(url: String!, branch: String): DetectServicesResult!
 
+    # Add one service by repo-relative root directory
+    addRepoServiceRoot(
+      url: String!
+      branch: String
+      rootPath: String!
+      displayName: String
+    ): DetectServicesResult!
+
+    # Remove a service from the stored catalog by service name
+    removeRepoService(url: String!, serviceName: String!): DetectServicesResult!
+
     # Add a public repository
     addPublicRepo(owner: String!, repo: String!): Repository
 

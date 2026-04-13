@@ -232,10 +232,11 @@ See [`.env.example`](.env.example) for the full template.
 ## Repo guides
 
 - [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
-- [docs/AWS_IAM_SETUP.md](docs/AWS_IAM_SETUP.md)
+- [docs/AWS_SETUP.md](docs/AWS_SETUP.md)
 - [docs/GCP_SETUP.md](docs/GCP_SETUP.md)
 - [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md)
 - [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
+- [docs/MULTI_SERVICE_DETECTION.md](docs/MULTI_SERVICE_DETECTION.md)
 
 ## Scripts
 

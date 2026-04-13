@@ -1,10 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { Github, AlertTriangle } from "lucide-react";
+import { Github, AlertTriangle, FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "@/components/ui/sheet";
 import { DetectedServiceInfo, DeployConfig, repoType } from "@/app/types";
 import { getDeploymentForService } from "@/lib/utils";
+
+export type RepoCatalogActions = {
+	busy: boolean;
+	onAddService: (rootPath: string, displayName?: string) => Promise<boolean>;
+};
 
 type RepoServicesListProps = {
 	owner: string;
@@ -16,6 +30,7 @@ type RepoServicesListProps = {
 	repoDeployments: DeployConfig[];
 	resolvedRepo: repoType;
 	openWorkspaceForService: (svc: DetectedServiceInfo) => void;
+	catalogActions?: RepoCatalogActions;
 };
 
 export default function RepoServicesList({
@@ -28,7 +43,23 @@ export default function RepoServicesList({
 	repoDeployments,
 	resolvedRepo,
 	openWorkspaceForService,
+	catalogActions,
 }: RepoServicesListProps) {
+	const [sheet, setSheet] = React.useState<null | "add">(null);
+	const [rootPath, setRootPath] = React.useState(".");
+	const [displayName, setDisplayName] = React.useState("");
+
+	const busy = catalogActions?.busy ?? false;
+
+	async function submitAdd() {
+		if (!catalogActions) return;
+		const ok = await catalogActions.onAddService(rootPath.trim() || ".", displayName.trim() || undefined);
+		if (!ok) return;
+		setSheet(null);
+		setRootPath(".");
+		setDisplayName("");
+	}
+
 	return (
 		<div className="flex flex-col h-full p-6">
 			<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -40,16 +71,23 @@ export default function RepoServicesList({
 						{services.length} service{services.length !== 1 ? "s" : ""}
 					</p>
 				</div>
-				{!loading && !error && services.length > 1 && (
-					<div className="flex items-center gap-2">
-						<Button
-							onClick={() => openWorkspaceForService({ name: ".", path: ".", language: "unknown" })}
-							className="shrink-0"
-						>
-							Open whole app workspace
-						</Button>
-					</div>
-				)}
+				<div className="flex flex-wrap items-center gap-2">
+					{catalogActions && !loading && !error && (
+						<>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="shrink-0"
+								disabled={busy}
+								onClick={() => setSheet("add")}
+							>
+								<FolderPlus className="size-4 mr-1.5" />
+								Add service
+							</Button>
+						</>
+					)}
+				</div>
 			</div>
 
 			{loading && (
@@ -61,8 +99,15 @@ export default function RepoServicesList({
 				</div>
 			)}
 			{!loading && !error && services.length === 0 && (
-				<div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center text-muted-foreground">
-					No deployable services detected. Add a service or check the repository structure.
+				<div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center text-muted-foreground space-y-3">
+					<p>No services yet. Add a root directory, or refresh the page to re-run detection.</p>
+					{catalogActions && (
+						<div className="flex flex-wrap justify-center gap-2">
+							<Button type="button" variant="secondary" disabled={busy} onClick={() => setSheet("add")}>
+								Add service
+							</Button>
+						</div>
+					)}
 				</div>
 			)}
 			{!loading && !error && services.length > 0 && (
@@ -101,7 +146,7 @@ export default function RepoServicesList({
 
 						return (
 							<div
-								key={svc.name}
+								key={`${svc.path}::${svc.name}`}
 								role="button"
 								tabIndex={0}
 								onClick={handleCardClick}
@@ -114,6 +159,9 @@ export default function RepoServicesList({
 									<span className="font-semibold text-foreground truncate">
 										@{repoName}/{svc.name}
 									</span>
+								</div>
+								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
+									{svc.path === "." ? "Root: ." : svc.path}
 								</div>
 								<div className="mt-3 flex flex-col gap-2">
 									<div className="flex items-center gap-2">
@@ -161,6 +209,43 @@ export default function RepoServicesList({
 					})}
 				</div>
 			)}
+
+			<Sheet open={sheet === "add"} onOpenChange={(o) => !o && setSheet(null)}>
+				<SheetContent side="right" className="w-full sm:max-w-md">
+					<SheetHeader>
+						<SheetTitle>Add service</SheetTitle>
+						<SheetDescription>
+							Set the repository subdirectory SmartDeploy should use as this service’s root. Use{" "}
+							<code className="rounded bg-muted px-1">.</code> for the repository root.
+						</SheetDescription>
+					</SheetHeader>
+					<div className="mt-6 space-y-4">
+						<div className="space-y-2">
+							<Label htmlFor="svc-root-path">Root path</Label>
+							<Input
+								id="svc-root-path"
+								value={rootPath}
+								onChange={(e) => setRootPath(e.target.value)}
+								placeholder="e.g. apps/web or ."
+								disabled={busy}
+							/>
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="svc-display-name">Display name (optional)</Label>
+							<Input
+								id="svc-display-name"
+								value={displayName}
+								onChange={(e) => setDisplayName(e.target.value)}
+								placeholder="Defaults from folder or repo name"
+								disabled={busy}
+							/>
+						</div>
+						<Button type="button" className="w-full" disabled={busy} onClick={() => void submitAdd()}>
+							{busy ? "Saving…" : "Add service"}
+						</Button>
+					</div>
+				</SheetContent>
+			</Sheet>
 		</div>
 	);
 }
