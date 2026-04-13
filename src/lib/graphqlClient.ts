@@ -547,7 +547,31 @@ const PREFILL_INFRA_MUTATION = `
 		prefillInfra(url: $url, branch: $branch, packagePath: $packagePath) {
 			found
 			branch
-			results
+			results {
+				commit_sha
+				stack_summary
+				services {
+					name
+					build_context
+					port
+					dockerfile_path
+					language
+					framework
+				}
+				dockerfiles
+				docker_compose
+				nginx_conf
+				has_existing_dockerfiles
+				has_existing_compose
+				risks
+				confidence
+				hadolint_results
+				token_usage {
+					input_tokens
+					output_tokens
+					total_tokens
+				}
+			}
 		}
 	}
 `;

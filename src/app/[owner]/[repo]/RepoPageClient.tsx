@@ -16,7 +16,8 @@ import {
 	addRepoServiceRoot,
 	type DetectServicesResult,
 } from "@/lib/graphqlClient";
-import { normalizeRepoUrl } from "@/lib/utils";
+import { getDeploymentForService, normalizeRepoUrl } from "@/lib/utils";
+import config from "@/config";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
@@ -45,6 +46,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		setDetectedRepoCache,
 		mergeRepoServices,
 		syncRepoDeployments,
+		updateDeploymentById,
 		activeServiceName: storeActiveService,
 		setActiveServiceName,
 		setActiveRepo,
@@ -289,9 +291,35 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		};
 	}, [setActiveRepo, setActiveServiceName]);
 
-	function openWorkspaceForService(svc: DetectedServiceInfo) {
+	async function openWorkspaceForService(svc: DetectedServiceInfo) {
 		const normalizedServiceName =
 			svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
+
+		// Ensure a deployment row exists before entering DeployWorkspace.
+		// (useActiveDeployment can synthesize a draft locally, but we want an immediate persisted record.)
+		const existingDeployment = repo
+			? getDeploymentForService(repoDeployments, repo.html_url, normalizedServiceName, repo.name)
+			: null;
+
+		if (!existingDeployment && repo) {
+			try {
+				await updateDeploymentById({
+					repoName: repo.name,
+					serviceName: normalizedServiceName,
+					url: repo.html_url,
+					branch: repo.default_branch ?? "",
+					status: "didnt_deploy",
+					cloudProvider: "aws",
+					deploymentTarget: "ec2",
+					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
+					scanResults: {} as never,
+				});
+			} catch (e) {
+				// Non-blocking: still allow the workspace to open using the local draft deployment.
+				toast.error(getErrorMessage(e as Error, "Failed to create deployment"));
+			}
+		}
+
 		if (repo) {
 			setActiveRepo(repo as repoType);
 		}

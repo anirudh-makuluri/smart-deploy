@@ -553,11 +553,12 @@ export default function DeployWorkspace({
 							</div>
 							<div className="pt-4">
 								<div className="flex flex-wrap items-center justify-center gap-3">
-									<Button size="lg" onClick={startScan} className="px-8 font-bold gap-2">
+									<Button type="button" size="lg" onClick={startScan} className="px-8 font-bold gap-2">
 										<Rocket className="size-5" />
 										Start Smart Analysis
 									</Button>
 									<Button
+										type="button"
 										size="lg"
 										variant="outline"
 										onClick={prefillScanFromRepo}

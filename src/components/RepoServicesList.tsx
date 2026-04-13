@@ -29,7 +29,7 @@ type RepoServicesListProps = {
 	error: string | null;
 	repoDeployments: DeployConfig[];
 	resolvedRepo: repoType;
-	openWorkspaceForService: (svc: DetectedServiceInfo) => void;
+	openWorkspaceForService: (svc: DetectedServiceInfo) => void | Promise<void>;
 	catalogActions?: RepoCatalogActions;
 };
 
@@ -127,7 +127,7 @@ export default function RepoServicesList({
 						const liveUrl = deployment?.liveUrl;
 
 						const handleCardClick = () => {
-							openWorkspaceForService(svc);
+							void openWorkspaceForService(svc);
 						};
 
 						const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
