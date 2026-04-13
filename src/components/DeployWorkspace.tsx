@@ -22,6 +22,7 @@ import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl 
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
+import { usePostHog } from "posthog-js/react";
 import ScanProgress from "@/components/ScanProgress";
 import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
 import PostScanResults from "@/components/PostScanResults";
@@ -54,6 +55,7 @@ export default function DeployWorkspace({
 	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
 	const repoServices = useAppData((s) => s.repoServices);
 	const { data: session } = useSession();
+	const posthog = usePostHog();
 	const repoName = activeRepo?.name ?? "";
 	const repoIdentifier = activeRepo?.full_name ?? repoName;
 	const repoOwner = activeRepo?.owner?.login ?? "";
@@ -357,6 +359,14 @@ export default function DeployWorkspace({
 					console.error("Failed to fetch commit info:", err);
 				});
 		}
+
+		posthog.capture("deploy_clicked", {
+			repo_name: payload.repoName ?? null,
+			service_name: payload.serviceName ?? null,
+			branch: payload.branch ?? null,
+			commit_sha: payload.commitSha ?? null,
+			has_scan_results: Boolean(payload.scanResults),
+		});
 
 		setIsDeploying(true);
 		sendDeployConfig(payload, token!, session?.userID);

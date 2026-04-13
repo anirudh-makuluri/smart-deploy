@@ -33,6 +33,7 @@ import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBu
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { getAwsClientConfig } from "./aws/sdkClients";
+import { captureServerEvent } from "./analytics/posthogServer";
 
 // GCP imports (for Cloud SQL)
 import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
@@ -246,6 +247,26 @@ async function sendDeployComplete(
 		);
 	} catch (err) {
 		console.error("Failed to save deployment to DB:", err);
+	}
+
+	// PostHog: server-truth event (never blocks deploy completion).
+	if (userID) {
+		const failedStep = deploySteps.find((s) => s.status === "error")?.id ?? null;
+		captureServerEvent({
+			distinctId: userID,
+			event: "deploy_completed",
+			properties: {
+				success,
+				duration_ms: durationMs ?? null,
+				repo_name: deployConfig.repoName ?? null,
+				service_name: deployConfig.serviceName ?? null,
+				branch: deployConfig.branch ?? null,
+				commit_sha: deployConfig.commitSha ?? null,
+				failed_step: failedStep,
+				steps_count: deploySteps.length,
+				has_custom_domain: Boolean(vercelDns?.success && vercelDns.customUrl),
+			},
+		});
 	}
 
 	if (ws?.readyState === ws?.OPEN) {
