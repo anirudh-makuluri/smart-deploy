@@ -13,6 +13,8 @@ export type FeedbackProgressPayload = {
 
 type FeedbackProgressProps = {
 	payload: FeedbackProgressPayload;
+	repoName: string;
+	serviceName: string;
 	onComplete: (data: SDArtifactsResponse) => void;
 	onCancel: () => void;
 };
@@ -25,7 +27,7 @@ const NODES = [
 	{ id: "feedback_verifier", label: "Feedback Verifier", desc: "Validating improved artifacts" },
 ];
 
-export default function FeedbackProgress({ payload, onComplete, onCancel }: FeedbackProgressProps) {
+export default function FeedbackProgress({ payload, repoName, serviceName, onComplete, onCancel }: FeedbackProgressProps) {
 	const { repoUrl, commitSha, feedback } = payload;
 	const [activeNode, setActiveNode] = useState<string>("feedback_coordinator");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
@@ -119,6 +121,26 @@ export default function FeedbackProgress({ payload, onComplete, onCancel }: Feed
 							} else if (eventType === "complete") {
 								appendLog("event: feedback complete");
 								setProgress(100);
+								// Record artifact generation metrics (best-effort; does not block UI).
+								try {
+									const dockerfilesCount = data?.dockerfiles ? Object.keys(data.dockerfiles).length : 0;
+									void fetch("/api/artifacts/generation", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({
+											source: "feedback",
+											repoName,
+											serviceName,
+											dockerfilesCount,
+											hasExistingDockerfiles: Boolean(data?.has_existing_dockerfiles),
+											hasExistingCompose: Boolean(data?.has_existing_compose),
+											hasCompose: Boolean(data?.docker_compose?.trim()),
+											hasNginx: Boolean(data?.nginx_conf?.trim()),
+										}),
+									});
+								} catch {
+									// ignore
+								}
 								onCompleteRef.current(data as SDArtifactsResponse);
 							} else if (eventType === "error") {
 								const errorMsg = data.detail || data.message || "Unknown error";
@@ -163,7 +185,7 @@ export default function FeedbackProgress({ payload, onComplete, onCancel }: Feed
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoUrl, commitSha, feedback]);
+	}, [repoUrl, commitSha, feedback, repoName, serviceName]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">

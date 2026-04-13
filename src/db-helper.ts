@@ -515,6 +515,42 @@ export const dbHelper = {
 		}
 	},
 
+	recordArtifactGeneration: async function (args: {
+		userID: string;
+		repoName: string;
+		serviceName: string;
+		source: "scan" | "feedback" | "manual";
+		dockerfilesGeneratedCount?: number;
+		composeGenerated?: boolean;
+		nginxGenerated?: boolean;
+	}) {
+		try {
+			const { userID, repoName, serviceName, source } = args;
+			if (!userID || !repoName || !serviceName) return { error: "userID, repoName, serviceName are required" };
+
+			const rows: { user_id: string; repo_name: string; service_name: string; source: string; artifact_type: string; action: string; count: number }[] = [];
+			const dockerCount = Math.max(0, Math.floor(args.dockerfilesGeneratedCount ?? 0));
+			if (dockerCount > 0) {
+				rows.push({ user_id: userID, repo_name: repoName, service_name: serviceName, source, artifact_type: "dockerfile", action: "generated", count: dockerCount });
+			}
+			if (args.composeGenerated) {
+				rows.push({ user_id: userID, repo_name: repoName, service_name: serviceName, source, artifact_type: "compose", action: "generated", count: 1 });
+			}
+			if (args.nginxGenerated) {
+				rows.push({ user_id: userID, repo_name: repoName, service_name: serviceName, source, artifact_type: "nginx", action: "generated", count: 1 });
+			}
+			if (rows.length === 0) return { success: true, inserted: 0 };
+
+			const supabase = getSupabaseServer();
+			const { error } = await supabase.from("artifact_events").insert(rows);
+			if (error) return { error: error.message };
+			return { success: true, inserted: rows.length };
+		} catch (error) {
+			console.error("recordArtifactGeneration error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();

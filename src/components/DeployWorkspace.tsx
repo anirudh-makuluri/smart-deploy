@@ -483,6 +483,8 @@ export default function DeployWorkspace({
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<FeedbackProgress
 								payload={improveScanPayload}
+								repoName={repoName}
+								serviceName={serviceName ?? ""}
 								onComplete={(data) => {
 									setScanResults(data);
 									setScanMode("results");
@@ -504,6 +506,8 @@ export default function DeployWorkspace({
 							<ScanProgress
 								repoFullName={repoIdentifier}
 								packagePath={analyzeServicePath}
+								repoName={repoName}
+								serviceName={serviceName ?? ""}
 								onComplete={(data) => {
 									setScanDuration(Date.now() - scanStartTime);
 									setScanResults(data);

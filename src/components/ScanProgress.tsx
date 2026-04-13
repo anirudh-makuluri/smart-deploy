@@ -9,6 +9,8 @@ type ScanProgressProps = {
 	repoFullName: string;
 	/** Repo-relative package root for this service (monorepo); forwarded as package_path. */
 	packagePath?: string;
+	repoName: string;
+	serviceName: string;
 	onComplete: (data: SDArtifactsResponse) => void;
 	onCancel: () => void;
 };
@@ -23,7 +25,7 @@ const NODES = [
 	{ id: "verifier", label: "Verifier", desc: "Final health check validation" },
 ];
 
-export default function ScanProgress({ repoFullName, packagePath, onComplete, onCancel }: ScanProgressProps) {
+export default function ScanProgress({ repoFullName, packagePath, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
 	const [activeNode, setActiveNode] = useState<string>("scanner");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -121,6 +123,26 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 							} else if (eventType === "complete") {
 								appendLog("event: analysis complete");
 								setProgress(100);
+								// Record artifact generation metrics (best-effort; does not block UI).
+								try {
+									const dockerfilesCount = data?.dockerfiles ? Object.keys(data.dockerfiles).length : 0;
+									void fetch("/api/artifacts/generation", {
+										method: "POST",
+										headers: { "Content-Type": "application/json" },
+										body: JSON.stringify({
+											source: "scan",
+											repoName,
+											serviceName,
+											dockerfilesCount,
+											hasExistingDockerfiles: Boolean(data?.has_existing_dockerfiles),
+											hasExistingCompose: Boolean(data?.has_existing_compose),
+											hasCompose: Boolean(data?.docker_compose?.trim()),
+											hasNginx: Boolean(data?.nginx_conf?.trim()),
+										}),
+									});
+								} catch {
+									// ignore
+								}
 								onCompleteRef.current(data);
 							} else if (eventType === "error") {
 								const errorMsg = data.detail || data.message || "Unknown error";
@@ -179,7 +201,7 @@ export default function ScanProgress({ repoFullName, packagePath, onComplete, on
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoFullName, packagePath]);
+	}, [repoFullName, packagePath, repoName, serviceName]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">

@@ -64,6 +64,24 @@ create index if not exists idx_deployment_history_user_repo_service
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
 
+-- Artifact generation events: append-only facts about generated infra files.
+create table if not exists public.artifact_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public.users(id) on delete cascade,
+  repo_name text not null,
+  service_name text not null,
+  timestamp timestamptz not null default now(),
+  source text not null, -- 'scan' | 'feedback' | 'manual'
+  artifact_type text not null, -- 'dockerfile' | 'compose' | 'nginx'
+  action text not null default 'generated', -- future-proof
+  count int not null default 1
+);
+
+create index if not exists idx_artifact_events_user_time
+  on public.artifact_events(user_id, timestamp desc);
+create index if not exists idx_artifact_events_user_repo_service
+  on public.artifact_events(user_id, repo_name, service_name);
+
 -- User repos: one row per repo per user with denormalized fields
 create table if not exists public.user_repos (
   user_id text not null references public.users(id) on delete cascade,
@@ -148,6 +166,7 @@ alter table public.users enable row level security;
 alter table public.deployments enable row level security;
 alter table public.deployment_history enable row level security;
 alter table public.user_repos enable row level security;
+alter table public.artifact_events enable row level security;
 alter table public.waiting_list enable row level security;
 alter table public.approved_users enable row level security;
 
@@ -194,3 +213,66 @@ $$;
 
 revoke all on function public.get_deploy_metrics(text) from public;
 grant execute on function public.get_deploy_metrics(text) to service_role;
+
+-- Artifact generation metrics (all-time; optional filter by user id). Used by server via service role only.
+create or replace function public.get_artifact_generation_metrics(p_user_id text default null)
+returns jsonb
+language sql
+stable
+as $$
+  with events_filtered as (
+    select artifact_type, sum(count)::bigint as generated_count
+    from public.artifact_events
+    where action = 'generated'
+      and (p_user_id is null or user_id = p_user_id)
+    group by artifact_type
+  ),
+  history as (
+    select success, config_snapshot::jsonb as config_snapshot
+    from public.deployment_history
+    where (p_user_id is null or user_id = p_user_id)
+  ),
+  success_total as (
+    select count(*)::bigint as n
+    from history
+    where success = true
+  ),
+  success_flags as (
+    select
+      count(*) filter (
+        where success = true
+          and coalesce((config_snapshot #>> '{scanResults,has_existing_dockerfiles}')::boolean, false) = false
+          and coalesce(jsonb_typeof(config_snapshot #> '{scanResults,dockerfiles}'), '') = 'object'
+          and exists (
+            select 1
+            from jsonb_each(coalesce(config_snapshot #> '{scanResults,dockerfiles}', '{}'::jsonb))
+          )
+      )::bigint as success_with_generated_dockerfiles,
+
+      count(*) filter (
+        where success = true
+          and coalesce((config_snapshot #>> '{scanResults,has_existing_compose}')::boolean, false) = false
+          and length(coalesce(config_snapshot #>> '{scanResults,docker_compose}', '')) > 0
+      )::bigint as success_with_generated_compose,
+
+      count(*) filter (
+        where success = true
+          and length(coalesce(config_snapshot #>> '{scanResults,nginx_conf}', '')) > 0
+      )::bigint as success_with_nginx_conf
+    from history
+  )
+  select jsonb_build_object(
+    'generated_counts', jsonb_build_object(
+      'dockerfile', coalesce((select generated_count from events_filtered where artifact_type = 'dockerfile'), 0),
+      'compose', coalesce((select generated_count from events_filtered where artifact_type = 'compose'), 0),
+      'nginx', coalesce((select generated_count from events_filtered where artifact_type = 'nginx'), 0)
+    ),
+    'successful_deploys_total', (select n from success_total),
+    'success_with_generated_dockerfiles', (select success_with_generated_dockerfiles from success_flags),
+    'success_with_generated_compose', (select success_with_generated_compose from success_flags),
+    'success_with_nginx_conf', (select success_with_nginx_conf from success_flags)
+  );
+$$;
+
+revoke all on function public.get_artifact_generation_metrics(text) from public;
+grant execute on function public.get_artifact_generation_metrics(text) to service_role;
