@@ -18,9 +18,13 @@ import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { PublicBottomNav, type MobileNavLink } from "@/components/public/PublicBottomNav";
 import { PublicPageFooterContent } from "@/components/public/PublicPageFooter";
 import { Button } from "@/components/ui/button";
+import { LandingMetricsStrip } from "@/components/landing/LandingMetricsStrip";
+import type { DeployMetricsSummary } from "@/lib/metrics/deployMetricsCore";
 
 type LandingExperienceProps = {
 	isSignedIn: boolean;
+	/** All-time aggregate metrics; shown when present and there is at least one deployment */
+	publicMetrics: DeployMetricsSummary | null;
 };
 
 type StoryCard = {
@@ -313,7 +317,7 @@ function WorkflowRail() {
 	);
 }
 
-export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
+export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperienceProps) {
 	const primaryHref = isSignedIn ? "/home" : "/auth";
 	const primaryCopy = isSignedIn ? "Open Dashboard" : "Open Smart Deploy";
 	const prefersReducedMotion = useReducedMotion();
@@ -430,6 +434,11 @@ export function LandingExperience({ isSignedIn }: LandingExperienceProps) {
 							<HeroPreview />
 						</div>
 					</div>
+					{publicMetrics && publicMetrics.totalCount > 0 ? (
+						<div className="mx-auto mt-10 max-w-7xl w-full px-6 lg:px-10">
+							<LandingMetricsStrip metrics={publicMetrics} />
+						</div>
+					) : null}
 				</section>
 
 				<section id="start-your-way" className={`border-b border-border/60 px-6 py-16 lg:px-10 ${sectionAnchorClass}`}>

@@ -40,6 +40,10 @@ const config = {
 	SUPABASE_URL: process.env.SUPABASE_URL || "",
 	SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
 
+	// When false, global deploy metrics are hidden (landing strip + GET /api/metrics/public). Per-user metrics still work.
+	PUBLIC_DEPLOY_METRICS_ENABLED:
+		(process.env.PUBLIC_DEPLOY_METRICS_ENABLED ?? "true").toLowerCase() !== "false",
+
 	// Supabase Storage bucket for deployed app screenshots
 	DEPLOYMENT_SCREENSHOT_BUCKET: process.env.DEPLOYMENT_SCREENSHOT_BUCKET || "deployment-screenshots",
 }

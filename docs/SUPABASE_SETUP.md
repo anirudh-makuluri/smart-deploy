@@ -19,6 +19,8 @@ SmartDeploy uses **Supabase** (hosted PostgreSQL) as its primary database for us
 2. Paste the contents of [`supabase/schema.sql`](../supabase/schema.sql) into the editor.
 3. Click **Run**.
 
+If your project was created from an **older** `schema.sql` that did not yet include deploy metrics, run [`supabase/deploy_metrics_rpc.sql`](../supabase/deploy_metrics_rpc.sql) once in the SQL Editor (the app falls back to reading `deployment_history` in chunks if the function is missing, but the RPC is faster for aggregates).
+
 This creates the following tables:
 
 | Table | Purpose |
