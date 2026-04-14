@@ -8,8 +8,7 @@
     "sourceMap": false,
     "incremental": false,
     "types": [
-      "node",
-      "next-auth"
+      "node"
     ]
   },
   "include": [
