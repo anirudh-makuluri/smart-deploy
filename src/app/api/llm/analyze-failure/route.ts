@@ -1,17 +1,17 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "../../auth/authOptions";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { DeployStep } from "@/app/types";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /** POST - analyze deployment failure logs and suggest fixes */
 export async function POST(req: Request) {
-	const session = await getServerSession(authOptions);
-	if (!session?.accessToken) {
-		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+	const session = await auth.api.getSession({ headers: await headers() });
+	if (!session?.user?.id) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	let body: { steps: DeployStep[]; configSnapshot: Record<string, unknown> };

@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getServerSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 const createWebSocketAuthTokenMock = vi.fn();
 
-vi.mock("next-auth", () => ({
-	getServerSession: (...args: unknown[]) => getServerSessionMock(...args),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 vi.mock("@/lib/wsAuth", () => ({
@@ -19,7 +23,7 @@ describe("GET /api/system-health", () => {
 	});
 
 	it("returns 401 when the user is not authenticated", async () => {
-		getServerSessionMock.mockResolvedValue(null);
+		getSessionMock.mockResolvedValue(null);
 		const { GET } = await import("@/app/api/system-health/route");
 
 		const response = await GET();
@@ -28,7 +32,7 @@ describe("GET /api/system-health", () => {
 	});
 
 	it("returns healthy when websocket and SD Artifacts checks succeed", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "user-123" });
+		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 		vi.stubEnv("SD_API_BASE_URL", "https://artifacts.example.com");
 		vi.stubEnv("SD_API_BEARER_TOKEN", "artifact-token");
@@ -73,7 +77,7 @@ describe("GET /api/system-health", () => {
 	});
 
 	it("returns degraded when SD Artifacts env is missing", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "user-123" });
+		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({
@@ -95,7 +99,7 @@ describe("GET /api/system-health", () => {
 	});
 
 	it("treats successful healthz responses as healthy even with minimal payloads", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "user-123" });
+		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 		vi.stubEnv("SD_API_BASE_URL", "https://artifacts.example.com");
 		vi.stubEnv("SD_API_BEARER_TOKEN", "artifact-token");

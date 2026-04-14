@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 describe("GET /api/auth/error", () => {
-	it("uses NEXTAUTH_URL when configured", async () => {
+	it("uses BETTER_AUTH_URL when configured", async () => {
 		vi.resetModules();
 		vi.doMock("@/config", () => ({
-			default: { NEXTAUTH_URL: "https://smartdeploy.example.com" },
+			default: { BETTER_AUTH_URL: "https://smartdeploy.example.com" },
 		}));
 
 		const { GET } = await import("@/app/api/auth/error/route");
@@ -21,7 +21,7 @@ describe("GET /api/auth/error", () => {
 	it("falls back to forwarded host/protocol", async () => {
 		vi.resetModules();
 		vi.doMock("@/config", () => ({
-			default: { NEXTAUTH_URL: "http://localhost:3000" },
+			default: { BETTER_AUTH_URL: "http://localhost:3000" },
 		}));
 
 		const { GET } = await import("@/app/api/auth/error/route");

@@ -1,10 +1,10 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
+import { authClient } from "@/lib/auth-client";
 import Image from "next/image";
 import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
 import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +32,8 @@ type HeaderProps = {
 };
 
 export default function Header({ homeNav, workspaceNav }: HeaderProps) {
-	const { data: session } = useSession();
+	const { data: session } = authClient.useSession();
+	const router = useRouter();
 	const params = useParams();
 	const pathname = usePathname();
 	const { activeServiceName, setActiveServiceName } = useAppData();
@@ -46,6 +47,12 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 
 	function handleRepoClick() {
 		setActiveServiceName(null);
+	}
+
+	async function handleSignOut() {
+		await authClient.signOut();
+		router.replace("/auth");
+		router.refresh();
 	}
 
 	function handleAvatarKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
@@ -222,7 +229,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
 									className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer mt-1"
-									onClick={() => signOut()}
+									onClick={() => void handleSignOut()}
 								>
 									<LogOut className="size-4 mr-2" />
 									<span className="font-bold">Sign out</span>

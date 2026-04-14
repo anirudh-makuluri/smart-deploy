@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { executeGraphQLOperation } from "@/app/api/graphql/route";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req?: Request) {
 	const start = Date.now();
 	try {
-		const session = await getServerSession(authOptions);
-		const userID = (session as { userID?: string })?.userID;
+		const session = await auth.api.getSession({ headers: req?.headers ?? new Headers() });
+		const userID = session?.user?.id;
 		if (!userID) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
@@ -18,7 +17,7 @@ export async function GET() {
 		const response = await executeGraphQLOperation(
 			"repoServices",
 			{},
-			session as { userID?: string; accessToken?: string } | null
+			session ? ({ userID } as { userID?: string }) : null
 		) as { repoServices?: unknown[] };
 		const services = response.repoServices ?? [];
 		return NextResponse.json({ services });

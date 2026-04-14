@@ -1,6 +1,5 @@
 "use client";
 
-import { SessionProvider } from "next-auth/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import ActiveDeploymentProvider from "@/components/ActiveDeploymentProvider";
@@ -19,12 +18,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 	);
 
 	return (
-		<SessionProvider>
-			<PosthogGate>
-				<QueryClientProvider client={queryClient}>
-					<ActiveDeploymentProvider>{children}</ActiveDeploymentProvider>
-				</QueryClientProvider>
-			</PosthogGate>
-		</SessionProvider>
+		<PosthogGate>
+			<QueryClientProvider client={queryClient}>
+				<ActiveDeploymentProvider>{children}</ActiveDeploymentProvider>
+			</QueryClientProvider>
+		</PosthogGate>
 	);
 }

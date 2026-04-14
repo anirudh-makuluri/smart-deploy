@@ -1,32 +1,41 @@
 /**
  * GraphQL Context Builder
  * 
- * Extracts authentication and session info from NextAuth.
+ * Extracts authentication and session info from Better Auth.
  * Used by all resolvers to determine user permissions.
  */
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/authOptions";
 import type { NextRequest } from "next/server";
+import { headers as nextHeaders } from "next/headers";
+import { auth } from "@/lib/auth";
+import { getGithubAccessTokenForUserId } from "@/lib/githubAccessToken";
 
 export type GraphQLContext = {
-	session: Awaited<ReturnType<typeof getServerSession>> | null;
+	session: Awaited<ReturnType<typeof auth.api.getSession>> | null;
 	userID?: string;
-	token?: string;
+	/**
+	 * GitHub OAuth token (optional).
+	 * Present only when the user connected GitHub.
+	 */
+	githubToken?: string;
 };
 
 /**
  * Build GraphQL context from Next.js request
- * Extracts NextAuth session, user ID, and GitHub token
+ * Extracts Better Auth session and (optionally) a GitHub token.
  */
 export async function buildContext(request?: NextRequest): Promise<GraphQLContext> {
 	try {
-		const session = await getServerSession(authOptions);
-		
+		const session = await auth.api.getSession({
+			headers: request?.headers ?? (await nextHeaders()),
+		});
+		const userID = session?.user?.id;
+		const githubToken = userID ? await getGithubAccessTokenForUserId(userID) : null;
+
 		return {
 			session,
-			userID: (session as any)?.userID,
-			token: (session as any)?.accessToken,
+			userID: userID ?? undefined,
+			githubToken: githubToken ?? undefined,
 		};
 	} catch (error) {
 		console.error("[GraphQL Context] Failed to build context:", error);

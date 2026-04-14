@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import { executeGraphQLOperation } from "@/app/api/graphql/route";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,8 +16,9 @@ function parseLimit(raw: string | null): number {
 export async function GET(req: NextRequest) {
 	const start = Date.now();
 	try {
-		const session = await getServerSession(authOptions);
-		if (!session?.userID) {
+		const session = await auth.api.getSession({ headers: req.headers });
+		const userID = session?.user?.id;
+		if (!userID) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 		const response = await executeGraphQLOperation(
 			"serviceLogs",
 			{ repoName, serviceName, limit },
-			session as { userID?: string; accessToken?: string } | null
+			({ userID } as { userID?: string }) ?? null
 		) as { serviceLogs?: { logs?: unknown[] } };
 
 		const logs = response.serviceLogs?.logs ?? [];

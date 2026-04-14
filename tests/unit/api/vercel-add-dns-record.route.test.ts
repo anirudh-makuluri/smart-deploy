@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getServerSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 const addVercelDnsRecordMock = vi.fn();
 
-vi.mock("next-auth", () => ({
-	getServerSession: () => getServerSessionMock(),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 vi.mock("@/lib/vercelDns", () => ({
@@ -17,21 +21,21 @@ describe("POST /api/vercel/add-dns-record", () => {
 	});
 
 	it("returns 401 when user is unauthorized", async () => {
-		getServerSessionMock.mockResolvedValue(null);
+		getSessionMock.mockResolvedValue(null);
 		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
 		const res = await POST(new Request("http://localhost", { method: "POST", body: "{}" }) as any);
 		expect(res.status).toBe(401);
 	});
 
 	it("returns 400 when deployUrl is missing", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
 		const res = await POST(new Request("http://localhost", { method: "POST", body: "{}" }) as any);
 		expect(res.status).toBe(400);
 	});
 
 	it("returns custom URL on success", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		addVercelDnsRecordMock.mockResolvedValue({ success: true, customUrl: "app.example.com" });
 		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
 		const res = await POST(
@@ -45,7 +49,7 @@ describe("POST /api/vercel/add-dns-record", () => {
 	});
 
 	it("returns 400 when dns helper fails", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		addVercelDnsRecordMock.mockResolvedValue({ success: false, error: "invalid domain" });
 		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
 		const res = await POST(

@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/authOptions";
 import { addVercelDnsRecord } from "@/lib/vercelDns";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
 	try {
-		const session = await getServerSession(authOptions);
-		if (!session?.accessToken) {
+		const session = await auth.api.getSession({ headers: req.headers });
+		if (!session?.user?.id) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 

@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getServerSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 const executeGraphQLOperationMock = vi.fn();
 
-vi.mock("next-auth", () => ({
-	getServerSession: () => getServerSessionMock(),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 vi.mock("@/app/api/graphql/route", () => ({
@@ -17,7 +21,7 @@ describe("GET /api/service-logs-history", () => {
 	});
 
 	it("returns 401 when session user is missing", async () => {
-		getServerSessionMock.mockResolvedValue(null);
+		getSessionMock.mockResolvedValue(null);
 		const { GET } = await import("@/app/api/service-logs-history/route");
 		const req = { nextUrl: new URL("http://localhost/api/service-logs-history?serviceName=web") } as any;
 		const res = await GET(req);
@@ -25,7 +29,7 @@ describe("GET /api/service-logs-history", () => {
 	});
 
 	it("returns 400 when serviceName is missing", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		const { GET } = await import("@/app/api/service-logs-history/route");
 		const req = { nextUrl: new URL("http://localhost/api/service-logs-history") } as any;
 		const res = await GET(req);
@@ -33,7 +37,7 @@ describe("GET /api/service-logs-history", () => {
 	});
 
 	it("returns logs on success from EC2", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockResolvedValue({
 			serviceLogs: { logs: [{ message: "ec2 log" }], source: "ec2" },
 		});
@@ -48,7 +52,7 @@ describe("GET /api/service-logs-history", () => {
 	});
 
 	it("returns logs on success from GCP", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockResolvedValue({
 			serviceLogs: { logs: [{ message: "gcp log" }], source: "gcp" },
 		});
@@ -63,7 +67,7 @@ describe("GET /api/service-logs-history", () => {
 	});
 
 	it("returns 500 when graphql operation fails", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockRejectedValue(new Error("provider down"));
 
 		const { GET } = await import("@/app/api/service-logs-history/route");

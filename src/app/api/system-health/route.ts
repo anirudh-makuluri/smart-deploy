@@ -1,8 +1,7 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
 import { createWebSocketAuthToken } from "@/lib/wsAuth";
 import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -92,9 +91,9 @@ async function checkAnalyzeHealth(): Promise<ServiceStatus> {
 	}
 }
 
-export async function GET() {
-	const session = await getServerSession(authOptions);
-	const userID = session?.userID;
+export async function GET(req?: Request) {
+	const session = await auth.api.getSession({ headers: req?.headers ?? new Headers() });
+	const userID = session?.user?.id;
 
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { PublicBottomNav, type MobileNavLink } from "@/components/public/PublicBottomNav";
-import { PublicPageFooterContent } from "@/components/public/PublicPageFooter";
+import { PublicPageFooterContent } from "@/components/public/PublicPageFooterContent";
 import { Button } from "@/components/ui/button";
 import { LandingMetricsStrip } from "@/components/landing/LandingMetricsStrip";
 import type { DeployMetricsSummary } from "@/lib/metrics/deployMetricsCore";

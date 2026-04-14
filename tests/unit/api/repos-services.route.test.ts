@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getServerSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 const executeGraphQLOperationMock = vi.fn();
 
-vi.mock("next-auth", () => ({
-	getServerSession: () => getServerSessionMock(),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 vi.mock("@/app/api/graphql/route", () => ({
@@ -17,14 +21,14 @@ describe("GET /api/repos/services", () => {
 	});
 
 	it("returns 401 for missing user", async () => {
-		getServerSessionMock.mockResolvedValue(null);
+		getSessionMock.mockResolvedValue(null);
 		const { GET } = await import("@/app/api/repos/services/route");
 		const res = await GET();
 		expect(res.status).toBe(401);
 	});
 
 	it("returns 500 when graphql operation fails", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockRejectedValue(new Error("bad db"));
 		const { GET } = await import("@/app/api/repos/services/route");
 		const res = await GET();
@@ -32,7 +36,7 @@ describe("GET /api/repos/services", () => {
 	});
 
 	it("returns services on success", async () => {
-		getServerSessionMock.mockResolvedValue({ userID: "u1" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockResolvedValue({
 			repoServices: [{ repo: "acme/repo" }],
 		});

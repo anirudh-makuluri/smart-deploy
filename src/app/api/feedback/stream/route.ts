@@ -1,15 +1,15 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-	const session = await getServerSession(authOptions);
-	const token = session?.accessToken;
+	const session = await auth.api.getSession({ headers: await headers() });
+	const userId = session?.user?.id;
 
-	if (!token) {
-		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+	if (!userId) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	let body: { repo_url?: string; commit_sha?: string; feedback?: string };

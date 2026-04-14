@@ -184,7 +184,7 @@ export async function detectServices(
 ) {
 	return withTiming("detectServices", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const urlTrimmed = String(url ?? "").trim();
 		let branchTrimmed = String(branch ?? "").trim();
@@ -206,7 +206,7 @@ export async function detectServices(
 
 		try {
 			if (!branchTrimmed) {
-				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.token);
+				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.githubToken);
 				branchTrimmed = default_branch;
 			}
 
@@ -214,7 +214,7 @@ export async function detectServices(
 				parsed.owner,
 				parsed.repo,
 				branchTrimmed,
-				ctx.token,
+				ctx.githubToken,
 				tmpDir
 			);
 
@@ -238,7 +238,7 @@ export async function detectServices(
 			);
 		} catch (inner: unknown) {
 			const message = inner instanceof GithubApiError 
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.token)}`
+				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
 				: inner instanceof Error
 					? inner.message
 					: "Failed to detect services";
@@ -268,7 +268,7 @@ export async function addRepoServiceRoot(
 ) {
 	return withTiming("addRepoServiceRoot", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const urlTrimmed = String(url ?? "").trim();
 		let branchTrimmed = String(branch ?? "").trim();
@@ -284,14 +284,14 @@ export async function addRepoServiceRoot(
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "add-repo-service-"));
 		try {
 			if (!branchTrimmed) {
-				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.token);
+				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.githubToken);
 				branchTrimmed = default_branch;
 			}
 			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(
 				parsed.owner,
 				parsed.repo,
 				branchTrimmed,
-				ctx.token,
+				ctx.githubToken,
 				tmpDir
 			);
 
@@ -345,7 +345,7 @@ export async function addRepoServiceRoot(
 			);
 		} catch (inner: unknown) {
 			const message = inner instanceof GithubApiError
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.token)}`
+				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
 				: inner instanceof Error
 					? inner.message
 					: "Failed to add service";
@@ -370,7 +370,7 @@ export async function removeRepoService(
 ) {
 	return withTiming("removeRepoService", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		let repoUrl = String(url ?? "").trim().replace(/\.git$/, "");
 		if (!repoUrl.startsWith("http")) {
@@ -428,13 +428,13 @@ export async function addPublicRepo(
 ) {
 	return withTiming("addPublicRepo", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const ownerTrimmed = String(owner ?? "").trim();
 		const repoTrimmed = String(repo ?? "").trim();
 		if (!ownerTrimmed || !repoTrimmed) throw new Error("Owner and repo are required");
 
-		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.token);
+		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.githubToken);
 
 		if (repoData.private) {
 			throw new Error("Private repositories are not supported. Please use your own repositories.");
@@ -628,7 +628,7 @@ export async function cloneRepo(
 	ctx: GraphQLContext
 ) {
 	return withTiming("cloneRepo", async () => {
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const repoUrlTrimmed = String(repoUrl ?? "").trim();
 		const repoNameTrimmed = String(repoName ?? "").trim();
@@ -638,7 +638,7 @@ export async function cloneRepo(
 		}
 
 		const repoDir = path.join(process.cwd(), "clones", repoNameTrimmed);
-		const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrlTrimmed, ctx.token);
+		const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrlTrimmed, ctx.githubToken);
 
 		try {
 			execSync(`git clone ${authenticatedUrl} ${repoDir}`, { stdio: "pipe" });
@@ -666,7 +666,7 @@ export async function prefillInfra(
 	ctx: GraphQLContext
 ) {
 	return withTiming("prefillInfra", async () => {
-		if (!ctx.token) throw new Error("Unauthorized");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const urlTrimmed = String(url ?? "").trim();
 		let branchTrimmed = String(branch ?? "").trim();
@@ -689,7 +689,7 @@ export async function prefillInfra(
 
 		try {
 			if (!branchTrimmed) {
-				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.token);
+				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.githubToken);
 				branchTrimmed = default_branch;
 			}
 
@@ -697,7 +697,7 @@ export async function prefillInfra(
 				parsed.owner,
 				parsed.repo,
 				branchTrimmed,
-				ctx.token,
+				ctx.githubToken,
 				tmpDir
 			);
 
@@ -718,7 +718,7 @@ export async function prefillInfra(
 			};
 		} catch (inner: unknown) {
 			const message = inner instanceof GithubApiError 
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.token)}`
+				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
 				: inner instanceof Error
 					? inner.message
 					: "Failed to prefill infrastructure";
@@ -740,9 +740,9 @@ export async function prefillInfra(
 export async function refreshRepos(_: unknown, __: unknown, ctx: GraphQLContext) {
 	return withTiming("refreshRepos", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
-		const response = await getGithubRepos(ctx.token);
+		const response = await getGithubRepos(ctx.githubToken);
 		if (response.error) throw new Error(String(response.error));
 
 		const repoList = response.data ?? [];

@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getServerSessionMock = vi.fn();
+const getSessionMock = vi.fn();
 
-vi.mock("next-auth", () => ({
-	getServerSession: (...args: unknown[]) => getServerSessionMock(...args),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 describe("DELETE /api/cache", () => {
@@ -12,7 +16,7 @@ describe("DELETE /api/cache", () => {
 	});
 
 	it("returns 401 when session token is missing", async () => {
-		getServerSessionMock.mockResolvedValue(null);
+		getSessionMock.mockResolvedValue(null);
 		const { DELETE } = await import("@/app/api/cache/route");
 
 		const res = await DELETE(
@@ -26,7 +30,7 @@ describe("DELETE /api/cache", () => {
 	});
 
 	it("returns 400 for invalid JSON", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		const { DELETE } = await import("@/app/api/cache/route");
 
 		const req = { json: vi.fn().mockRejectedValue(new Error("bad json")) } as unknown as Request;
@@ -35,7 +39,7 @@ describe("DELETE /api/cache", () => {
 	});
 
 	it("returns 400 when repo_url is missing", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		const { DELETE } = await import("@/app/api/cache/route");
 		const res = await DELETE(
 			new Request("http://localhost/api/cache", {
@@ -48,7 +52,7 @@ describe("DELETE /api/cache", () => {
 	});
 
 	it("proxies delete and returns json body when successful", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: true,
 			json: async () => ({ deleted: true }),
@@ -67,7 +71,7 @@ describe("DELETE /api/cache", () => {
 	});
 
 	it("returns 502 when proxy request fails", async () => {
-		getServerSessionMock.mockResolvedValue({ accessToken: "t" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: false,
 			status: 500,

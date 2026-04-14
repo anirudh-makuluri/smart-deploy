@@ -1,20 +1,16 @@
 -- Run this in the Supabase SQL Editor (Dashboard → SQL Editor) to create tables.
--- Replace existing Firebase/Firestore usage with these tables.
+-- Prerequisite: Better Auth tables must exist first (`npm run auth:migrate` with DATABASE_URL)
+-- so `public."user"` is present — this schema references it for foreign keys.
 
--- Users: id = auth provider user id (e.g. GitHub), profile fields
-create table if not exists public.users (
-  id text primary key,
-  name text,
-  image text,
-  created_at timestamptz default now(),
-);
+-- Identity lives in Better Auth's `public."user"` (created by `npm run auth:migrate`).
+-- App tables reference that id via foreign keys (same string id the session uses).
 
 -- Deployments: one row per deployment; id = deployment id (e.g. repo/branch slug)
 create table if not exists public.deployments (
   id text primary key,
   repo_name text not null,
   service_name text not null,
-  owner_id text not null references public.users(id) on delete cascade,
+  owner_id text not null references public."user"(id) on delete cascade,
   
   -- Core deployment fields
   url text not null default '',
@@ -46,7 +42,7 @@ create index if not exists idx_deployments_provider on public.deployments(cloud_
 -- Deployment history: stored per user so it survives deployment deletion
 create table if not exists public.deployment_history (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references public.users(id) on delete cascade,
+  user_id text not null references public."user"(id) on delete cascade,
   repo_name text not null,
   service_name text not null,
   timestamp timestamptz not null default now(),
@@ -67,7 +63,7 @@ create index if not exists idx_deployment_history_user_time
 -- Artifact generation events: append-only facts about generated infra files.
 create table if not exists public.artifact_events (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references public.users(id) on delete cascade,
+  user_id text not null references public."user"(id) on delete cascade,
   repo_name text not null,
   service_name text not null,
   timestamp timestamptz not null default now(),
@@ -84,7 +80,7 @@ create index if not exists idx_artifact_events_user_repo_service
 
 -- User repos: one row per repo per user with denormalized fields
 create table if not exists public.user_repos (
-  user_id text not null references public.users(id) on delete cascade,
+  user_id text not null references public."user"(id) on delete cascade,
   repo_name text not null,
   
   -- Repository metadata (denormalized for efficient querying)
@@ -121,7 +117,7 @@ create index if not exists idx_user_repos_synced_at on public.user_repos(user_id
 
 -- Detected services per repo (from detect-services); one row per repo per user
 create table if not exists public.repo_services (
-  user_id text not null references public.users(id) on delete cascade,
+  user_id text not null references public."user"(id) on delete cascade,
   repo_url text not null,
   branch text not null default 'main',
   repo_owner text not null,
@@ -154,7 +150,7 @@ create table if not exists public.approved_users (
 );
 create index if not exists idx_approved_users_email on public.approved_users(email);
 
--- Optional: minimal table for health checks (or use: select 1 from users limit 1)
+-- Optional: minimal table for health checks (or use: select 1 from public._health limit 1)
 create table if not exists public._health (
   id int primary key default 1,
   checked_at timestamptz default now()
@@ -162,7 +158,6 @@ create table if not exists public._health (
 insert into public._health (id) values (1) on conflict (id) do nothing;
 
 -- RLS: disable or set policies as needed; service role bypasses RLS
-alter table public.users enable row level security;
 alter table public.deployments enable row level security;
 alter table public.deployment_history enable row level security;
 alter table public.user_repos enable row level security;

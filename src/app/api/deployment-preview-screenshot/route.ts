@@ -6,10 +6,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/authOptions";
 import { dbHelper } from "@/db-helper";
 import { captureDeploymentScreenshotAndUpload } from "@/lib/deploymentScreenshot";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,8 +23,8 @@ interface RequestBody {
 export async function POST(request: NextRequest) {
 	const start = Date.now();
 	try {
-		const session = await getServerSession(authOptions);
-		const userID = (session as { userID?: string })?.userID;
+		const session = await auth.api.getSession({ headers: await headers() });
+		const userID = session?.user?.id;
 		if (!userID) {
 			return NextResponse.json(
 				{ error: "Unauthorized" },

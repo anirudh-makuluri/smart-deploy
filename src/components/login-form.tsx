@@ -4,12 +4,61 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signIn } from "next-auth/react";
+import * as React from "react";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
 
 export function LoginForm({
 	className,
 	...props
 }: React.ComponentProps<"div">) {
+	const [email, setEmail] = React.useState("");
+	const [password, setPassword] = React.useState("");
+	const [pending, setPending] = React.useState<null | "google" | "github" | "email">(null);
+
+	async function signInWithProvider(provider: "google" | "github") {
+		setPending(provider);
+		try {
+			await authClient.signIn.social({
+				provider,
+				callbackURL: "/home",
+			});
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Sign in failed");
+		} finally {
+			setPending(null);
+		}
+	}
+
+	async function signInWithEmail(e: React.FormEvent) {
+		e.preventDefault();
+		const emailTrimmed = email.trim().toLowerCase();
+		if (!emailTrimmed) {
+			toast.error("Please enter an email");
+			return;
+		}
+		if (!password) {
+			toast.error("Please enter a password");
+			return;
+		}
+		setPending("email");
+		try {
+			const res = await authClient.signIn.email({
+				email: emailTrimmed,
+				password,
+				callbackURL: "/home",
+			});
+			if (res?.error) {
+				toast.error(res.error.message || "Sign in failed");
+				return;
+			}
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Sign in failed");
+		} finally {
+			setPending(null);
+		}
+	}
+
 	return (
 		<div className={cn("flex flex-col gap-5", className)} {...props}>
 			{/* Card-style container with landing theme */}
@@ -18,23 +67,24 @@ export function LoginForm({
 
 				<div className="flex flex-col gap-3">
 					<Button
-						disabled
 						type="button"
 						variant="outline"
 						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("google", { callbackUrl: "/home" })}
+						disabled={pending !== null}
+						onClick={() => void signInWithProvider("google")}
 					>
 						<GoogleIcon className="size-5 mr-2" />
-						Login with Google
+						{pending === "google" ? "Connecting…" : "Login with Google"}
 					</Button>
 					<Button
 						type="button"
 						variant="outline"
 						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("github", { callbackUrl: "/home" })}
+						disabled={pending !== null}
+						onClick={() => void signInWithProvider("github")}
 					>
 						<GitHubIcon className="size-5 mr-2" />
-						Login with GitHub
+						{pending === "github" ? "Connecting…" : "Login with GitHub"}
 					</Button>
 				</div>
 
@@ -47,8 +97,7 @@ export function LoginForm({
 					</div>
 				</div>
 
-				{/* Sign in with email and password (UI only; functionality later) */}
-				<form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
+				<form className="flex flex-col gap-4" onSubmit={(e) => void signInWithEmail(e)}>
 					<div className="space-y-2">
 						<Label htmlFor="auth-email" className="text-foreground text-sm">
 							Email
@@ -59,7 +108,9 @@ export function LoginForm({
 							placeholder="you@example.com"
 							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
 							autoComplete="email"
-							disabled
+							disabled={pending !== null}
+							value={email}
+							onChange={(e) => setEmail(e.target.value)}
 						/>
 					</div>
 					<div className="space-y-2">
@@ -72,15 +123,17 @@ export function LoginForm({
 							placeholder="••••••••"
 							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
 							autoComplete="current-password"
-							disabled
+							disabled={pending !== null}
+							value={password}
+							onChange={(e) => setPassword(e.target.value)}
 						/>
 					</div>
 					<Button
 						type="submit"
 						className="w-full h-11 landing-build-blue hover:opacity-95 text-white font-medium"
-						disabled
+						disabled={pending !== null}
 					>
-						Sign in with email
+						{pending === "email" ? "Signing in…" : "Sign in with email"}
 					</Button>
 				</form>
 			</div>

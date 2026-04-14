@@ -88,7 +88,7 @@ The Next.js app hosts sign-in, the repository and dashboard UI, API routes, and 
 - Tailwind CSS 4
 - shadcn/ui
 - Supabase
-- NextAuth
+- Better Auth
 - GraphQL + REST API routes
 - WebSocket worker for long-running deploy operations
 - AWS SDK and GCP integrations
@@ -128,8 +128,9 @@ Minimum variables for local access:
 | Variable | Notes |
 |----------|-------|
 | `GITHUB_ID`, `GITHUB_SECRET` | GitHub OAuth app credentials |
-| `NEXTAUTH_SECRET` | Shared by the app and WebSocket worker |
-| `NEXTAUTH_URL` | Usually `http://localhost:3000` locally |
+| `BETTER_AUTH_SECRET` | Shared by the app and WebSocket worker |
+| `BETTER_AUTH_URL` | Usually `http://localhost:3000` locally |
+| `DATABASE_URL` | Supabase Postgres connection string (server-only) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase credentials |
 | `NEXT_PUBLIC_WS_URL` | Usually `ws://localhost:4001` locally |
 
@@ -198,7 +199,7 @@ One supported setup is:
 - deploy the WebSocket worker to Render with `Dockerfile.websocket`
 - set `NEXT_PUBLIC_WS_URL` to the worker URL
 - set `WS_ALLOWED_ORIGINS` on the worker
-- keep `NEXTAUTH_SECRET` identical in both services
+- keep `BETTER_AUTH_SECRET` identical in both services
 
 Health endpoints:
 
@@ -216,8 +217,8 @@ Health endpoints:
 
 | Category | Variables |
 |----------|-----------|
-| Auth | `GITHUB_ID`, `GITHUB_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` |
-| Database | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
+| Auth | `GITHUB_ID`, `GITHUB_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` |
+| Database | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` |
 | Internal APIs | `SD_API_BASE_URL`, `SD_API_BEARER_TOKEN` |
 | WebSocket | `NEXT_PUBLIC_WS_URL`, `WS_ALLOWED_ORIGINS`, `WS_PORT` |
 | Generation | `GEMINI_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `BEDROCK_MODEL_ID` |

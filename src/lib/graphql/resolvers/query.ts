@@ -102,13 +102,13 @@ export async function resolveRepo(
 ) {
 	return withTiming("resolveRepo", async () => {
 		const userID = requireUser(ctx);
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const ownerTrimmed = (owner ?? "").trim();
 		const repoTrimmed = (repo ?? "").trim();
 		if (!ownerTrimmed || !repoTrimmed) throw new Error("Owner and repo are required");
 
-		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.token);
+		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.githubToken);
 		await dbHelper.syncUserRepos(userID, [repoData]);
 
 		return repoData;
@@ -125,7 +125,7 @@ export async function latestCommit(
 	ctx: GraphQLContext
 ) {
 	return withTiming("latestCommit", async () => {
-		if (!ctx.token) throw new Error("Missing access token");
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
 
 		const ownerTrimmed = (owner ?? "").trim();
 		const repoTrimmed = (repo ?? "").trim();
@@ -137,7 +137,7 @@ export async function latestCommit(
 		if (!branchTrimmed) {
 			const metaRes = await fetch(`https://api.github.com/repos/${ownerTrimmed}/${repoTrimmed}`, {
 				headers: {
-					Authorization: `token ${ctx.token}`,
+					Authorization: `token ${ctx.githubToken}`,
 					Accept: "application/vnd.github+json",
 				},
 			});
@@ -150,7 +150,7 @@ export async function latestCommit(
 		}
 		if (!branchTrimmed) throw new Error("Could not resolve a branch for this repository");
 
-		const commitData = await fetchLatestCommit(ownerTrimmed, repoTrimmed, branchTrimmed, ctx.token);
+		const commitData = await fetchLatestCommit(ownerTrimmed, repoTrimmed, branchTrimmed, ctx.githubToken);
 
 		return {
 			commit: commitData,
