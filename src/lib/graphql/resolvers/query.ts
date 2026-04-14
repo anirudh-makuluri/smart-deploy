@@ -381,6 +381,41 @@ function transformDeployment(deployment: any) {
 		return obj;
 	};
 
+	const sanitizeEc2Details = (ec2: any): EC2Details | null => {
+		const candidate = nullifyIfEmpty(ec2);
+		if (!candidate) return null;
+
+		const requiredStringKeys: Array<keyof Omit<EC2Details, "success">> = [
+			"baseUrl",
+			"instanceId",
+			"publicIp",
+			"vpcId",
+			"subnetId",
+			"securityGroupId",
+			"amiId",
+			"sharedAlbDns",
+			"instanceType",
+		];
+
+		for (const key of requiredStringKeys) {
+			const v = (candidate as any)[key];
+			if (typeof v !== "string" || !v.trim()) return null;
+		}
+
+		return {
+			success: typeof candidate.success === "boolean" ? candidate.success : true,
+			baseUrl: candidate.baseUrl,
+			instanceId: candidate.instanceId,
+			publicIp: candidate.publicIp,
+			vpcId: candidate.vpcId,
+			subnetId: candidate.subnetId,
+			securityGroupId: candidate.securityGroupId,
+			amiId: candidate.amiId,
+			sharedAlbDns: candidate.sharedAlbDns,
+			instanceType: candidate.instanceType,
+		};
+	};
+
 	return {
 		id: deployment.id,
 		repoName: deployment.repoName,
@@ -400,7 +435,7 @@ function transformDeployment(deployment: any) {
 		cloudProvider: deployment.cloudProvider ? mapCloudProviderToEnum(deployment.cloudProvider) : null,
 		deploymentTarget: deployment.deploymentTarget ? mapDeploymentTargetToEnum(deployment.deploymentTarget) : null,
 		awsRegion: deployment.awsRegion || undefined,
-		ec2: nullifyIfEmpty(deployment.ec2),
+		ec2: sanitizeEc2Details(deployment.ec2),
 		cloudRun: nullifyIfEmpty(deployment.cloudRun),
 	};
 }

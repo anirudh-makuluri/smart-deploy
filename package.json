@@ -12,9 +12,9 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "ws": "ts-node ./src/websocket-server.ts",
-    "ws:build": "tsc -p tsconfig.websocket.json",
-    "ws:start": "node dist/websocket-server.js",
+    "ws": "ts-node -r tsconfig-paths/register -P tsconfig.websocket.json ./src/websocket-server.ts",
+    "ws:build": "tsc -p tsconfig.websocket.json && tsc-alias -p tsconfig.websocket.json",
+    "ws:start": "node ./dist/websocket-server.js",
     "start-all": "concurrently \"npm run dev\" \"npm run ws\"",
     "changelog:snapshot": "node scripts/generate-changelog-snapshot.mjs"
   },
@@ -101,6 +101,8 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.11",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.16",
+    "tsconfig-paths": "^4.2.0",
     "tw-animate-css": "^1.3.4",
     "typescript": "^5",
     "vitest": "^4.1.0"

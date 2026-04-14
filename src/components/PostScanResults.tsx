@@ -42,6 +42,12 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		);
 	}, [results.dockerfiles]);
 
+	const deploymentIdShort = useMemo(() => {
+		const raw = (deployment as any)?.id;
+		if (raw === null || raw === undefined) return "—";
+		return String(raw).substring(0, 12);
+	}, [deployment]);
+
 	const initialActiveTab = dockerfileNames[0] ?? "";
 	const [activeTab, setActiveTab] = useState<string>(initialActiveTab);
 	const [isEditing, setIsEditing] = useState(false);
@@ -341,7 +347,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 							<CheckCircle2 className="size-3" />
 							Analysis Complete
 						</div>
-						<span className="text-[10px] text-muted-foreground/40 font-mono tracking-tighter uppercase">Deployment ID: {deployment.id.substring(0, 12)}</span>
+						<span className="text-[10px] text-muted-foreground/40 font-mono tracking-tighter uppercase">Deployment ID: {deploymentIdShort}</span>
 					</div>
 					<h2 className="text-4xl font-extrabold tracking-tight text-white bg-clip-text text-transparent bg-gradient-to-r from-white via-white to-white/40">
 						Post-Scan Results
