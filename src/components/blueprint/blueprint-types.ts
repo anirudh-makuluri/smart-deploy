@@ -11,7 +11,7 @@ export type BlueprintNodeKind =
 	| "customDomain"
 	| "infrastructure";
 
-export type BlueprintEdgeKind = "input" | "reference";
+export type BlueprintEdgeKind = "input" | "reference" | "traffic";
 
 export type BlueprintNode = {
 	id: string;

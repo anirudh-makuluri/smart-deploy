@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
+import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -29,13 +30,13 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		scan_results,
 	} = row;
 
-	return {
+	const ownerID = String(owner_id ?? "");
+	const normalized = withDeployInfraDefaults({
 		id,
-		repoName: repo_name || '',
-		serviceName: service_name || '',
-		ownerID: owner_id || '',
-		url: url || '',
-		branch: branch || '',
+		repoName: repo_name || "",
+		serviceName: service_name || "",
+		url: url || "",
+		branch: branch || "",
 		commitSha: commit_sha ?? null,
 		envVars: env_vars ?? undefined,
 		liveUrl: live_url ?? null,
@@ -44,13 +45,14 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		firstDeployment: first_deployment ?? null,
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
-		cloudProvider: (cloud_provider as 'aws' | 'gcp') || 'aws',
-		deploymentTarget: (deployment_target as 'ec2' | 'cloud_run') || 'ec2',
-		awsRegion: aws_region || '',
+		cloudProvider: (cloud_provider as "aws" | "gcp") || "aws",
+		deploymentTarget: (deployment_target as "ec2" | "cloud_run") || "ec2",
+		awsRegion: aws_region || "",
 		ec2: (ec2 as Record<string, unknown>) || {},
 		cloudRun: (cloud_run as Record<string, unknown>) || {},
 		scanResults: (scan_results || {}) as Record<string, unknown>,
-	} as DeployConfig & { ownerID: string };
+	} as DeployConfig);
+	return { ...normalized, ownerID } as DeployConfig & { ownerID: string };
 }
 
 /**

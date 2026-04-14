@@ -8,7 +8,7 @@ const MENU_ITEMS: MenuItem[] = [
 	{ id: "overview", label: "Overview" },
 	{ id: "setup", label: "Setup" },
 	{ id: "scan", label: "Scan" },
-	{ id: "blueprint", label: "Blueprint" },
+	{ id: "blueprint", label: "Preview" },
 	{ id: "logs", label: "Logs" },
 	{ id: "history", label: "Deployment History" },
 ];

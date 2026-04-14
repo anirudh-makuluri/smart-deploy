@@ -1,6 +1,7 @@
 import type { BlueprintEdge, BlueprintInput, BlueprintModel, BlueprintNode } from "@/components/blueprint/blueprint-types";
 import config from "@/config";
 import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
+import { validateBlueprint } from "@/components/blueprint/blueprint-validators";
 
 const NODE_WIDTH = 232;
 const HUB_WIDTH = 280;
@@ -17,6 +18,10 @@ const ROW_Y = {
 	middle: 266,
 	bottom: 440,
 } as const;
+
+function serviceNodeId(name: string) {
+	return `service-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+}
 
 function envVarCount(raw: string | null | undefined) {
 	if (!raw?.trim()) return 0;
@@ -64,6 +69,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			: dockerfileEntries[0]?.[0];
 	const envCount = envVarCount(deployment.envVars);
 	const deployConfigId = "deploy-config";
+	const issues = validateBlueprint(deployment, scanResults);
 
 	nodes.push({
 		id: deployConfigId,
@@ -85,28 +91,39 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		},
 	});
 
-	nodes.push({
-		id: "service",
-		kind: "service",
-		title: deployment.serviceName,
-		subtitle: primaryService ? [primaryService.framework, primaryService.language].filter(Boolean).join(" / ") || "Detected service" : "Selected service",
-		x: COLUMN_X.context,
-		y: ROW_Y.top,
-		width: NODE_WIDTH,
-		height: NODE_HEIGHT,
-		data: {
-			repo: deployment.repoName,
-			service: deployment.serviceName,
-			framework: primaryService?.framework || "unknown",
-			language: primaryService?.language || "unknown",
-		},
-	});
-	edges.push({
-		id: "service-deploy-config",
-		from: "service",
-		to: deployConfigId,
-		kind: "input",
-		label: "service",
+	const renderedServices = services.length > 0
+		? services
+		: [{ name: deployment.serviceName, framework: undefined, language: undefined, port: undefined, build_context: undefined, dockerfile_path: undefined }];
+
+	renderedServices.forEach((service, index) => {
+		const id = serviceNodeId(service.name);
+		const isPrimary = service.name === (primaryService?.name ?? deployment.serviceName);
+		nodes.push({
+			id,
+			kind: "service",
+			title: service.name,
+			subtitle: [service.framework, service.language].filter(Boolean).join(" / ") || (isPrimary ? "Selected service" : "Detected service"),
+			x: COLUMN_X.context,
+			y: ROW_Y.top + index * 160,
+			width: NODE_WIDTH,
+			height: NODE_HEIGHT,
+			data: {
+				repo: deployment.repoName,
+				service: service.name,
+				framework: service.framework || "unknown",
+				language: service.language || "unknown",
+				port: service.port ?? "",
+				buildContext: service.build_context ?? "",
+				dockerfilePath: service.dockerfile_path ?? "",
+			},
+		});
+		edges.push({
+			id: `${id}-deploy-config`,
+			from: id,
+			to: deployConfigId,
+			kind: "input",
+			label: isPrimary ? "service" : "service (detected)",
+		});
 	});
 
 	nodes.push({
@@ -174,7 +191,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		edges.push({
 			id: "dockerfile-service",
 			from: "dockerfile",
-			to: "service",
+			to: primaryService ? serviceNodeId(primaryService.name) : serviceNodeId(deployment.serviceName),
 			kind: "reference",
 			label: "builds",
 		});
@@ -236,6 +253,16 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			kind: "input",
 			label: "artifact",
 		});
+
+		if (primaryService) {
+			edges.push({
+				id: "nginx-service-traffic",
+				from: "nginx",
+				to: serviceNodeId(primaryService.name),
+				kind: "traffic",
+				label: "routes",
+			});
+		}
 	}
 
 	nodes.push({
@@ -290,15 +317,15 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			id: "domain-nginx",
 			from: "custom-domain",
 			to: "nginx",
-			kind: "reference",
-			label: "uses",
+			kind: "traffic",
+			label: "public",
 		});
 	}
 
 	return {
 		nodes,
 		edges,
-		issues: [],
+		issues,
 		metrics: {
 			serviceCount: services.length,
 			publicEndpoints: deployment.liveUrl?.trim() ? 1 : 0,

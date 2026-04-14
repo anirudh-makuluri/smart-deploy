@@ -42,6 +42,9 @@ export const BLUEPRINT_NODE_FIELDS: Record<BlueprintNodeKind, BlueprintFieldDefi
 		{ key: "service", label: "Service" },
 		{ key: "framework", label: "Framework" },
 		{ key: "language", label: "Language" },
+		{ key: "port", label: "Runtime Port", type: "number", editable: true, placeholder: "3000" },
+		{ key: "buildContext", label: "Build Context", type: "text", editable: true, placeholder: "." },
+		{ key: "dockerfilePath", label: "Dockerfile Path", type: "text", editable: true, placeholder: "Dockerfile" },
 	],
 	branch: [
 		{ key: "branch", label: "Branch", type: "select", editable: true, placeholder: "Select branch" },

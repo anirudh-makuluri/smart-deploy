@@ -2,9 +2,10 @@ import { DeployConfig } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import config from "@/config";
 import { getDeploymentForService } from "@/lib/utils";
+import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 
 function createDefaultDeployment(repoName: string, serviceName: string, repoUrl?: string, branch?: string): DeployConfig {
-	return {
+	return withDeployInfraDefaults({
 		id: `draft-${repoName}-${serviceName}`,
 		repoName,
 		serviceName,
@@ -20,11 +21,11 @@ function createDefaultDeployment(repoName: string, serviceName: string, repoUrl?
 		revision: null,
 		cloudProvider: "aws",
 		deploymentTarget: "ec2",
-		awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
+		awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "",
 		ec2: null,
 		cloudRun: null,
 		scanResults: {},
-	};
+	});
 }
 
 export function useActiveDeployment(): DeployConfig {
@@ -43,7 +44,7 @@ export function useActiveDeployment(): DeployConfig {
 		activeRepo.name
 	);
 
-	if (found) return found;
+	if (found) return withDeployInfraDefaults(found);
 
 	return createDefaultDeployment(activeRepo.name, activeServiceName, activeRepo.html_url, activeRepo.default_branch);
 }

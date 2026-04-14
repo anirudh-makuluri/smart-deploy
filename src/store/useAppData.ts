@@ -1,4 +1,5 @@
 import { DeployConfig, repoType, RepoServicesRecord, DetectedServiceInfo } from '@/app/types';
+import { withDeployInfraDefaults } from '@/lib/deployInfraDefaults';
 import { create } from 'zustand';
 import {
 	fetchAppOverview,
@@ -113,7 +114,7 @@ function mergeDeploymentLists(existing: DeployConfig[], incoming: DeployConfig[]
 		merged.set(deploymentKey(deployment), deployment);
 	}
 
-	return sortDeployments(Array.from(merged.values()));
+	return sortDeployments(Array.from(merged.values()).map(withDeployInfraDefaults));
 }
 
 function repoServicesKey(record: Pick<RepoServicesRecord, "repo_url">): string {
@@ -279,10 +280,10 @@ export const useAppData = create<AppState>((set, get) => ({
 			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existing = deployments.find(matchKey);
-		const merged: DeployConfig = {
+		const merged: DeployConfig = withDeployInfraDefaults({
 			...(existing ?? ({} as DeployConfig)),
 			...partial,
-		};
+		} as DeployConfig);
 
 		let updatedList: DeployConfig[];
 		if (merged.status === 'stopped') {

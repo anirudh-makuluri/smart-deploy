@@ -1,7 +1,63 @@
 {
-	"generatedAt": "2026-04-12T20:04:36.482Z",
+	"generatedAt": "2026-04-14T02:09:46.016Z",
 	"commitCount": 120,
 	"commits": [
+		{
+			"hash": "4fda48bc351e67588b347e266436b45e179f4ba6",
+			"shortHash": "4fda48b",
+			"date": "2026-04-13",
+			"author": "amakulur",
+			"subject": "fixed using existing repo files",
+			"prNumber": null
+		},
+		{
+			"hash": "dd7b602f29392cceb83b78ce89bdc474c75931ab",
+			"shortHash": "dd7b602",
+			"date": "2026-04-13",
+			"author": "amakulur",
+			"subject": "feat: implement artifact generation tracking and metrics",
+			"prNumber": null
+		},
+		{
+			"hash": "41b25d4855620c4a16af7e6de45370f25d53f5e5",
+			"shortHash": "41b25d4",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "added posthog",
+			"prNumber": null
+		},
+		{
+			"hash": "0033827f05b9c043b953a59f9e08e59666c4e15f",
+			"shortHash": "0033827",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "show metrics on landing page",
+			"prNumber": null
+		},
+		{
+			"hash": "a852e8c4ba0fb0b8dd1dad6813f0a055f5b0e542",
+			"shortHash": "a852e8c",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "refactored service detection",
+			"prNumber": null
+		},
+		{
+			"hash": "9da3a4ab7837f30bcfa8973758969d19ebe2583e",
+			"shortHash": "9da3a4a",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "updated changelog",
+			"prNumber": null
+		},
+		{
+			"hash": "e70996346f40cf0f75a4cbf471b8fd96c58cd341",
+			"shortHash": "e709963",
+			"date": "2026-04-12",
+			"author": "amakulur",
+			"subject": "feat: add changelog snapshot generation and update changelog page to use it",
+			"prNumber": null
+		},
 		{
 			"hash": "cea221950f5098d7f16ac77d048a28bde283499f",
 			"shortHash": "cea2219",
@@ -904,62 +960,6 @@
 			"date": "2026-03-01",
 			"author": "amakulur",
 			"subject": "Refactor deployment logging and history retrieval for improved snapshot handling",
-			"prNumber": null
-		},
-		{
-			"hash": "60fa14705fe0d91500b241044172fe17d301de00",
-			"shortHash": "60fa147",
-			"date": "2026-03-01",
-			"author": "amakulur",
-			"subject": "Enhance deployment handling and service detection",
-			"prNumber": null
-		},
-		{
-			"hash": "aa9e7d95a29c112c78ab838919c571b1787f353f",
-			"shortHash": "aa9e7d9",
-			"date": "2026-03-01",
-			"author": "Anirudh Makuluri",
-			"subject": "Merge pull request #3 from anirudh-makuluri/develop",
-			"prNumber": 3
-		},
-		{
-			"hash": "0640891c335427465999c738260f193afd20a672",
-			"shortHash": "0640891",
-			"date": "2026-03-01",
-			"author": "amakulur",
-			"subject": "Refactor deployment handling and improve cloud provider support",
-			"prNumber": null
-		},
-		{
-			"hash": "397c86ee4033bb58c75cd9c7f1e9875b5927727b",
-			"shortHash": "397c86e",
-			"date": "2026-03-01",
-			"author": "Anirudh Makuluri",
-			"subject": "Merge pull request #2 from anirudh-makuluri/develop",
-			"prNumber": 2
-		},
-		{
-			"hash": "b0e8493ffae3a59da8e21c2bfa147e636b0a13bb",
-			"shortHash": "b0e8493",
-			"date": "2026-03-01",
-			"author": "amakulur",
-			"subject": "add commit message to deployment history",
-			"prNumber": null
-		},
-		{
-			"hash": "fd86bf517f5f06cafc5a2d023162aee6343466fe",
-			"shortHash": "fd86bf5",
-			"date": "2026-03-01",
-			"author": "amakulur",
-			"subject": "delete, pause deployment",
-			"prNumber": null
-		},
-		{
-			"hash": "a050ea5c4ff3d34f0e4b7855e9167a47b4d47af5",
-			"shortHash": "a050ea5",
-			"date": "2026-03-01",
-			"author": "amakulur",
-			"subject": "show deploy notif when deployment is going on",
 			"prNumber": null
 		}
 	]
