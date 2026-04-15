@@ -40,6 +40,10 @@ async function proxy(req: NextRequest, params: { path?: string[] }) {
 	const upstreamRes = await fetch(upstreamUrl, init);
 
 	const resHeaders = new Headers(upstreamRes.headers);
+	resHeaders.delete("content-encoding");
+	resHeaders.delete("content-length");
+	resHeaders.delete("transfer-encoding");
+	resHeaders.delete("connection");
 	// Ensure the browser treats it as non-cacheable in dev/prod.
 	resHeaders.set("Cache-Control", "no-store");
 
