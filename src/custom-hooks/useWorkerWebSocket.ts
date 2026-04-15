@@ -45,6 +45,7 @@ const defaultSteps: DeployStep[] = [
 ];
 
 const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function getActiveDeployment(): { repoName: string; serviceName: string; userID?: string } | null {
 	if (typeof window === "undefined") return null;
@@ -212,6 +213,11 @@ export function useWorkerWebSocketSession({
 		if (!connectionEnabledRef.current) return;
 		clearReconnectTimer();
 		reconnectAttemptRef.current += 1;
+		if (reconnectAttemptRef.current > MAX_RECONNECT_ATTEMPTS) {
+			setSocketStatus("error");
+			setDeployError("Deploy worker unreachable");
+			return;
+		}
 		const delay = Math.min(1000 * (2 ** (reconnectAttemptRef.current - 1)), 10000);
 		reconnectTimerRef.current = setTimeout(() => {
 			reconnectTimerRef.current = null;
