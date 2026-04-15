@@ -129,6 +129,7 @@ export function useWorkerWebSocketSession({
 	const [vercelDnsStatus, setVercelDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
 	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<ServiceLogEntry[]>([]);
+	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
@@ -226,6 +227,7 @@ export function useWorkerWebSocketSession({
 
 				ws.onopen = () => {
 					connectInFlightRef.current = false;
+					setHasConnectedOnce(true);
 					setSocketStatus("open");
 					initiateServiceLogs();
 					flushOnReadyQueue();
@@ -445,6 +447,7 @@ export function useWorkerWebSocketSession({
 			onReadyQueueRef.current = [];
 			wsRef.current?.close();
 			wsRef.current = null;
+				setHasConnectedOnce(false);
 			setSocketStatus("closed");
 			return;
 		}
@@ -529,6 +532,7 @@ export function useWorkerWebSocketSession({
 		vercelDnsError,
 		initiateServiceLogs,
 		serviceLogs,
+		hasConnectedOnce,
 		setOnDeployFinished,
 	};
 }

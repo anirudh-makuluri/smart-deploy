@@ -48,12 +48,15 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 		message: string;
 		services: SystemHealthService[];
 	} => {
+		const workerOnline = workerWs.hasConnectedOnce || workerWs.socketStatus === "open";
 		const wsRow: SystemHealthService = {
 			name: "WebSocket server",
-			status: workerWs.socketStatus === "open" ? "healthy" : "unavailable",
+			status: workerOnline ? "healthy" : "unavailable",
 			message:
 				workerWs.socketStatus === "open"
 					? "Connected to deploy worker"
+					: workerWs.hasConnectedOnce
+						? "Deploy worker connected"
 					: workerWs.socketStatus === "connecting"
 						? "Connecting to deploy worker…"
 						: workerWs.socketStatus === "closed"
@@ -63,7 +66,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 
 		const services: SystemHealthService[] = [wsRow, ...artifactsHealth.services];
 
-		const wsOk = workerWs.socketStatus === "open";
+		const wsOk = workerOnline;
 		const artifactsOk =
 			artifactsHealth.services.length > 0 && artifactsHealth.services.every((s) => s.status === "healthy");
 
@@ -96,7 +99,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 			message: "One or more services need attention",
 			services,
 		};
-	}, [workerWs.socketStatus, artifactsHealth]);
+	}, [workerWs.hasConnectedOnce, workerWs.socketStatus, artifactsHealth]);
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;
@@ -132,7 +135,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 
 	return (
 		<header className="sticky top-0 z-50 w-full shrink-0 border-b border-white/5 bg-background/50 backdrop-blur-md">
-			<div className="mx-auto flex max-w-[1600px] flex-row items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
+			<div className="mx-auto flex max-w-400 flex-row items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
 				<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
 					<SmartDeployLogo
 						href="/home"
