@@ -45,7 +45,6 @@ const defaultSteps: DeployStep[] = [
 ];
 
 const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
-const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function getActiveDeployment(): { repoName: string; serviceName: string; userID?: string } | null {
 	if (typeof window === "undefined") return null;
@@ -136,19 +135,11 @@ export function useWorkerWebSocketSession({
 	const wsRef = useRef<WebSocket | null>(null);
 	const activeDeploymentToastShownRef = useRef(false);
 	const onDeployFinishedRef = useRef<((payload: DeployCompleteWsPayload) => void) | undefined>(undefined);
-	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const reconnectAttemptRef = useRef(0);
 	const connectionEnabledRef = useRef(connectionEnabled);
 	const connectInFlightRef = useRef(false);
+	const connectionAttemptedRef = useRef(false);
 	const onReadyQueueRef = useRef<Array<() => void>>([]);
 	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
-
-	const clearReconnectTimer = useCallback(() => {
-		if (reconnectTimerRef.current) {
-			clearTimeout(reconnectTimerRef.current);
-			reconnectTimerRef.current = null;
-		}
-	}, []);
 
 	const flushOnReadyQueue = useCallback(() => {
 		const queue = onReadyQueueRef.current;
@@ -209,33 +200,14 @@ export function useWorkerWebSocketSession({
 		}
 	}, [repoName, serviceName]);
 
-	const scheduleReconnect = useCallback(() => {
-		if (!connectionEnabledRef.current) return;
-		clearReconnectTimer();
-		reconnectAttemptRef.current += 1;
-		if (reconnectAttemptRef.current > MAX_RECONNECT_ATTEMPTS) {
-			setSocketStatus("error");
-			setDeployError("Deploy worker unreachable");
-			return;
-		}
-		const delay = Math.min(1000 * (2 ** (reconnectAttemptRef.current - 1)), 10000);
-		reconnectTimerRef.current = setTimeout(() => {
-			reconnectTimerRef.current = null;
-			if (!connectionEnabledRef.current) return;
-			const socket = wsRef.current;
-			if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-				return;
-			}
-			if (connectInFlightRef.current) return;
-			setSocketStatus("connecting");
-			openSocketRef.current();
-		}, delay);
-	}, [clearReconnectTimer]);
-
 	const createWebSocket = useCallback(() => {
 		if (connectInFlightRef.current) {
 			return null;
 		}
+		if (connectionAttemptedRef.current) {
+			return wsRef.current;
+		}
+		connectionAttemptedRef.current = true;
 		connectInFlightRef.current = true;
 		setSocketStatus("connecting");
 		activeDeploymentToastShownRef.current = false;
@@ -254,8 +226,6 @@ export function useWorkerWebSocketSession({
 
 				ws.onopen = () => {
 					connectInFlightRef.current = false;
-					reconnectAttemptRef.current = 0;
-					clearReconnectTimer();
 					setSocketStatus("open");
 					initiateServiceLogs();
 					flushOnReadyQueue();
@@ -426,22 +396,17 @@ export function useWorkerWebSocketSession({
 						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
 					}
 					wasDeployingRef.current = false;
-					scheduleReconnect();
 				};
 			} catch (error) {
 				connectInFlightRef.current = false;
 				setSocketStatus("error");
 				const message = error instanceof Error ? error.message : "Failed to authenticate websocket connection";
 				setDeployError(message);
-				if (message.includes("NEXT_PUBLIC_WS_URL") || message.includes("authenticate websocket connection")) {
-					return;
-				}
-				scheduleReconnect();
 			}
 		})();
 
 		return null;
-	}, [announceActiveDeployments, clearReconnectTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs, scheduleReconnect]);
+	}, [announceActiveDeployments, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
@@ -475,9 +440,8 @@ export function useWorkerWebSocketSession({
 		if (typeof window === "undefined") return;
 
 		if (!connectionEnabled) {
-			clearReconnectTimer();
-			reconnectAttemptRef.current = 0;
 			connectInFlightRef.current = false;
+			connectionAttemptedRef.current = false;
 			onReadyQueueRef.current = [];
 			wsRef.current?.close();
 			wsRef.current = null;
@@ -486,7 +450,7 @@ export function useWorkerWebSocketSession({
 		}
 
 		openSocket();
-	}, [clearReconnectTimer, connectionEnabled, openSocket]);
+	}, [connectionEnabled, openSocket]);
 
 	useEffect(() => {
 		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") return;
@@ -512,12 +476,11 @@ export function useWorkerWebSocketSession({
 
 	useEffect(() => {
 		return () => {
-			clearReconnectTimer();
 			connectInFlightRef.current = false;
 			onReadyQueueRef.current = [];
 			wsRef.current?.close();
 		};
-	}, [clearReconnectTimer]);
+	}, []);
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
 		deployConfigRef.current = deployConfig;

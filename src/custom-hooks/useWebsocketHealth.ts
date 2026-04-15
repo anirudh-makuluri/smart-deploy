@@ -70,7 +70,7 @@ function probeBrowserWebSocket(url: string, timeoutMs: number): Promise<void> {
 	});
 }
 
-export function useWebsocketHealth(pollMs: number = 30000): WorkerHealthState {
+export function useWebsocketHealth(): WorkerHealthState {
 	const [state, setState] = React.useState<WorkerHealthState>(DEFAULT_STATE);
 
 	React.useEffect(() => {
@@ -100,15 +100,11 @@ export function useWebsocketHealth(pollMs: number = 30000): WorkerHealthState {
 		};
 
 		void checkHealth();
-		const interval = window.setInterval(() => {
-			void checkHealth();
-		}, pollMs);
 
 		return () => {
 			cancelled = true;
-			window.clearInterval(interval);
 		};
-	}, [pollMs]);
+	}, []);
 
 	return state;
 }
