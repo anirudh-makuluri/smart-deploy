@@ -6,7 +6,7 @@ import { PosthogIdentify } from "@/components/analytics/PosthogIdentify";
 import { PosthogWebVitals } from "@/components/analytics/PosthogWebVitals";
 
 const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
-const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST || "/ph";
 const posthogDebug = process.env.NEXT_PUBLIC_POSTHOG_DEBUG === "true";
 
 type PosthogGateProps = {

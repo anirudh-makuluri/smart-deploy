@@ -133,6 +133,7 @@ Minimum variables for local access:
 | `DATABASE_URL` | Supabase Postgres connection string (server-only) |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase credentials |
 | `NEXT_PUBLIC_WS_URL` | Usually `ws://localhost:4001` locally |
+| `NEXT_PUBLIC_POSTHOG_HOST` | Optional. Defaults to the same-origin `/ph` proxy route to reduce adblock noise |
 
 Variables needed for scan and artifact flows:
 
@@ -200,6 +201,9 @@ One supported setup is:
 - set `NEXT_PUBLIC_WS_URL` to the worker URL
 - set `WS_ALLOWED_ORIGINS` on the worker
 - keep `BETTER_AUTH_SECRET` identical in both services
+- PostHog browser traffic goes through `/ph` by default; only override `NEXT_PUBLIC_POSTHOG_HOST` if you need a different proxy target
+
+The browser no longer falls back to the app host in production, so `NEXT_PUBLIC_WS_URL` must be set to the actual worker endpoint.
 
 Health endpoints:
 
