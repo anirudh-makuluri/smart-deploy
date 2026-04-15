@@ -18,8 +18,10 @@ const setActiveServiceName = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
-vi.mock("next-auth/react", () => ({
-	useSession: () => mockUseSession(),
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => mockUseSession(),
+	},
 }));
 
 vi.mock("sonner", () => ({
@@ -106,7 +108,7 @@ function renderWithQueryClient(ui: React.ReactElement) {
 describe("DeployWorkspace", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mockUseSession.mockReturnValue({ data: { user: { name: "A" }, accessToken: "token", userID: "u-1" } });
+		mockUseSession.mockReturnValue({ data: { user: { name: "A", id: "u-1" } } });
 		mockUseDeployLogs.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),

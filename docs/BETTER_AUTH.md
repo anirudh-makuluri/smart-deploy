@@ -34,7 +34,7 @@ Required:
 
 - `BETTER_AUTH_SECRET`: cookie signing + encryption secret (32+ chars).
 - `BETTER_AUTH_URL`: base URL of the app (used for callbacks/redirects).
-- `DATABASE_URL`: Supabase Postgres connection string (server-only).
+- `DATABASE_URL`: Supabase Postgres connection string (server-only). On IPv4-only networks, use the dashboard **Session pooler** URI instead of the direct `db.*.supabase.co` host; see `docs/SUPABASE_SETUP.md`.
 - `SUPABASE_URL`: Supabase project URL (HTTP API).
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (server-only).
 

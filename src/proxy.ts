@@ -55,7 +55,13 @@ function clearSessionCookies(response: NextResponse) {
 }
 
 export async function proxy(req : NextRequest) {
-	const session = await auth.api.getSession({ headers: req.headers });
+	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+	try {
+		session = await auth.api.getSession({ headers: req.headers });
+	} catch (err) {
+		// DB unreachable (ENOTFOUND, ECONNREFUSED, etc.) should not brick every route.
+		console.error("[proxy] auth.api.getSession failed — treating as unauthenticated:", err);
+	}
 	const email = session?.user?.email;
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")

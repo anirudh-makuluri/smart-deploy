@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 		const response = await executeGraphQLOperation(
 			"serviceLogs",
 			{ repoName, serviceName, limit },
-			({ userID } as { userID?: string }) ?? null
+			{ userID },
 		) as { serviceLogs?: { logs?: unknown[] } };
 
 		const logs = response.serviceLogs?.logs ?? [];

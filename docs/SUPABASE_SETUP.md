@@ -67,14 +67,22 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
 
 Better Auth needs a server-side Postgres connection string to the **same Supabase project**.
 
-1. In the Supabase dashboard, go to **Project Settings -> Database -> Connection string**.
-2. Copy a connection string and set:
+1. In the Supabase dashboard, open **Connect** (or **Project Settings → Database → Connection string**).
+2. Set `DATABASE_URL` to a URI from the dashboard.
+
+**IPv4 vs direct host:** The default **direct** string uses host `db.<project-ref>.supabase.co` on port **5432**. Supabase documents this path as **IPv6-first**; the dashboard may show *“Not IPv4 compatible — use Session Pooler if on an IPv4 network”*. On many home/office networks (especially Windows), **IPv4-only** routing is common, so the direct host can fail intermittently (`ENOTFOUND`, timeouts, or unreachable DB) even though the project and password are correct.
+
+For **local dev and typical servers on IPv4**, prefer the **Session pooler** (Supavisor session mode) string instead. It uses a host like `aws-0-<REGION>.pooler.supabase.com`, port **5432**, and a username of the form `postgres.<project-ref>` (see the dashboard **Session pooler** tab). That path supports **IPv4 and IPv6** and works well with a persistent Node app and `pg`.
+
+Official overview: [Connect to Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres) (direct vs pooler session vs transaction).
 
 ```
 DATABASE_URL=postgresql://...
 ```
 
 > **Never expose `DATABASE_URL` to the browser.** It must remain server-only.
+
+> **Migrations:** You can run `npm run auth:migrate` with either direct or session pooler URI; if direct fails on your network, use the session pooler string for all server-side Postgres (including `DATABASE_URL`).
 
 ### Lock down Better Auth tables (recommended)
 
@@ -118,6 +126,7 @@ The default is `deployment-screenshots`.
 | Issue | Fix |
 |-------|-----|
 | "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set" | Both env vars are required. Double-check `.env`. |
+| `getaddrinfo ENOTFOUND` / DB unreachable for `db.*.supabase.co` on a laptop or IPv4 network | Use the **Session pooler** connection string (not the direct IPv6-only host). See [Supabase: connecting to Postgres](https://supabase.com/docs/guides/database/connecting-to-postgres#pooler-session-mode). |
 | "relation does not exist" | You haven't run `supabase/schema.sql` yet. |
 | FK to `user`: Key `(owner_id)=(…)` not in table `"user"` | Old rows may still use a **GitHub numeric id** as `owner_id`. Run [`supabase/remap_legacy_owner_ids_to_better_auth.sql`](../supabase/remap_legacy_owner_ids_to_better_auth.sql) after signing in once with GitHub so `account` links `accountId` → `userId`. Remaining orphans can be deleted or fixed manually. |
 | Permission denied / RLS error | Make sure you're using the **service_role** key, not the **anon** key. |
