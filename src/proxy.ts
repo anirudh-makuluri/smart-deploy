@@ -55,21 +55,33 @@ function clearSessionCookies(response: NextResponse) {
 }
 
 export async function proxy(req : NextRequest) {
+	const pathname = req.nextUrl.pathname;
+	const isAuthPage = pathname.startsWith("/auth");
+	const isLanding = pathname === "/";
+	const isDocsPage = pathname === "/docs" || pathname.startsWith("/docs/");
+	const isChangelogPage = pathname === "/changelog";
+	const isWaitingList = pathname === "/waiting-list";
+	const isAuthApi = pathname.startsWith("/api/auth");
+	const isPosthogProxy = pathname === "/ph" || pathname.startsWith("/ph/");
+
+	// Never run auth checks for PostHog proxy requests.
+	if (isPosthogProxy) {
+		return NextResponse.next();
+	}
+
+	const isPublicPage = isLanding || isDocsPage || isChangelogPage || isWaitingList;
+	const shouldCheckSession = isAuthPage || (!isPublicPage && !isAuthApi);
+
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
-	try {
-		session = await auth.api.getSession({ headers: req.headers });
-	} catch (err) {
-		// DB unreachable (ENOTFOUND, ECONNREFUSED, etc.) should not brick every route.
-		console.error("[proxy] auth.api.getSession failed — treating as unauthenticated:", err);
+	if (shouldCheckSession) {
+		try {
+			session = await auth.api.getSession({ headers: req.headers });
+		} catch (err) {
+			// DB unreachable (ENOTFOUND, ECONNREFUSED, etc.) should not brick every route.
+			console.error("[proxy] auth.api.getSession failed — treating as unauthenticated:", err);
+		}
 	}
 	const email = session?.user?.email;
-
-	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
-	const isLanding = req.nextUrl.pathname === "/"
-	const isDocsPage = req.nextUrl.pathname === "/docs" || req.nextUrl.pathname.startsWith("/docs/")
-	const isChangelogPage = req.nextUrl.pathname === "/changelog"
-	const isWaitingList = req.nextUrl.pathname === "/waiting-list"
-	const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth")
 
 	// Allow unauthenticated access to public pages and auth API routes.
 	if (!session && !isAuthPage && !isLanding && !isDocsPage && !isChangelogPage && !isWaitingList && !isAuthApi) {
@@ -99,6 +111,6 @@ export async function proxy(req : NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next|api|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico)).*)",
+		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico)).*)",
   ], // Exclude static assets, API routes, etc.
 }

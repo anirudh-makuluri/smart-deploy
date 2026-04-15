@@ -47,8 +47,9 @@ async function proxy(req: NextRequest, params: { path?: string[] }) {
 	// Ensure the browser treats it as non-cacheable in dev/prod.
 	resHeaders.set("Cache-Control", "no-store");
 
-	const body = await upstreamRes.arrayBuffer();
-	const res = new NextResponse(body, {
+	const isNoBodyStatus = upstreamRes.status === 204 || upstreamRes.status === 205 || upstreamRes.status === 304;
+	const responseBody = isNoBodyStatus ? null : await upstreamRes.arrayBuffer();
+	const res = new NextResponse(responseBody, {
 		status: upstreamRes.status,
 		headers: resHeaders,
 	});
