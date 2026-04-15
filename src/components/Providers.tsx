@@ -2,11 +2,15 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { WorkerWebSocketProvider } from "@/components/WorkerWebSocketProvider";
 import { PosthogGate } from "@/components/analytics/PosthogGate";
 import { SessionFailureLogoutGuard } from "@/components/auth/SessionFailureLogoutGuard";
+import { isPublicOrAuthRoute } from "@/lib/publicRoutes";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+	const pathname = usePathname() ?? "/";
+	const disableAuthBoundProviders = isPublicOrAuthRoute(pathname);
 	const [queryClient] = useState(
 		() =>
 			new QueryClient({
@@ -20,9 +24,15 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
 	return (
 		<PosthogGate>
-			<SessionFailureLogoutGuard />
 			<QueryClientProvider client={queryClient}>
-				<WorkerWebSocketProvider>{children}</WorkerWebSocketProvider>
+				{disableAuthBoundProviders ? (
+					children
+				) : (
+					<>
+						<SessionFailureLogoutGuard />
+						<WorkerWebSocketProvider>{children}</WorkerWebSocketProvider>
+					</>
+				)}
 			</QueryClientProvider>
 		</PosthogGate>
 	);
