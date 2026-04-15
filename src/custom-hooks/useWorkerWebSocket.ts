@@ -62,12 +62,19 @@ export function clearActiveDeployment(): void {
 	sessionStorage.removeItem(ACTIVE_DEPLOYMENT_KEY);
 }
 
+function isLocalhostHost(hostname: string): boolean {
+	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname.endsWith(".local");
+}
+
 export function getWebSocketUrl(): string {
 	const env = process.env.NEXT_PUBLIC_WS_URL;
 	if (typeof env === "string" && env) {
 		return env.replace(/^https?/, (p) => (p === "https" ? "wss" : "ws"));
 	}
 	if (typeof window !== "undefined" && window.location.host) {
+		if (!isLocalhostHost(window.location.hostname)) {
+			return "";
+		}
 		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 		return `${protocol}://${window.location.host}/ws`;
 	}
@@ -228,8 +235,12 @@ export function useWorkerWebSocketSession({
 		activeDeploymentToastShownRef.current = false;
 		void (async () => {
 			try {
+				const wsBaseUrl = getWebSocketUrl();
+				if (!wsBaseUrl) {
+					throw new Error("NEXT_PUBLIC_WS_URL is not configured for this deployment");
+				}
 				const authToken = await fetchWebSocketAuthToken();
-				const wsUrl = new URL(getWebSocketUrl());
+				const wsUrl = new URL(wsBaseUrl);
 				wsUrl.searchParams.set("auth", authToken);
 
 				const ws = new WebSocket(wsUrl.toString());
@@ -414,7 +425,11 @@ export function useWorkerWebSocketSession({
 			} catch (error) {
 				connectInFlightRef.current = false;
 				setSocketStatus("error");
-				setDeployError(error instanceof Error ? error.message : "Failed to authenticate websocket connection");
+				const message = error instanceof Error ? error.message : "Failed to authenticate websocket connection";
+				setDeployError(message);
+				if (message.includes("NEXT_PUBLIC_WS_URL") || message.includes("authenticate websocket connection")) {
+					return;
+				}
 				scheduleReconnect();
 			}
 		})();

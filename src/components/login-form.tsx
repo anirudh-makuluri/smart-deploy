@@ -351,7 +351,7 @@ function SocialProviderIconRow({
 }) {
 	const busy = pending !== null;
 	const providerBtnClass =
-		"h-10 w-full min-w-0 shrink justify-start gap-2.5 rounded-lg border-border bg-background/60 px-3 text-left text-sm font-medium text-foreground hover:bg-secondary";
+		"relative h-10 w-full min-w-0 shrink rounded-lg border-border bg-background/60 px-3 text-sm font-medium text-foreground hover:bg-secondary";
 	return (
 		<div
 			className={cn("flex flex-row gap-3", (lastUsedMethod === "google" || lastUsedMethod === "github") && "pb-1")}
@@ -367,14 +367,14 @@ function SocialProviderIconRow({
 					aria-label="Continue with Google"
 					onClick={onGoogle}
 				>
-					<span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
+					<span className="pointer-events-none absolute left-3 top-1/2 flex size-5 shrink-0 -translate-y-1/2 items-center justify-center" aria-hidden>
 						{pending === "google" ? (
 							<Loader2 className="size-[1.15rem] animate-spin text-muted-foreground" />
 						) : (
 							<GoogleIcon className="size-[1.15rem]" />
 						)}
 					</span>
-					<span className="truncate">Google</span>
+					<span className="block w-full truncate text-center">Google</span>
 				</Button>
 				{lastUsedMethod === "google" && (
 					<span className="relative z-10 -mt-2.5">
@@ -391,14 +391,14 @@ function SocialProviderIconRow({
 					aria-label="Continue with GitHub"
 					onClick={onGithub}
 				>
-					<span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
+					<span className="pointer-events-none absolute left-3 top-1/2 flex size-5 shrink-0 -translate-y-1/2 items-center justify-center" aria-hidden>
 						{pending === "github" ? (
 							<Loader2 className="size-[1.15rem] animate-spin text-muted-foreground" />
 						) : (
 							<GitHubIcon className="size-[1.15rem]" />
 						)}
 					</span>
-					<span className="truncate">GitHub</span>
+					<span className="block w-full truncate text-center">GitHub</span>
 				</Button>
 				{lastUsedMethod === "github" && (
 					<span className="relative z-10 -mt-2.5">
