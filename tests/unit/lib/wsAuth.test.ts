@@ -7,7 +7,7 @@ describe("wsAuth", () => {
 	});
 
 	it("creates and verifies a websocket auth token", () => {
-		vi.stubEnv("NEXTAUTH_SECRET", "test-secret");
+		vi.stubEnv("BETTER_AUTH_SECRET", "test-secret");
 
 		const token = createWebSocketAuthToken("user-123");
 		const payload = verifyWebSocketAuthToken(token);
@@ -17,7 +17,7 @@ describe("wsAuth", () => {
 	});
 
 	it("rejects tampered tokens", () => {
-		vi.stubEnv("NEXTAUTH_SECRET", "test-secret");
+		vi.stubEnv("BETTER_AUTH_SECRET", "test-secret");
 
 		const token = createWebSocketAuthToken("user-123");
 		const tampered = `${token}x`;

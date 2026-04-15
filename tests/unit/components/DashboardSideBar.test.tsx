@@ -7,8 +7,10 @@ const mockUseSession = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
-vi.mock("next-auth/react", () => ({
-	useSession: () => mockUseSession(),
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => mockUseSession(),
+	},
 }));
 
 vi.mock("@/store/useAppData", () => ({

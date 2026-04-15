@@ -74,6 +74,10 @@ async function streamGithubZipballToFile(
 
 	if (!res.ok) {
 		const text = await res.text();
+		// GitHub returns 409 for empty repositories (no commits / no branch to archive).
+		if (res.status === 409) {
+			throw new GithubApiError("GitHub repository is empty", 409);
+		}
 		throw new GithubApiError(text.slice(0, 800), res.status);
 	}
 
@@ -131,6 +135,10 @@ export async function prepareGithubRepoWorkspace(
 		await download(preferredBranch);
 	} catch (firstErr) {
 		const status = firstErr instanceof GithubApiError ? firstErr.status : 0;
+		if (status === 409) {
+			// Empty repo: return an empty workspace folder.
+			return { repoRoot: extractDir, effectiveBranch };
+		}
 		if (status === 404) {
 			const { default_branch } = await fetchRepoMetadata(owner, repo, token);
 			effectiveBranch = default_branch;

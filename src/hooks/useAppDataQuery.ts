@@ -1,11 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
 import { useAppData } from "@/store/useAppData";
 import type { DeployConfig, repoType, RepoServicesRecord } from "@/app/types";
 import { benchmarkAppOverview, fetchAppOverview } from "@/lib/graphqlClient";
+import { authClient } from "@/lib/auth-client";
 
 const CACHE_KEY = "smart-deploy-app-data";
 const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -69,25 +69,30 @@ async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: Depl
  * On refresh, rehydrates from localStorage first (same user, cache under 7 days) so you don't see a loading state.
  */
 export function useAppDataQuery() {
-	const { status, data: session } = useSession();
-	const userID = (session as { userID?: string } | null)?.userID;
+	const { data: session, isPending } = authClient.useSession();
+	const userID = session?.user?.id;
 	const { setAppData, unAuthenticated } = useAppData();
 	const hasRehydrated = useRef(false);
 
+	// Allow cache rehydration again whenever the signed-in user id changes (e.g. switch account / provider).
+	useEffect(() => {
+		hasRehydrated.current = false;
+	}, [userID]);
+
 	// Rehydrate from cache as soon as we have an authenticated user (before query runs)
 	useEffect(() => {
-		if (status !== "authenticated" || !userID || hasRehydrated.current) return;
+		if (isPending || !userID || hasRehydrated.current) return;
 		hasRehydrated.current = true;
 		const cached = readCache(userID);
 		if (cached) {
 			setAppData(cached.repoList, cached.deployments, false, cached.repoServices);
 		}
-	}, [status, userID, setAppData]);
+	}, [isPending, userID, setAppData]);
 
 	const query = useQuery({
 		queryKey: ["app-data", userID],
 		queryFn: fetchAppData,
-		enabled: status === "authenticated",
+		enabled: !isPending && Boolean(userID),
 		staleTime: 60 * 1000,
 	});
 
@@ -100,12 +105,12 @@ export function useAppDataQuery() {
 
 	// Clear store and cache when user logs out
 	useEffect(() => {
-		if (status === "unauthenticated") {
+		if (!isPending && !userID) {
 			hasRehydrated.current = false;
 			unAuthenticated();
 			clearCache();
 		}
-	}, [status, unAuthenticated]);
+	}, [isPending, unAuthenticated, userID]);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;

@@ -1,17 +1,18 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "../auth/authOptions";
 import { getRepoFilePaths } from "@/github-helper";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
+import { getGithubAccessTokenForUserId } from "@/lib/githubAccessToken";
 
 export async function POST(req: Request) {
-	const session = await getServerSession(authOptions);
-
-	const token = session?.accessToken;
+	const session = await auth.api.getSession({ headers: await headers() });
+	const userId = session?.user?.id;
+	const token = userId ? await getGithubAccessTokenForUserId(userId, req.headers) : null;
 
 	if (!token) {
-		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+		return NextResponse.json({ error: "GitHub not connected" }, { status: 401 });
 	}
 
 	const body = await req.json();

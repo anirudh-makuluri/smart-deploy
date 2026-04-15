@@ -142,58 +142,6 @@ function dedupeRepoSyncRows(rows: Record<string, unknown>[]) {
 }
 
 export const dbHelper = {
-	upsertUser: async function (
-		userID: string,
-		payload: { name?: string; image?: string }
-	): Promise<{ error?: string }> {
-		try {
-			if (!userID) return { error: "userID not found" };
-			const supabase = getSupabaseServer();
-
-			const { error } = await supabase.from("users").upsert(
-				{
-					id: userID,
-					name: (payload.name || "").trim() || null,
-					image: (payload.image || "").trim() || null,
-					created_at: new Date().toISOString(),
-				},
-				{ onConflict: "id" }
-			);
-
-			if (error) return { error: error.message };
-			return {};
-		} catch (err: unknown) {
-			return { error: err instanceof Error ? err.message : String(err) };
-		}
-	},
-
-	updateUser: async function (userID: string, data: object) {
-		try {
-			if (!userID) return { error: "userID not found" };
-			if (typeof data !== "object" || data === null) return { message: "Invalid request" };
-
-			const supabase = getSupabaseServer();
-			const { data: user, error: fetchError } = await supabase
-				.from("users")
-				.select("id")
-				.eq("id", userID)
-				.single();
-
-			if (fetchError || !user) return { error: "User doesnt exist" };
-
-			const { error: updateError } = await supabase
-				.from("users")
-				.update(data as Record<string, unknown>)
-				.eq("id", userID);
-
-			if (updateError) return { error: updateError };
-			console.log("User data updated successfully");
-			return { success: "User data updated successfully" };
-		} catch (error) {
-			return { error };
-		}
-	},
-
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
 			const { repoName, serviceName } = deployConfig;
@@ -456,28 +404,6 @@ export const dbHelper = {
 		}
 	},
 
-	getOrCreateUser: async function (
-		userID: string,
-		defaults: { name: string; image: string; createdAt?: string }
-	): Promise<{ error?: string; created?: boolean }> {
-		try {
-			const supabase = getSupabaseServer();
-			const { data: existing } = await supabase.from("users").select("id").eq("id", userID).single();
-
-			if (existing) return { created: false };
-
-			await supabase.from("users").insert({
-				id: userID,
-				name: defaults.name,
-				image: defaults.image,
-				created_at: defaults.createdAt ?? new Date().toISOString(),
-			});
-			return { created: true };
-		} catch (error) {
-			return { error: error instanceof Error ? error.message : String(error) };
-		}
-	},
-
 	addDeploymentHistory: async function (
 		repoName: string,
 		serviceName: string,
@@ -488,8 +414,7 @@ export const dbHelper = {
 			if (!repoName || !serviceName) return { error: "repo_name and service_name are required." };
 
 			const supabase = getSupabaseServer();
-			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
-			if (!user) return { error: "User not found" };
+			if (!(userID || "").trim()) return { error: "User not found" };
 
 			const { data: inserted, error } = await supabase
 				.from("deployment_history")
@@ -556,8 +481,7 @@ export const dbHelper = {
 	getDeploymentHistory: async function (repoName: string, serviceName: string, userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
-			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
-			if (!user) return { error: "User not found" };
+			if (!(userID || "").trim()) return { error: "User not found" };
 
 			const safePage = Math.max(1, page);
 			const safeLimit = Math.max(1, limit);
@@ -599,8 +523,7 @@ export const dbHelper = {
 	getAllDeploymentHistory: async function (userID: string, page = 1, limit = 10) {
 		try {
 			const supabase = getSupabaseServer();
-			const { data: user } = await supabase.from("users").select("id").eq("id", userID).single();
-			if (!user) return { error: "User doesn't exist" };
+			if (!(userID || "").trim()) return { error: "User doesn't exist" };
 
 			const safePage = Math.max(1, page);
 			const safeLimit = Math.max(1, limit);

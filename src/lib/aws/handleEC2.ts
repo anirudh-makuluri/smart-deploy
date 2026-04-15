@@ -108,7 +108,7 @@ function buildEnvBase64(
 	const host = normalizeDomain(customDomain);
 	if (host) {
 		envEntries.push({ key: "NEXT_PUBLIC_WS_URL", value: `wss://${host}/ws` });
-		envEntries.push({ key: "NEXTAUTH_URL", value: `https://${host}` });
+		envEntries.push({ key: "BETTER_AUTH_URL", value: `https://${host}` });
 	}
 	if (dbConnectionString) envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
 	const raw = buildEnvFileContent(envEntries);

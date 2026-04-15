@@ -3,14 +3,14 @@ import config from '../../../../config';
 
 export async function GET(req: NextRequest) {
 	// Redirect to waiting list page when access is denied
-	// Get the proper origin from headers or use NEXTAUTH_URL
+	// Get the proper origin from headers or use BETTER_AUTH_URL
 	const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
 	const protocol = req.headers.get('x-forwarded-proto') || (req.nextUrl.protocol === 'https:' ? 'https' : 'http');
 	
-	// Use NEXTAUTH_URL if available, otherwise construct from headers
+	// Use BETTER_AUTH_URL if available, otherwise construct from headers
 	let baseUrl: string;
-	if (config.NEXTAUTH_URL && config.NEXTAUTH_URL !== 'http://localhost:3000') {
-		baseUrl = config.NEXTAUTH_URL;
+	if (config.BETTER_AUTH_URL && config.BETTER_AUTH_URL !== 'http://localhost:3000') {
+		baseUrl = config.BETTER_AUTH_URL;
 	} else if (host) {
 		baseUrl = `${protocol}://${host}`;
 	} else {

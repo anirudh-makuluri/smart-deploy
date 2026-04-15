@@ -8,14 +8,14 @@ import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 import BlueprintView from "@/components/blueprint/BlueprintView";
 
-import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
+import type { DeployCompleteWsPayload } from "@/custom-hooks/useWorkerWebSocket";
+import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { useDeploymentTimer } from "@/custom-hooks/useDeploymentTimer";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
-import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { controlDeployment, deleteDeployment, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
+import { authClient } from "@/lib/auth-client";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
 	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
@@ -54,7 +55,7 @@ export default function DeployWorkspace({
 	const fetchRepoDeployments = useAppData((s) => s.fetchRepoDeployments);
 	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
 	const repoServices = useAppData((s) => s.repoServices);
-	const { data: session } = useSession();
+	const { data: session } = authClient.useSession();
 	const posthog = usePostHog();
 	const repoName = activeRepo?.name ?? "";
 	const repoIdentifier = activeRepo?.full_name ?? repoName;
@@ -127,16 +128,17 @@ export default function DeployWorkspace({
 				});
 			}
 
-			if (!p.success && ec2?.instanceId && repoName && serviceName) {
+			if (!p.success && repoName && serviceName) {
 				void updateDeploymentById({
 					repoName,
 					serviceName: serviceName,
-					ec2: p.ec2,
+					...(p.ec2 != null ? { ec2: p.ec2 } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 					}),
 					status: "failed",
 				});
+				void fetchRepoDeployments(repoIdentifier);
 			}
 		},
 		[deployment.liveUrl, deployment.url, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
@@ -147,8 +149,15 @@ export default function DeployWorkspace({
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
-		useDeployLogs(serviceName ?? "", repoName, { onDeployFinished: onDeployFinishedCallback });
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+		useWorkerWebSocket();
+
+	React.useEffect(() => {
+		setOnDeployFinished(onDeployFinishedCallback);
+		return () => {
+			setOnDeployFinished(undefined);
+		};
+	}, [onDeployFinishedCallback, setOnDeployFinished]);
 
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
 		repoName,
@@ -322,12 +331,26 @@ export default function DeployWorkspace({
 	}
 
 	async function handleDeploy(commitSha?: string) {
-		const token = session?.accessToken;
-		if (!token || !activeRepo || !deployment.repoName || !deployment.serviceName) {
+		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
 		if (deployDisabled) {
 			toast.error("Deployment requires at least one Dockerfile and nginx.conf.");
+			return;
+		}
+
+		let githubToken: string | null = null;
+		try {
+			const res = await fetch("/api/github/access-token", { method: "GET" });
+			if (res.ok) {
+				const payload = (await res.json()) as { token?: string };
+				githubToken = typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : null;
+			}
+		} catch {
+			// ignore; handled below
+		}
+		if (!githubToken) {
+			toast.error("GitHub is not connected. Sign in with GitHub to deploy.");
 			return;
 		}
 
@@ -369,7 +392,7 @@ export default function DeployWorkspace({
 		});
 
 		setIsDeploying(true);
-		sendDeployConfig(payload, token!, session?.userID);
+		sendDeployConfig(payload, githubToken, session?.user?.id);
 		setActiveSection("logs");
 	}
 

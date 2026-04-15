@@ -1,13 +1,12 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
+import { auth } from "@/lib/auth";
 
 export async function DELETE(req: Request) {
-	const session = await getServerSession(authOptions);
-	const token = session?.accessToken;
+	const session = await auth.api.getSession({ headers: req.headers });
+	const userId = session?.user?.id;
 
-	if (!token) {
-		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+	if (!userId) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	let body;

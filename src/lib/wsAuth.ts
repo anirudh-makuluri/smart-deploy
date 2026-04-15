@@ -8,9 +8,9 @@ type WsAuthPayload = {
 };
 
 function getSecret(): string {
-	const secret = process.env.NEXTAUTH_SECRET?.trim();
+	const secret = (process.env.BETTER_AUTH_SECRET || "").trim();
 	if (!secret) {
-		throw new Error("NEXTAUTH_SECRET is required for websocket authentication");
+		throw new Error("BETTER_AUTH_SECRET is required for websocket authentication");
 	}
 	return secret;
 }

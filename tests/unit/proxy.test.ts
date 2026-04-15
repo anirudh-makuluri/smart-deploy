@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getTokenMock = vi.fn();
+const getSessionMock = vi.fn();
 
-vi.mock("next-auth/jwt", () => ({
-	getToken: (...args: unknown[]) => getTokenMock(...args),
+vi.mock("@/lib/auth", () => ({
+	auth: {
+		api: {
+			getSession: (...args: unknown[]) => getSessionMock(...args),
+		},
+	},
 }));
 
 describe("proxy approval guard", () => {
@@ -12,11 +16,10 @@ describe("proxy approval guard", () => {
 		vi.unstubAllEnvs();
 		vi.stubEnv("SUPABASE_URL", "https://supabase.example.com");
 		vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
-		vi.stubEnv("NEXTAUTH_SECRET", "secret");
 	});
 
 	it("redirects removed users with a stale session to waiting-list", async () => {
-		getTokenMock.mockResolvedValue({ email: "removed@example.com" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "removed@example.com" } });
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: true,
 			json: async () => ([]),
@@ -33,7 +36,7 @@ describe("proxy approval guard", () => {
 	});
 
 	it("allows approved users to access protected pages", async () => {
-		getTokenMock.mockResolvedValue({ email: "approved@example.com" });
+		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "approved@example.com" } });
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: true,
 			json: async () => ([{ email: "approved@example.com" }]),

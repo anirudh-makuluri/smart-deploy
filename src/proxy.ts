@@ -1,12 +1,14 @@
-import { getToken } from 'next-auth/jwt'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { auth } from "@/lib/auth";
 
 const SESSION_COOKIE_NAMES = [
-	"next-auth.session-token",
-	"__Secure-next-auth.session-token",
-	"authjs.session-token",
-	"__Secure-authjs.session-token",
+	"better-auth.session_token",
+	"__Secure-better-auth.session_token",
+	"better-auth.session_data",
+	"__Secure-better-auth.session_data",
+	"better-auth.dont_remember",
+	"__Secure-better-auth.dont_remember",
 ];
 
 async function isApprovedEmail(email: string | null | undefined) {
@@ -53,7 +55,14 @@ function clearSessionCookies(response: NextResponse) {
 }
 
 export async function proxy(req : NextRequest) {
-	const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET })
+	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+	try {
+		session = await auth.api.getSession({ headers: req.headers });
+	} catch (err) {
+		// DB unreachable (ENOTFOUND, ECONNREFUSED, etc.) should not brick every route.
+		console.error("[proxy] auth.api.getSession failed — treating as unauthenticated:", err);
+	}
+	const email = session?.user?.email;
 
 	const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
 	const isLanding = req.nextUrl.pathname === "/"
@@ -63,12 +72,12 @@ export async function proxy(req : NextRequest) {
 	const isAuthApi = req.nextUrl.pathname.startsWith("/api/auth")
 
 	// Allow unauthenticated access to public pages and auth API routes.
-	if (!token && !isAuthPage && !isLanding && !isDocsPage && !isChangelogPage && !isWaitingList && !isAuthApi) {
+	if (!session && !isAuthPage && !isLanding && !isDocsPage && !isChangelogPage && !isWaitingList && !isAuthApi) {
 		return NextResponse.redirect(new URL("/auth", req.url))
 	}
 
-	if (token) {
-		const approved = await isApprovedEmail(typeof token.email === "string" ? token.email : undefined);
+	if (session) {
+		const approved = await isApprovedEmail(email);
 		if (!approved) {
 			const response = NextResponse.redirect(new URL("/waiting-list", req.url));
 			clearSessionCookies(response);
@@ -76,12 +85,12 @@ export async function proxy(req : NextRequest) {
 		}
 	}
 
-	if(token && isAuthPage) {
+	if(session && isAuthPage) {
 		return NextResponse.redirect(new URL("/home", req.url))
 	}
 
 	// Only block non-auth API routes
-	if (req.nextUrl.pathname.startsWith("/api") && !isAuthApi && !token) {
+	if (req.nextUrl.pathname.startsWith("/api") && !isAuthApi && !session) {
 		return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 	}
 

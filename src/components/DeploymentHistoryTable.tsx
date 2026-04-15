@@ -20,8 +20,8 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Download, Loader2, Search } from "lucide-react";
-import { useActiveDeployment } from "@/components/ActiveDeploymentProvider";
 import type { DeployStep } from "@/app/types";
+import { DeploymentLogsModal, type DeploymentLogsModalPrefetched } from "@/components/DeploymentLogsModal";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
 
@@ -85,8 +85,14 @@ function downloadCsv(rows: DeploymentHistoryRow[]) {
 	URL.revokeObjectURL(url);
 }
 
+type LogsModalState = {
+	repoName: string;
+	serviceName: string;
+	prefetched?: DeploymentLogsModalPrefetched;
+} | null;
+
 export default function DeploymentHistoryTable() {
-	const { openLogsModal } = useActiveDeployment();
+	const [logsModal, setLogsModal] = React.useState<LogsModalState>(null);
 	const [query, setQuery] = React.useState("");
 	const [statusFilter, setStatusFilter] = React.useState<(typeof statusOptions)[number]>("all");
 	const [envFilter, setEnvFilter] = React.useState<(typeof envOptions)[number]>("all");
@@ -122,6 +128,13 @@ export default function DeploymentHistoryTable() {
 
 	return (
 		<div className="rounded-xl border border-border bg-card/60 p-4">
+			<DeploymentLogsModal
+				open={logsModal != null}
+				onClose={() => setLogsModal(null)}
+				repoName={logsModal?.repoName ?? ""}
+				serviceName={logsModal?.serviceName ?? ""}
+				prefetched={logsModal?.prefetched}
+			/>
 			<div className="flex flex-wrap items-center gap-3">
 				<div className="relative flex-1 min-w-56">
 					<Search className="size-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
@@ -191,10 +204,14 @@ export default function DeploymentHistoryTable() {
 								<TableRow
 									key={row.id}
 									onClick={() =>
-										openLogsModal(row.repo_name, row.service_name, undefined, {
-											steps: row.steps,
-											status: row.success ? "success" : "error",
-											error: row.success ? null : "Deployment failed",
+										setLogsModal({
+											repoName: row.repo_name,
+											serviceName: row.service_name,
+											prefetched: {
+												steps: row.steps,
+												status: row.success ? "success" : "error",
+												error: row.success ? null : "Deployment failed",
+											},
 										})
 									}
 									className="cursor-pointer"

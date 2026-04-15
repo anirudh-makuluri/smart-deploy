@@ -39,12 +39,12 @@ export const OPTIONS = yoga;
 export async function executeGraphQLOperation(
 	operation: string,
 	variables: Record<string, unknown>,
-	session: { userID?: string; accessToken?: string } | null,
+	session: { userID?: string } | null,
 ) {
 	const context = {
 		session,
 		userID: session?.userID,
-		token: session?.accessToken,
+		githubToken: undefined,
 	};
 
 	// Import resolvers

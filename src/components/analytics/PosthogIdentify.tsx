@@ -1,19 +1,19 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { usePostHog } from "posthog-js/react";
 import { useEffect } from "react";
+import { authClient } from "@/lib/auth-client";
 
 /**
- * Binds NextAuth user to PostHog when signed in; resets on sign-out.
+ * Binds authenticated user to PostHog when signed in; resets on sign-out.
  */
 export function PosthogIdentify() {
-	const { data: session, status } = useSession();
+	const { data: session, isPending } = authClient.useSession();
 	const posthog = usePostHog();
 
 	useEffect(() => {
-		if (status === "loading") return;
-		const id = session?.userID;
+		if (isPending) return;
+		const id = session?.user?.id;
 		if (id) {
 			posthog.identify(id, {
 				email: session?.user?.email ?? undefined,
@@ -22,7 +22,7 @@ export function PosthogIdentify() {
 		} else {
 			posthog.reset();
 		}
-	}, [posthog, session?.user?.email, session?.user?.name, session?.userID, status]);
+	}, [isPending, posthog, session?.user?.email, session?.user?.id, session?.user?.name]);
 
 	return null;
 }

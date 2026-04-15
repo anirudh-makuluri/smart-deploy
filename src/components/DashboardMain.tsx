@@ -5,7 +5,6 @@ import Link from "next/link";
 import DeploymentHistoryTable from "./DeploymentHistoryTable";
 import { useAppData } from "@/store/useAppData";
 import { Boxes, Plus, RefreshCcw, ExternalLink } from "lucide-react";
-import { useSession } from "next-auth/react";
 import { countDeployedServicesForRepo, formatTimestamp } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
@@ -14,6 +13,7 @@ import { addPublicRepo } from "@/lib/graphqlClient";
 import { toast } from "sonner";
 import { RepoServicesRecord } from "@/app/types";
 import LanguageIcon from "./LanguageIcon";
+import { authClient } from "@/lib/auth-client";
 
 function normalizeUrl(url: string): string {
 	return url?.replace(/\.git$/, "").toLowerCase().trim();
@@ -31,7 +31,7 @@ type DashboardMainProps = {
 
 export default function DashboardMain({ activeView }: DashboardMainProps) {
 	const router = useRouter();
-	const { data: session } = useSession();
+	const { data: session } = authClient.useSession();
 	const { deployments, repoServices, repoList, isLoading, setAppData, refreshRepoList } = useAppData();
 	const [isRefreshing, setIsRefreshing] = React.useState(false);
 	const [showAddRepo, setShowAddRepo] = React.useState(false);

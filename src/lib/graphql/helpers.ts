@@ -31,6 +31,14 @@ export function githubHeaders(token: string): HeadersInit {
 	};
 }
 
+function mapGithubErrorMessage(raw: unknown): string {
+	const message = String(raw ?? "Failed to fetch repository");
+	if (/bad credentials/i.test(message)) {
+		return "GitHub authentication expired. Please reconnect GitHub and try again.";
+	}
+	return message;
+}
+
 export function mapGithubRepoToAppRepo(repoData: any, latestCommit: any, branches: any[]): repoType {
 	return {
 		id: String(repoData.id),
@@ -69,7 +77,7 @@ export async function fetchAndBuildRepo(owner: string, repoName: string, token: 
 	});
 	if (!repoRes.ok) {
 		const errorData = await repoRes.json().catch(() => ({}));
-		throw new Error(String(errorData?.message ?? "Failed to fetch repository"));
+		throw new Error(mapGithubErrorMessage(errorData?.message ?? "Failed to fetch repository"));
 	}
 	const repoData = await repoRes.json();
 
@@ -94,7 +102,7 @@ export async function fetchLatestCommit(owner: string, repoName: string, branch:
 
 	if (!commitRes.ok) {
 		const error = await commitRes.json().catch(() => ({}));
-		throw new Error(String(error?.message ?? "Failed to fetch commit"));
+		throw new Error(mapGithubErrorMessage(error?.message ?? "Failed to fetch commit"));
 	}
 
 	const commit = await commitRes.json();

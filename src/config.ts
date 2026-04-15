@@ -1,7 +1,10 @@
 const config = {
-	// NextAuth
-	NEXTAUTH_URL: process.env.NEXTAUTH_URL || "http://localhost:3000",
-	NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || "",
+	// Better Auth
+	BETTER_AUTH_URL: process.env.BETTER_AUTH_URL || "http://localhost:3000",
+	BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET || "",
+
+	// Better Auth DB (Supabase Postgres connection string)
+	DATABASE_URL: process.env.DATABASE_URL || "",
 
 	// GitHub OAuth
 	GITHUB_ID: process.env.GITHUB_ID || "",

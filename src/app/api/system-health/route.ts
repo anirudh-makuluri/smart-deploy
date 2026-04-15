@@ -1,8 +1,5 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "@/app/api/auth/authOptions";
-import { createWebSocketAuthToken } from "@/lib/wsAuth";
-import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,42 +9,6 @@ type ServiceStatus = {
 	status: "healthy" | "unavailable";
 	message: string;
 };
-
-function getWorkerHealthzUrl(token: string) {
-	const wsBase = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:4001";
-	const healthUrl = new URL(buildWebSocketHealthUrl(wsBase, "/healthz"));
-	healthUrl.searchParams.set("auth", token);
-	return healthUrl.toString();
-}
-
-async function checkWebsocketHealth(userID: string): Promise<ServiceStatus> {
-	try {
-		const token = createWebSocketAuthToken(userID);
-		const response = await fetch(getWorkerHealthzUrl(token), {
-			method: "GET",
-			cache: "no-store",
-		});
-
-		if (!response.ok) {
-			throw new Error(`Health check returned ${response.status}`);
-		}
-
-		const payload = (await response.json()) as { ok?: boolean; status?: string };
-		const healthy = payload.ok !== false && payload.status !== "unhealthy";
-
-		return {
-			name: "WebSocket server",
-			status: healthy ? "healthy" : "unavailable",
-			message: healthy ? "Authenticated worker health check passed" : "Worker health check failed",
-		};
-	} catch (error) {
-		return {
-			name: "WebSocket server",
-			status: "unavailable",
-			message: error instanceof Error ? error.message : "Worker unavailable",
-		};
-	}
-}
 
 async function checkAnalyzeHealth(): Promise<ServiceStatus> {
 	const baseUrl = process.env.SD_API_BASE_URL;
@@ -92,27 +53,47 @@ async function checkAnalyzeHealth(): Promise<ServiceStatus> {
 	}
 }
 
-export async function GET() {
-	const session = await getServerSession(authOptions);
-	const userID = session?.userID;
+export async function GET(req?: Request) {
+	let userID: string | undefined;
+	try {
+		const session = await auth.api.getSession({ headers: req?.headers ?? new Headers() });
+		userID = session?.user?.id;
+	} catch (error) {
+		console.error("Failed to read session for system health:", error);
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
 
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const services = await Promise.all([
-		checkWebsocketHealth(userID),
-		checkAnalyzeHealth(),
-	]);
+	try {
+		/** WebSocket worker health comes from the browser session (`useWorkerWebSocket`); server only checks SD Artifacts here. */
+		const services = [await checkAnalyzeHealth()];
 
-	const overallStatus = services.every((service) => service.status === "healthy") ? "healthy" : "degraded";
+		const overallStatus = services.every((service) => service.status === "healthy") ? "healthy" : "degraded";
 
-	return NextResponse.json(
-		{
-			status: overallStatus,
-			services,
-			timestamp: new Date().toISOString(),
-		},
-		{ status: 200 }
-	);
+		return NextResponse.json(
+			{
+				status: overallStatus,
+				services,
+				timestamp: new Date().toISOString(),
+			},
+			{ status: 200 }
+		);
+	} catch (error) {
+		console.error("Failed to build system health response:", error);
+		return NextResponse.json(
+			{
+				status: "unavailable",
+				services: [{
+					name: "SD Artifacts server",
+					status: "unavailable",
+					message: "System health unavailable",
+				}],
+				timestamp: new Date().toISOString(),
+			},
+			{ status: 200 }
+		);
+	}
 }

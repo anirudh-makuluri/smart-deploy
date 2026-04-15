@@ -1,15 +1,18 @@
 "use client";
 
-import { signOut, useSession } from "next-auth/react";
+import * as React from "react";
+import { authClient } from "@/lib/auth-client";
 import Image from "next/image";
 import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
 import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSystemHealth } from "@/custom-hooks/useSystemHealth";
+import type { SystemHealthService, SystemHealthStatus } from "@/custom-hooks/useSystemHealth";
+import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { cn } from "@/lib/utils";
 import {
 	DropdownMenu,
@@ -32,11 +35,68 @@ type HeaderProps = {
 };
 
 export default function Header({ homeNav, workspaceNav }: HeaderProps) {
-	const { data: session } = useSession();
+	const { data: session } = authClient.useSession();
+	const router = useRouter();
 	const params = useParams();
 	const pathname = usePathname();
 	const { activeServiceName, setActiveServiceName } = useAppData();
-	const systemHealth = useSystemHealth();
+	const workerWs = useWorkerWebSocket();
+	const artifactsHealth = useSystemHealth();
+
+	const systemHealth = React.useMemo((): {
+		status: SystemHealthStatus;
+		message: string;
+		services: SystemHealthService[];
+	} => {
+		const wsRow: SystemHealthService = {
+			name: "WebSocket server",
+			status: workerWs.socketStatus === "open" ? "healthy" : "unavailable",
+			message:
+				workerWs.socketStatus === "open"
+					? "Connected to deploy worker"
+					: workerWs.socketStatus === "connecting"
+						? "Connecting to deploy worker…"
+						: workerWs.socketStatus === "closed"
+							? "Disconnected from deploy worker"
+							: "Deploy worker unreachable",
+		};
+
+		const services: SystemHealthService[] = [wsRow, ...artifactsHealth.services];
+
+		const wsOk = workerWs.socketStatus === "open";
+		const artifactsOk =
+			artifactsHealth.services.length > 0 && artifactsHealth.services.every((s) => s.status === "healthy");
+
+		if (workerWs.socketStatus === "connecting" || artifactsHealth.status === "checking") {
+			return {
+				status: "checking",
+				message: "Checking system health",
+				services,
+			};
+		}
+
+		if (artifactsHealth.status === "unavailable" && artifactsHealth.services.length === 0) {
+			return {
+				status: "unavailable",
+				message: artifactsHealth.message,
+				services,
+			};
+		}
+
+		if (wsOk && artifactsOk) {
+			return {
+				status: "healthy",
+				message: "All systems online",
+				services,
+			};
+		}
+
+		return {
+			status: "degraded",
+			message: "One or more services need attention",
+			services,
+		};
+	}, [workerWs.socketStatus, artifactsHealth]);
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;
@@ -46,6 +106,12 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 
 	function handleRepoClick() {
 		setActiveServiceName(null);
+	}
+
+	async function handleSignOut() {
+		await authClient.signOut();
+		router.replace("/auth");
+		router.refresh();
 	}
 
 	function handleAvatarKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
@@ -222,7 +288,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 								<DropdownMenuSeparator />
 								<DropdownMenuItem
 									className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer mt-1"
-									onClick={() => signOut()}
+									onClick={() => void handleSignOut()}
 								>
 									<LogOut className="size-4 mr-2" />
 									<span className="font-bold">Sign out</span>

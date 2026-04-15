@@ -4,88 +4,313 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signIn } from "next-auth/react";
+import * as React from "react";
+import { authClient } from "@/lib/auth-client";
+import { toast } from "sonner";
+import { AnimatePresence, motion } from "framer-motion";
+import { Loader2 } from "lucide-react";
+import {
+	type AuthLastMethod,
+	readLastAuthMethod,
+	writeLastAuthMethod,
+} from "@/lib/auth-last-method";
+
+const MIN_PASSWORD_LEN = 8;
+
+const tabTriggerBase =
+	"inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow,background-color] focus-visible:outline-1 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4";
+
+const tabTriggerActive =
+	"bg-background text-foreground shadow-sm dark:border-input dark:bg-input/30";
 
 export function LoginForm({
 	className,
 	...props
 }: React.ComponentProps<"div">) {
+	const [mode, setMode] = React.useState<"signIn" | "signUp">("signIn");
+	const [name, setName] = React.useState("");
+	const [email, setEmail] = React.useState("");
+	const [password, setPassword] = React.useState("");
+	const [pending, setPending] = React.useState<null | "google" | "github" | "email" | "signup">(null);
+	const [lastUsedMethod, setLastUsedMethod] = React.useState<AuthLastMethod | null>(null);
+
+	React.useEffect(() => {
+		setLastUsedMethod(readLastAuthMethod());
+	}, []);
+
+	async function signInWithProvider(provider: "google" | "github") {
+		writeLastAuthMethod(provider);
+		setLastUsedMethod(provider);
+		setPending(provider);
+		try {
+			await authClient.signIn.social({
+				provider,
+				callbackURL: "/home",
+			});
+		} catch (e) {
+			toast.error(e instanceof Error ? e.message : "Sign in failed");
+		} finally {
+			setPending(null);
+		}
+	}
+
+	async function signInWithEmail(e: React.FormEvent) {
+		e.preventDefault();
+		const emailTrimmed = email.trim().toLowerCase();
+		if (!emailTrimmed) {
+			toast.error("Please enter an email");
+			return;
+		}
+		if (!password) {
+			toast.error("Please enter a password");
+			return;
+		}
+		setPending("email");
+		try {
+			const res = await authClient.signIn.email({
+				email: emailTrimmed,
+				password,
+				callbackURL: "/home",
+			});
+			if (res?.error) {
+				toast.error(res.error.message || "Sign in failed");
+				return;
+			}
+			writeLastAuthMethod("email");
+			setLastUsedMethod("email");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Sign in failed");
+		} finally {
+			setPending(null);
+		}
+	}
+
+	async function signUpWithEmail(e: React.FormEvent) {
+		e.preventDefault();
+		const nameTrimmed = name.trim();
+		const emailTrimmed = email.trim().toLowerCase();
+		if (!nameTrimmed) {
+			toast.error("Please enter your name");
+			return;
+		}
+		if (!emailTrimmed) {
+			toast.error("Please enter an email");
+			return;
+		}
+		if (password.length < MIN_PASSWORD_LEN) {
+			toast.error(`Password must be at least ${MIN_PASSWORD_LEN} characters`);
+			return;
+		}
+		setPending("signup");
+		try {
+			const res = await authClient.signUp.email({
+				email: emailTrimmed,
+				password,
+				name: nameTrimmed,
+				callbackURL: "/home",
+			});
+			if (res?.error) {
+				toast.error(res.error.message || "Could not create account");
+				return;
+			}
+			writeLastAuthMethod("email");
+			setLastUsedMethod("email");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Could not create account");
+		} finally {
+			setPending(null);
+		}
+	}
+
 	return (
-		<div className={cn("flex flex-col gap-5", className)} {...props}>
-			{/* Card-style container with landing theme */}
-			<div className="rounded-xl border border-border bg-card p-6 shadow-lg">
-				<h2 className="text-center text-xl font-semibold text-foreground mb-5">Welcome</h2>
+		<div className={cn("flex w-full flex-col gap-3", className)} {...props}>
+			<SocialProviderIconRow
+				pending={pending}
+				lastUsedMethod={lastUsedMethod}
+				onGoogle={() => void signInWithProvider("google")}
+				onGithub={() => void signInWithProvider("github")}
+			/>
 
-				<div className="flex flex-col gap-3">
-					<Button
-						disabled
-						type="button"
-						variant="outline"
-						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("google", { callbackUrl: "/home" })}
-					>
-						<GoogleIcon className="size-5 mr-2" />
-						Login with Google
-					</Button>
-					<Button
-						type="button"
-						variant="outline"
-						className="w-full h-11 border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-						onClick={() => signIn("github", { callbackUrl: "/home" })}
-					>
-						<GitHubIcon className="size-5 mr-2" />
-						Login with GitHub
-					</Button>
-				</div>
-
-				<div className="relative my-5">
-					<div className="absolute inset-0 flex items-center">
-						<span className="w-full border-t border-border" />
-					</div>
-					<div className="relative flex justify-center text-xs uppercase tracking-wider">
-						<span className="bg-card px-2 text-muted-foreground">or</span>
-					</div>
-				</div>
-
-				{/* Sign in with email and password (UI only; functionality later) */}
-				<form className="flex flex-col gap-4" onSubmit={(e) => e.preventDefault()}>
-					<div className="space-y-2">
-						<Label htmlFor="auth-email" className="text-foreground text-sm">
-							Email
-						</Label>
-						<Input
-							id="auth-email"
-							type="email"
-							placeholder="you@example.com"
-							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
-							autoComplete="email"
-							disabled
-						/>
-					</div>
-					<div className="space-y-2">
-						<Label htmlFor="auth-password" className="text-foreground text-sm">
-							Password
-						</Label>
-						<Input
-							id="auth-password"
-							type="password"
-							placeholder="••••••••"
-							className="h-11 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
-							autoComplete="current-password"
-							disabled
-						/>
-					</div>
-					<Button
-						type="submit"
-						className="w-full h-11 landing-build-blue hover:opacity-95 text-white font-medium"
-						disabled
-					>
-						Sign in with email
-					</Button>
-				</form>
+			<div
+				role="tablist"
+				aria-label="Email sign-in or registration"
+				className="bg-muted text-muted-foreground grid h-9 w-full grid-cols-2 items-center justify-center rounded-lg p-[3px]"
+			>
+				<button
+					type="button"
+					role="tab"
+					id="auth-tab-signin"
+					aria-selected={mode === "signIn"}
+					aria-controls="auth-panel-signin"
+					tabIndex={mode === "signIn" ? 0 : -1}
+					className={cn(
+						tabTriggerBase,
+						"text-foreground dark:text-muted-foreground",
+						mode === "signIn" && tabTriggerActive,
+					)}
+					onClick={() => setMode("signIn")}
+				>
+					Sign in
+				</button>
+				<button
+					type="button"
+					role="tab"
+					id="auth-tab-signup"
+					aria-selected={mode === "signUp"}
+					aria-controls="auth-panel-signup"
+					tabIndex={mode === "signUp" ? 0 : -1}
+					className={cn(
+						tabTriggerBase,
+						"text-foreground dark:text-muted-foreground",
+						mode === "signUp" && tabTriggerActive,
+					)}
+					onClick={() => setMode("signUp")}
+				>
+					Create account
+				</button>
 			</div>
 
-			<p className="text-center text-xs text-muted-foreground/70">
+			<AnimatePresence mode="wait" initial={false}>
+				{mode === "signIn" ? (
+					<motion.div
+						key="signIn"
+						role="tabpanel"
+						id="auth-panel-signin"
+						aria-labelledby="auth-tab-signin"
+						initial={{ opacity: 0, x: -10 }}
+						animate={{ opacity: 1, x: 0 }}
+						exit={{ opacity: 0, x: 8 }}
+						transition={{ type: "spring", stiffness: 460, damping: 36 }}
+						className="flex w-full flex-col gap-3"
+					>
+						<form className="flex flex-col gap-3" onSubmit={(e) => void signInWithEmail(e)}>
+							<div className="space-y-1.5">
+								<Label htmlFor="auth-email" className="text-foreground text-xs">
+									Email
+								</Label>
+								<Input
+									id="auth-email"
+									type="email"
+									placeholder="you@example.com"
+									className="h-10 border-border bg-background/60 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+									autoComplete="email"
+									disabled={pending !== null}
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label htmlFor="auth-password-signin" className="text-foreground text-xs">
+									Password
+								</Label>
+								<Input
+									id="auth-password-signin"
+									type="password"
+									placeholder="••••••••"
+									className="h-10 border-border bg-background/60 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+									autoComplete="current-password"
+									disabled={pending !== null}
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+								/>
+							</div>
+							<div className="relative mt-0.5">
+								<Button
+									type="submit"
+									className="landing-build-blue relative z-0 h-10 w-full text-sm font-medium text-white hover:opacity-95"
+									disabled={pending !== null}
+								>
+									{pending === "email" ? "Signing in…" : "Sign in"}
+								</Button>
+								{lastUsedMethod === "email" && (
+									<div className="relative z-10 -mt-2.5 flex justify-center">
+										<LastUsedBadge className="shadow-sm ring-2 ring-background" />
+									</div>
+								)}
+							</div>
+						</form>
+					</motion.div>
+				) : (
+					<motion.div
+						key="signUp"
+						role="tabpanel"
+						id="auth-panel-signup"
+						aria-labelledby="auth-tab-signup"
+						initial={{ opacity: 0, x: 10 }}
+						animate={{ opacity: 1, x: 0 }}
+						exit={{ opacity: 0, x: -8 }}
+						transition={{ type: "spring", stiffness: 460, damping: 36 }}
+						className="flex w-full flex-col gap-3"
+					>
+						<form className="flex flex-col gap-3" onSubmit={(e) => void signUpWithEmail(e)}>
+							<div className="space-y-1.5">
+								<Label htmlFor="auth-name" className="text-foreground text-xs">
+									Name
+								</Label>
+								<Input
+									id="auth-name"
+									type="text"
+									placeholder="Ada Lovelace"
+									className="h-10 border-border bg-background/60 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+									autoComplete="name"
+									disabled={pending !== null}
+									value={name}
+									onChange={(e) => setName(e.target.value)}
+								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label htmlFor="auth-email-signup" className="text-foreground text-xs">
+									Email
+								</Label>
+								<Input
+									id="auth-email-signup"
+									type="email"
+									placeholder="you@example.com"
+									className="h-10 border-border bg-background/60 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+									autoComplete="email"
+									disabled={pending !== null}
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label htmlFor="auth-password-signup" className="text-foreground text-xs">
+									Password
+								</Label>
+								<Input
+									id="auth-password-signup"
+									type="password"
+									placeholder="••••••••"
+									className="h-10 border-border bg-background/60 text-sm text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary"
+									autoComplete="new-password"
+									disabled={pending !== null}
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+								/>
+								<p className="text-[0.7rem] leading-tight text-muted-foreground">
+									Min. {MIN_PASSWORD_LEN} characters
+								</p>
+							</div>
+							<div className="relative mt-0.5">
+								<Button
+									type="submit"
+									className="landing-build-blue relative z-0 h-10 w-full text-sm font-medium text-white hover:opacity-95"
+									disabled={pending !== null}
+								>
+									{pending === "signup" ? "Creating account…" : "Create account"}
+								</Button>
+								{lastUsedMethod === "email" && (
+									<div className="relative z-10 -mt-2.5 flex justify-center">
+										<LastUsedBadge className="shadow-sm ring-2 ring-background" />
+									</div>
+								)}
+							</div>
+						</form>
+					</motion.div>
+				)}
+			</AnimatePresence>
+
+			<p className="text-center text-[0.7rem] leading-snug text-muted-foreground/80">
 				By continuing, you agree to our{" "}
 				<a href="#" className="text-primary hover:underline">
 					Terms of Service
@@ -96,6 +321,91 @@ export function LoginForm({
 				</a>
 				.
 			</p>
+		</div>
+	);
+}
+
+function LastUsedBadge({ className }: { className?: string }) {
+	return (
+		<span
+			className={cn(
+				"inline-flex items-center rounded-md border border-primary bg-primary px-1.5 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide text-primary-foreground",
+				className,
+			)}
+		>
+			Last used
+		</span>
+	);
+}
+
+function SocialProviderIconRow({
+	pending,
+	lastUsedMethod,
+	onGoogle,
+	onGithub,
+}: {
+	pending: null | "google" | "github" | "email" | "signup";
+	lastUsedMethod: AuthLastMethod | null;
+	onGoogle: () => void;
+	onGithub: () => void;
+}) {
+	const busy = pending !== null;
+	const providerBtnClass =
+		"h-10 w-full min-w-0 shrink justify-start gap-2.5 rounded-lg border-border bg-background/60 px-3 text-left text-sm font-medium text-foreground hover:bg-secondary";
+	return (
+		<div
+			className={cn("flex flex-row gap-3", (lastUsedMethod === "google" || lastUsedMethod === "github") && "pb-1")}
+			role="group"
+			aria-label="Continue with Google or GitHub"
+		>
+			<div className="flex min-w-0 flex-1 flex-col items-center">
+				<Button
+					type="button"
+					variant="outline"
+					className={cn(providerBtnClass, "relative z-0")}
+					disabled={busy}
+					aria-label="Continue with Google"
+					onClick={onGoogle}
+				>
+					<span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
+						{pending === "google" ? (
+							<Loader2 className="size-[1.15rem] animate-spin text-muted-foreground" />
+						) : (
+							<GoogleIcon className="size-[1.15rem]" />
+						)}
+					</span>
+					<span className="truncate">Google</span>
+				</Button>
+				{lastUsedMethod === "google" && (
+					<span className="relative z-10 -mt-2.5">
+						<LastUsedBadge className="shadow-sm ring-2 ring-background" />
+					</span>
+				)}
+			</div>
+			<div className="flex min-w-0 flex-1 flex-col items-center">
+				<Button
+					type="button"
+					variant="outline"
+					className={cn(providerBtnClass, "relative z-0")}
+					disabled={busy}
+					aria-label="Continue with GitHub"
+					onClick={onGithub}
+				>
+					<span className="flex size-5 shrink-0 items-center justify-center" aria-hidden>
+						{pending === "github" ? (
+							<Loader2 className="size-[1.15rem] animate-spin text-muted-foreground" />
+						) : (
+							<GitHubIcon className="size-[1.15rem]" />
+						)}
+					</span>
+					<span className="truncate">GitHub</span>
+				</Button>
+				{lastUsedMethod === "github" && (
+					<span className="relative z-10 -mt-2.5">
+						<LastUsedBadge className="shadow-sm ring-2 ring-background" />
+					</span>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -135,4 +445,3 @@ function GitHubIcon({ className }: { className?: string }) {
 		</svg>
 	);
 }
-

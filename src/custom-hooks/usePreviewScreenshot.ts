@@ -51,7 +51,7 @@ export function usePreviewScreenshot({
 					return;
 				}
 
-				const nextScreenshotUrl = data.screenshotUrl.trim()
+				const nextScreenshotUrl = typeof data.screenshotUrl === "string" ? data.screenshotUrl.trim() : "";
 
 				if (nextScreenshotUrl) {
 					await onScreenshotUpdated?.(nextScreenshotUrl);

@@ -101,3 +101,21 @@ export function getSnapshot(userID: string | undefined, repoName: string, servic
 		error: entry.error,
 	};
 }
+
+/** In-memory deploy runs only (`status === "running"`). Used to greet reconnecting clients. */
+export function listRunningDeploymentsForUser(userID: string): Array<{ repoName: string; serviceName: string }> {
+	const out: Array<{ repoName: string; serviceName: string }> = [];
+	const prefix = `${userID}:`;
+	for (const [k, entry] of store) {
+		if (entry.status !== "running") continue;
+		if (!k.startsWith(prefix)) continue;
+		const rest = k.slice(prefix.length);
+		const sep = rest.lastIndexOf(":");
+		if (sep <= 0) continue;
+		out.push({
+			repoName: rest.slice(0, sep),
+			serviceName: rest.slice(sep + 1),
+		});
+	}
+	return out;
+}

@@ -1,17 +1,17 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions } from "../../auth/authOptions";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { DeployStep } from "@/app/types";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /** POST - analyze deployment failure logs and suggest fixes */
 export async function POST(req: Request) {
-	const session = await getServerSession(authOptions);
-	if (!session?.accessToken) {
-		return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+	const session = await auth.api.getSession({ headers: await headers() });
+	if (!session?.user?.id) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
 	let body: { steps: DeployStep[]; configSnapshot: Record<string, unknown> };
@@ -53,16 +53,15 @@ Keep the answer practical and short (a few paragraphs at most). Use plain text, 
 
 	try {
 		const text = await callLLMWithFallback(prompt);
-		return NextResponse.json({ response: text });
+		return NextResponse.json({ response: text, source: "llm" });
 	} catch (error: unknown) {
 		console.error("analyze-failure LLM error:", error);
-		return NextResponse.json(
-			{
-				error: "LLM request failed",
-				details: error instanceof Error ? error.message : "Unknown error",
-			},
-			{ status: 502 }
-		);
+		const fallback = buildHeuristicFailureAnalysis(steps, configSnapshot);
+		return NextResponse.json({
+			response: fallback,
+			source: "heuristic-fallback",
+			warning: error instanceof Error ? error.message : "LLM unavailable",
+		});
 	}
 }
 
@@ -95,7 +94,7 @@ async function callGemini(prompt: string): Promise<string> {
 	}
 	const genAI = new GoogleGenerativeAI(geminiApiKey);
 	const model = genAI.getGenerativeModel({
-		model: "gemini-2.5-flash",
+		model: "gemini-3-flash",
 		generationConfig: {
 			temperature: 0.2,
 			maxOutputTokens: 4096,
@@ -112,17 +111,25 @@ async function callLocalLLM(prompt: string): Promise<string> {
 		throw new Error("Missing LOCAL_LLM_BASE_URL env var");
 	}
 	const model = process.env.LOCAL_LLM_MODEL || "llama3.2";
-	const res = await fetch(baseUrl, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			model,
-			prompt,
-			stream: false,
-			temperature: 0.2,
-			max_tokens: 4096,
-		}),
-	});
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 20_000);
+	let res: Response;
+	try {
+		res = await fetch(baseUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			signal: controller.signal,
+			body: JSON.stringify({
+				model,
+				prompt,
+				stream: false,
+				temperature: 0.2,
+				max_tokens: 4096,
+			}),
+		});
+	} finally {
+		clearTimeout(timeout);
+	}
 	if (!res.ok) {
 		const errText = await res.text();
 		throw new Error(`Local LLM returned ${res.status}: ${errText.slice(0, 200)}`);
@@ -133,4 +140,46 @@ async function callLocalLLM(prompt: string): Promise<string> {
 		throw new Error("Local LLM response missing text");
 	}
 	return text;
+}
+
+function buildHeuristicFailureAnalysis(
+	steps: DeployStep[],
+	configSnapshot: Record<string, unknown>
+): string {
+	const allLogs = steps.flatMap((s) => s.logs ?? []);
+	const logText = allLogs.join("\n");
+	const failedSteps = steps.filter((s) => s.status === "error");
+	const failedStepLabels = failedSteps.map((s) => s.label).join(", ");
+
+	const hints: string[] = [];
+	if (/econnrefused|connection refused|timed out|timeout|network/i.test(logText)) {
+		hints.push("Network or upstream connectivity failed. Verify service endpoints, firewall/security group rules, and retry after confirming network reachability.");
+	}
+	if (/bad credentials|unauthorized|401|403|forbidden/i.test(logText)) {
+		hints.push("Authentication appears invalid. Reconnect provider credentials (GitHub/cloud) and re-run deployment.");
+	}
+	if (/dockerfile|build failed|npm err|pnpm err|yarn err|module not found|tsc|compile/i.test(logText)) {
+		hints.push("Build/runtime dependency failure detected. Verify lockfile consistency, install/build commands, and required runtime packages.");
+	}
+	if (/env|environment variable|missing .*key|secret/i.test(logText)) {
+		hints.push("Missing or invalid environment variables are likely. Recheck required secrets and variable names in deployment configuration.");
+	}
+	if (failedSteps.length === 0) {
+		hints.push("Deployment did not complete successfully, but no explicit error step was marked. Review the latest logs around setup/build/deploy boundaries.");
+	}
+
+	const deploymentTarget = typeof configSnapshot.deploymentTarget === "string"
+		? configSnapshot.deploymentTarget
+		: "unknown";
+
+	const topLogs = allLogs.slice(-8).map((l) => `- ${l}`).join("\n");
+	const suggested = hints.slice(0, 3).map((h, i) => `${i + 1}. ${h}`).join("\n");
+
+	return [
+		"LLM providers are currently unavailable, so this is a heuristic analysis.",
+		`Most likely failure area: ${failedStepLabels || "unknown step"}.`,
+		`Deployment target: ${deploymentTarget}.`,
+		suggested || "1. Inspect the most recent error logs and retry after fixing the first concrete error.",
+		topLogs ? `Recent log lines:\n${topLogs}` : "",
+	].filter(Boolean).join("\n\n");
 }

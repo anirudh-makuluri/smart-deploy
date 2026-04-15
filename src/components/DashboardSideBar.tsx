@@ -1,10 +1,10 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { FolderGit2, LayoutGrid, History, User } from "lucide-react";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 import { useAppData } from "@/store/useAppData";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth-client";
 
 type DashboardSideBarProps = {
 	activeView: "overview" | "deployments" | "repositories";
@@ -24,7 +24,7 @@ export default function DashboardSideBar({
 	collapsed = false,
 	onToggleCollapsed,
 }: DashboardSideBarProps) {
-	const { data: session } = useSession();
+	const { data: session } = authClient.useSession();
 	const { repoList, deployments } = useAppData();
 	const activeDeployments = deployments.filter((d) => {
 		const hasStoredLiveUrl = Boolean((d.liveUrl ?? "").trim());

@@ -1,33 +1,27 @@
 "use client";
 
 import * as React from "react";
-import { useDeployLogs } from "@/custom-hooks/useDeployLogs";
+import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import DeployLogsView from "@/components/deploy-workspace/DeployLogsView";
 import { Button } from "@/components/ui/button";
 import { X, Loader2 } from "lucide-react";
 import type { DeployStep } from "@/app/types";
 
-type PrefetchedDeployLogs = {
+export type DeploymentLogsModalPrefetched = {
 	steps: DeployStep[];
 	status?: "running" | "success" | "error";
 	error?: string | null;
 };
 
-type LogsModalState = { repoName: string; serviceName: string; userID?: string; prefetched?: PrefetchedDeployLogs } | null;
+export type DeploymentLogsModalProps = {
+	open: boolean;
+	onClose: () => void;
+	repoName: string;
+	serviceName: string;
+	prefetched?: DeploymentLogsModalPrefetched;
+};
 
-const ActiveDeploymentContext = React.createContext<{
-	openLogsModal: (repoName: string, serviceName: string, userID?: string, prefetched?: PrefetchedDeployLogs) => void;
-	closeLogsModal: () => void;
-}>({
-	openLogsModal: () => { },
-	closeLogsModal: () => { },
-});
-
-export function useActiveDeployment() {
-	return React.useContext(ActiveDeploymentContext);
-}
-
-function DeployLogsModalContent({
+function DeploymentLogsModalContent({
 	repoName,
 	serviceName,
 	prefetched,
@@ -35,15 +29,14 @@ function DeployLogsModalContent({
 }: {
 	repoName: string;
 	serviceName: string;
-	userID?: string;
-	prefetched?: PrefetchedDeployLogs;
+	prefetched?: DeploymentLogsModalPrefetched;
 	onClose: () => void;
 }) {
-	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useDeployLogs(
-		serviceName,
+	const { deployStatus, deployError, serviceLogs, deployLogEntries } = useWorkerWebSocketSession({
+		connectionEnabled: true,
 		repoName,
-		{}
-	);
+		serviceName,
+	});
 
 	const fallbackEntries = React.useMemo(() => {
 		if (!prefetched?.steps?.length) return [] as { timestamp?: string; message?: string }[];
@@ -99,8 +92,8 @@ function DeployLogsModalContent({
 	);
 }
 
-function DeployLogsModal({ state, onClose }: { state: LogsModalState; onClose: () => void }) {
-	if (!state) return null;
+export function DeploymentLogsModal({ open, onClose, repoName, serviceName, prefetched }: DeploymentLogsModalProps) {
+	if (!open) return null;
 
 	return (
 		<div className="fixed inset-0 z-110 flex items-center justify-center p-4">
@@ -110,42 +103,13 @@ function DeployLogsModal({ state, onClose }: { state: LogsModalState; onClose: (
 				onClick={onClose}
 			/>
 			<div className="relative z-10 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-xl">
-				<DeployLogsModalContent
-					repoName={state.repoName}
-					serviceName={state.serviceName}
-					userID={state.userID}
-					prefetched={state.prefetched}
+				<DeploymentLogsModalContent
+					repoName={repoName}
+					serviceName={serviceName}
+					prefetched={prefetched}
 					onClose={onClose}
 				/>
 			</div>
 		</div>
-	);
-}
-
-export default function ActiveDeploymentProvider({
-	children,
-}: {
-	children: React.ReactNode;
-}) {
-	const [logsModal, setLogsModal] = React.useState<LogsModalState>(null);
-
-	const openLogsModal = React.useCallback(
-		(repoName: string, serviceName: string, userID?: string, prefetched?: PrefetchedDeployLogs) => {
-			setLogsModal({ repoName, serviceName, userID, prefetched });
-		},
-		[]
-	);
-	const closeLogsModal = React.useCallback(() => setLogsModal(null), []);
-
-	const ctx = React.useMemo(
-		() => ({ openLogsModal, closeLogsModal }),
-		[openLogsModal, closeLogsModal]
-	);
-
-	return (
-		<ActiveDeploymentContext.Provider value={ctx}>
-			{children}
-			<DeployLogsModal state={logsModal} onClose={closeLogsModal} />
-		</ActiveDeploymentContext.Provider>
 	);
 }
