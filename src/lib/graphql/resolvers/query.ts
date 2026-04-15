@@ -152,9 +152,7 @@ export async function latestCommit(
 
 		const commitData = await fetchLatestCommit(ownerTrimmed, repoTrimmed, branchTrimmed, ctx.githubToken);
 
-		return {
-			commit: commitData,
-		};
+		return commitData;
 	});
 }
 

@@ -579,13 +579,11 @@ const PREFILL_INFRA_MUTATION = `
 const LATEST_COMMIT_QUERY = `
 	query LatestCommit($owner: String!, $repo: String!, $branch: String) {
 		latestCommit(owner: $owner, repo: $repo, branch: $branch) {
-			commit {
-				sha
-				message
-				author
-				date
-				url
-			}
+			sha
+			message
+			author
+			date
+			url
 		}
 	}
 `;
@@ -725,6 +723,6 @@ export async function prefillInfra(url: string, branch?: string, packagePath?: s
 export async function fetchLatestCommit(owner: string, repo: string, branch?: string): Promise<LatestCommit> {
 	const variables: Record<string, unknown> = { owner, repo };
 	if (branch) variables.branch = branch;
-	const data = await graphQLRequest<{ latestCommit: { commit: LatestCommit } }>(LATEST_COMMIT_QUERY, variables);
-	return data.latestCommit.commit;
+	const data = await graphQLRequest<{ latestCommit: LatestCommit }>(LATEST_COMMIT_QUERY, variables);
+	return data.latestCommit;
 }
