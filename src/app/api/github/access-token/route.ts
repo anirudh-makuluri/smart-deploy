@@ -12,7 +12,7 @@ export async function GET(req: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const token = await getGithubAccessTokenForUserId(userId);
+	const token = await getGithubAccessTokenForUserId(userId, req.headers);
 	if (!token) {
 		return NextResponse.json({ error: "GitHub not connected" }, { status: 404 });
 	}

@@ -8,7 +8,8 @@ import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 import BlueprintView from "@/components/blueprint/BlueprintView";
 
-import { useDeployLogs, type DeployCompleteWsPayload } from "@/custom-hooks/useDeployLogs";
+import type { DeployCompleteWsPayload } from "@/custom-hooks/useWorkerWebSocket";
+import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
@@ -127,16 +128,17 @@ export default function DeployWorkspace({
 				});
 			}
 
-			if (!p.success && ec2?.instanceId && repoName && serviceName) {
+			if (!p.success && repoName && serviceName) {
 				void updateDeploymentById({
 					repoName,
 					serviceName: serviceName,
-					ec2: p.ec2,
+					...(p.ec2 != null ? { ec2: p.ec2 } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 					}),
 					status: "failed",
 				});
+				void fetchRepoDeployments(repoIdentifier);
 			}
 		},
 		[deployment.liveUrl, deployment.url, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
@@ -147,8 +149,15 @@ export default function DeployWorkspace({
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries } =
-		useDeployLogs(serviceName ?? "", repoName, { onDeployFinished: onDeployFinishedCallback });
+	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+		useWorkerWebSocket();
+
+	React.useEffect(() => {
+		setOnDeployFinished(onDeployFinishedCallback);
+		return () => {
+			setOnDeployFinished(undefined);
+		};
+	}, [onDeployFinishedCallback, setOnDeployFinished]);
 
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
 		repoName,

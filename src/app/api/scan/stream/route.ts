@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
 	const session = await auth.api.getSession({ headers: await headers() });
 	const userId = session?.user?.id;
-	const token = userId ? await getGithubAccessTokenForUserId(userId) : null;
+	const token = userId ? await getGithubAccessTokenForUserId(userId, req.headers) : null;
 
 	if (!token) {
 		return NextResponse.json({ error: "GitHub not connected" }, { status: 401 });

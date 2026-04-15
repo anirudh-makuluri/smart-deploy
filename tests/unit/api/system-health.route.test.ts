@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
-const createWebSocketAuthTokenMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
 	auth: {
@@ -11,15 +10,10 @@ vi.mock("@/lib/auth", () => ({
 	},
 }));
 
-vi.mock("@/lib/wsAuth", () => ({
-	createWebSocketAuthToken: (...args: unknown[]) => createWebSocketAuthTokenMock(...args),
-}));
-
 describe("GET /api/system-health", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.unstubAllEnvs();
-		createWebSocketAuthTokenMock.mockReturnValue("ws-token");
 	});
 
 	it("returns 401 when the user is not authenticated", async () => {
@@ -31,21 +25,13 @@ describe("GET /api/system-health", () => {
 		expect(response.status).toBe(401);
 	});
 
-	it("returns healthy when websocket and SD Artifacts checks succeed", async () => {
+	it("returns healthy when SD Artifacts check succeeds", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 		vi.stubEnv("SD_API_BASE_URL", "https://artifacts.example.com");
 		vi.stubEnv("SD_API_BEARER_TOKEN", "artifact-token");
 
 		vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
 			const url = String(input);
-			if (url.includes("ws.example.com/healthz")) {
-				return {
-					ok: true,
-					json: async () => ({ ok: true }),
-				} as Response;
-			}
-
 			if (url.includes("artifacts.example.com/healthz")) {
 				return {
 					ok: true,
@@ -64,11 +50,6 @@ describe("GET /api/system-health", () => {
 		expect(body.status).toBe("healthy");
 		expect(body.services).toEqual([
 			{
-				name: "WebSocket server",
-				status: "healthy",
-				message: "Authenticated worker health check passed",
-			},
-			{
 				name: "SD Artifacts server",
 				status: "healthy",
 				message: "Authenticated SD Artifacts health check passed",
@@ -78,12 +59,6 @@ describe("GET /api/system-health", () => {
 
 	it("returns degraded when SD Artifacts env is missing", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
-
-		vi.spyOn(globalThis, "fetch").mockResolvedValue({
-			ok: true,
-			json: async () => ({ ok: true }),
-		} as Response);
 
 		const { GET } = await import("@/app/api/system-health/route");
 		const response = await GET();
@@ -91,16 +66,15 @@ describe("GET /api/system-health", () => {
 
 		expect(response.status).toBe(200);
 		expect(body.status).toBe("degraded");
-		expect(body.services[1]).toEqual({
+		expect(body.services[0]).toEqual({
 			name: "SD Artifacts server",
 			status: "unavailable",
 			message: "SD_API_BASE_URL or SD_API_BEARER_TOKEN is not configured",
 		});
 	});
 
-	it("treats successful healthz responses as healthy even with minimal payloads", async () => {
+	it("treats minimal SD Artifacts payloads as healthy", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "user-123" } });
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 		vi.stubEnv("SD_API_BASE_URL", "https://artifacts.example.com");
 		vi.stubEnv("SD_API_BEARER_TOKEN", "artifact-token");
 
@@ -116,11 +90,6 @@ describe("GET /api/system-health", () => {
 		expect(response.status).toBe(200);
 		expect(body.status).toBe("healthy");
 		expect(body.services).toEqual([
-			{
-				name: "WebSocket server",
-				status: "healthy",
-				message: "Authenticated worker health check passed",
-			},
 			{
 				name: "SD Artifacts server",
 				status: "healthy",

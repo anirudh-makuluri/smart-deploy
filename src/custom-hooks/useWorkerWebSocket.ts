@@ -2,6 +2,7 @@ import { DeployConfig, DeployStep } from "@/app/types";
 import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 import { getDeploymentDisplayUrl } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export type DeployCompleteWsPayload = {
 	success: boolean;
@@ -14,8 +15,19 @@ export type DeployCompleteWsPayload = {
 	customUrl?: string | null;
 };
 
-export type UseDeployLogsOptions = {
-	onDeployFinished?: (payload: DeployCompleteWsPayload) => void;
+export type UseWorkerWebSocketSessionParams = {
+	/**
+	 * When true, opens and keeps a WebSocket to the deploy worker (after fetching `/api/ws-token`).
+	 * Use `Boolean(session?.user?.id)` for the global session, or `true` for a modal-scoped viewer.
+	 */
+	connectionEnabled: boolean;
+	repoName: string;
+	serviceName: string;
+	/**
+	 * When true, show a toast if the worker reports in-memory running deploys for this user on connect.
+	 * Use only for the global `WorkerWebSocketProvider` session so a second modal socket does not duplicate toasts.
+	 */
+	announceActiveDeployments?: boolean;
 };
 
 type SocketStatus = "connecting" | "open" | "closed" | "error";
@@ -66,15 +78,17 @@ export function getWebSocketHealthUrl(): string {
 	return buildWebSocketHealthUrl(getWebSocketUrl(), "/health");
 }
 
+/** Authenticated worker WebSocket URL (same path used for deploy logs). */
 export function getAuthenticatedWebSocketHealthUrl(token: string): string {
-	const healthUrl = new URL(buildWebSocketHealthUrl(getWebSocketUrl(), "/healthz"));
-	healthUrl.searchParams.set("auth", token);
-	return healthUrl.toString();
+	const url = new URL(getWebSocketUrl());
+	url.searchParams.set("auth", token);
+	return url.toString();
 }
 
 export async function fetchWebSocketAuthToken(): Promise<string> {
 	const response = await fetch("/api/ws-token", {
 		method: "GET",
+		credentials: "include",
 		cache: "no-store",
 	});
 
@@ -90,7 +104,16 @@ export async function fetchWebSocketAuthToken(): Promise<string> {
 	return payload.token;
 }
 
-export function useDeployLogs(serviceName: string, repoName: string, options: UseDeployLogsOptions) {
+/**
+ * One WebSocket session to the deploy worker (auth + optional repo/service subscriptions).
+ * The app uses a single provider-scoped instance when logged in; modals may mount another for arbitrary repo/service.
+ */
+export function useWorkerWebSocketSession({
+	connectionEnabled,
+	repoName,
+	serviceName,
+	announceActiveDeployments = false,
+}: UseWorkerWebSocketSessionParams) {
 	const [steps, setSteps] = useState<DeployStep[]>(() => [...defaultSteps]);
 	const [deployLogEntries, setDeployLogEntries] = useState<DeployLogEntry[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -103,11 +126,31 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
 	const wsRef = useRef<WebSocket | null>(null);
-	const onDeployFinishedRef = useRef(options?.onDeployFinished);
+	const activeDeploymentToastShownRef = useRef(false);
+	const onDeployFinishedRef = useRef<((payload: DeployCompleteWsPayload) => void) | undefined>(undefined);
+	const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const reconnectAttemptRef = useRef(0);
+	const connectionEnabledRef = useRef(connectionEnabled);
+	const connectInFlightRef = useRef(false);
+	const onReadyQueueRef = useRef<Array<() => void>>([]);
+	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
 
-	useEffect(() => {
-		onDeployFinishedRef.current = options?.onDeployFinished;
-	}, [options?.onDeployFinished]);
+	const clearReconnectTimer = useCallback(() => {
+		if (reconnectTimerRef.current) {
+			clearTimeout(reconnectTimerRef.current);
+			reconnectTimerRef.current = null;
+		}
+	}, []);
+
+	const flushOnReadyQueue = useCallback(() => {
+		const queue = onReadyQueueRef.current;
+		onReadyQueueRef.current = [];
+		queue.forEach((handler) => handler());
+	}, []);
+
+	const setOnDeployFinished = useCallback((handler: ((payload: DeployCompleteWsPayload) => void) | undefined) => {
+		onDeployFinishedRef.current = handler;
+	}, []);
 
 	const processServiceLogs = useCallback((logs: ServiceLogEntry[]) => {
 		setServiceLogs((prev) => [...prev, ...logs]);
@@ -158,8 +201,31 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 		}
 	}, [repoName, serviceName]);
 
-	const createWebSocket = useCallback((onReady?: () => void) => {
+	const scheduleReconnect = useCallback(() => {
+		if (!connectionEnabledRef.current) return;
+		clearReconnectTimer();
+		reconnectAttemptRef.current += 1;
+		const delay = Math.min(1000 * (2 ** (reconnectAttemptRef.current - 1)), 10000);
+		reconnectTimerRef.current = setTimeout(() => {
+			reconnectTimerRef.current = null;
+			if (!connectionEnabledRef.current) return;
+			const socket = wsRef.current;
+			if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+				return;
+			}
+			if (connectInFlightRef.current) return;
+			setSocketStatus("connecting");
+			openSocketRef.current();
+		}, delay);
+	}, [clearReconnectTimer]);
+
+	const createWebSocket = useCallback(() => {
+		if (connectInFlightRef.current) {
+			return null;
+		}
+		connectInFlightRef.current = true;
 		setSocketStatus("connecting");
+		activeDeploymentToastShownRef.current = false;
 		void (async () => {
 			try {
 				const authToken = await fetchWebSocketAuthToken();
@@ -170,9 +236,12 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 				wsRef.current = ws;
 
 				ws.onopen = () => {
+					connectInFlightRef.current = false;
+					reconnectAttemptRef.current = 0;
+					clearReconnectTimer();
 					setSocketStatus("open");
 					initiateServiceLogs();
-					onReady?.();
+					flushOnReadyQueue();
 				};
 
 				ws.onmessage = (event) => {
@@ -188,6 +257,20 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 
 					const payload = data.payload;
 					switch (data.type) {
+						case "active_deployments": {
+							if (!announceActiveDeployments || activeDeploymentToastShownRef.current) break;
+							const deployments = (payload as { deployments?: { repoName: string; serviceName: string }[] } | undefined)
+								?.deployments ?? [];
+							if (deployments.length === 0) break;
+							activeDeploymentToastShownRef.current = true;
+							const d0 = deployments[0]!;
+							const description =
+								deployments.length === 1
+									? `${d0.serviceName} · ${d0.repoName}`
+									: `${deployments.length} deployments running (e.g. ${d0.serviceName} · ${d0.repoName})`;
+							toast.info("Deployment in progress", { description });
+							break;
+						}
 						case "initial_logs":
 							processServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
 							break;
@@ -319,33 +402,73 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 				};
 
 				ws.onclose = () => {
+					connectInFlightRef.current = false;
 					setSocketStatus("closed");
 					if (wasDeployingRef.current) {
 						setDeployStatus("error");
 						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
 					}
 					wasDeployingRef.current = false;
+					scheduleReconnect();
 				};
 			} catch (error) {
+				connectInFlightRef.current = false;
 				setSocketStatus("error");
 				setDeployError(error instanceof Error ? error.message : "Failed to authenticate websocket connection");
+				scheduleReconnect();
 			}
 		})();
 
 		return null;
-	}, [deployLogs, initiateServiceLogs, processServiceLogs]);
+	}, [announceActiveDeployments, clearReconnectTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs, scheduleReconnect]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
 		if (existing && existing.readyState === WebSocket.OPEN) {
-			onReady?.();
+			if (onReady) {
+				onReady();
+			}
 			return existing;
 		}
-		return createWebSocket(onReady);
+		if (onReady) {
+			onReadyQueueRef.current.push(onReady);
+		}
+		if (existing && existing.readyState === WebSocket.CONNECTING) {
+			return existing;
+		}
+		if (connectInFlightRef.current) {
+			return null;
+		}
+		return createWebSocket();
 	}, [createWebSocket]);
 
 	useEffect(() => {
-		if (!repoName || !serviceName || typeof window === "undefined") return;
+		openSocketRef.current = openSocket;
+		return () => {
+			openSocketRef.current = () => null;
+		};
+	}, [openSocket]);
+
+	useEffect(() => {
+		connectionEnabledRef.current = connectionEnabled;
+		if (typeof window === "undefined") return;
+
+		if (!connectionEnabled) {
+			clearReconnectTimer();
+			reconnectAttemptRef.current = 0;
+			connectInFlightRef.current = false;
+			onReadyQueueRef.current = [];
+			wsRef.current?.close();
+			wsRef.current = null;
+			setSocketStatus("closed");
+			return;
+		}
+
+		openSocket();
+	}, [clearReconnectTimer, connectionEnabled, openSocket]);
+
+	useEffect(() => {
+		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") return;
 
 		const active = getActiveDeployment();
 		const payloadUserId =
@@ -364,13 +487,16 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 				}));
 			}
 		});
-	}, [openSocket, repoName, serviceName]);
+	}, [connectionEnabled, openSocket, repoName, serviceName]);
 
 	useEffect(() => {
 		return () => {
+			clearReconnectTimer();
+			connectInFlightRef.current = false;
+			onReadyQueueRef.current = [];
 			wsRef.current?.close();
 		};
-	}, []);
+	}, [clearReconnectTimer]);
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
 		deployConfigRef.current = deployConfig;
@@ -419,5 +545,6 @@ export function useDeployLogs(serviceName: string, repoName: string, options: Us
 		vercelDnsError,
 		initiateServiceLogs,
 		serviceLogs,
+		setOnDeployFinished,
 	};
 }

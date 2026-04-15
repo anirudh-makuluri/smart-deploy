@@ -6,8 +6,14 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-	const session = await auth.api.getSession({ headers: req.headers });
-	const userID = session?.user?.id;
+	let userID: string | undefined;
+	try {
+		const session = await auth.api.getSession({ headers: req.headers });
+		userID = session?.user?.id;
+	} catch (error) {
+		console.error("Failed to read session for websocket token:", error);
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
 
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

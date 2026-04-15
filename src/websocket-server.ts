@@ -133,6 +133,21 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 	ws.authUserID = authPayload.userID;
 	console.log("Client connected");
 
+	// Defer so the browser has time to attach `onmessage` before this fires.
+	queueMicrotask(() => {
+		if (ws.readyState !== 1) return;
+		const running = deployLogsStore.listRunningDeploymentsForUser(authPayload.userID);
+		if (running.length === 0) return;
+		try {
+			ws.send(JSON.stringify({
+				type: "active_deployments",
+				payload: { deployments: running },
+			}));
+		} catch {
+			// ignore
+		}
+	});
+
 	ws.on("message", async (data) => {
 		try {
 			const response = JSON.parse(data.toString());

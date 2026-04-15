@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { authClient } from "@/lib/auth-client";
 import Image from "next/image";
 import Link from "next/link";
@@ -10,6 +11,8 @@ import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSystemHealth } from "@/custom-hooks/useSystemHealth";
+import type { SystemHealthService, SystemHealthStatus } from "@/custom-hooks/useSystemHealth";
+import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { cn } from "@/lib/utils";
 import {
 	DropdownMenu,
@@ -37,7 +40,63 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const params = useParams();
 	const pathname = usePathname();
 	const { activeServiceName, setActiveServiceName } = useAppData();
-	const systemHealth = useSystemHealth();
+	const workerWs = useWorkerWebSocket();
+	const artifactsHealth = useSystemHealth();
+
+	const systemHealth = React.useMemo((): {
+		status: SystemHealthStatus;
+		message: string;
+		services: SystemHealthService[];
+	} => {
+		const wsRow: SystemHealthService = {
+			name: "WebSocket server",
+			status: workerWs.socketStatus === "open" ? "healthy" : "unavailable",
+			message:
+				workerWs.socketStatus === "open"
+					? "Connected to deploy worker"
+					: workerWs.socketStatus === "connecting"
+						? "Connecting to deploy worker…"
+						: workerWs.socketStatus === "closed"
+							? "Disconnected from deploy worker"
+							: "Deploy worker unreachable",
+		};
+
+		const services: SystemHealthService[] = [wsRow, ...artifactsHealth.services];
+
+		const wsOk = workerWs.socketStatus === "open";
+		const artifactsOk =
+			artifactsHealth.services.length > 0 && artifactsHealth.services.every((s) => s.status === "healthy");
+
+		if (workerWs.socketStatus === "connecting" || artifactsHealth.status === "checking") {
+			return {
+				status: "checking",
+				message: "Checking system health",
+				services,
+			};
+		}
+
+		if (artifactsHealth.status === "unavailable" && artifactsHealth.services.length === 0) {
+			return {
+				status: "unavailable",
+				message: artifactsHealth.message,
+				services,
+			};
+		}
+
+		if (wsOk && artifactsOk) {
+			return {
+				status: "healthy",
+				message: "All systems online",
+				services,
+			};
+		}
+
+		return {
+			status: "degraded",
+			message: "One or more services need attention",
+			services,
+		};
+	}, [workerWs.socketStatus, artifactsHealth]);
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;

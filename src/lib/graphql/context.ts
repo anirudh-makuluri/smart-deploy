@@ -26,11 +26,12 @@ export type GraphQLContext = {
  */
 export async function buildContext(request?: NextRequest): Promise<GraphQLContext> {
 	try {
+		const requestHeaders = request?.headers ?? (await nextHeaders());
 		const session = await auth.api.getSession({
-			headers: request?.headers ?? (await nextHeaders()),
+			headers: requestHeaders,
 		});
 		const userID = session?.user?.id;
-		const githubToken = userID ? await getGithubAccessTokenForUserId(userID) : null;
+		const githubToken = userID ? await getGithubAccessTokenForUserId(userID, requestHeaders) : null;
 
 		return {
 			session,

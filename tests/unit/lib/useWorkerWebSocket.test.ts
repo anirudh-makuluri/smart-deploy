@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAuthenticatedWebSocketHealthUrl, getWebSocketHealthUrl, getWebSocketUrl } from "@/custom-hooks/useDeployLogs";
+import { getAuthenticatedWebSocketHealthUrl, getWebSocketHealthUrl, getWebSocketUrl } from "@/custom-hooks/useWorkerWebSocket";
 
 describe("getWebSocketUrl", () => {
 	afterEach(() => {
@@ -31,15 +31,15 @@ describe("getWebSocketUrl", () => {
 		expect(getWebSocketHealthUrl()).toBe("https://ws.example.com/health");
 	});
 
-	it("derives the authenticated worker health endpoint from the websocket URL", () => {
+	it("derives the authenticated worker websocket URL from the websocket URL", () => {
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com/ws");
 
-		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("https://ws.example.com/healthz?auth=test-token");
+		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("wss://ws.example.com/ws?auth=test-token");
 	});
 
-	it("derives the authenticated worker health endpoint when the websocket URL has no /ws suffix", () => {
+	it("derives the authenticated worker websocket URL when the websocket URL has no /ws suffix", () => {
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
 
-		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("https://ws.example.com/healthz?auth=test-token");
+		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("wss://ws.example.com/?auth=test-token");
 	});
 });

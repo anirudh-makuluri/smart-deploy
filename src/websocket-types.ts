@@ -28,8 +28,12 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 	};
 
 	try {
-		await handleDeploy(deployConfig, token, ws, userID, options);
-		deployLogsStore.setStatus(userID, repoName, serviceName, "success");
+		const result = await handleDeploy(deployConfig, token, ws, userID, options);
+		if (result === "error") {
+			deployLogsStore.setStatus(userID, repoName, serviceName, "error", "Deployment failed");
+		} else {
+			deployLogsStore.setStatus(userID, repoName, serviceName, "success");
+		}
 	} catch (err: any) {
 		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Deployment failed");
 		throw err;

@@ -6,9 +6,10 @@ import DeployWorkspace from "@/components/DeployWorkspace";
 import type { DeployConfig } from "@/app/types";
 
 const mockUseSession = vi.fn();
-const mockUseDeployLogs = vi.fn();
+const mockUseWorkerWebSocket = vi.fn();
 const mockToastSuccess = vi.fn();
 const mockToastInfo = vi.fn();
+const mockToastError = vi.fn();
 const fetchRepoDeployments = vi.fn();
 const updateDeploymentById = vi.fn();
 const getDetectedRepoCache = vi.fn(() => undefined);
@@ -28,6 +29,7 @@ vi.mock("sonner", () => ({
 	toast: {
 		success: (...args: unknown[]) => mockToastSuccess(...args),
 		info: (...args: unknown[]) => mockToastInfo(...args),
+		error: (...args: unknown[]) => mockToastError(...args),
 	},
 }));
 
@@ -35,8 +37,8 @@ vi.mock("@/store/useAppData", () => ({
 	useAppData: (selector: (state: Record<string, unknown>) => unknown) => selector(appState),
 }));
 
-vi.mock("@/custom-hooks/useDeployLogs", () => ({
-	useDeployLogs: (...args: unknown[]) => mockUseDeployLogs(...args),
+vi.mock("@/components/WorkerWebSocketProvider", () => ({
+	useWorkerWebSocket: () => mockUseWorkerWebSocket(),
 }));
 
 vi.mock("@/components/ConfigTabs", () => ({
@@ -109,7 +111,7 @@ describe("DeployWorkspace", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockUseSession.mockReturnValue({ data: { user: { name: "A", id: "u-1" } } });
-		mockUseDeployLogs.mockReturnValue({
+		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),
 			deployConfigRef: { current: null },
@@ -117,6 +119,7 @@ describe("DeployWorkspace", () => {
 			deployError: null,
 			serviceLogs: [],
 			deployLogEntries: [],
+			setOnDeployFinished: vi.fn(),
 		});
 		updateDeploymentById.mockImplementation(async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
 			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
@@ -224,23 +227,24 @@ describe("DeployWorkspace", () => {
 	});
 
 	it("updates the workspace immediately after a successful deploy completes", async () => {
-		mockUseDeployLogs.mockImplementation((_serviceName: string, _repoName: string, options?: { onDeployFinished?: (payload: { success: boolean; deployUrl?: string | null }) => void }) => {
-			queueMicrotask(() => {
-				options?.onDeployFinished?.({
-					success: true,
-					deployUrl: "https://web.example.com",
-				});
-			});
-
-			return {
-				steps: [],
-				sendDeployConfig: vi.fn(),
-				deployConfigRef: { current: null },
-				deployStatus: "success",
-				deployError: null,
-				serviceLogs: [],
-				deployLogEntries: [],
-			};
+		mockUseWorkerWebSocket.mockReturnValue({
+			steps: [],
+			sendDeployConfig: vi.fn(),
+			deployConfigRef: { current: null },
+			deployStatus: "success",
+			deployError: null,
+			serviceLogs: [],
+			deployLogEntries: [],
+			setOnDeployFinished: vi.fn((handler) => {
+				if (handler) {
+					queueMicrotask(() => {
+						handler({
+							success: true,
+							deployUrl: "https://web.example.com",
+						});
+					});
+				}
+			}),
 		});
 
 		appState = {
@@ -263,5 +267,48 @@ describe("DeployWorkspace", () => {
 			);
 		});
 		expect(document.title).toContain("Deployment succeeded");
+	});
+
+	it("marks deployment failed when deploy completes with error even without EC2 metadata", async () => {
+		mockUseWorkerWebSocket.mockReturnValue({
+			steps: [],
+			sendDeployConfig: vi.fn(),
+			deployConfigRef: { current: null },
+			deployStatus: "error",
+			deployError: "Build failed",
+			serviceLogs: [],
+			deployLogEntries: [],
+			setOnDeployFinished: vi.fn((handler) => {
+				if (handler) {
+					queueMicrotask(() => {
+						handler({
+							success: false,
+							error: "Build failed",
+						});
+					});
+				}
+			}),
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [baseDeployment],
+		};
+
+		renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "failed",
+				})
+			);
+		});
+		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
+		expect(mockToastError).toHaveBeenCalled();
 	});
 });

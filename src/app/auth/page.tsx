@@ -9,7 +9,12 @@ type AuthPageProps = {
 };
 
 export default async function AuthPage({ searchParams }: AuthPageProps) {
-	const session = await auth.api.getSession({ headers: await headers() });
+	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
+	try {
+		session = await auth.api.getSession({ headers: await headers() });
+	} catch (error) {
+		console.error("Failed to read auth session for /auth page:", error);
+	}
 	if (session) {
 		redirect("/home");
 	}

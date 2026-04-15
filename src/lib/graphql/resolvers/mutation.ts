@@ -33,6 +33,29 @@ import path from "path";
 import os from "os";
 import { execSync } from "child_process";
 
+function isTransientDbConnectionError(message: string): boolean {
+	return /connection terminated unexpectedly|connection terminated|terminated|econnreset|econnrefused|enotfound/i.test(message);
+}
+
+function resolveMutationErrorMessage(
+	inner: unknown,
+	githubToken: string | undefined,
+	fallback: string
+): string {
+	if (inner instanceof GithubApiError) {
+		return `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, githubToken ?? "")}`;
+	}
+
+	if (inner instanceof Error) {
+		if (isTransientDbConnectionError(inner.message)) {
+			return "Database connection was interrupted. Please retry in a few seconds.";
+		}
+		return inner.message;
+	}
+
+	return fallback;
+}
+
 // ──────────────────────────────────────────────────────────────
 // Mutation Resolvers
 // ──────────────────────────────────────────────────────────────
@@ -237,11 +260,7 @@ export async function detectServices(
 				catalog.packageManager ?? null
 			);
 		} catch (inner: unknown) {
-			const message = inner instanceof GithubApiError 
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
-				: inner instanceof Error
-					? inner.message
-					: "Failed to detect services";
+			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to detect services");
 			throw new Error(message);
 		} finally {
 			try {
@@ -344,11 +363,7 @@ export async function addRepoServiceRoot(
 				null
 			);
 		} catch (inner: unknown) {
-			const message = inner instanceof GithubApiError
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
-				: inner instanceof Error
-					? inner.message
-					: "Failed to add service";
+			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to add service");
 			throw new Error(message);
 		} finally {
 			try {
@@ -717,11 +732,7 @@ export async function prefillInfra(
 				results,
 			};
 		} catch (inner: unknown) {
-			const message = inner instanceof GithubApiError 
-				? `Failed to fetch repository from GitHub: ${redactTokenInText(inner.message, ctx.githubToken)}`
-				: inner instanceof Error
-					? inner.message
-					: "Failed to prefill infrastructure";
+			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to prefill infrastructure");
 			throw new Error(message);
 		} finally {
 			try {
