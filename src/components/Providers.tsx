@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { WorkerWebSocketProvider } from "@/components/WorkerWebSocketProvider";
 import { PosthogGate } from "@/components/analytics/PosthogGate";
+import { SessionFailureLogoutGuard } from "@/components/auth/SessionFailureLogoutGuard";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
 	const [queryClient] = useState(
@@ -19,6 +20,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
 	return (
 		<PosthogGate>
+			<SessionFailureLogoutGuard />
 			<QueryClientProvider client={queryClient}>
 				<WorkerWebSocketProvider>{children}</WorkerWebSocketProvider>
 			</QueryClientProvider>
