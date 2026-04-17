@@ -1,10 +1,10 @@
-# AWS Worker Update Stack (OpenTofu/Terraform)
+# AWS Worker New Stack (OpenTofu/Terraform)
 
-This stack manages the existing Smart Deploy worker instance.
+This stack provisions a new EC2 worker host for Smart Deploy.
 
 What it creates:
 - 1 EC2 instance (default `t3.small`)
-- Security group (80 public, 22 restricted by `ssh_cidr`)
+- Security group (80/443 public, 22 restricted by `ssh_cidr`)
 - IAM role and instance profile with SSM + ECR read access
 - Optional Elastic IP
 - Optional public Route53 A record
@@ -47,14 +47,6 @@ After apply, use output `worker_origin_example` for app env:
 This stack configures Nginx on ports 80 and 443.
 For production, keep TLS enabled and point `NEXT_PUBLIC_WS_URL` to `wss://...`.
 Without TLS, use `ws://...`.
-
-## 5) Existing Instance
-
-This directory already has Terraform state for the live worker. Use it when you want to update the existing EC2 instance, ECR image, or security group settings without creating a separate deployment.
-
-## 6) Fresh Instance
-
-Use [infra/aws-worker-new](../aws-worker-new) when you want to create a brand-new worker instance with a separate Terraform state.
 
 ## Notes
 
