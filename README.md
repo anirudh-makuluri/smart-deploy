@@ -1,10 +1,51 @@
 # Smart Deploy
 
-Smart Deploy is a transparent deployment platform for solo developers.
+<p align="center">
+   <img src="public/icons/favicon-success.svg" alt="Smart Deploy logo" width="96" height="96" />
+</p>
 
-It sits between a PaaS and raw cloud infrastructure. You can write your own deploy files or generate them, inspect the deployment in a blueprint view, review how Docker, `docker-compose.yml`, and Nginx will be used, and then deploy with confidence.
+<p align="center">
+   <strong>Smart Deploy</strong> is a transparent deployment platform for solo developers.
+</p>
 
-Deploy like a PaaS. Understand it like the cloud.
+<p align="center">
+   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT license" /></a>
+   <a href="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml"><img src="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+   <a href="https://github.com/anirudh-makuluri/smart-deploy/issues"><img src="https://img.shields.io/github/issues/anirudh-makuluri/smart-deploy" alt="Open issues" /></a>
+   <a href="https://github.com/anirudh-makuluri/smart-deploy/pulls"><img src="https://img.shields.io/github/issues-pr/anirudh-makuluri/smart-deploy" alt="Open pull requests" /></a>
+   <a href="https://github.com/anirudh-makuluri/smart-deploy/commits/main"><img src="https://img.shields.io/github/last-commit/anirudh-makuluri/smart-deploy/main" alt="Last commit" /></a>
+</p>
+
+<p align="center">
+   It sits between a PaaS and raw cloud infrastructure. You can write your own deploy files or generate them, inspect the deployment in a blueprint view, review how Docker, `docker-compose.yml`, and Nginx will be used, and then deploy with confidence.
+</p>
+
+<p align="center"><em>Deploy like a PaaS. Understand it like the cloud.</em></p>
+
+## Highlights
+
+| What you get | Why it matters |
+|--------------|----------------|
+| Blueprint-first deploy flow | Inspect the deployment path before anything runs |
+| Bring-your-own infra files | Use a Dockerfile, `docker-compose.yml`, and Nginx config you already trust |
+| AWS and GCP support | Keep the workflow grounded in real cloud primitives |
+
+## Table of Contents
+
+- [Highlights](#highlights)
+- [The problem](#the-problem)
+- [What Smart Deploy does](#what-smart-deploy-does)
+- [Workflow](#workflow)
+- [Core experience](#core-experience)
+- [Architecture overview](#architecture-overview)
+- [Tech stack](#tech-stack)
+- [Quick start](#quick-start)
+- [Production notes](#production-notes)
+- [Access control](#access-control)
+- [Environment variables reference](#environment-variables-reference)
+- [Repo guides](#repo-guides)
+- [Scripts](#scripts)
+- [License](#license)
 
 ## The problem
 
