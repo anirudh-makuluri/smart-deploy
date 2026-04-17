@@ -1,7 +1,7 @@
 # Smart Deploy
 
 <p align="center">
-   <img src="public/icons/favicon-success.svg" alt="Smart Deploy logo" width="96" height="96" />
+   <img src="public/icons/icon.svg" alt="Smart Deploy logo" width="96" height="96" />
 </p>
 
 <p align="center">
