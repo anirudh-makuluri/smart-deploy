@@ -158,7 +158,7 @@ function normalizeSvcPath(p: string | undefined): string {
 }
 
 function uniqueServiceName(used: Set<string>, base: string): string {
-	let n = sanitizeFolderServiceId(base) || "app";
+	const n = sanitizeFolderServiceId(base) || "app";
 	if (!used.has(n)) return n;
 	let i = 2;
 	while (used.has(`${n}-${i}`)) i += 1;

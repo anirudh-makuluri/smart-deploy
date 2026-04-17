@@ -2,7 +2,7 @@ import { DeployConfig, DeployStep, EC2Details } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
-import { handleDeploy } from "./lib/handleDeploy";
+import { handleDeploy } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
 import * as deployLogsStore from "./lib/deployLogsStore";
