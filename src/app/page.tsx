@@ -3,6 +3,8 @@ import { getGlobalDeployMetricsForPublic } from "@/lib/metrics/deployMetrics";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	try {

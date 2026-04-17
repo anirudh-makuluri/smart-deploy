@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
+import appConfig from "@/config";
+import { dbHelper } from "@/db-helper";
 
 const SESSION_COOKIE_NAMES = [
 	"better-auth.session_token",
@@ -89,11 +91,16 @@ export async function proxy(req : NextRequest) {
 	}
 
 	if (session) {
-		const approved = await isApprovedEmail(email);
-		if (!approved) {
-			const response = NextResponse.redirect(new URL("/waiting-list", req.url));
-			clearSessionCookies(response);
-			return response;
+		if (appConfig.WAITING_LIST_ENABLED) {
+			const approved = await isApprovedEmail(email);
+			if (!approved) {
+				if (email) {
+					await dbHelper.addToWaitingList(email, session.user?.name ?? null);
+				}
+				const response = NextResponse.redirect(new URL("/waiting-list", req.url));
+				clearSessionCookies(response);
+				return response;
+			}
 		}
 	}
 

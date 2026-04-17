@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import config from '../../../../config';
+import config from '@/config';
 
 export async function GET(req: NextRequest) {
 	// Redirect to waiting list page when access is denied
@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
 		baseUrl = req.nextUrl.origin;
 	}
 	
-	const redirectUrl = new URL('/waiting-list', baseUrl);
+	const redirectPath = config.WAITING_LIST_ENABLED ? '/waiting-list' : '/auth';
+	const redirectUrl = new URL(redirectPath, baseUrl);
 	return NextResponse.redirect(redirectUrl);
 }
