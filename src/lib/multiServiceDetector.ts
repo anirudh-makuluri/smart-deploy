@@ -175,7 +175,7 @@ function dedupedComposePaths(repoRoot: string, maxDepth = 6): string[] {
 }
 
 function allocateCatalogServiceName(used: Set<string>, base: string): string {
-	let n = sanitizeFolderServiceId(base) || "compose";
+	const n = sanitizeFolderServiceId(base) || "compose";
 	if (!used.has(n)) {
 		used.add(n);
 		return n;

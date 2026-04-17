@@ -204,7 +204,7 @@ export default function PreviewModeView({
 				},
 				{ auth: [], build: [], setup: [], deploy: [], done: [] } as Record<PreviewStepId, typeof model.warnings>
 			),
-		[model.warnings]
+		[model]
 	);
 
 	const regionSelectOptions = React.useMemo(() => {

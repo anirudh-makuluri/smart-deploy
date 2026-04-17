@@ -140,7 +140,15 @@ export function useWorkerWebSocketSession({
 	const connectInFlightRef = useRef(false);
 	const connectionAttemptedRef = useRef(false);
 	const onReadyQueueRef = useRef<Array<() => void>>([]);
+	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
+
+	const clearRetryTimer = useCallback(() => {
+		if (retryTimerRef.current != null) {
+			clearTimeout(retryTimerRef.current);
+			retryTimerRef.current = null;
+		}
+	}, []);
 
 	const flushOnReadyQueue = useCallback(() => {
 		const queue = onReadyQueueRef.current;
@@ -404,11 +412,21 @@ export function useWorkerWebSocketSession({
 				setSocketStatus("error");
 				const message = error instanceof Error ? error.message : "Failed to authenticate websocket connection";
 				setDeployError(message);
+				connectionAttemptedRef.current = false;
+				clearRetryTimer();
+				if (connectionEnabledRef.current) {
+					retryTimerRef.current = setTimeout(() => {
+						retryTimerRef.current = null;
+						if (connectionEnabledRef.current) {
+							createWebSocket();
+						}
+					}, 1000);
+				}
 			}
 		})();
 
 		return null;
-	}, [announceActiveDeployments, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
+	}, [announceActiveDeployments, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
@@ -445,6 +463,7 @@ export function useWorkerWebSocketSession({
 			connectInFlightRef.current = false;
 			connectionAttemptedRef.current = false;
 			onReadyQueueRef.current = [];
+			clearRetryTimer();
 			wsRef.current?.close();
 			wsRef.current = null;
 				setHasConnectedOnce(false);
@@ -453,7 +472,7 @@ export function useWorkerWebSocketSession({
 		}
 
 		openSocket();
-	}, [connectionEnabled, openSocket]);
+	}, [clearRetryTimer, connectionEnabled, openSocket]);
 
 	useEffect(() => {
 		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") return;
@@ -481,9 +500,10 @@ export function useWorkerWebSocketSession({
 		return () => {
 			connectInFlightRef.current = false;
 			onReadyQueueRef.current = [];
+			clearRetryTimer();
 			wsRef.current?.close();
 		};
-	}, []);
+	}, [clearRetryTimer]);
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
 		deployConfigRef.current = deployConfig;
