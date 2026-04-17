@@ -5,9 +5,10 @@ import { authClient } from "@/lib/auth-client";
 import Image from "next/image";
 import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
+import HelpAgentSheet from "./HelpAgentSheet";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
-import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
+import { Activity, Bot, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSystemHealth } from "@/custom-hooks/useSystemHealth";
@@ -42,6 +43,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const { activeServiceName, setActiveServiceName } = useAppData();
 	const workerWs = useWorkerWebSocket();
 	const artifactsHealth = useSystemHealth();
+	const [helpAgentOpen, setHelpAgentOpen] = React.useState(false);
 
 	const systemHealth = React.useMemo((): {
 		status: SystemHealthStatus;
@@ -201,6 +203,16 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 				</div>
 
 				<div className="flex shrink-0 flex-row items-center gap-2 sm:gap-3">
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm"
+						onClick={() => setHelpAgentOpen(true)}
+					>
+						<Bot className="size-3.5" />
+						<span>Agent</span>
+					</Button>
 					<DropdownMenu>
 						<DropdownMenuTrigger asChild>
 							<button
@@ -301,6 +313,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 					)}
 				</div>
 			</div>
+			<HelpAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
 		</header>
 	);
 }
