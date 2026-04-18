@@ -7,13 +7,14 @@ import Link from "next/link";
 import { SmartDeployLogo } from "./SmartDeployLogo";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
-import { Activity, ChevronRight, LogOut, Menu, User } from "lucide-react";
+import { Activity, Bug, ChevronRight, LogOut, Menu, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSystemHealth } from "@/custom-hooks/useSystemHealth";
 import type { SystemHealthService, SystemHealthStatus } from "@/custom-hooks/useSystemHealth";
 import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { cn } from "@/lib/utils";
+import UserReportSheet from "@/components/UserReportSheet";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -42,6 +43,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const { activeServiceName, setActiveServiceName } = useAppData();
 	const workerWs = useWorkerWebSocket();
 	const artifactsHealth = useSystemHealth();
+	const [reportOpen, setReportOpen] = React.useState(false);
 
 	const systemHealth = React.useMemo((): {
 		status: SystemHealthStatus;
@@ -261,6 +263,19 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 						</DropdownMenuContent>
 					</DropdownMenu>
 					{session?.user && (
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon"
+							className="h-9 w-9 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.08]"
+							onClick={() => setReportOpen(true)}
+							aria-label="Report issue"
+							title="Report issue"
+						>
+							<Bug className="size-4" />
+						</Button>
+					)}
+					{session?.user && (
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
 								<button
@@ -301,6 +316,14 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 					)}
 				</div>
 			</div>
+			<UserReportSheet
+				open={reportOpen}
+				onOpenChange={setReportOpen}
+				pagePath={pathname || "/"}
+				repoOwner={owner || undefined}
+				repoName={repo || undefined}
+				serviceName={activeServiceName || null}
+			/>
 		</header>
 	);
 }

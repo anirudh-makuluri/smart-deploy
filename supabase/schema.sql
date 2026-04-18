@@ -150,6 +150,26 @@ create table if not exists public.approved_users (
 );
 create index if not exists idx_approved_users_email on public.approved_users(email);
 
+-- Product issue reports and general product feedback from signed-in users.
+create table if not exists public.user_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  user_email text,
+  user_name text,
+  user_image text,
+  category text not null default 'bug' check (category in ('bug', 'feature', 'general', 'other')),
+  message text not null,
+  page_path text,
+  repo_owner text,
+  repo_name text,
+  service_name text,
+  metadata jsonb not null default '{}',
+  status text not null default 'new',
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_user_reports_user_time on public.user_reports(user_id, created_at desc);
+create index if not exists idx_user_reports_category_time on public.user_reports(category, created_at desc);
+
 -- Optional: minimal table for health checks (or use: select 1 from public._health limit 1)
 create table if not exists public._health (
   id int primary key default 1,
@@ -164,6 +184,7 @@ alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
 alter table public.waiting_list enable row level security;
 alter table public.approved_users enable row level security;
+alter table public.user_reports enable row level security;
 
 -- RLS Policies for user_repos
 create policy "Users can view their own repos" on public.user_repos
@@ -171,6 +192,13 @@ create policy "Users can view their own repos" on public.user_repos
 
 create policy "Users can manage their own repos" on public.user_repos
   for all using (auth.uid()::text = user_id);
+
+-- RLS Policies for user_reports
+create policy "Users can view their own reports" on public.user_reports
+  for select using (auth.uid()::text = user_id);
+
+create policy "Users can insert their own reports" on public.user_reports
+  for insert with check (auth.uid()::text = user_id);
 
 -- Allow service role full access (service role key bypasses RLS by default)
 -- If using anon key from client, add policies here.
