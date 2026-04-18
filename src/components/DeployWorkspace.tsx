@@ -13,7 +13,6 @@ import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
-import { useDeploymentTimer } from "@/custom-hooks/useDeploymentTimer";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
@@ -21,7 +20,7 @@ import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
-import { Clock, Rocket, Search, ShieldCheck, AlertCircle, Trash2, Layers } from "lucide-react";
+import { Rocket, Search, ShieldCheck, AlertCircle, Layers } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import ScanProgress from "@/components/ScanProgress";
 import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
@@ -162,11 +161,6 @@ export default function DeployWorkspace({
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
 		repoName,
 		serviceName: serviceName ?? "",
-		deployStatus: deployStatus,
-	});
-
-	const { elapsedSeconds: elapsedTime, formattedTime } = useDeploymentTimer({
-		isActive: isDeploying || deployStatus === "running" || deployStatus === "error",
 		deployStatus: deployStatus,
 	});
 
@@ -782,31 +776,6 @@ export default function DeployWorkspace({
 					</div>
 				</div>
 			</div>
-
-			{isDeploying && deployingCommitInfo && (
-				<div className="mx-auto mt-6 w-full max-w-6xl px-6 animate-in slide-in-from-top-4 duration-500">
-					<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm flex items-center justify-between group hover:border-primary/40 transition-colors">
-						<div className="flex flex-col gap-1">
-							<div className="flex items-center gap-2">
-								<div className="size-2 rounded-full bg-primary animate-pulse" />
-								<span className="font-bold text-foreground">Deploying commit: {deployingCommitInfo.sha.substring(0, 7)}</span>
-							</div>
-							<div className="font-medium text-muted-foreground truncate max-w-md">{deployingCommitInfo.message.split("\n")[0]}</div>
-						</div>
-						<div className="flex items-center gap-4">
-							{elapsedTime > 0 && (
-								<div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-background/50 font-mono text-xs tabular-nums">
-									<Clock className="size-4 text-muted-foreground" />
-									{formattedTime}
-								</div>
-							)}
-							<Button variant="ghost" size="icon" className="text-muted-foreground hover:text-destructive hover:bg-destructive/10">
-								<Trash2 className="size-4" />
-							</Button>
-						</div>
-					</div>
-				</div>
-			)}
 
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<aside className={`hidden h-full shrink-0 border-r border-white/6 bg-background/22 backdrop-blur-sm transition-[width] duration-200 md:block ${isSidebarCollapsed ? "w-20" : "w-60"}`}>

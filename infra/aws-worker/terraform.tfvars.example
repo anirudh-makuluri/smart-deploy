@@ -1,0 +1,26 @@
+aws_region      = "us-east-1"
+project_name    = "smart-deploy"
+environment     = "prod"
+instance_type   = "t3.small"
+
+# Set to your static IP or office CIDR before applying.
+ssh_cidr        = "203.0.113.10/32"
+
+# Optional: leave empty to use default VPC + first subnet.
+vpc_id          = ""
+public_subnet_id = ""
+
+# Optional key pair for SSH. Leave empty if using SSM only.
+key_name        = ""
+
+assign_eip      = true
+
+domain_name     = "smart-deploy.xyz"
+worker_subdomain = "ws"
+
+allowed_origins = [
+  "https://smart-deploy.xyz"
+]
+
+worker_port     = 4001
+worker_image    = "ghcr.io/replace-me/smart-deploy-worker:latest"
