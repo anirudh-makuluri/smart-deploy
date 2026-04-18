@@ -282,6 +282,8 @@ See [`.env.example`](.env.example) for the full template.
 - [docs/GCP_SETUP.md](docs/GCP_SETUP.md)
 - [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md)
 - [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- [docs/FAQ.md](docs/FAQ.md)
 - [docs/MULTI_SERVICE_DETECTION.md](docs/MULTI_SERVICE_DETECTION.md)
 
 ## Scripts
