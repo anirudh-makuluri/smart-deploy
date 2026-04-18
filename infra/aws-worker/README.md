@@ -17,7 +17,10 @@ What it creates:
    - `ssh_cidr`
    - `worker_image`
    - `domain_name` and `worker_subdomain` (if using Route53)
-   - `allowed_origins`
+
+3. Ensure `/opt/smart-deploy/.env` exists on the worker host before starting the service.
+   - The worker container reads this env file directly via `--env-file`.
+   - Include the full runtime env your worker needs (for example `BETTER_AUTH_SECRET`, `WS_ALLOWED_ORIGINS`, cloud credentials, and DB vars).
 
 ## 2) Apply
 
@@ -44,8 +47,9 @@ After apply, use output `worker_origin_example` for app env:
 
 ## 4) TLS/HTTPS
 
-This stack configures Nginx on ports 80 and 443.
-For production, keep TLS enabled and point `NEXT_PUBLIC_WS_URL` to `wss://...`.
+This stack configures Nginx reverse proxying on port 80 by default.
+For production `wss://` you must terminate TLS in front of this instance (for example: Cloudflare, ALB, or your own certificate-managed Nginx setup).
+When TLS is enabled at the edge, set `NEXT_PUBLIC_WS_URL` to `wss://...`.
 Without TLS, use `ws://...`.
 
 ## 5) Existing Instance

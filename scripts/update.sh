@@ -1,48 +1,20 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# SmartDeploy - Update Deployment Script
-# Run this on EC2 to update to latest version
+# Opinionated release command for existing production worker updates.
+# Defaults:
+# - Terraform auto-approve enabled
+# - In-place rollout enabled via SSM
+# - Stack defaults to infra/aws-worker
+#
+# You can still override anything with environment variables, for example:
+#   IMAGE_TAG=2026-04-17-2 ./scripts/update.sh
+#   AUTO_APPROVE=false ./scripts/update.sh
+#   ROLLOUT_MODE=none ./scripts/update.sh
 
-echo "=== SmartDeploy Update ==="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+export AUTO_APPROVE="${AUTO_APPROVE:-true}"
+export ROLLOUT_MODE="${ROLLOUT_MODE:-ssm}"
 
-APP_DIR="/opt/smartdeploy"
-BRANCH="main"
-
-cd "$APP_DIR"
-
-# Step 1: Pull latest code
-echo "Pulling latest changes from $BRANCH..."
-git fetch origin
-git reset --hard origin/$BRANCH
-
-
-# Step 2: Rebuild and restart containers
-echo "Rebuilding Docker images..."
-docker compose build
-
-echo "Restarting containers with zero-downtime..."
-# Pull new images and restart with minimal downtime
-docker compose up -d --force-recreate
-
-# Step 3: Clean up old images
-echo "Cleaning up old Docker images..."
-docker image prune -f
-
-# Step 4: Show status
-echo ""
-echo "=== Update Status ==="
-docker compose ps
-echo ""
-echo "=== Recent Logs ==="
-docker compose logs --tail=30
-echo ""
-echo -e "${GREEN}=== Update Complete ===${NC}"
-echo "Current commit: $(git rev-parse --short HEAD)"
-echo "Commit message: $(git log -1 --pretty=%B)"
+exec "${SCRIPT_DIR}/deploy.sh"

@@ -1,45 +1,50 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# SmartDeploy - Status Script
+# Show status for worker-service deployment (and legacy compose fallback).
 
-APP_DIR="/opt/smartdeploy"
-cd "$APP_DIR"
+APP_DIR="${APP_DIR:-/opt/smartdeploy}"
+ENV_FILE="${ENV_FILE:-/opt/smart-deploy/.env}"
 
 echo "=== SmartDeploy Status ==="
-echo ""
+echo
 
-echo "📦 Container Status:"
-docker compose ps
-echo ""
+if systemctl list-unit-files | grep -q '^smart-deploy-worker\.service'; then
+	echo "[service] smart-deploy-worker"
+	sudo systemctl status smart-deploy-worker --no-pager || true
+	echo
 
-echo "💾 Resource Usage:"
-docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"
-echo ""
+	echo "[container]"
+	docker ps --filter name=smart-deploy-worker
+	echo
 
-echo "🔗 Git Info:"
-echo "  Branch: $(git branch --show-current)"
-echo "  Commit: $(git rev-parse --short HEAD)"
-echo "  Message: $(git log -1 --pretty=%B | head -1)"
-echo ""
+	echo "[health]"
+	curl -fsS http://127.0.0.1:4001/health || echo "Worker health endpoint unavailable"
+	echo
 
-echo "🌐 Network:"
-echo "  Public IP: $(curl -s ifconfig.me)"
-echo "  App URL: http://$(curl -s ifconfig.me)"
-echo ""
+	echo "[unit execstart]"
+	sudo systemctl cat smart-deploy-worker | sed -n '/ExecStart/p'
+	echo
 
-echo "🏥 Health Check:"
-APP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000)
-if echo "$APP_STATUS" | grep -q "200\|302\|401"; then
-    echo "  App: ✅ Healthy (HTTP $APP_STATUS)"
-else
-    echo "  App: ❌ Unhealthy (HTTP $APP_STATUS)"
-    echo "  Trying /api/session endpoint..."
-    SESSION_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/session)
-    echo "  /api/session: HTTP $SESSION_STATUS"
+	echo "[env file] ${ENV_FILE}"
+	if [[ -f "${ENV_FILE}" ]]; then
+		echo "present"
+	else
+		echo "missing"
+	fi
+
+	echo
+	echo "[running image]"
+	docker inspect smart-deploy-worker --format '{{.Config.Image}}' 2>/dev/null || echo "container not running"
+	exit 0
 fi
 
-if curl -s -o /dev/null -w "%{http_code}" http://localhost:4001 2>/dev/null | grep -q "101\|200"; then
-    echo "  WebSocket: ✅ Healthy"
-else
-    echo "  WebSocket: ⚠️  Check manually"
+if [[ -d "${APP_DIR}" ]] && [[ -f "${APP_DIR}/docker-compose.yml" ]]; then
+	echo "[legacy compose mode]"
+	cd "${APP_DIR}"
+	docker compose ps
+	exit 0
 fi
+
+echo "No smart-deploy-worker service and no docker compose app detected."
+exit 1

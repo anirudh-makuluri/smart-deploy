@@ -79,5 +79,5 @@ variable "worker_port" {
 variable "worker_image" {
   description = "Container image for the websocket/deploy worker"
   type        = string
-  default     = "328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:2026-04-17-1"
+  default     = "328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:latest"
 }
