@@ -271,7 +271,13 @@ export const useAppData = create<AppState>((set, get) => ({
 		try {
 			await graphQLUpdateDeployment(partial as DeployConfig);
 		} catch (err) {
-			console.log((err as Error).message);
+			const message = err instanceof Error ? err.message : String(err);
+			const isStaleDeployConfigSchemaError =
+				message.includes('Variable "$config" got invalid value') &&
+				message.includes('Field "ec2" is not defined by type "DeployConfigInput"');
+			if (!isStaleDeployConfigSchemaError) {
+				console.error('updateDeploymentById failed', err);
+			}
 			return;
 		}
 
