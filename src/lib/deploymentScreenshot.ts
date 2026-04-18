@@ -20,7 +20,7 @@ async function launchChromiumForScreenshot() {
 			return await playwrightCore.chromium.launch({
 				args: chromium.args,
 				executablePath,
-				headless: chromium.headless,
+				headless: true,
 			});
 		} catch (err) {
 			console.warn("[Screenshot] Serverless Chromium launch failed, falling back to Playwright package", err);
