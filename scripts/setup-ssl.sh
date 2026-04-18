@@ -1,126 +1,68 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# SmartDeploy - SSL Setup Script with Let's Encrypt
-# Run this after initial deployment to set up SSL certificates
+# Configure HTTPS on a worker host where nginx proxies ws traffic to port 4001.
+# This is optional if TLS terminates at ALB/Cloudflare.
 
-echo "=== SmartDeploy SSL Setup ==="
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Check if running as root or with sudo
-if [ "$EUID" -ne 0 ]; then 
-    echo -e "${RED}Please run with sudo${NC}"
-    exit 1
+if [[ "${EUID}" -ne 0 ]]; then
+	echo "Run as root (sudo)."
+	exit 1
 fi
 
-# Get domain name
-read -p "Enter your domain name (e.g., example.com): " DOMAIN
+DOMAIN="${DOMAIN:-}"
+EMAIL="${EMAIL:-}"
 
-if [ -z "$DOMAIN" ]; then
-    echo -e "${RED}Domain name is required${NC}"
-    exit 1
+if [[ -z "${DOMAIN}" ]]; then
+	read -r -p "Domain (e.g. ws.smart-deploy.xyz): " DOMAIN
+fi
+if [[ -z "${EMAIL}" ]]; then
+	read -r -p "Email for Let's Encrypt: " EMAIL
 fi
 
-# Get email for Let's Encrypt
-read -p "Enter your email for Let's Encrypt notifications: " EMAIL
-
-if [ -z "$EMAIL" ]; then
-    echo -e "${RED}Email is required${NC}"
-    exit 1
+if [[ -z "${DOMAIN}" || -z "${EMAIL}" ]]; then
+	echo "DOMAIN and EMAIL are required."
+	exit 1
 fi
 
-echo "Setting up SSL for domain: $DOMAIN"
+install_certbot() {
+	if command -v apt-get >/dev/null 2>&1; then
+		apt-get update
+		apt-get install -y certbot python3-certbot-nginx nginx
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf install -y certbot python3-certbot-nginx nginx
+	else
+		echo "Unsupported OS package manager. Install certbot + nginx manually."
+		exit 1
+	fi
+}
 
-# Step 1: Install Certbot
-echo "Installing Certbot..."
-apt-get update
-apt-get install -y certbot python3-certbot-nginx
+install_certbot
 
-# Step 2: Create temporary Nginx config for domain verification
-echo "Creating temporary Nginx configuration..."
-cat > /etc/nginx/sites-available/smartdeploy << NGINX
+cat >/etc/nginx/conf.d/smart-deploy-worker.conf <<NGINX
 server {
-    listen 80;
-    server_name $DOMAIN www.$DOMAIN;
+  listen 80;
+  server_name ${DOMAIN};
 
-    # Allow Let's Encrypt verification
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-
-    # Temporary: proxy to app (will be updated after SSL)
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-
-    # WebSocket endpoint
-    location /ws {
-        proxy_pass http://127.0.0.1:4001/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 86400;
-    }
+  location / {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 3600;
+    proxy_pass http://127.0.0.1:4001;
+  }
 }
 NGINX
 
-# Enable the site
-ln -sf /etc/nginx/sites-available/smartdeploy /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl enable nginx
+systemctl restart nginx
 
-# Test and reload Nginx
-nginx -t && systemctl reload nginx
+certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos --email "${EMAIL}" --redirect
 
-# Step 3: Obtain SSL certificate
-echo ""
-echo -e "${YELLOW}IMPORTANT: Make sure your domain $DOMAIN points to this server's IP!${NC}"
-echo "Current server IP: $(curl -s ifconfig.me)"
-read -p "Press Enter to continue with certificate generation..."
+nginx -t
+systemctl reload nginx
 
-certbot --nginx -d $DOMAIN -d www.$DOMAIN \
-    --non-interactive \
-    --agree-tos \
-    --email $EMAIL \
-    --redirect \
-    --expand
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}SSL certificate obtained successfully!${NC}"
-    
-    # Certbot automatically updates Nginx config, but let's verify
-    nginx -t && systemctl reload nginx
-    
-    echo ""
-    echo -e "${GREEN}=== SSL Setup Complete ===${NC}"
-    echo "Your site is now available at: https://$DOMAIN"
-    echo ""
-    echo "Certificate will auto-renew. To test renewal:"
-    echo "  sudo certbot renew --dry-run"
-    echo ""
-    echo "To check certificate status:"
-    echo "  sudo certbot certificates"
-else
-    echo -e "${RED}Failed to obtain SSL certificate${NC}"
-    echo ""
-    echo "Common issues:"
-    echo "  1. Domain DNS not pointing to this server ($(curl -s ifconfig.me))"
-    echo "  2. Port 80 not accessible from internet (check security group)"
-    echo "  3. Firewall blocking port 80"
-    echo "  4. Domain already has a certificate (use --force-renewal if needed)"
-    exit 1
-fi
+echo "SSL configured for ${DOMAIN}."

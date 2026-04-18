@@ -66,6 +66,29 @@ function isLocalhostHost(hostname: string): boolean {
 	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname.endsWith(".local");
 }
 
+function getWebSocketCloseMessage(event: CloseEvent) {
+	const reason = event.reason?.trim();
+	if (event.code === 1008) {
+		if (/unauthorized/i.test(reason)) {
+			return "Worker connection rejected as unauthorized. Check BETTER_AUTH_SECRET parity between app and worker.";
+		}
+		if (/forbidden/i.test(reason)) {
+			return "Worker connection rejected by origin policy. Check WS_ALLOWED_ORIGINS includes your frontend origin.";
+		}
+		return reason ? `Worker rejected connection: ${reason}` : "Worker rejected the connection (policy/auth failure).";
+	}
+
+	if (event.code === 1006) {
+		return "Worker connection closed unexpectedly. Check worker availability, TLS, and reverse proxy settings.";
+	}
+
+	if (reason) {
+		return `Worker connection closed: ${reason}`;
+	}
+
+	return `Worker connection closed (code ${event.code || "unknown"}).`;
+}
+
 export function getWebSocketUrl(): string {
 	const env = process.env.NEXT_PUBLIC_WS_URL;
 	if (typeof env === "string" && env) {
@@ -142,6 +165,7 @@ export function useWorkerWebSocketSession({
 	const onReadyQueueRef = useRef<Array<() => void>>([]);
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
+	const everOpenedRef = useRef(false);
 
 	const clearRetryTimer = useCallback(() => {
 		if (retryTimerRef.current != null) {
@@ -220,6 +244,7 @@ export function useWorkerWebSocketSession({
 		connectInFlightRef.current = true;
 		setSocketStatus("connecting");
 		activeDeploymentToastShownRef.current = false;
+		everOpenedRef.current = false;
 		void (async () => {
 			try {
 				const wsBaseUrl = getWebSocketUrl();
@@ -235,8 +260,10 @@ export function useWorkerWebSocketSession({
 
 				ws.onopen = () => {
 					connectInFlightRef.current = false;
+					everOpenedRef.current = true;
 					setHasConnectedOnce(true);
 					setSocketStatus("open");
+					setDeployError(null);
 					initiateServiceLogs();
 					flushOnReadyQueue();
 				};
@@ -394,18 +421,36 @@ export function useWorkerWebSocketSession({
 					setSocketStatus("error");
 					if (wasDeployingRef.current) {
 						setDeployStatus("error");
-						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
+						setDeployError("Worker connection error during deployment. Check worker logs and websocket configuration.");
 					}
 				};
 
-				ws.onclose = () => {
+				ws.onclose = (event) => {
 					connectInFlightRef.current = false;
 					setSocketStatus("closed");
+					const closeMessage = getWebSocketCloseMessage(event);
 					if (wasDeployingRef.current) {
 						setDeployStatus("error");
-						setDeployError("Connection lost - deployment may have failed. Check if the deploy server is running.");
+						setDeployError(closeMessage);
+					} else if (!everOpenedRef.current && connectionEnabledRef.current) {
+						// Surface initial handshake failures so UI doesn't look stuck in a "waiting" state.
+						setDeployError(closeMessage);
+						if (event.code === 1008) {
+							toast.error("Worker connection rejected", { description: closeMessage });
+						}
 					}
 					wasDeployingRef.current = false;
+
+					if (!everOpenedRef.current && connectionEnabledRef.current) {
+						connectionAttemptedRef.current = false;
+						clearRetryTimer();
+						retryTimerRef.current = setTimeout(() => {
+							retryTimerRef.current = null;
+							if (connectionEnabledRef.current) {
+								createWebSocket();
+							}
+						}, 1500);
+					}
 				};
 			} catch (error) {
 				connectInFlightRef.current = false;
@@ -462,12 +507,14 @@ export function useWorkerWebSocketSession({
 		if (!connectionEnabled) {
 			connectInFlightRef.current = false;
 			connectionAttemptedRef.current = false;
+			everOpenedRef.current = false;
 			onReadyQueueRef.current = [];
 			clearRetryTimer();
 			wsRef.current?.close();
 			wsRef.current = null;
 				setHasConnectedOnce(false);
 			setSocketStatus("closed");
+			setDeployError(null);
 			return;
 		}
 

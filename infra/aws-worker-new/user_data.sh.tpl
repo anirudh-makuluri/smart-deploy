@@ -13,6 +13,12 @@ if [[ "${worker_image}" == *.dkr.ecr.*.amazonaws.com/* ]]; then
 fi
 
 mkdir -p /opt/smart-deploy
+ENV_FILE="/opt/smart-deploy/.env"
+
+if [[ ! -f "$${ENV_FILE}" ]]; then
+  echo "Missing $${ENV_FILE}. Create it with the same environment values used by the app service."
+  exit 1
+fi
 
 cat >/etc/systemd/system/smart-deploy-worker.service <<'UNIT'
 [Unit]
@@ -26,8 +32,7 @@ RestartSec=5
 ExecStartPre=-/usr/bin/docker rm -f smart-deploy-worker
 ExecStart=/usr/bin/docker run --name smart-deploy-worker \
   -p ${worker_port}:${worker_port} \
-  -e PORT=${worker_port} \
-  -e WS_ALLOWED_ORIGINS=${ws_allowed_origins} \
+  --env-file $${ENV_FILE} \
   ${worker_image}
 ExecStop=/usr/bin/docker stop smart-deploy-worker
 

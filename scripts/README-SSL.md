@@ -1,168 +1,111 @@
-# SSL Certificate Setup with Let's Encrypt
+# SSL Setup For Worker Host
 
-This guide explains how to set up SSL certificates for your SmartDeploy application using Let's Encrypt.
+This guide covers TLS for the worker host endpoint, typically a websocket domain such as ws.smart-deploy.xyz.
+
+Use this only when TLS terminates on the worker instance itself.
+If TLS already terminates at ALB, Cloudflare, or another edge proxy, you do not need to run setup-ssl.sh on the instance.
+
+## Scope
+
+- Target service: smart-deploy-worker on port 4001
+- Nginx role: reverse proxy and websocket upgrade handling
+- Cert manager: Certbot with nginx integration
 
 ## Prerequisites
 
-1. **Domain name** pointing to your EC2 instance's public IP
-2. **Port 443 (HTTPS)** open in your AWS Security Group
-3. **Port 80 (HTTP)** open in your AWS Security Group (for Let's Encrypt verification)
+1. DNS A record for your worker domain points to the instance public IP.
+2. Security group allows inbound 80 and 443.
+3. Worker service is already running and healthy on localhost:4001.
+4. You can run commands as root with sudo.
 
-## Quick Setup
+## Initial Setup
 
-### Step 1: Ensure Security Group Allows HTTPS
-
-Make sure your AWS Security Group allows inbound traffic on:
-- Port 80 (HTTP) - for Let's Encrypt verification
-- Port 443 (HTTPS) - for SSL traffic
-
-### Step 2: Point Your Domain to Your Server
-
-Update your domain's DNS A record to point to your EC2 instance's public IP:
-
-```
-Type: A
-Name: @ (or your subdomain)
-Value: <your-ec2-public-ip>
-```
-
-You can find your public IP by running:
-```bash
-curl ifconfig.me
-```
-
-### Step 3: Run SSL Setup Script
+Run on the worker host:
 
 ```bash
 cd /opt/smartdeploy
-sudo chmod +x scripts/setup-ssl.sh
 sudo ./scripts/setup-ssl.sh
 ```
 
-The script will:
-1. Install Certbot
-2. Configure Nginx for your domain
-3. Obtain SSL certificate from Let's Encrypt
-4. Configure automatic HTTPS redirect
-5. Set up security headers
+You can also pass values non-interactively:
 
-## Automatic Certificate Renewal
-
-Let's Encrypt certificates expire every 90 days. Certbot automatically renews them, but you can:
-
-### Test Renewal
 ```bash
-sudo certbot renew --dry-run
+sudo DOMAIN=ws.smart-deploy.xyz EMAIL=you@example.com ./scripts/setup-ssl.sh
 ```
 
-### Manual Renewal
+The script does the following:
+
+1. Installs certbot and nginx tools.
+2. Writes nginx config for your worker domain.
+3. Proxies traffic to http://127.0.0.1:4001.
+4. Obtains certificate and enables HTTPS redirect.
+5. Reloads nginx.
+
+## Renewal
+
+Manual renewal:
+
 ```bash
 sudo ./scripts/renew-ssl.sh
 ```
 
-### Set Up Cron Job (Automatic)
-Certbot usually sets up automatic renewal, but you can verify:
+Recommended validation command:
 
 ```bash
-# Check if renewal timer is active
-sudo systemctl status certbot.timer
-
-# Or add to crontab
-sudo crontab -e
-# Add this line:
-0 0 * * * /opt/smartdeploy/scripts/renew-ssl.sh
+sudo certbot renew --dry-run
 ```
 
-## Verify SSL Setup
+## Verification
 
-1. **Check certificate status:**
-   ```bash
-   sudo certbot certificates
-   ```
+After setup, verify all three layers:
 
-2. **Test your site:**
-   - Visit `https://yourdomain.com`
-   - Check browser shows padlock icon
-   - Test HTTP redirect: `http://yourdomain.com` should redirect to HTTPS
+```bash
+sudo systemctl status nginx --no-pager
+sudo certbot certificates
+curl -i https://ws.smart-deploy.xyz/health
+```
 
-3. **Check SSL rating:**
-   - Visit [SSL Labs](https://www.ssllabs.com/ssltest/) and test your domain
+Expected result for health call: HTTP 200 JSON from worker.
+
+## App Config
+
+When worker TLS is active, app env should use:
+
+```env
+NEXT_PUBLIC_WS_URL=wss://ws.smart-deploy.xyz
+```
+
+Auth base URL in app should use Better Auth naming, not NextAuth naming:
+
+```env
+BETTER_AUTH_URL=https://your-app-domain
+```
 
 ## Troubleshooting
 
-### Certificate Generation Fails
+### Certificate request fails
 
-**Issue:** "Failed to obtain certificate"
+Check DNS and port reachability:
 
-**Solutions:**
-1. Verify DNS is pointing to your server:
-   ```bash
-   dig yourdomain.com
-   # Should show your EC2 IP
-   ```
+```bash
+dig +short ws.smart-deploy.xyz
+sudo ss -tlnp | grep -E ':80|:443'
+```
 
-2. Check port 80 is accessible:
-   ```bash
-   sudo netstat -tlnp | grep :80
-   ```
+### Worker reachable on HTTP but not HTTPS
 
-3. Check security group allows port 80 from 0.0.0.0/0
+Check nginx and certificate wiring:
 
-4. Verify Nginx is running:
-   ```bash
-   sudo systemctl status nginx
-   ```
+```bash
+sudo nginx -t
+sudo journalctl -u nginx -n 200 --no-pager
+sudo certbot certificates
+```
 
-### Certificate Renewal Fails
+### Websocket still fails after TLS
 
-**Issue:** Auto-renewal not working
+Check app and worker env alignment:
 
-**Solutions:**
-1. Check Certbot logs:
-   ```bash
-   sudo tail -f /var/log/letsencrypt/letsencrypt.log
-   ```
-
-2. Manually test renewal:
-   ```bash
-   sudo certbot renew --dry-run
-   ```
-
-3. Ensure Certbot timer is active:
-   ```bash
-   sudo systemctl enable certbot.timer
-   sudo systemctl start certbot.timer
-   ```
-
-### Mixed Content Warnings
-
-If you see mixed content warnings, ensure your Next.js app uses HTTPS URLs:
-
-1. Update `NEXTAUTH_URL` in `.env`:
-   ```
-   NEXTAUTH_URL=https://yourdomain.com
-   ```
-
-2. Update `NEXT_PUBLIC_WS_URL`:
-   ```
-   NEXT_PUBLIC_WS_URL=wss://yourdomain.com
-   ```
-
-3. Restart containers:
-   ```bash
-   docker compose restart
-   ```
-
-## Security Headers
-
-The SSL setup includes these security headers:
-- `Strict-Transport-Security` - Forces HTTPS
-- `X-Frame-Options` - Prevents clickjacking
-- `X-Content-Type-Options` - Prevents MIME sniffing
-- `X-XSS-Protection` - XSS protection
-
-## Additional Resources
-
-- [Let's Encrypt Documentation](https://letsencrypt.org/docs/)
-- [Certbot Documentation](https://certbot.eff.org/)
-- [Nginx SSL Configuration](https://nginx.org/en/docs/http/configuring_https_servers.html)
+1. NEXT_PUBLIC_WS_URL points to wss worker domain.
+2. BETTER_AUTH_SECRET matches between app and worker.
+3. WS_ALLOWED_ORIGINS includes the frontend origin.

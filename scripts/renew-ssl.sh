@@ -1,24 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# SmartDeploy - SSL Certificate Renewal Script
-# This script can be run manually or via cron for automatic renewal
+# Renew Let's Encrypt certs and reload nginx if renewal succeeds.
 
-echo "=== Checking SSL Certificate Renewal ==="
-
-# Run certbot renewal in dry-run mode first to check
-certbot renew --dry-run
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "Dry-run successful. Running actual renewal..."
-    certbot renew
-    
-    # Reload Nginx if certificates were renewed
-    if [ $? -eq 0 ]; then
-        systemctl reload nginx
-        echo "✅ Certificates renewed and Nginx reloaded"
-    fi
-else
-    echo "❌ Renewal check failed. Please investigate."
-    exit 1
+if [[ "${EUID}" -ne 0 ]]; then
+	echo "Run as root (sudo)."
+	exit 1
 fi
+
+certbot renew --dry-run
+certbot renew
+nginx -t
+systemctl reload nginx
+
+echo "Certificate renewal check complete."
+certbot certificates || true

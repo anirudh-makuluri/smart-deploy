@@ -1,28 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# SmartDeploy - View Logs Script
+# Stream logs for current deployment model.
+# Modes:
+#   worker (default): docker logs for smart-deploy-worker container
+#   service: journalctl for smart-deploy-worker systemd service
+#   compose: docker compose logs (legacy mode)
 
-APP_DIR="/opt/smartdeploy"
-cd "$APP_DIR"
+MODE="${1:-worker}"
+APP_DIR="${APP_DIR:-/opt/smartdeploy}"
 
-case "$1" in
-    app)
-        echo "=== Next.js App Logs ==="
-        docker compose logs -f app
-        ;;
-    ws|websocket)
-        echo "=== WebSocket Server Logs ==="
-        docker compose logs -f websocket
-        ;;
-    all|"")
-        echo "=== All Logs ==="
-        docker compose logs -f
-        ;;
-    *)
-        echo "Usage: $0 [app|ws|all]"
-        echo "  app  - Show Next.js app logs"
-        echo "  ws   - Show WebSocket server logs"
-        echo "  all  - Show all logs (default)"
-        exit 1
-        ;;
+usage() {
+	echo "Usage: $0 [worker|service|compose]"
+	exit 1
+}
+
+case "${MODE}" in
+	worker)
+		docker logs -f smart-deploy-worker
+		;;
+	service)
+		sudo journalctl -u smart-deploy-worker -f --no-pager
+		;;
+	compose)
+		cd "${APP_DIR}"
+		docker compose logs -f
+		;;
+	*)
+		usage
+		;;
 esac

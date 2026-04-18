@@ -6,6 +6,7 @@ import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
+import { getSupabaseServer } from "./lib/supabaseServer";
 import { verifyWebSocketAuthToken } from "./lib/wsAuth";
 import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
 
@@ -50,9 +51,12 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
+const environment = process.env.NODE_ENV || "development";
+const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 type AuthenticatedSocket = WebSocket & {
 	authUserID?: string;
+	authUserLabel?: string;
 };
 
 // Setup HTTP server to attach WebSocket to
@@ -80,7 +84,7 @@ const server = http.createServer((req, res) => {
 
 	if (req.url === "/health" || req.url === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ ok: true, service: "websocket", port }));
+		res.end(JSON.stringify({ ok: true, service: "websocket", port, environment }));
 		return;
 	}
 
@@ -96,7 +100,7 @@ const server = http.createServer((req, res) => {
 		}
 
 		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ ok: true, service: "websocket", port, authenticated: true }));
+		res.end(JSON.stringify({ ok: true, service: "websocket", port, environment, authenticated: true }));
 		return;
 	}
 
@@ -116,22 +120,28 @@ function sendDeployComplete(ws: any, success: boolean, error?: string) {
 
 wss.on("connection", (ws: AuthenticatedSocket, req) => {
 	const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+	const requestUrl = new URL(req.url || "/", "http://localhost");
+	const hasAuthParam = requestUrl.searchParams.has("auth");
+	console.log(`[ws] incoming connection origin=${requestOrigin || "none"} hasAuth=${hasAuthParam}`);
+
 	if (!isOriginAllowed(requestOrigin, allowedOrigins)) {
+		console.warn(`[ws] rejected connection: forbidden origin (${requestOrigin || "none"})`);
 		ws.close(1008, "Forbidden origin");
 		return;
 	}
 
-	const requestUrl = new URL(req.url || "/", "http://localhost");
 	const authToken = requestUrl.searchParams.get("auth") || "";
 	const authPayload = verifyWebSocketAuthToken(authToken);
 
 	if (!authPayload?.userID) {
+		console.warn("[ws] rejected connection: unauthorized (missing/invalid auth token)");
 		ws.close(1008, "Unauthorized");
 		return;
 	}
 
 	ws.authUserID = authPayload.userID;
-	console.log("Client connected");
+	ws.authUserLabel = (authPayload.userID || "user").slice(0, 4);
+	console.log(`Client connected [${ws.authUserLabel}]`);
 
 	// Defer so the browser has time to attach `onmessage` before this fires.
 	queueMicrotask(() => {
@@ -205,13 +215,15 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 	});
 
 	ws.on("close", () => {
-		console.log("Client disconnected");
+		const userLabel = ws.authUserLabel || ws.authUserID || "unknown";
+		console.log(`Client disconnected [${userLabel}]`);
 		deployLogsStore.removeSubscriberFromAll(ws);
 	});
 });
 
 server.listen(port, "0.0.0.0", () => {
 	console.log(`WebSocket server running on 0.0.0.0:${port}`);
+	console.log(`[ws] allowed origins: ${allowedOriginsLabel}`);
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients

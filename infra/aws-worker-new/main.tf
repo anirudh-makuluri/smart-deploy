@@ -120,10 +120,9 @@ resource "aws_instance" "worker" {
   key_name = var.key_name != "" ? var.key_name : null
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    worker_port        = var.worker_port
-    worker_image       = var.worker_image
-    aws_region         = var.aws_region
-    ws_allowed_origins = join(",", var.allowed_origins)
+    worker_port  = var.worker_port
+    worker_image = var.worker_image
+    aws_region   = var.aws_region
   })
 
   tags = {

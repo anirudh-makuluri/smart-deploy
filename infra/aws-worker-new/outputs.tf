@@ -15,5 +15,5 @@ output "worker_dns_record" {
 
 output "worker_origin_example" {
   description = "Example websocket origin to set as NEXT_PUBLIC_WS_URL"
-  value       = var.domain_name != "" ? "ws://${var.worker_subdomain}.${var.domain_name}" : ""
+  value       = var.domain_name != "" ? "wss://${var.worker_subdomain}.${var.domain_name}" : ""
 }
