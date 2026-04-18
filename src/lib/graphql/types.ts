@@ -315,6 +315,8 @@ export const typeDefs = `
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
     awsRegion: String
+    ec2: JSON
+    cloudRun: JSON
     scanResults: JSON
   }
 

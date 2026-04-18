@@ -1,6 +1,35 @@
-import { chromium } from "playwright";
 import config from "../config";
 import { getSupabaseServer } from "./supabaseServer";
+
+async function launchChromiumForScreenshot() {
+	const preferServerlessLauncher =
+		process.env.PLAYWRIGHT_USE_SERVERLESS_CHROMIUM === "1" ||
+		Boolean(process.env.VERCEL) ||
+		Boolean(process.env.AWS_EXECUTION_ENV) ||
+		Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+	if (preferServerlessLauncher) {
+		try {
+			const [playwrightCore, sparticuzModule] = await Promise.all([
+				import("playwright-core"),
+				import("@sparticuz/chromium"),
+			]);
+			const chromium = sparticuzModule.default;
+			const executablePath = await chromium.executablePath();
+
+			return await playwrightCore.chromium.launch({
+				args: chromium.args,
+				executablePath,
+				headless: chromium.headless,
+			});
+		} catch (err) {
+			console.warn("[Screenshot] Serverless Chromium launch failed, falling back to Playwright package", err);
+		}
+	}
+
+	const { chromium } = await import("playwright");
+	return chromium.launch({ headless: true });
+}
 
 function sanitizePathSegment(s: string) {
 	// Keep it filesystem/DNS friendly for storage object keys.
@@ -46,8 +75,8 @@ export async function captureDeploymentScreenshotAndUpload(opts: {
 	const bucket = config.DEPLOYMENT_SCREENSHOT_BUCKET.trim() || "deployment-screenshots";
 	await ensureScreenshotBucket();
 
-	// Capture screenshot using headless Chromium.
-	const browser = await chromium.launch({ headless: true });
+	// Capture screenshot using a runtime-compatible Chromium launcher.
+	const browser = await launchChromiumForScreenshot();
 	try {
 		const context = await browser.newContext({
 			ignoreHTTPSErrors: true,

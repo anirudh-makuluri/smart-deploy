@@ -109,14 +109,26 @@ export async function POST(request: NextRequest) {
 	} catch (err) {
 		console.error("[Screenshot] Error:", err);
 		const errorMessage = err instanceof Error ? err.message : "Unknown error";
+		const normalized = errorMessage.toLowerCase();
+
+		if (
+			normalized.includes("browsertype.launch") ||
+			normalized.includes("executable doesn't exist") ||
+			normalized.includes("playwright install")
+		) {
+			return NextResponse.json({
+				status: "skipped",
+				error: "Screenshot browser is unavailable in the current runtime",
+			});
+		}
 
 		// Check if it's a gateway timeout or similar error (501, 502, 503, 504)
 		if (
-			errorMessage.includes("502") ||
-			errorMessage.includes("503") ||
-			errorMessage.includes("504") ||
-			errorMessage.includes("gateway") ||
-			errorMessage.includes("timeout")
+			normalized.includes("502") ||
+			normalized.includes("503") ||
+			normalized.includes("504") ||
+			normalized.includes("gateway") ||
+			normalized.includes("timeout")
 		) {
 			return NextResponse.json(
 				{
