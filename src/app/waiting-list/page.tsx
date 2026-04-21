@@ -28,10 +28,10 @@ export default function WaitingListPage() {
 					<p className="text-muted-foreground mb-6 leading-relaxed">
 						To get access sooner, please email{" "}
 						<a 
-							href="mailto:anirudh.makuluri@gmail.com" 
+							href="mailto:contact@smartdeploy.xyz" 
 							className="text-primary hover:underline font-medium"
 						>
-							anirudh.makuluri@gmail.com
+							contact@smartdeploy.xyz
 						</a>
 						{" "}and let him know you&apos;d like to be added to the platform.
 					</p>
@@ -41,7 +41,7 @@ export default function WaitingListPage() {
 							asChild
 							className="w-full hidden h-11 landing-build-blue hover:opacity-95 text-white font-medium"
 						>
-							<a href="mailto:anirudh.makuluri@gmail.com?subject=Request%20for%20Smart%20Deploy%20Access">
+							<a href="mailto:contact@smartdeploy.xyz?subject=Request%20for%20Smart%20Deploy%20Access">
 								<Mail className="size-4 mr-2" />
 								Send Email Request
 							</a>
