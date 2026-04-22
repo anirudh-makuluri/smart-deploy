@@ -28,6 +28,7 @@ type ChatMessage = {
 	content: string;
 	citations?: string[];
 	model?: string;
+	responseTimeMs?: number;
 };
 
 const STARTER_PROMPTS = [
@@ -103,6 +104,7 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 				answer?: string;
 				citations?: string[];
 				model?: string;
+				responseTimeMs?: number;
 				error?: string;
 			};
 
@@ -118,6 +120,7 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 					content: data.answer || "I couldn't generate a response right now.",
 					citations: Array.isArray(data.citations) ? data.citations : [],
 					model: typeof data.model === "string" ? data.model : undefined,
+					responseTimeMs: typeof data.responseTimeMs === "number" ? data.responseTimeMs : undefined,
 				},
 			]);
 		} catch (error) {
@@ -219,6 +222,11 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 									{message.role === "assistant" && message.model ? (
 										<div className="mt-2 text-[11px] text-muted-foreground/90">
 											Model: {message.model}
+										</div>
+									) : null}
+									{message.role === "assistant" && typeof message.responseTimeMs === "number" ? (
+										<div className="mt-1 text-[11px] text-muted-foreground/70">
+											Response time: {message.responseTimeMs} ms
 										</div>
 									) : null}
 								</div>

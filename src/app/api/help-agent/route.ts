@@ -347,9 +347,10 @@ function preferredDocFallback(contextSources: Set<string>): string[] {
 }
 
 export async function POST(req: Request) {
+	const startedAt = Date.now();
 	const session = await auth.api.getSession({ headers: await headers() });
 	if (!session?.user?.id) {
-		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		return NextResponse.json({ error: "Unauthorized", responseTimeMs: Date.now() - startedAt }, { status: 401 });
 	}
 
 	const body = (await req.json()) as { question?: string; history?: ChatTurn[] };
@@ -357,7 +358,7 @@ export async function POST(req: Request) {
 	const history = Array.isArray(body.history) ? body.history : [];
 
 	if (!question) {
-		return NextResponse.json({ error: "Missing question" }, { status: 400 });
+		return NextResponse.json({ error: "Missing question", responseTimeMs: Date.now() - startedAt }, { status: 400 });
 	}
 
 	const [chunks, recentDeployments] = await Promise.all([
@@ -371,6 +372,7 @@ export async function POST(req: Request) {
 				"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.",
 			citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
 			confidence: "low",
+			responseTimeMs: Date.now() - startedAt,
 		});
 	}
 
@@ -386,6 +388,7 @@ export async function POST(req: Request) {
 				citations: preferredDocFallback(contextSources),
 				confidence: "low",
 				model: llm.model,
+				responseTimeMs: Date.now() - startedAt,
 			});
 		}
 
@@ -395,6 +398,7 @@ export async function POST(req: Request) {
 			citations: citations.length > 0 ? citations : preferredDocFallback(contextSources),
 			confidence: parsed.confidence,
 			model: llm.model,
+			responseTimeMs: Date.now() - startedAt,
 		});
 	} catch (error) {
 		console.error("Help agent request failed:", error);
@@ -404,6 +408,7 @@ export async function POST(req: Request) {
 					"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.",
 				citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
 				confidence: "low",
+				responseTimeMs: Date.now() - startedAt,
 			},
 			{ status: 200 }
 		);
