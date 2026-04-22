@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { BookOpenText, Loader2, MessageCircleQuestion, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,6 +27,8 @@ type ChatMessage = {
 	role: "user" | "assistant";
 	content: string;
 	citations?: string[];
+	model?: string;
+	responseTimeMs?: number;
 };
 
 const STARTER_PROMPTS = [
@@ -99,6 +103,8 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 			const data = (await response.json()) as {
 				answer?: string;
 				citations?: string[];
+				model?: string;
+				responseTimeMs?: number;
 				error?: string;
 			};
 
@@ -113,6 +119,8 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 					role: "assistant",
 					content: data.answer || "I couldn't generate a response right now.",
 					citations: Array.isArray(data.citations) ? data.citations : [],
+					model: typeof data.model === "string" ? data.model : undefined,
+					responseTimeMs: typeof data.responseTimeMs === "number" ? data.responseTimeMs : undefined,
 				},
 			]);
 		} catch (error) {
@@ -178,10 +186,28 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 											: "border-border bg-background/70 text-foreground",
 									)}
 								>
-									<p className="whitespace-pre-wrap">{message.content}</p>
+									{message.role === "assistant" ? (
+										<ReactMarkdown
+											remarkPlugins={[remarkGfm]}
+											components={{
+												p: ({ children }) => <p className="whitespace-pre-wrap leading-relaxed">{children}</p>,
+												ul: ({ children }) => <ul className="mt-2 list-disc space-y-1 pl-5">{children}</ul>,
+												ol: ({ children }) => <ol className="mt-2 list-decimal space-y-1 pl-5">{children}</ol>,
+												li: ({ children }) => <li>{children}</li>,
+												strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+												code: ({ children }) => (
+													<code className="rounded bg-secondary/60 px-1 py-0.5 text-[0.9em]">{children}</code>
+												),
+											}}
+										>
+											{message.content}
+										</ReactMarkdown>
+									) : (
+										<p className="whitespace-pre-wrap">{message.content}</p>
+									)}
 									{message.citations && message.citations.length > 0 ? (
 										<div className="mt-2 flex flex-wrap gap-2">
-											{message.citations.map((citation) => (
+											{message.citations.filter((citation) => citation !== "README.md").map((citation) => (
 												<Link
 													key={`${message.id}-${citation}`}
 													href={sourceToHref(citation)}
@@ -191,6 +217,16 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 													{sourceToLabel(citation)}
 												</Link>
 											))}
+										</div>
+									) : null}
+									{message.role === "assistant" && message.model ? (
+										<div className="mt-2 text-[11px] text-muted-foreground/90">
+											Model: {message.model}
+										</div>
+									) : null}
+									{message.role === "assistant" && typeof message.responseTimeMs === "number" ? (
+										<div className="mt-1 text-[11px] text-muted-foreground/70">
+											Response time: {message.responseTimeMs} ms
 										</div>
 									) : null}
 								</div>
