@@ -58,6 +58,8 @@ function clearSessionCookies(response: NextResponse) {
 
 export async function proxy(req : NextRequest) {
 	const pathname = req.nextUrl.pathname;
+	const isRobotsTxt = pathname === "/robots.txt";
+	const isSitemapXml = pathname === "/sitemap.xml";
 	const isAuthPage = pathname.startsWith("/auth");
 	const isLanding = pathname === "/";
 	const isDocsPage = pathname === "/docs" || pathname.startsWith("/docs/");
@@ -71,7 +73,7 @@ export async function proxy(req : NextRequest) {
 		return NextResponse.next();
 	}
 
-	const isPublicPage = isLanding || isDocsPage || isChangelogPage || isWaitingList;
+	const isPublicPage = isLanding || isDocsPage || isChangelogPage || isWaitingList || isRobotsTxt || isSitemapXml;
 	const shouldCheckSession = isAuthPage || (!isPublicPage && !isAuthApi);
 
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
@@ -118,6 +120,6 @@ export async function proxy(req : NextRequest) {
 
 export const config = {
   matcher: [
-		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico)).*)",
+		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico|txt|xml)).*)",
   ], // Exclude static assets, API routes, etc.
 }
