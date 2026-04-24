@@ -303,8 +303,8 @@ async function createMossHarness(): Promise<MossHarness | null> {
 		keepMossIndex,
 	});
 
-	const module = await import("@moss-dev/moss");
-	const MossClientCtor = (module as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
+	const mossModule = await import("@moss-dev/moss");
+	const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 	if (!MossClientCtor) {
 		throw new Error("Failed to load MossClient from @moss-dev/moss");
 	}
