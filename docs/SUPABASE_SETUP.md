@@ -121,6 +121,39 @@ The default is `deployment-screenshots`.
 
 ---
 
+## 5. (Optional) Help-agent docs knowledge base table
+
+If you want docs stored in Supabase (for admin workflows, analytics, and hybrid retrieval), create the optional docs table and sync markdown files.
+
+1. In Supabase SQL Editor, run:
+
+```sql
+-- file: supabase/help_docs_schema.sql
+```
+
+2. Ensure `.env` includes:
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+3. Sync docs from `README.md` and `docs/**/*.md`:
+
+```bash
+npm run sync:help-docs
+```
+
+4. Optional: remove rows for deleted docs while syncing:
+
+```bash
+npm run sync:help-docs -- --prune
+```
+
+This writes to `public.help_docs` with `source_path`, `title`, `content`, `checksum`, and `tags`.
+
+---
+
 ## Troubleshooting
 
 | Issue | Fix |

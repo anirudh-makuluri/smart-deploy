@@ -1,0 +1,62 @@
+[
+	{
+		"id": "deploy-failure-logs",
+		"question": "Why did my recent deployment fail?",
+		"expectedSignals": ["failed step", "log", "environment variable", "permission"],
+		"notes": "Primary troubleshooting query. Should recover from recent deployment history and logs."
+	},
+	{
+		"id": "local-startup",
+		"question": "npm run dev fails and localhost:3000 never comes up. What should I check first?",
+		"expectedSignals": ["npm install", "BETTER_AUTH_SECRET", "DATABASE_URL", "SUPABASE_URL"],
+		"notes": "Tests startup guidance and environment variable recall."
+	},
+	{
+		"id": "signin-waitlist",
+		"question": "I can sign in but I get sent to /waiting-list. Why?",
+		"expectedSignals": ["approved_users", "waiting list", "approved"],
+		"notes": "Checks auth and approval flow retrieval."
+	},
+	{
+		"id": "github-not-connected",
+		"question": "Repo scanning says GitHub not connected. What does that mean?",
+		"expectedSignals": ["GitHub not connected", "GitHub OAuth", "token"],
+		"notes": "Checks GitHub auth troubleshooting."
+	},
+	{
+		"id": "supabase-connection",
+		"question": "I’m seeing Supabase connection errors and relation does not exist. What should I do?",
+		"expectedSignals": ["SUPABASE_URL", "DATABASE_URL", "schema.sql", "relation does not exist"],
+		"notes": "Tests database setup guidance."
+	},
+	{
+		"id": "websocket-not-connecting",
+		"question": "Why is the WebSocket not connecting and deploy logs are not streaming?",
+		"expectedSignals": ["NEXT_PUBLIC_WS_URL", "ws://localhost:4001", "wss://", "worker"],
+		"notes": "Checks worker / websocket guidance."
+	},
+	{
+		"id": "aws-permissions",
+		"question": "My AWS deploy failed with UnauthorizedOperation. What does that usually mean?",
+		"expectedSignals": ["UnauthorizedOperation", "IAM", "permissions", "AWS_ACCESS_KEY_ID"],
+		"notes": "Checks AWS permission troubleshooting."
+	},
+	{
+		"id": "custom-domain",
+		"question": "My custom domain is not pointing to the deployment. Where should I look?",
+		"expectedSignals": ["custom domain", "DNS", "Vercel", "SSL"],
+		"notes": "Checks domain/DNS guidance."
+	},
+	{
+		"id": "self-hosting",
+		"question": "I’m self-hosting and the app works locally but fails behind my reverse proxy. What should I verify?",
+		"expectedSignals": ["reverse proxy", "WS_ALLOWED_ORIGINS", "NEXT_PUBLIC_WS_URL", "self-hosting"],
+		"notes": "Checks self-hosting docs recall."
+	},
+	{
+		"id": "deploy-health",
+		"question": "The deployment is up but the health check or preview looks broken. How would you debug that?",
+		"expectedSignals": ["health", "preview", "logs", "deployment history"],
+		"notes": "Tests follow-up diagnostic guidance."
+	}
+]
