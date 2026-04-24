@@ -19,7 +19,7 @@ export function DocsSimpleLayout({ guideLinks, activeSlug, contentSourcePath, ch
 
 			<div className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-12">
 				<p className="font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Documentation</p>
-				<h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Repository docs</h1>
+				<h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Repository docs</h2>
 
 				<div className="mt-6 space-y-4 text-sm leading-7 text-muted-foreground">
 					<p>

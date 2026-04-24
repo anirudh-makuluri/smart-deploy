@@ -4,8 +4,17 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import config from "@/config";
+import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+	title: "Auth",
+	robots: {
+		index: false,
+		follow: false,
+	},
+};
 
 type AuthPageProps = {
 	searchParams?: Promise<Record<string, string | string[] | undefined>>;

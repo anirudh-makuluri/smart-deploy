@@ -5,6 +5,17 @@ import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
+const webApplicationJsonLd = {
+	"@context": "https://schema.org",
+	"@type": "WebApplication",
+	name: "Smart Deploy",
+	applicationCategory: "DeveloperApplication",
+	operatingSystem: "Web",
+	url: "https://smart-deploy.xyz",
+	description:
+		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+};
+
 export default async function Home() {
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	try {
@@ -16,6 +27,12 @@ export default async function Home() {
 	const publicMetrics = await getGlobalDeployMetricsForPublic();
 
 	return (
-		<LandingExperience isSignedIn={Boolean(session)} publicMetrics={publicMetrics} />
+		<>
+			<script
+				type="application/ld+json"
+				dangerouslySetInnerHTML={{ __html: JSON.stringify(webApplicationJsonLd) }}
+			/>
+			<LandingExperience isSignedIn={Boolean(session)} publicMetrics={publicMetrics} />
+		</>
 	);
 }
