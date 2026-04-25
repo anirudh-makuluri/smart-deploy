@@ -8,6 +8,7 @@ Use this format:
 3. Apply the fix.
 
 If you are self-hosting, also see [Self Hosting](./SELF_HOSTING.md).
+For frequent deploy-time failures, see [Error Catalog](./ERROR_CATALOG.md#common-deployment-failures-high-frequency).
 
 ---
 

@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { auth } from "@/lib/auth";
 import { getHelpContext, type HelpDocChunk } from "@/lib/helpAgentDocs";
+import { getMossHelpContextWithMetrics } from "@/lib/helpAgentMoss";
 import { dbHelper } from "@/db-helper";
 
 type ChatTurn = {
@@ -346,6 +347,22 @@ function preferredDocFallback(contextSources: Set<string>): string[] {
 	return preferred.slice(0, 3);
 }
 
+function mergeChunks(primary: HelpDocChunk[], secondary: HelpDocChunk[], limit = 8): HelpDocChunk[] {
+	const merged = [...primary, ...secondary];
+	const seen = new Set<string>();
+	const deduped: HelpDocChunk[] = [];
+
+	for (const chunk of merged) {
+		const key = `${chunk.source}::${chunk.section}::${chunk.content.slice(0, 120)}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		deduped.push(chunk);
+		if (deduped.length >= limit) break;
+	}
+
+	return deduped;
+}
+
 export async function POST(req: Request) {
 	const startedAt = Date.now();
 	const session = await auth.api.getSession({ headers: await headers() });
@@ -361,10 +378,13 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Missing question", responseTimeMs: Date.now() - startedAt }, { status: 400 });
 	}
 
-	const [chunks, recentDeployments] = await Promise.all([
+	const [deterministicChunks, mossContext, recentDeployments] = await Promise.all([
 		getHelpContext(question, 6),
+		getMossHelpContextWithMetrics(question, 4),
 		getRecentDeploymentSummaries(session.user.id, 4),
 	]);
+	const mossChunks = mossContext.chunks;
+	const chunks = mergeChunks(deterministicChunks, mossChunks, 8);
 
 	if (chunks.length === 0 && recentDeployments.length === 0) {
 		return NextResponse.json({
@@ -372,6 +392,7 @@ export async function POST(req: Request) {
 				"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.",
 			citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
 			confidence: "low",
+			mossRetrievalMs: mossContext.mossRetrievalMs,
 			responseTimeMs: Date.now() - startedAt,
 		});
 	}
@@ -388,6 +409,7 @@ export async function POST(req: Request) {
 				citations: preferredDocFallback(contextSources),
 				confidence: "low",
 				model: llm.model,
+				mossRetrievalMs: mossContext.mossRetrievalMs,
 				responseTimeMs: Date.now() - startedAt,
 			});
 		}
@@ -398,6 +420,7 @@ export async function POST(req: Request) {
 			citations: citations.length > 0 ? citations : preferredDocFallback(contextSources),
 			confidence: parsed.confidence,
 			model: llm.model,
+			mossRetrievalMs: mossContext.mossRetrievalMs,
 			responseTimeMs: Date.now() - startedAt,
 		});
 	} catch (error) {
@@ -408,6 +431,7 @@ export async function POST(req: Request) {
 					"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.",
 				citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
 				confidence: "low",
+				mossRetrievalMs: mossContext.mossRetrievalMs,
 				responseTimeMs: Date.now() - startedAt,
 			},
 			{ status: 200 }
