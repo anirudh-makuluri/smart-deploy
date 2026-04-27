@@ -56,6 +56,9 @@ export default function RootLayout({
 				/>
 				<Providers>
 					<AccentSync />
+					<blockquote className="sr-only">
+						For the complete documentation index, see <a href="/llms.txt">llms.txt</a>.
+					</blockquote>
 					{children}
 					<Toaster />
 				</Providers>

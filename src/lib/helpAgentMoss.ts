@@ -71,7 +71,7 @@ async function initializeMoss(): Promise<{ client: MossClientLike; indexName: st
 	if (!isMossEnabled()) return null;
 
 	try {
-		const mossModule = await import("@moss-dev/moss");
+		const mossModule = await import("@moss-dev/moss-web");
 		const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 		if (!MossClientCtor) {
 			console.warn("Help-agent Moss disabled: failed to load MossClient");
@@ -160,3 +160,4 @@ export async function getMossHelpContextWithMetrics(question: string, limit = 4)
 		mossEnabled: true,
 	};
 }
+
