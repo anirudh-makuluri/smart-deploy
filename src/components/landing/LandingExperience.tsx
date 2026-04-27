@@ -60,7 +60,6 @@ const whyCards: WhyCard[] = [
 const landingMobileNavLinks: MobileNavLink[] = [
 	{ href: "#flow", label: "Flow" },
 	{ href: "#why-smartdeploy", label: "Why" },
-	{ href: "#frameworks", label: "Frameworks" },
 	{ href: "#cloud", label: "Cloud" },
 	{ href: "#stats", label: "Stats" },
 ];
@@ -234,7 +233,11 @@ function StatsBoard({ metrics }: { metrics: DeployMetricsSummary | null }) {
 	const median = formatDurationMs(metrics?.medianDurationMs ?? null);
 	const p95 = formatDurationMs(metrics?.p95DurationMs ?? null);
 	const updatedAt = metrics
-		? new Date(metrics.computedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+		? `${new Intl.DateTimeFormat("en-US", {
+				dateStyle: "medium",
+				timeStyle: "short",
+				timeZone: "UTC",
+		  }).format(new Date(metrics.computedAt))} UTC`
 		: "Telemetry appears after the first deployment";
 
 	return (
@@ -321,7 +324,6 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 					<nav className="hidden items-center gap-6 text-sm text-muted-foreground lg:gap-8 md:flex" aria-label="Primary">
 						<a href="#flow" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Flow</a>
 						<a href="#why-smartdeploy" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Why</a>
-						<a href="#frameworks" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Frameworks</a>
 						<a href="#cloud" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Cloud</a>
 						<a href="#stats" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Stats</a>
 					</nav>
@@ -349,12 +351,12 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 			</header>
 
 			<main>
-				<section className="landing-hero-bg relative overflow-hidden px-6 pb-16 pt-16 lg:px-10 lg:pb-20 lg:pt-24">
-					<div className="landing-hero-wave absolute inset-x-0 top-0 h-112 opacity-55" aria-hidden />
-					<div className="landing-grid-overlay absolute inset-0 opacity-30" aria-hidden />
-					<div className="mx-auto max-w-6xl text-center">
+				<section className="landing-hero-bg relative flex min-h-[calc(100svh-4.5rem)] items-center overflow-hidden px-6 py-12 sm:min-h-[calc(100svh-4.5rem)] lg:px-10 lg:py-16">
+					<div className="landing-hero-wave pointer-events-none absolute inset-x-0 top-0 h-112 opacity-55" aria-hidden />
+					<div className="landing-grid-overlay pointer-events-none absolute inset-0 opacity-30" aria-hidden />
+					<div className="relative z-10 mx-auto w-full max-w-6xl text-center">
 						<p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">Deploy workspace, rebuilt for clarity</p>
-						<h1 className="mx-auto mt-6 max-w-4xl text-5xl font-semibold leading-[1.03] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
+						<h1 className="mx-auto mt-6 max-w-4xl text-4xl font-semibold leading-[1.03] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
 							Deploy your app with full transparency and the same ease you expect.
 						</h1>
 						<p className="mx-auto mt-8 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
@@ -385,19 +387,6 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 						/>
 						<div className="mt-12">
 							<WhySmartDeploy />
-						</div>
-					</div>
-				</section>
-
-				<section id="frameworks" className={`border-t border-border/60 bg-muted/20 px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
-					<div className="mx-auto max-w-7xl">
-						<SectionIntro
-							eyebrow="Framework Support"
-							title="Deploy apps built with JavaScript and Python frameworks"
-							description="SmartDeploy supports modern JS/TS and Python ecosystems so teams can onboard existing services without changing stacks."
-						/>
-						<div className="mt-12">
-							<SupportedFrameworks />
 						</div>
 					</div>
 				</section>

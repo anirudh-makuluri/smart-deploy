@@ -1,8 +1,96 @@
 {
-	"generatedAt": "2026-04-18T20:57:36.796Z",
+	"generatedAt": "2026-04-27T01:53:31.014Z",
 	"rawCommitCount": 100,
-	"commitCount": 78,
+	"commitCount": 72,
 	"commits": [
+		{
+			"hash": "6450b784d3f64af60a58adff7816139401500ca5",
+			"shortHash": "6450b78",
+			"date": "2026-04-26",
+			"author": "amakulur",
+			"subject": "Landing page revamped",
+			"prNumber": null
+		},
+		{
+			"hash": "e57959932c520c2de128e3c68b24acdd9ea904df",
+			"shortHash": "e579599",
+			"date": "2026-04-24",
+			"author": "amakulur",
+			"subject": "Fix build issue",
+			"prNumber": null
+		},
+		{
+			"hash": "8bbb182f489403eb29ef26df2ad67020e04b6346",
+			"shortHash": "8bbb182",
+			"date": "2026-04-24",
+			"author": "amakulur",
+			"subject": "Refactor: Rename variable 'module' to 'mossModule' for clarity in MossClient imports",
+			"prNumber": null
+		},
+		{
+			"hash": "b4594441abc843ed07e3a96fc7076fe49f954d0c",
+			"shortHash": "b459444",
+			"date": "2026-04-24",
+			"author": "amakulur",
+			"subject": "Feature: Add scripts for indexing help docs and syncing to Supabase",
+			"prNumber": null
+		},
+		{
+			"hash": "c5acee5565ba6d989205f9a11e7888cfbe8f436e",
+			"shortHash": "c5acee5",
+			"date": "2026-04-23",
+			"author": "amakulur",
+			"subject": "Add metadata and structured data for SEO; implement robots.txt and sitemap functionality",
+			"prNumber": null
+		},
+		{
+			"hash": "51e47f46ecd513b03acaa0f2477fa534716dbcf1",
+			"shortHash": "51e47f4",
+			"date": "2026-04-22",
+			"author": "amakulur",
+			"subject": "Add response time",
+			"prNumber": null
+		},
+		{
+			"hash": "bff381076359c665e0ec90dc7ca370a979abe8c6",
+			"shortHash": "bff3810",
+			"date": "2026-04-21",
+			"author": "amakulur",
+			"subject": "Change contact info in waiting list",
+			"prNumber": null
+		},
+		{
+			"hash": "c444740f48ddfea329f4ab80f3df7f165968f7d8",
+			"shortHash": "c444740",
+			"date": "2026-04-21",
+			"author": "amakulur",
+			"subject": "Enhance HelpAgentSheet to display model information and format assistant responses with Markdown",
+			"prNumber": null
+		},
+		{
+			"hash": "b2ae7973d4420a178613e375d689817c55765fdc",
+			"shortHash": "b2ae797",
+			"date": "2026-04-18",
+			"author": "amakulur",
+			"subject": "Fix build error",
+			"prNumber": null
+		},
+		{
+			"hash": "49e10adb66d26069a1fb3c082b62e6e4347f625e",
+			"shortHash": "49e10ad",
+			"date": "2026-04-18",
+			"author": "amakulur",
+			"subject": "Removed log",
+			"prNumber": null
+		},
+		{
+			"hash": "0fb20bcdc5e6c73cc4771e9935ae51de880dfbce",
+			"shortHash": "0fb20bc",
+			"date": "2026-04-18",
+			"author": "amakulur",
+			"subject": "Fix deployment screenshot",
+			"prNumber": null
+		},
 		{
 			"hash": "44739044051c1a2669f5827b36030a1dab396676",
 			"shortHash": "4473904",
@@ -240,7 +328,7 @@
 			"shortHash": "c78d77d",
 			"date": "2026-04-12",
 			"author": "amakulur",
-			"subject": "Updated docs (+1 related commits)",
+			"subject": "Updated docs",
 			"prNumber": null
 		},
 		{
@@ -489,142 +577,6 @@
 			"date": "2026-04-01",
 			"author": "amakulur",
 			"subject": "Added tests",
-			"prNumber": null
-		},
-		{
-			"hash": "727a6e6f8ead8272abbbd0682cda448454e6dfad",
-			"shortHash": "727a6e6",
-			"date": "2026-04-01",
-			"author": "amakulur",
-			"subject": "Migrate-ql-1",
-			"prNumber": null
-		},
-		{
-			"hash": "f465cc1f413934f289e7f5e799818e993bef2216",
-			"shortHash": "f465cc1",
-			"date": "2026-03-28",
-			"author": "amakulur",
-			"subject": "Fixed ts error",
-			"prNumber": null
-		},
-		{
-			"hash": "bbe8e3919dde278118c98c89ddd4f22b47963b06",
-			"shortHash": "bbe8e39",
-			"date": "2026-03-28",
-			"author": "amakulur",
-			"subject": "Feature: Implement custom domain configuration for deployments with Vercel DNS integration",
-			"prNumber": null
-		},
-		{
-			"hash": "fae2d98cccbe4c4b402de282c10a10f73715fc44",
-			"shortHash": "fae2d98",
-			"date": "2026-03-28",
-			"author": "amakulur",
-			"subject": "Feature: Add frontend-design and react-useeffect skills with comprehensive guidelines and best practices",
-			"prNumber": null
-		},
-		{
-			"hash": "e51c7e4b09b3dd52a4de996e9e02e80977e2a882",
-			"shortHash": "e51c7e4",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Updated favicons",
-			"prNumber": null
-		},
-		{
-			"hash": "4b5ae902ffc9a91e746363b263473b39f5a40b1f",
-			"shortHash": "4b5ae90",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Change document title and icon using deployState",
-			"prNumber": null
-		},
-		{
-			"hash": "9d79c5b63fd0ba6b5de80ae3ff13c3688caf7fd4",
-			"shortHash": "9d79c5b",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Fixed compse deploy",
-			"prNumber": null
-		},
-		{
-			"hash": "b4f25c8c1b8b058c6edc35b7b7bfc7abd2bd15c5",
-			"shortHash": "b4f25c8",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Refactor: Enhance AWS command handling with improved IAM instance profile management and type safety",
-			"prNumber": null
-		},
-		{
-			"hash": "b8ca87b70624038955f642dabf536fc60beab4c7",
-			"shortHash": "b8ca87b",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Enhance ECR authentication and CodeBuild integration",
-			"prNumber": null
-		},
-		{
-			"hash": "5b80cf0446a5fa74f263fe0dcc84a61858b9ca5a",
-			"shortHash": "5b80cf0",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Refactor: Update default domain to \"smart-deploy.xyz\" in config and components",
-			"prNumber": null
-		},
-		{
-			"hash": "c2d87c9e2b68adfdd4555b94101ba6873355e4cb",
-			"shortHash": "c2d87c9",
-			"date": "2026-03-27",
-			"author": "amakulur",
-			"subject": "Implement prefill infrastructure feature with Dockerfile and nginx.conf validation",
-			"prNumber": null
-		},
-		{
-			"hash": "dcac10a33992a3ac6ac8006870ab0a758bf48cea",
-			"shortHash": "dcac10a",
-			"date": "2026-03-24",
-			"author": "amakulur",
-			"subject": "Exclude static files from proxy",
-			"prNumber": null
-		},
-		{
-			"hash": "e529c4058bd75d746dca6011f4b84ddf5ba31ab6",
-			"shortHash": "e529c40",
-			"date": "2026-03-24",
-			"author": "amakulur",
-			"subject": "Revamped landing page",
-			"prNumber": null
-		},
-		{
-			"hash": "0a2c54d60dc24c159eb9433641789e97136a485f",
-			"shortHash": "0a2c54d",
-			"date": "2026-03-24",
-			"author": "amakulur",
-			"subject": "Enhance compose file handling in build scripts",
-			"prNumber": null
-		},
-		{
-			"hash": "7f12798ff78120a48cfa783416b6fa93e8a81285",
-			"shortHash": "7f12798",
-			"date": "2026-03-23",
-			"author": "amakulur",
-			"subject": "Enhance ServiceLogs component to display appropriate messages based on deployment status; restrict log streaming to Cloud Run deployments only",
-			"prNumber": null
-		},
-		{
-			"hash": "42504e2e804423135cf49f5e57568f232c78ed9a",
-			"shortHash": "42504e2",
-			"date": "2026-03-23",
-			"author": "amakulur",
-			"subject": "Add support for AWS CodeBuild and ECR integration",
-			"prNumber": null
-		},
-		{
-			"hash": "90aaa98140962ed63f9eb9638803151b2456bc61",
-			"shortHash": "90aaa98",
-			"date": "2026-03-23",
-			"author": "amakulur",
-			"subject": "Implement gateway error handling in deployment preview screenshot API; enhance DeployWorkspace to support refreshing previews and improve service settings management in PostScanResults",
 			"prNumber": null
 		}
 	]

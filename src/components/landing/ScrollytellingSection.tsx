@@ -907,7 +907,15 @@ function NodeChip({
 	);
 }
 
-function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: boolean }) {
+function FlowUI({
+	activeStep,
+	isVisible,
+	isCompact = false,
+}: {
+	activeStep: number;
+	isVisible: boolean;
+	isCompact?: boolean;
+}) {
 	const [scanLine, setScanLine] = React.useState(0);
 	const [scanLogs, setScanLogs] = React.useState<LogEntry[]>([]);
 	const [fixComplete, setFixComplete] = React.useState(false);
@@ -991,6 +999,7 @@ function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: bool
 					: activeStep === 5
 						? "overview"
 						: "logs";
+	const activeWorkspaceTabLabel = workspaceTabs.find((tab) => tab.id === activeWorkspaceTab)?.label ?? "Overview";
 
 	const storyTimelineLogs = React.useMemo(() => {
 		const timeline: LogEntry[] = [
@@ -1041,7 +1050,11 @@ function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: bool
 	const nodeStates = getNodeStates(activeStep, fixComplete);
 
 	return (
-		<div className="landing-panel landing-shell mx-auto w-full max-w-[46rem] rounded-2xl border border-border/70 bg-card/85 p-4 shadow-sm sm:p-5">
+		<div
+			className={`landing-panel landing-shell mx-auto w-full rounded-2xl border border-border/70 bg-card/85 shadow-sm ${
+				isCompact ? "max-w-none p-3 sm:p-4" : "max-w-[46rem] p-4 sm:p-5"
+			}`}
+		>
 			<div className="flex hidden items-center justify-between gap-3">
 				<p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Deployment flow</p>
 				<p className="text-xs text-muted-foreground">Step {activeStep + 1} / {steps.length}</p>
@@ -1059,18 +1072,24 @@ function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: bool
 					</div>
 				</div>
 				<div className="mt-2 flex flex-wrap gap-1.5">
-					{workspaceTabs.map((tab) => (
-						<span
-							key={tab.id}
-							className={`rounded-md border px-2 py-1 text-[10px] font-medium ${
-								tab.id === activeWorkspaceTab
-									? "border-primary/35 bg-primary/10 text-primary"
-									: "border-border/60 bg-card/70 text-muted-foreground"
-							}`}
-						>
-							{tab.label}
+					{isCompact ? (
+						<span className="rounded-md border border-primary/35 bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary">
+							{activeWorkspaceTabLabel}
 						</span>
-					))}
+					) : (
+						workspaceTabs.map((tab) => (
+							<span
+								key={tab.id}
+								className={`rounded-md border px-2 py-1 text-[10px] font-medium ${
+									tab.id === activeWorkspaceTab
+										? "border-primary/35 bg-primary/10 text-primary"
+										: "border-border/60 bg-card/70 text-muted-foreground"
+								}`}
+							>
+								{tab.label}
+							</span>
+						))
+					)}
 				</div>
 			</div>
 
@@ -1101,7 +1120,7 @@ function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: bool
 				</div>
 			</div>
 
-			<div className="mt-4 space-y-3 min-[420px]:min-h-[22rem] sm:min-h-[24rem] lg:min-h-[25.5rem]">
+			<div className={`mt-4 space-y-3 ${isCompact ? "min-h-0" : "min-[420px]:min-h-[22rem] sm:min-h-[24rem] lg:min-h-[25.5rem]"}`}>
 				{activeStep === 0 ? (
 					<motion.div
 						initial={{ opacity: 0, y: 14 }}
@@ -1192,12 +1211,25 @@ function FlowUI({ activeStep, isVisible }: { activeStep: number; isVisible: bool
 
 export function ScrollytellingSection() {
 	const [activeStep, setActiveStep] = React.useState(0);
+	const [isDesktop, setIsDesktop] = React.useState(false);
 	const [isSectionVisible, setIsSectionVisible] = React.useState(false);
 	const stepRefs = React.useRef<Array<HTMLDivElement | null>>([]);
 	const sectionRef = React.useRef<HTMLElement | null>(null);
 
 	const setStepRef = React.useCallback((index: number, node: HTMLDivElement | null) => {
 		stepRefs.current[index] = node;
+	}, []);
+
+	React.useEffect(() => {
+		const mediaQuery = window.matchMedia("(min-width: 1024px)");
+		const syncLayout = () => setIsDesktop(mediaQuery.matches);
+		syncLayout();
+		if (typeof mediaQuery.addEventListener === "function") {
+			mediaQuery.addEventListener("change", syncLayout);
+			return () => mediaQuery.removeEventListener("change", syncLayout);
+		}
+		mediaQuery.addListener(syncLayout);
+		return () => mediaQuery.removeListener(syncLayout);
 	}, []);
 
 	React.useEffect(() => {
@@ -1230,7 +1262,7 @@ export function ScrollytellingSection() {
 		}
 
 		return () => observer.disconnect();
-	}, []);
+	}, [isDesktop]);
 
 	React.useEffect(() => {
 		const sectionNode = sectionRef.current;
@@ -1265,34 +1297,63 @@ export function ScrollytellingSection() {
 					</p>
 				</div>
 
-				<div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
-					<div>
-						{steps.map((step, index) => {
-							const stepKey = `${index}-${step.title}`;
-							return (
-								<React.Fragment key={stepKey}>
-									<StepItem
-										index={index}
-										step={step}
-										isActive={activeStep === index}
-										onRef={setStepRef}
-									/>
-									{activeStep === index ? (
-										<div className="mb-10 lg:hidden">
-											<FlowUI activeStep={activeStep} isVisible={isSectionVisible} />
-										</div>
-									) : null}
-								</React.Fragment>
-							);
-						})}
-					</div>
+				{isDesktop ? (
+					<div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
+						<div>
+							{steps.map((step, index) => (
+								<StepItem
+									key={`${index}-${step.title}`}
+									index={index}
+									step={step}
+									isActive={activeStep === index}
+									onRef={setStepRef}
+								/>
+							))}
+						</div>
 
-					<div className="hidden lg:sticky lg:top-20 lg:block lg:h-[calc(100vh-6rem)]">
-						<div className="flex h-full items-start justify-center pt-1">
-							<FlowUI activeStep={activeStep} isVisible={isSectionVisible} />
+						<div className="lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
+							<div className="flex h-full items-start justify-center pt-1">
+								<FlowUI activeStep={activeStep} isVisible={isSectionVisible} />
+							</div>
 						</div>
 					</div>
-				</div>
+				) : (
+					<div className="mt-8 lg:hidden">
+						<div className="sticky top-16 z-10 h-[calc(100svh-5.5rem)]">
+							<div className="grid h-full grid-rows-[minmax(7rem,18svh)_minmax(0,1fr)] gap-3">
+								<motion.article
+									key={`mobile-step-${activeStep}`}
+									initial={{ opacity: 0, y: 10 }}
+									animate={{ opacity: 1, y: 0 }}
+									transition={{ duration: 0.2, ease: "easeOut" }}
+									className="landing-panel landing-shell rounded-2xl border border-border/70 bg-card/90 p-4"
+								>
+									<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+										Step {activeStep + 1} of {steps.length}
+									</p>
+									<h3 className="mt-1.5 text-lg font-bold tracking-tight text-foreground">{steps[activeStep]?.title}</h3>
+									<p className="mt-1 text-xs leading-5 text-muted-foreground">{steps[activeStep]?.description}</p>
+								</motion.article>
+
+								<div className="min-h-0 overflow-y-auto pb-2">
+									<FlowUI activeStep={activeStep} isVisible={isSectionVisible} isCompact />
+								</div>
+							</div>
+						</div>
+
+						<div className="mt-3">
+							{steps.map((step, index) => (
+								<div
+									key={`mobile-tracker-${step.title}`}
+									ref={(node) => setStepRef(index, node)}
+									data-step-index={index}
+									className="h-[72svh]"
+									aria-hidden
+								/>
+							))}
+						</div>
+					</div>
+				)}
 			</div>
 		</section>
 	);
