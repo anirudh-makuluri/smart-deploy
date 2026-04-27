@@ -58,6 +58,51 @@ function clearSessionCookies(response: NextResponse) {
 
 export async function proxy(req : NextRequest) {
 	const pathname = req.nextUrl.pathname;
+	const accept = req.headers?.get?.("accept") ?? "";
+	const wantsMarkdown = accept.includes("text/markdown");
+
+	if (pathname === "/docs.md") {
+		const markdownTarget = req.nextUrl.clone();
+		markdownTarget.pathname = "/api/docs-markdown";
+		markdownTarget.searchParams.set("slug", "__readme__");
+		return NextResponse.rewrite(markdownTarget);
+	}
+	if (pathname === "/changelog.md") {
+		const markdownTarget = req.nextUrl.clone();
+		markdownTarget.pathname = "/api/docs-markdown";
+		markdownTarget.searchParams.set("slug", "__changelog__");
+		return NextResponse.rewrite(markdownTarget);
+	}
+	const docsMarkdownPath = /^\/docs\/([^/]+)\.md$/i.exec(pathname);
+	if (docsMarkdownPath?.[1]) {
+		const markdownTarget = req.nextUrl.clone();
+		markdownTarget.pathname = "/api/docs-markdown";
+		markdownTarget.searchParams.set("slug", docsMarkdownPath[1].toLowerCase());
+		return NextResponse.rewrite(markdownTarget);
+	}
+
+	if (wantsMarkdown) {
+		const markdownTarget = req.nextUrl.clone();
+		if (pathname === "/docs") {
+			markdownTarget.pathname = "/api/docs-markdown";
+			markdownTarget.searchParams.set("slug", "__readme__");
+			return NextResponse.rewrite(markdownTarget);
+		}
+		if (pathname.startsWith("/docs/")) {
+			const slug = pathname.replace(/^\/docs\//, "");
+			if (slug && !slug.includes("/")) {
+				markdownTarget.pathname = "/api/docs-markdown";
+				markdownTarget.searchParams.set("slug", slug);
+				return NextResponse.rewrite(markdownTarget);
+			}
+		}
+		if (pathname === "/changelog") {
+			markdownTarget.pathname = "/api/docs-markdown";
+			markdownTarget.searchParams.set("slug", "__changelog__");
+			return NextResponse.rewrite(markdownTarget);
+		}
+	}
+
 	const isRobotsTxt = pathname === "/robots.txt";
 	const isSitemapXml = pathname === "/sitemap.xml";
 	const isAuthPage = pathname.startsWith("/auth");
@@ -65,16 +110,29 @@ export async function proxy(req : NextRequest) {
 	const isDocsPage = pathname === "/docs" || pathname.startsWith("/docs/");
 	const isChangelogPage = pathname === "/changelog";
 	const isWaitingList = pathname === "/waiting-list";
+	const isMcp = pathname === "/mcp";
+	const isSkillMd = pathname === "/skill.md";
+	const isWellKnown = pathname === "/.well-known" || pathname.startsWith("/.well-known/");
 	const isAuthApi = pathname.startsWith("/api/auth");
 	const isPosthogProxy = pathname === "/ph" || pathname.startsWith("/ph/");
+	const isPrivateHome = pathname === "/home" || pathname.startsWith("/home/");
 
 	// Never run auth checks for PostHog proxy requests.
 	if (isPosthogProxy) {
 		return NextResponse.next();
 	}
 
-	const isPublicPage = isLanding || isDocsPage || isChangelogPage || isWaitingList || isRobotsTxt || isSitemapXml;
-	const shouldCheckSession = isAuthPage || (!isPublicPage && !isAuthApi);
+	const isPublicPage =
+		isLanding ||
+		isDocsPage ||
+		isChangelogPage ||
+		isWaitingList ||
+		isRobotsTxt ||
+		isSitemapXml ||
+		isMcp ||
+		isSkillMd ||
+		isWellKnown;
+	const shouldCheckSession = isAuthPage || isPrivateHome;
 
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	if (shouldCheckSession) {
@@ -87,9 +145,9 @@ export async function proxy(req : NextRequest) {
 	}
 	const email = session?.user?.email;
 
-	// Allow unauthenticated access to public pages and auth API routes.
-	if (!session && !isAuthPage && !isLanding && !isDocsPage && !isChangelogPage && !isWaitingList && !isAuthApi) {
-		return NextResponse.redirect(new URL("/auth", req.url))
+	// Only redirect known private app routes.
+	if (!session && isPrivateHome && !isAuthApi) {
+		return NextResponse.redirect(new URL("/auth", req.url));
 	}
 
 	if (session) {
@@ -106,20 +164,20 @@ export async function proxy(req : NextRequest) {
 		}
 	}
 
-	if(session && isAuthPage) {
-		return NextResponse.redirect(new URL("/home", req.url))
+	if (session && isAuthPage) {
+		return NextResponse.redirect(new URL("/home", req.url));
 	}
 
-	// Only block non-auth API routes
-	if (req.nextUrl.pathname.startsWith("/api") && !isAuthApi && !session) {
-		return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+	if (!isPublicPage && !isPrivateHome && !isAuthPage && !isAuthApi) {
+		// Let unknown routes resolve naturally (404), not auth redirects (soft-404 behavior).
+		return NextResponse.next();
 	}
 
-	return NextResponse.next()
+	return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico|txt|xml)).*)",
+		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico|txt|xml|json)).*)",
   ], // Exclude static assets, API routes, etc.
 }

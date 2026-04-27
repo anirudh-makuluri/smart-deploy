@@ -30,10 +30,10 @@ async function main() {
 		throw new Error("Missing MOSS_PROJECT_ID or MOSS_PROJECT_KEY in environment");
 	}
 
-	const mossModule = await import("@moss-dev/moss");
+	const mossModule = await import("@moss-dev/moss-web");
 	const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 	if (!MossClientCtor) {
-		throw new Error("Failed to load MossClient from @moss-dev/moss");
+		throw new Error("Failed to load MossClient from @moss-dev/moss-web");
 	}
 
 	const client = new MossClientCtor(projectId, projectKey);

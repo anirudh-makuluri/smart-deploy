@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default function ChangelogPage() {
-	const commits = getChangelogCommits();
+	const commits = getChangelogCommits({ limit: 120 });
 	const repo = getGithubRepoSlug();
 
 	return (
@@ -26,16 +26,25 @@ export default function ChangelogPage() {
 					<div className="mt-6 space-y-4 text-sm leading-7 text-muted-foreground">
 						<p>
 							Shows a <strong className="font-medium text-foreground">checked-in snapshot</strong> of{" "}
-							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>{" "}
+							<code className="rounded bg-muted/80 px-1.5 py-0.5 font-mono text-xs text-foreground">git log</code>.
 						</p>
 						<p className="font-mono text-xs text-foreground/90">
 							Repository: <span className="text-foreground">{repo}</span>
 							{commits.length > 0 ? (
-								<span className="text-muted-foreground">
-									{" "}
-									· {commits.length} commits below (newest first)
-								</span>
+								<span className="text-muted-foreground"> - {commits.length} commits below (newest first)</span>
 							) : null}
+						</p>
+						<p className="text-xs">
+							Need older history?{" "}
+							<a
+								className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+								href={`https://github.com/${repo}/commits/main`}
+								rel="noreferrer"
+								target="_blank"
+							>
+								View full commit history on GitHub
+							</a>
+							.
 						</p>
 					</div>
 

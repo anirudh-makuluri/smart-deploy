@@ -57,6 +57,11 @@ next-env.d.ts
 clones
 smartdeploy-key.json
 *.txt
+!public/llms.txt
+!src/app/llms.txt/
+!src/app/llms.txt/**
+!src/app/llms-full.txt/
+!src/app/llms-full.txt/**
 smartdeploy-key
 smartdeploy-key.pub
 *.tfstate

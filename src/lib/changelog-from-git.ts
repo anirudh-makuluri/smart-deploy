@@ -14,6 +14,10 @@ export type GitChangelogCommit = {
 	prNumber: number | null;
 };
 
+type ChangelogReadOptions = {
+	limit?: number;
+};
+
 type ChangelogSnapshotFile = {
 	generatedAt?: string;
 	commitCount?: number;
@@ -34,18 +38,20 @@ export function getGithubRepoSlug(): string {
  * (`src/data/changelog-commits.json`) so production builds without `.git` still render history.
  * Regenerate locally: `npm run changelog:snapshot`
  */
-export function getChangelogCommits(): GitChangelogCommit[] {
+export function getChangelogCommits(options: ChangelogReadOptions = {}): GitChangelogCommit[] {
 	try {
 		const raw = fs.readFileSync(SNAPSHOT_PATH, "utf-8");
 		const data = JSON.parse(raw) as ChangelogSnapshotFile;
 		if (!Array.isArray(data.commits)) return [];
-		return data.commits.map((c) => ({
+		const normalized = data.commits.map((c) => ({
 			...c,
 			prNumber:
 				typeof c.prNumber === "number"
 					? c.prNumber
 					: parsePrNumberFromSubject(c.subject),
 		}));
+		if (!options.limit || options.limit <= 0) return normalized;
+		return normalized.slice(0, options.limit);
 	} catch {
 		return [];
 	}

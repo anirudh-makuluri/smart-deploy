@@ -1,0 +1,6 @@
+{
+	"name": "smart-deploy-docs",
+	"version": "1.0.0",
+	"url": "https://smart-deploy.xyz/mcp",
+	"transport": "streamable-http"
+}
