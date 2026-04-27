@@ -3,7 +3,7 @@
 import type { DeployMetricsSummary } from "@/lib/metrics/deployMetricsCore";
 
 function formatDurationMs(ms: number | null): string {
-	if (ms === null) return "—";
+	if (ms === null) return "--";
 	if (ms < 1000) return `${ms} ms`;
 	const s = ms / 1000;
 	if (s < 60) return s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
@@ -29,8 +29,7 @@ type LandingMetricsStripProps = {
 };
 
 export function LandingMetricsStrip({ metrics }: LandingMetricsStripProps) {
-	const rate =
-		metrics.successRatePercent === null ? "—" : `${metrics.successRatePercent}%`;
+	const rate = metrics.successRatePercent === null ? "--" : `${metrics.successRatePercent}%`;
 
 	return (
 		<div
@@ -41,7 +40,7 @@ export function LandingMetricsStrip({ metrics }: LandingMetricsStripProps) {
 			<div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 				<p className="text-xs font-medium text-muted-foreground">
 					All-time deploy stats
-					<span className="mx-2 text-border">·</span>
+					<span className="mx-2 text-border">|</span>
 					<span className="font-mono text-[0.7rem] opacity-90">
 						updated {new Date(metrics.computedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
 					</span>

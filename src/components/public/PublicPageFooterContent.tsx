@@ -29,7 +29,7 @@ export type PublicPageFooterContentProps = {
 };
 
 /**
- * Shared footer for landing, docs, and changelog. Section links use `/#…` so they work from any route.
+ * Shared footer for landing, docs, and changelog. Section links use `/#...` so they work from any route.
  */
 export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContentProps) {
 	return (
@@ -45,17 +45,17 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 					<Link href="/" className={navLinkClass}>
 						Home
 					</Link>
-					<Link href="/#start-your-way" className={navLinkClass}>
-						Your way
+					<Link href="/#flow" className={navLinkClass}>
+						Flow
 					</Link>
-					<Link href="/#problem-solution" className={navLinkClass}>
-						Problem and solution
+					<Link href="/#why-smartdeploy" className={navLinkClass}>
+						Why
 					</Link>
-					<Link href="/#comparison" className={navLinkClass}>
-						Comparison
+					<Link href="/#cloud" className={navLinkClass}>
+						Cloud
 					</Link>
-					<Link href="/#workflow" className={navLinkClass}>
-						How it works
+					<Link href="/#stats" className={navLinkClass}>
+						Stats
 					</Link>
 					<Link href="/docs" className={navLinkClass}>
 						Docs
@@ -86,3 +86,4 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 		</footer>
 	);
 }
+
