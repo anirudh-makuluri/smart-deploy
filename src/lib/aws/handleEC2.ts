@@ -749,7 +749,7 @@ export async function runPreCurlDiagnostics(params: {
 	send: SendFn;
 	containerName?: string;
 	tail?: number;
-}): Promise<void> {
+}): Promise<{ output: string; sawStartupSignal: boolean }> {
 	const {
 		instanceId,
 		region,
@@ -776,8 +776,10 @@ else
 fi
 `.trim();
 
+	let output = "";
 	try {
-		await runRedeployViaSsm({ instanceId, region, script, send });
+		const result = await runRedeployViaSsm({ instanceId, region, script, send });
+		output = result.output || "";
 	} catch (error: any) {
 		send(
 			`[diagnostics] failed to collect docker logs via SSM: ${error?.message ?? String(error)}. Continuing...`,
@@ -786,6 +788,21 @@ fi
 	}
 
 	send("diagnostics:docker_logs:end", "deploy");
+	return { output, sawStartupSignal: hasDockerStartupSuccessSignal(output) };
+}
+
+function hasDockerStartupSuccessSignal(logOutput: string): boolean {
+	const text = (logOutput || "").toLowerCase();
+	if (!text.trim()) return false;
+	const patterns = [
+		/\bserver (is )?(listening|started|running)\b/,
+		/\bready in\b/,
+		/\bapplication startup complete\b/,
+		/\bhttp server listening\b/,
+		/\blistening on (port|0\.0\.0\.0|http)/,
+		/\bstarted successfully\b/,
+	];
+	return patterns.some((p) => p.test(text));
 }
 
 export async function detectRespondingPort(
@@ -794,17 +811,48 @@ export async function detectRespondingPort(
 	instanceId: string,
 	region: string,
 	ws: any,
-	send: SendFn
+	send: SendFn,
+	options?: {
+		dockerSignalAttempts?: number;
+		dockerSignalPollMs?: number;
+		curlAttempts?: number;
+		curlPollMs?: number;
+	}
 ): Promise<number | null> {
-	await runPreCurlDiagnostics({ instanceId, region, send });
+	const dockerSignalAttempts = options?.dockerSignalAttempts ?? 12;
+	const dockerSignalPollMs = options?.dockerSignalPollMs ?? 5000;
+	const curlAttempts = options?.curlAttempts ?? 12;
+	const curlPollMs = options?.curlPollMs ?? 5000;
+	let sawDockerStartupSignal = false;
+
+	send("Waiting for startup signal in container logs before curl checks...", "deploy");
+	for (let attempt = 1; attempt <= dockerSignalAttempts; attempt++) {
+		const diagnostic = await runPreCurlDiagnostics({ instanceId, region, send });
+		if (diagnostic.sawStartupSignal) {
+			sawDockerStartupSignal = true;
+			send(`Startup signal found in docker logs (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
+			break;
+		}
+		if (attempt < dockerSignalAttempts) {
+			send(`No startup signal in docker logs yet (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
+			await new Promise((r) => setTimeout(r, dockerSignalPollMs));
+		}
+	}
+
+	if (!sawDockerStartupSignal) {
+		send(
+			"No startup signal detected in docker logs; proceeding with curl checks as fallback.",
+			"deploy"
+		);
+	}
 
 	try {
-		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
+		const { runCommandLiveWithWebSocket } = await import("@/server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
 		send("Waiting for application to be ready (this may take a minute)...", "deploy");
 		send("diagnostics:curl:start", "deploy");
-		for (let attempt = 1; attempt <= 12; attempt++) {
+		for (let attempt = 1; attempt <= curlAttempts; attempt++) {
 			for (const port of candidates) {
 				try {
 					const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
@@ -815,8 +863,8 @@ export async function detectRespondingPort(
 					}
 				} catch { /* try next */ }
 			}
-			if (attempt < 12) {
-				await new Promise(r => setTimeout(r, 5000));
+			if (attempt < curlAttempts) {
+				await new Promise(r => setTimeout(r, curlPollMs));
 			}
 		}
 	} catch { /* curl unavailable */ }

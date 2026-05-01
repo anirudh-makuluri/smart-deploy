@@ -25,7 +25,7 @@ describe("EC2 diagnostics pipeline", () => {
 		runRedeployViaSsmMock.mockImplementation(async (params: any) => {
 			events.push("docker_logs");
 			expect(params.script).toContain("docker logs --tail 300 smartdeploy-app");
-			return { success: true, output: "ok" };
+			return { success: true, output: "server listening on port 8080" };
 		});
 		runCommandLiveWithWebSocketMock.mockImplementation(async () => {
 			events.push("curl");
@@ -41,7 +41,8 @@ describe("EC2 diagnostics pipeline", () => {
 			"i-123",
 			"us-west-2",
 			{},
-			send as any
+			send as any,
+			{ dockerSignalAttempts: 1, dockerSignalPollMs: 0, curlAttempts: 1, curlPollMs: 0 }
 		);
 
 		expect(port).toBe(80);
@@ -51,6 +52,37 @@ describe("EC2 diagnostics pipeline", () => {
 		expect(logs).toContain("diagnostics:docker_logs:end");
 		expect(logs).toContain("diagnostics:curl:start");
 		expect(logs).toContain("diagnostics:curl:end");
+	});
+
+	it("waits for docker startup signal before curl checks", async () => {
+		const events: string[] = [];
+		runRedeployViaSsmMock
+			.mockImplementationOnce(async () => {
+				events.push("docker_logs_1");
+				return { success: true, output: "booting..." };
+			})
+			.mockImplementationOnce(async () => {
+				events.push("docker_logs_2");
+				return { success: true, output: "application startup complete" };
+			});
+		runCommandLiveWithWebSocketMock.mockImplementation(async () => {
+			events.push("curl");
+			return "200";
+		});
+
+		const { detectRespondingPort } = await import("@/lib/aws/handleEC2");
+		const port = await detectRespondingPort(
+			"1.2.3.4",
+			[{ name: "app", dir: ".", port: 8080 }],
+			"i-789",
+			"us-west-2",
+			{},
+			(() => {}) as any,
+			{ dockerSignalAttempts: 2, dockerSignalPollMs: 0, curlAttempts: 1, curlPollMs: 0 }
+		);
+
+		expect(port).toBe(80);
+		expect(events).toEqual(["docker_logs_1", "docker_logs_2", "curl"]);
 	});
 
 	it("uses missing-container guardrail and still continues to curl checks", async () => {
