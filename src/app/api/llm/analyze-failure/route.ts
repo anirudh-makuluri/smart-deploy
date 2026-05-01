@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { DeployStep } from "@/app/types";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { callLLMWithFallback } from "@/lib/llmProviders";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,8 +52,14 @@ Analyze why the deployment likely failed. In a clear, concise response:
 Keep the answer practical and short (a few paragraphs at most). Use plain text, no markdown code fences.`;
 
 	try {
-		const text = await callLLMWithFallback(prompt);
-		return NextResponse.json({ response: text, source: "llm" });
+		const llm = await callLLMWithFallback(prompt, {
+			contextLabel: "Analyze failure",
+			maxTokens: 4096,
+			temperature: 0.2,
+			localModelDefault: "llama3.2",
+			localTimeoutMs: 20_000,
+		});
+		return NextResponse.json({ response: llm.text, source: "llm", model: llm.model, provider: llm.provider });
 	} catch (error: unknown) {
 		console.error("analyze-failure LLM error:", error);
 		const fallback = buildHeuristicFailureAnalysis(steps, configSnapshot);
@@ -63,83 +69,6 @@ Keep the answer practical and short (a few paragraphs at most). Use plain text, 
 			warning: error instanceof Error ? error.message : "LLM unavailable",
 		});
 	}
-}
-
-/** Try Gemini first; if it fails, run the same prompt on the local LLM. */
-async function callLLMWithFallback(prompt: string): Promise<string> {
-	const hasGemini = !!process.env.GEMINI_API_KEY?.trim();
-	const hasLocal = !!process.env.LOCAL_LLM_BASE_URL?.trim();
-
-	if (hasGemini) {
-		try {
-			return await callGemini(prompt);
-		} catch (geminiError) {
-			console.warn("Gemini failed, falling back to local LLM:", geminiError);
-			if (hasLocal) {
-				return await callLocalLLM(prompt);
-			}
-			throw geminiError;
-		}
-	}
-	if (hasLocal) {
-		return await callLocalLLM(prompt);
-	}
-	throw new Error("No LLM configured. Set GEMINI_API_KEY and/or LOCAL_LLM_BASE_URL.");
-}
-
-async function callGemini(prompt: string): Promise<string> {
-	const geminiApiKey = process.env.GEMINI_API_KEY;
-	if (!geminiApiKey?.trim()) {
-		throw new Error("Missing GEMINI_API_KEY env var");
-	}
-	const genAI = new GoogleGenerativeAI(geminiApiKey);
-	const model = genAI.getGenerativeModel({
-		model: "gemini-3-flash",
-		generationConfig: {
-			temperature: 0.2,
-			maxOutputTokens: 4096,
-		},
-	});
-	const result = await model.generateContent(prompt);
-	const response = await result.response;
-	return response.text();
-}
-
-async function callLocalLLM(prompt: string): Promise<string> {
-	const baseUrl = process.env.LOCAL_LLM_BASE_URL || "";
-	if (!baseUrl?.trim()) {
-		throw new Error("Missing LOCAL_LLM_BASE_URL env var");
-	}
-	const model = process.env.LOCAL_LLM_MODEL || "llama3.2";
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 20_000);
-	let res: Response;
-	try {
-		res = await fetch(baseUrl, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			signal: controller.signal,
-			body: JSON.stringify({
-				model,
-				prompt,
-				stream: false,
-				temperature: 0.2,
-				max_tokens: 4096,
-			}),
-		});
-	} finally {
-		clearTimeout(timeout);
-	}
-	if (!res.ok) {
-		const errText = await res.text();
-		throw new Error(`Local LLM returned ${res.status}: ${errText.slice(0, 200)}`);
-	}
-	const data = await res.json();
-	const text = data.response as string;
-	if (text == null) {
-		throw new Error("Local LLM response missing text");
-	}
-	return text;
 }
 
 function buildHeuristicFailureAnalysis(
