@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { DeployConfig, SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -273,9 +273,10 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 	};
 
 	const handleServiceDraftChange = (index: number, field: "build_context" | "port", value: string) => {
-		setServiceDrafts((prev) =>
-			prev.map((draft, i) => (i === index ? { ...draft, [field]: value } : draft))
-		);
+		setServiceDrafts((prev) => {
+			const base = prev.length === serviceDraftSeed.length ? prev : serviceDraftSeed;
+			return base.map((draft, i) => (i === index ? { ...draft, [field]: value } : draft));
+		});
 	};
 
 	const handleSaveServiceSettings = (index: number) => {

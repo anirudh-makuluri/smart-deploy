@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 import { auth } from "@/lib/auth";
 import { getHelpContext, type HelpDocChunk } from "@/lib/helpAgentDocs";
 import { getMossHelpContextWithMetrics } from "@/lib/helpAgentMoss";
 import { dbHelper } from "@/db-helper";
+import { callLLMWithFallback, type LLMFallbackResult } from "@/lib/llmProviders";
 
 type ChatTurn = {
 	role: "user" | "assistant";
@@ -16,11 +15,6 @@ type HelpAgentResponse = {
 	answer: string;
 	citations: string[];
 	confidence: "high" | "medium" | "low";
-};
-
-type LLMCallResult = {
-	text: string;
-	model: string;
 };
 
 type RecentDeploymentSummary = {
@@ -60,167 +54,13 @@ function parseModelJson(raw: string): HelpAgentResponse | null {
 	}
 }
 
-async function callGemini(prompt: string): Promise<LLMCallResult> {
-	const geminiApiKey = process.env.GEMINI_API_KEY?.trim();
-	if (!geminiApiKey) {
-		throw new Error("Missing GEMINI_API_KEY env var");
-	}
-	const modelName = "gemini-2.5-flash";
-	const genAI = new GoogleGenerativeAI(geminiApiKey);
-	const model = genAI.getGenerativeModel({
-		model: modelName,
-		generationConfig: {
-			temperature: 0.2,
-			maxOutputTokens: 4096,
-		},
+async function callHelpAgentLLM(prompt: string): Promise<LLMFallbackResult> {
+	return callLLMWithFallback(prompt, {
+		contextLabel: "Help agent",
+		maxTokens: 4096,
+		temperature: 0.2,
+		localModelDefault: "mistral",
 	});
-	const result = await model.generateContent(prompt);
-	const response = await result.response;
-	return {
-		text: response.text(),
-		model: "Gemini 2.5 Flash",
-	};
-}
-
-async function callLocalLLM(prompt: string): Promise<LLMCallResult> {
-	const baseUrl = process.env.LOCAL_LLM_BASE_URL?.trim();
-	if (!baseUrl) {
-		throw new Error("Missing LOCAL_LLM_BASE_URL env var");
-	}
-	const model = process.env.LOCAL_LLM_MODEL || "mistral";
-
-	const res = await fetch(baseUrl, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({
-			model,
-			prompt,
-			stream: false,
-			temperature: 0.2,
-			max_tokens: 4096,
-		}),
-	});
-
-	if (!res.ok) {
-		const errText = await res.text();
-		throw new Error(`Local LLM returned ${res.status}: ${errText.slice(0, 200)}`);
-	}
-
-	const data = (await res.json()) as { response?: string };
-	if (!data.response) throw new Error("Local LLM response missing text");
-	return {
-		text: data.response,
-		model: model,
-	};
-}
-
-function bedrockModelIdToLabel(modelId: string): string {
-	const normalized = modelId.toLowerCase();
-	if (normalized.includes("haiku-4")) return "Claude Haiku 4.0";
-	if (normalized.includes("sonnet-4")) return "Claude Sonnet 4.0";
-	if (normalized.includes("opus-4")) return "Claude Opus 4";
-	return modelId;
-}
-
-async function callBedrock(prompt: string): Promise<LLMCallResult> {
-	const region = process.env.AWS_REGION || "us-west-2";
-	const accessKeyId = process.env.AWS_BEDROCK_ACCESS_KEY_ID;
-	const secretAccessKey = process.env.AWS_BEDROCK_SECRET_ACCESS_KEY;
-
-	if (!accessKeyId || !secretAccessKey) {
-		throw new Error(
-			"Missing AWS Bedrock credentials (AWS_BEDROCK_ACCESS_KEY_ID and AWS_BEDROCK_SECRET_ACCESS_KEY)"
-		);
-	}
-
-	const client = new BedrockRuntimeClient({
-		region,
-		credentials: {
-			accessKeyId,
-			secretAccessKey,
-		},
-	});
-
-	const modelId = process.env.BEDROCK_MODEL_ID || "anthropic.claude-haiku-4-0-v1:0";
-	const command = new InvokeModelCommand({
-		modelId,
-		contentType: "application/json",
-		accept: "application/json",
-		body: JSON.stringify({
-			anthropic_version: "bedrock-2023-05-31",
-			max_tokens: 4096,
-			temperature: 0.2,
-			messages: [
-				{
-					role: "user",
-					content: [
-						{
-							type: "text",
-							text: prompt,
-						},
-					],
-				},
-			],
-		}),
-	});
-
-	const response = await client.send(command);
-	const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-	const text = responseBody?.content?.[0]?.text;
-	if (typeof text !== "string" || !text.trim()) {
-		throw new Error("Invalid response from Bedrock API");
-	}
-
-	return {
-		text,
-		model: bedrockModelIdToLabel(modelId),
-	};
-}
-
-async function callLLMWithFallback(prompt: string): Promise<LLMCallResult> {
-	const hasGemini = Boolean(process.env.GEMINI_API_KEY?.trim());
-	const hasBedrock = Boolean(
-		process.env.AWS_BEDROCK_ACCESS_KEY_ID?.trim() &&
-			process.env.AWS_BEDROCK_SECRET_ACCESS_KEY?.trim()
-	);
-	const hasLocal = Boolean(process.env.LOCAL_LLM_BASE_URL?.trim());
-
-	if (hasGemini) {
-		try {
-			return await callGemini(prompt);
-		} catch (error) {
-			console.warn("Help agent Gemini failed; attempting Bedrock fallback", error);
-			if (hasBedrock) {
-				try {
-					return await callBedrock(prompt);
-				} catch (bedrockError) {
-					console.warn("Help agent Bedrock fallback failed; attempting local fallback", bedrockError);
-					if (hasLocal) return callLocalLLM(prompt);
-					throw bedrockError;
-				}
-			}
-			if (hasLocal) return callLocalLLM(prompt);
-			throw error;
-		}
-	}
-
-	if (hasBedrock) {
-		try {
-			return await callBedrock(prompt);
-		} catch (error) {
-			console.warn("Help agent Bedrock failed; attempting local fallback", error);
-			if (hasLocal) return callLocalLLM(prompt);
-			throw error;
-		}
-	}
-
-	if (hasLocal) {
-		return callLocalLLM(prompt);
-	}
-
-	throw new Error(
-		"No help-agent model configured (set GEMINI_API_KEY and/or AWS_BEDROCK_ACCESS_KEY_ID + AWS_BEDROCK_SECRET_ACCESS_KEY and/or LOCAL_LLM_BASE_URL)"
-	);
 }
 
 function summarizeRecentLogs(logs: string[], maxLines = 4): string[] {
@@ -399,7 +239,7 @@ export async function POST(req: Request) {
 
 	try {
 		const prompt = buildPrompt(question, history, chunks, recentDeployments);
-		const llm = await callLLMWithFallback(prompt);
+		const llm = await callHelpAgentLLM(prompt);
 		const parsed = parseModelJson(llm.text);
 		const contextSources = new Set(chunks.map((chunk) => chunk.source));
 
