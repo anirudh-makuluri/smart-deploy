@@ -60,6 +60,24 @@ create index if not exists idx_deployment_history_user_repo_service
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
 
+-- Help-agent chats: one row per completed Q/A exchange.
+create table if not exists public.help_agent_chats (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  question text not null,
+  answer text not null,
+  citations jsonb not null default '[]',
+  confidence text not null default 'low' check (confidence in ('high', 'medium', 'low')),
+  model text,
+  moss_retrieval_ms int,
+  response_time_ms int,
+  chat_history jsonb not null default '[]',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_help_agent_chats_user_created
+  on public.help_agent_chats(user_id, created_at desc);
+
 -- Artifact generation events: append-only facts about generated infra files.
 create table if not exists public.artifact_events (
   id uuid primary key default gen_random_uuid(),
@@ -180,6 +198,7 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 -- RLS: disable or set policies as needed; service role bypasses RLS
 alter table public.deployments enable row level security;
 alter table public.deployment_history enable row level security;
+alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
 alter table public.waiting_list enable row level security;
@@ -198,6 +217,13 @@ create policy "Users can view their own reports" on public.user_reports
   for select using (auth.uid()::text = user_id);
 
 create policy "Users can insert their own reports" on public.user_reports
+  for insert with check (auth.uid()::text = user_id);
+
+-- RLS Policies for help_agent_chats
+create policy "Users can view their own help agent chats" on public.help_agent_chats
+  for select using (auth.uid()::text = user_id);
+
+create policy "Users can insert their own help agent chats" on public.help_agent_chats
   for insert with check (auth.uid()::text = user_id);
 
 -- Allow service role full access (service role key bypasses RLS by default)
