@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 		);
 	}
 
-	const logsText = steps
+	const logsText = prioritizeDiagnosticsLogs(steps)
 		.map(
 			(s) =>
 				`[${s.label}] (${s.status})\n${(s.logs || []).map((l) => `  ${l}`).join("\n")}`
@@ -111,4 +111,51 @@ function buildHeuristicFailureAnalysis(
 		suggested || "1. Inspect the most recent error logs and retry after fixing the first concrete error.",
 		topLogs ? `Recent log lines:\n${topLogs}` : "",
 	].filter(Boolean).join("\n\n");
+}
+
+export function prioritizeDiagnosticsLogs(steps: DeployStep[]): DeployStep[] {
+	const DIAG_START = "diagnostics:docker_logs:start";
+	const DIAG_END = "diagnostics:docker_logs:end";
+
+	let latestStepIndex = -1;
+	let latestStartIndex = -1;
+	let latestEndIndex = -1;
+
+	for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+		const logs = steps[stepIndex]?.logs || [];
+		for (let i = 0; i < logs.length; i++) {
+			if (logs[i]?.includes(DIAG_START)) {
+				let endIndex = -1;
+				for (let j = i + 1; j < logs.length; j++) {
+					if (logs[j]?.includes(DIAG_END)) {
+						endIndex = j;
+						break;
+					}
+				}
+				latestStepIndex = stepIndex;
+				latestStartIndex = i;
+				latestEndIndex = endIndex;
+			}
+		}
+	}
+
+	if (latestStepIndex === -1 || latestStartIndex === -1) {
+		return steps;
+	}
+
+	const ordered = [...steps];
+	const sourceStep = ordered[latestStepIndex];
+	const sourceLogs = sourceStep?.logs || [];
+	const endExclusive = latestEndIndex >= latestStartIndex ? latestEndIndex + 1 : sourceLogs.length;
+	const dockerDiagBlock = sourceLogs.slice(latestStartIndex, endExclusive);
+	if (dockerDiagBlock.length === 0) return steps;
+
+	const withoutBlock = sourceLogs.filter((line, idx) => idx < latestStartIndex || idx >= endExclusive);
+	const rebuiltStep: DeployStep = {
+		...sourceStep,
+		logs: [...dockerDiagBlock, ...withoutBlock],
+	};
+
+	ordered.splice(latestStepIndex, 1);
+	return [rebuiltStep, ...ordered];
 }
