@@ -442,6 +442,48 @@ export const dbHelper = {
 		}
 	},
 
+	recordHelpAgentChat: async function (args: {
+		userID: string;
+		question: string;
+		answer: string;
+		citations?: string[];
+		confidence?: "high" | "medium" | "low";
+		model?: string | null;
+		mossRetrievalMs?: number | null;
+		responseTimeMs?: number | null;
+		history?: Array<{ role: "user" | "assistant"; content: string }>;
+	}) {
+		try {
+			const { userID, question, answer } = args;
+			if (!userID || !question.trim() || !answer.trim()) {
+				return { error: "userID, question, and answer are required" };
+			}
+
+			const supabase = getSupabaseServer();
+			const { data: inserted, error } = await supabase
+				.from("help_agent_chats")
+				.insert({
+					user_id: userID,
+					question: question.trim(),
+					answer: answer.trim(),
+					citations: Array.isArray(args.citations) ? args.citations : [],
+					confidence: args.confidence ?? "low",
+					model: args.model ?? null,
+					moss_retrieval_ms: typeof args.mossRetrievalMs === "number" ? Math.round(args.mossRetrievalMs) : null,
+					response_time_ms: typeof args.responseTimeMs === "number" ? Math.round(args.responseTimeMs) : null,
+					chat_history: Array.isArray(args.history) ? args.history : [],
+				})
+				.select("id")
+				.single();
+
+			if (error) return { error };
+			return { success: true, id: inserted?.id };
+		} catch (error) {
+			console.error("recordHelpAgentChat error:", error);
+			return { error };
+		}
+	},
+
 	recordArtifactGeneration: async function (args: {
 		userID: string;
 		repoName: string;

@@ -35,6 +35,7 @@ This creates the following tables:
 | *(Better Auth)* `user`, `session`, `account`, `verification` | Auth identities and sessions (via `auth:migrate`, not `schema.sql`) |
 | `deployments` | Active deployments (one row per deploy) |
 | `deployment_history` | Immutable log of every deploy attempt |
+| `help_agent_chats` | Stored help-agent Q/A exchanges per user |
 | `user_repos` | Per-user repo metadata |
 | `repo_services` | Detected services for scanned repos |
 | `approved_users` | Emails allowed to sign in |

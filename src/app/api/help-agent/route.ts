@@ -363,6 +363,34 @@ function mergeChunks(primary: HelpDocChunk[], secondary: HelpDocChunk[], limit =
 	return deduped;
 }
 
+async function persistHelpAgentChat(args: {
+	userID: string;
+	question: string;
+	history: ChatTurn[];
+	answer: string;
+	citations: string[];
+	confidence: "high" | "medium" | "low";
+	model?: string;
+	mossRetrievalMs?: number | null;
+	responseTimeMs?: number;
+}) {
+	try {
+		await dbHelper.recordHelpAgentChat({
+			userID: args.userID,
+			question: args.question,
+			answer: args.answer,
+			citations: args.citations,
+			confidence: args.confidence,
+			model: args.model ?? null,
+			mossRetrievalMs: args.mossRetrievalMs ?? null,
+			responseTimeMs: args.responseTimeMs ?? null,
+			history: args.history.slice(-8),
+		});
+	} catch (error) {
+		console.warn("Failed to persist help-agent chat", error);
+	}
+}
+
 export async function POST(req: Request) {
 	const startedAt = Date.now();
 	const session = await auth.api.getSession({ headers: await headers() });
@@ -387,13 +415,27 @@ export async function POST(req: Request) {
 	const chunks = mergeChunks(deterministicChunks, mossChunks, 8);
 
 	if (chunks.length === 0 && recentDeployments.length === 0) {
-		return NextResponse.json({
-			answer:
-				"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.",
-			citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
-			confidence: "low",
+		const answer =
+			"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.";
+		const citations = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
+		const confidence = "low" as const;
+		const responseTimeMs = Date.now() - startedAt;
+		await persistHelpAgentChat({
+			userID: session.user.id,
+			question,
+			history,
+			answer,
+			citations,
+			confidence,
 			mossRetrievalMs: mossContext.mossRetrievalMs,
-			responseTimeMs: Date.now() - startedAt,
+			responseTimeMs,
+		});
+		return NextResponse.json({
+			answer,
+			citations,
+			confidence,
+			mossRetrievalMs: mossContext.mossRetrievalMs,
+			responseTimeMs,
 		});
 	}
 
@@ -404,35 +446,77 @@ export async function POST(req: Request) {
 		const contextSources = new Set(chunks.map((chunk) => chunk.source));
 
 		if (!parsed) {
-			return NextResponse.json({
-				answer: llm.text.trim().slice(0, 2000),
-				citations: preferredDocFallback(contextSources),
-				confidence: "low",
+			const answer = llm.text.trim().slice(0, 2000);
+			const citations = preferredDocFallback(contextSources);
+			const confidence = "low" as const;
+			const responseTimeMs = Date.now() - startedAt;
+			await persistHelpAgentChat({
+				userID: session.user.id,
+				question,
+				history,
+				answer,
+				citations,
+				confidence,
 				model: llm.model,
 				mossRetrievalMs: mossContext.mossRetrievalMs,
-				responseTimeMs: Date.now() - startedAt,
+				responseTimeMs,
+			});
+			return NextResponse.json({
+				answer,
+				citations,
+				confidence,
+				model: llm.model,
+				mossRetrievalMs: mossContext.mossRetrievalMs,
+				responseTimeMs,
 			});
 		}
 
 		const citations = normalizeCitations(parsed.citations, contextSources);
-		return NextResponse.json({
+		const finalCitations = citations.length > 0 ? citations : preferredDocFallback(contextSources);
+		const responseTimeMs = Date.now() - startedAt;
+		await persistHelpAgentChat({
+			userID: session.user.id,
+			question,
+			history,
 			answer: parsed.answer,
-			citations: citations.length > 0 ? citations : preferredDocFallback(contextSources),
+			citations: finalCitations,
 			confidence: parsed.confidence,
 			model: llm.model,
 			mossRetrievalMs: mossContext.mossRetrievalMs,
-			responseTimeMs: Date.now() - startedAt,
+			responseTimeMs,
+		});
+		return NextResponse.json({
+			answer: parsed.answer,
+			citations: finalCitations,
+			confidence: parsed.confidence,
+			model: llm.model,
+			mossRetrievalMs: mossContext.mossRetrievalMs,
+			responseTimeMs,
 		});
 	} catch (error) {
 		console.error("Help agent request failed:", error);
+		const answer =
+			"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.";
+		const citations = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
+		const confidence = "low" as const;
+		const responseTimeMs = Date.now() - startedAt;
+		await persistHelpAgentChat({
+			userID: session.user.id,
+			question,
+			history,
+			answer,
+			citations,
+			confidence,
+			mossRetrievalMs: mossContext.mossRetrievalMs,
+			responseTimeMs,
+		});
 		return NextResponse.json(
 			{
-				answer:
-					"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.",
-				citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
-				confidence: "low",
+				answer,
+				citations,
+				confidence,
 				mossRetrievalMs: mossContext.mossRetrievalMs,
-				responseTimeMs: Date.now() - startedAt,
+				responseTimeMs,
 			},
 			{ status: 200 }
 		);
