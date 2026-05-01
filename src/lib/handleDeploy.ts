@@ -138,6 +138,17 @@ async function saveDeploymentToDB(
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
+		captureServerEvent({
+			distinctId: "anonymous",
+			event: "deploy_persistence_skipped",
+			properties: {
+				reason: "missing_user_id",
+				repo_name: deployConfig.repoName ?? null,
+				service_name: deployConfig.serviceName ?? null,
+				success,
+				duration_ms: durationMs ?? null,
+			},
+		});
 		return;
 	}
 
@@ -155,6 +166,17 @@ async function saveDeploymentToDB(
 		const updateResponse = await dbHelper.updateDeployments(minimalDeployment, userID);
 		if (updateResponse.error) {
 			console.error("Failed to update deployment:", updateResponse.error);
+			captureServerEvent({
+				distinctId: userID,
+				event: "deploy_persistence_failed",
+				properties: {
+					phase: "update_deployments",
+					repo_name: deployConfig.repoName ?? null,
+					service_name: deployConfig.serviceName ?? null,
+					success,
+					error: String(updateResponse.error),
+				},
+			});
 		} else {
 			console.log("Deployment saved to DB:", updateResponse.success);
 
@@ -207,11 +229,52 @@ async function saveDeploymentToDB(
 
 		if (historyResponse.error) {
 			console.error("Failed to record deployment history:", historyResponse.error);
+			captureServerEvent({
+				distinctId: userID,
+				event: "deploy_persistence_failed",
+				properties: {
+					phase: "add_deployment_history",
+					repo_name: deployConfig.repoName ?? null,
+					service_name: deployConfig.serviceName ?? null,
+					success,
+					error: String(historyResponse.error),
+				},
+			});
 		} else {
 			console.log("Deployment history recorded:", historyResponse.id);
 		}
 	} catch (error) {
 		console.error("Error saving deployment to DB:", error);
+		captureServerEvent({
+			distinctId: userID,
+			event: "deploy_persistence_failed",
+			properties: {
+				phase: "save_deployment_to_db_exception",
+				repo_name: deployConfig.repoName ?? null,
+				service_name: deployConfig.serviceName ?? null,
+				success,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		});
+	}
+}
+
+function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], message: string): void {
+	const doneStep = deploySteps.find((step) => step.id === "done") ?? deploySteps[deploySteps.length - 1];
+	if (doneStep) {
+		doneStep.logs.push(message);
+	}
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "deploy_logs",
+				payload: {
+					id: doneStep?.id ?? "done",
+					msg: message,
+					time: new Date().toISOString(),
+				},
+			})
+		);
 	}
 }
 
@@ -234,6 +297,13 @@ async function sendDeployComplete(
 ) {
 	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
 	console.log("Saving deployment result to database...");
+	if (!userID) {
+		emitPersistenceWarningToDeployLogs(
+			ws,
+			deploySteps,
+			"Warning: deploy metadata was not persisted because userID is missing."
+		);
+	}
 	try {
 		await saveDeploymentToDB(
 			deployConfig,
@@ -247,6 +317,11 @@ async function sendDeployComplete(
 		);
 	} catch (err) {
 		console.error("Failed to save deployment to DB:", err);
+		emitPersistenceWarningToDeployLogs(
+			ws,
+			deploySteps,
+			`Warning: failed to persist deploy metadata: ${err instanceof Error ? err.message : String(err)}`
+		);
 	}
 
 	// PostHog: server-truth event (never blocks deploy completion).

@@ -38,6 +38,8 @@ import { EC2Client, GetConsoleOutputCommand } from "@aws-sdk/client-ec2";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type SendFn = (msg: string, stepId: string) => void;
+const DIAGNOSTIC_LOG_TAIL = 300;
+const DEFAULT_DIAGNOSTIC_CONTAINER = "smartdeploy-app";
 
 export type ServiceDef = { name: string; dir: string; port: number; isMonorepo?: boolean; relativePath?: string; framework?: string; language?: string };
 
@@ -480,7 +482,7 @@ async function launchNewInstance(params: {
 		return { instanceId, publicIp, detectedPort: null, success: false };
 	}
 
-	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
+	const detectedPort = await detectRespondingPort(publicIp, services, instanceId, region, ws, send);
 
 	if (!detectedPort) {
 		send("Instance failed to respond on any known ports. Instance will be reused on next deploy.", "deploy");
@@ -741,18 +743,74 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 	}
 }
 
-async function detectRespondingPort(publicIp: string, services: ServiceDef[], ws: any, send: SendFn): Promise<number | null> {
+export async function runPreCurlDiagnostics(params: {
+	instanceId: string;
+	region: string;
+	send: SendFn;
+	containerName?: string;
+	tail?: number;
+}): Promise<void> {
+	const {
+		instanceId,
+		region,
+		send,
+		containerName = DEFAULT_DIAGNOSTIC_CONTAINER,
+		tail = DIAGNOSTIC_LOG_TAIL,
+	} = params;
+
+	send(`diagnostics:docker_logs:start container=${containerName} tail=${tail}`, "deploy");
+
+	const safeContainerName = containerName.replace(/'/g, "'\"'\"'");
+	const safeTail = Number.isFinite(tail) && tail > 0 ? Math.floor(tail) : DIAGNOSTIC_LOG_TAIL;
+	const script = `
+set +e
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[diagnostics] docker CLI not found on instance"
+  exit 0
+fi
+if docker ps -a --format '{{.Names}}' | grep -Fxq '${safeContainerName}'; then
+  echo "[diagnostics] collecting docker logs for ${safeContainerName}"
+  docker logs --tail ${safeTail} ${safeContainerName} 2>&1 || true
+else
+  echo "[diagnostics] container '${safeContainerName}' not found; continuing to curl checks"
+fi
+`.trim();
+
+	try {
+		await runRedeployViaSsm({ instanceId, region, script, send });
+	} catch (error: any) {
+		send(
+			`[diagnostics] failed to collect docker logs via SSM: ${error?.message ?? String(error)}. Continuing...`,
+			"deploy"
+		);
+	}
+
+	send("diagnostics:docker_logs:end", "deploy");
+}
+
+export async function detectRespondingPort(
+	publicIp: string,
+	services: ServiceDef[],
+	instanceId: string,
+	region: string,
+	ws: any,
+	send: SendFn
+): Promise<number | null> {
+	await runPreCurlDiagnostics({ instanceId, region, send });
+
 	try {
 		const { runCommandLiveWithWebSocket } = await import("../../server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
 		send("Waiting for application to be ready (this may take a minute)...", "deploy");
+		send("diagnostics:curl:start", "deploy");
 		for (let attempt = 1; attempt <= 12; attempt++) {
 			for (const port of candidates) {
 				try {
 					const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
 					if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
-						send(`✅ Detected responding port ${port} (HTTP ${code})`, "deploy");
+						send(`Detected responding port ${port} (HTTP ${code})`, "deploy");
+						send("diagnostics:curl:end", "deploy");
 						return port;
 					}
 				} catch { /* try next */ }
@@ -762,6 +820,7 @@ async function detectRespondingPort(publicIp: string, services: ServiceDef[], ws
 			}
 		}
 	} catch { /* curl unavailable */ }
+	send("diagnostics:curl:end", "deploy");
 	return null;
 }
 
@@ -1134,7 +1193,7 @@ export async function handleEC2FromEcr(params: {
 		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
 	}
 
-	const detectedPort = await detectRespondingPort(publicIp, services, ws, send);
+	const detectedPort = await detectRespondingPort(publicIp, services, instanceId, region, ws, send);
 	if (!detectedPort) {
 		send("Instance failed to respond on any known ports. Instance will be reused on next deploy.", "deploy");
 		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
@@ -1166,3 +1225,4 @@ export async function handleEC2FromEcr(params: {
 
 	return { success: true, baseUrl, serviceUrls, instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId, sharedAlbDns };
 }
+
