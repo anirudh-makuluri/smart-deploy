@@ -522,10 +522,27 @@ async function handleAWSCodeBuildDeploy(
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const parsed = parseGithubOwnerRepo(repoUrl);
 	const repoFullName = parsed ? `${parsed.owner}/${parsed.repo}` : repoName;
+	const scanResults = deployConfig.scanResults;
+	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
+		? (scanResults as SDArtifactsResponse)
+		: null;
+	const rootCommands = (() => {
+		const raw = scanResults && typeof scanResults === "object" && "commands" in scanResults
+			? (scanResults as Record<string, unknown>).commands
+			: undefined;
+		if (Array.isArray(raw)) return raw.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
+		if (raw && typeof raw === "object") {
+			const dot = (raw as Record<string, unknown>)["."];
+			if (Array.isArray(dot)) {
+				return dot.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
+			}
+		}
+		return [] as string[];
+	})();
 
 	const target: DeploymentTarget = "ec2";
 	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS["ec2-codebuild"]);
+	sendDeploySteps(ws, rootCommands.length > 0 ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
 
 	// ── Auth: verify AWS credentials via SDK ──
 	send("Authenticating with AWS...", "auth");
@@ -539,6 +556,89 @@ async function handleAWSCodeBuildDeploy(
 	const identity = await stsClient.send(new GetCallerIdentityCommand({}));
 	// if (identity.Arn) send(`Authenticated as: ${identity.Arn}`, "auth");
 	// send("✅ AWS credentials verified", "auth");
+
+	if (rootCommands.length > 0) {
+		send("Using scan_results.commands deployment path (skipping CodeBuild/ECR)...", "deploy");
+		const multiServiceConfig: MultiServiceConfig = {
+			isMultiService: (scanResultsTyped?.services?.length || 0) > 1,
+			services: (scanResultsTyped?.services || []).map(s => ({
+				name: s.name,
+				workdir: s.build_context || ".",
+				dockerfile: s.dockerfile_path,
+				port: s.port,
+				build_context: s.build_context || ".",
+			})),
+			hasDockerCompose: !!scanResultsTyped?.docker_compose,
+			isMonorepo: (scanResultsTyped?.services?.length || 0) > 1,
+		};
+
+		const ec2Result = await handleEC2(
+			deployConfig,
+			".",
+			multiServiceConfig,
+			token,
+			undefined,
+			ws,
+			send
+		);
+
+		const serviceDetails: ServiceDeployDetails = {};
+		const ec2Details2 = deployConfig.ec2 || {};
+		const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2)
+			? (ec2Details2 as EC2Details)
+			: null;
+		serviceDetails.ec2 = {
+			success: ec2Result.success,
+			baseUrl: ec2Result.baseUrl,
+			instanceId: ec2Result.instanceId,
+			publicIp: ec2Result.publicIp,
+			vpcId: ec2Result.vpcId,
+			subnetId: ec2Result.subnetId,
+			securityGroupId: ec2Result.securityGroupId,
+			amiId: ec2Result.amiId,
+			sharedAlbDns: ec2Result.sharedAlbDns || "",
+			instanceType: ec2Typed2?.instanceType || "t3.micro",
+		};
+
+		let deployUrl: string | undefined;
+		let result: string;
+		if (!ec2Result.success || ec2Result.baseUrl === "") {
+			send("❌ Deployment failed: Server is not responding. Check deployment logs.", "deploy");
+			result = "error";
+		} else {
+			let ec2Summary = `\nDeployment completed!\n`;
+			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
+			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
+			ec2Summary += `\nService URLs:\n`;
+			for (const [name, url] of ec2Result.serviceUrls.entries()) {
+				ec2Summary += `  - ${name}: ${url}\n`;
+			}
+			send(ec2Summary, "done");
+			deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
+			result = "done";
+		}
+
+		let vercelResult: AddVercelDnsResult | null = null;
+		if (deployUrl && deployConfig.liveUrl !== deployUrl && deployConfig.serviceName?.trim() && ec2Result.success) {
+			send("Adding Vercel DNS record...", "done");
+			vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
+				deploymentTarget: target,
+				previousCustomUrl: deployConfig.liveUrl ?? null,
+			});
+		}
+		if (vercelResult?.success) {
+			send(`✅ Vercel DNS added: ${vercelResult.customUrl}`, "done");
+		} else if (deployUrl && vercelResult && ec2Result.success) {
+			send(`⚠️ Vercel DNS failed: ${vercelResult?.error ?? "Unknown error"}`, "done");
+		}
+
+		const doneStep = deploySteps.find(s => s.id === "done");
+		if (doneStep) doneStep.status = ec2Result.success ? "success" : "error";
+
+		const durationMs = Date.now() - deployStartTime;
+		await sendDeployComplete(ws, deployUrl, ec2Result.success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
+		return result;
+	}
 
 	// Resolve branch
 	let branch = deployConfig.branch?.trim() ?? "";
@@ -567,14 +667,11 @@ async function handleAWSCodeBuildDeploy(
 	const ecrAuth = await getEcrAuthToken(region);
 	const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 
-	const scanResults = deployConfig.scanResults;
 	const envBase64 = deployConfig.envVars
 		? Buffer.from(deployConfig.envVars, "utf8").toString("base64")
 		: undefined;
 
-	const services = (scanResults && typeof scanResults === "object" && "services" in scanResults)
-		? (scanResults as SDArtifactsResponse).services
-		: [];
+	const services = scanResultsTyped?.services || [];
 	const hasCompose = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults && services.length > 1;
 	const repoNames = new Set<string>();
 	repoNames.add(ecrRepoName);
@@ -655,9 +752,6 @@ async function handleAWSCodeBuildDeploy(
 
 	// ── Setup + Deploy: EC2 from ECR ──
 	send("Setting up networking...", "setup");
-	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
-		? (scanResults as SDArtifactsResponse)
-		: null;
 	const multiServiceConfig: MultiServiceConfig = {
 		isMultiService: (scanResultsTyped?.services?.length || 0) > 1,
 		services: (scanResultsTyped?.services || []).map(s => ({

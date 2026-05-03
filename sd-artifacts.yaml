@@ -1,0 +1,494 @@
+openapi: 3.1.0
+info:
+  title: SD-Artifacts Repo Analyzer
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TokenUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+          default: 0
+        output_tokens:
+          type: integer
+          default: 0
+        total_tokens:
+          type: integer
+          default: 0
+      required: [input_tokens, output_tokens, total_tokens]
+
+    AnalyzeRequest:
+      type: object
+      properties:
+        repo_url:
+          type: string
+        github_token:
+          type: string
+          nullable: true
+        max_files:
+          type: integer
+          default: 50
+          nullable: true
+        package_path:
+          type: string
+          default: "."
+        service_name:
+          type: string
+          nullable: true
+        commit_sha:
+          type: string
+          nullable: true
+      required: [repo_url]
+
+    AnalyzeResponse:
+      type: object
+      properties:
+        response_id:
+          type: string
+          nullable: true
+        commit_sha:
+          type: string
+          default: "unknown"
+        stack_summary:
+          type: string
+        stack_tokens:
+          type: array
+          items: { type: string }
+        services:
+          type: array
+          items: { type: object, additionalProperties: true }
+        dockerfiles:
+          type: object
+          additionalProperties: { type: string }
+        docker_compose:
+          type: string
+          nullable: true
+        nginx_conf:
+          type: string
+          nullable: true
+        has_existing_dockerfiles:
+          type: boolean
+          default: false
+        has_existing_compose:
+          type: boolean
+          default: false
+        risks:
+          type: array
+          items: { type: string }
+        confidence:
+          type: number
+        hadolint_results:
+          type: object
+          additionalProperties: { type: string }
+        commands:
+          type: object
+          additionalProperties: true
+        build_verification:
+          type: object
+          additionalProperties: true
+        llm_outputs:
+          type: object
+          additionalProperties: true
+        token_usage:
+          $ref: '#/components/schemas/TokenUsage'
+      required:
+        - commit_sha
+        - stack_summary
+        - stack_tokens
+        - services
+        - dockerfiles
+        - has_existing_dockerfiles
+        - has_existing_compose
+        - risks
+        - confidence
+        - hadolint_results
+        - commands
+        - build_verification
+        - llm_outputs
+        - token_usage
+
+    SeedExampleBankRequest:
+      type: object
+      properties:
+        repo_urls:
+          type: array
+          items: { type: string }
+        github_token:
+          type: string
+          nullable: true
+        max_files_per_repo:
+          type: integer
+          default: 20
+        permissive_only:
+          type: boolean
+          default: true
+      required: [repo_urls]
+
+    SeedExampleBankResponse:
+      type: object
+      properties:
+        inserted: { type: integer }
+        updated: { type: integer }
+        skipped: { type: integer }
+        errors:
+          type: array
+          items: { type: string }
+      required: [inserted, updated, skipped, errors]
+
+    PreviewExamplesRequest:
+      type: object
+      properties:
+        artifact_type:
+          type: string
+          enum: [dockerfile, compose]
+        detected_stack:
+          type: string
+        stack_tokens:
+          type: array
+          items: { type: string }
+        service:
+          type: object
+          nullable: true
+          additionalProperties: { type: string }
+        limit:
+          type: integer
+          default: 3
+      required: [artifact_type, detected_stack]
+
+    PreviewExamplesResponse:
+      type: object
+      properties:
+        examples:
+          type: array
+          items: { type: object, additionalProperties: true }
+      required: [examples]
+
+    DeleteCacheRequest:
+      type: object
+      properties:
+        repo_url: { type: string }
+        commit_sha: { type: string, nullable: true }
+        package_path: { type: string, default: "." }
+        service_name: { type: string, nullable: true }
+      required: [repo_url]
+
+    DeleteCacheResponse:
+      type: object
+      properties:
+        deleted: { type: integer }
+        repo_url: { type: string }
+        commit_sha: { type: string, nullable: true }
+        package_path: { type: string, nullable: true }
+        service_name: { type: string, nullable: true }
+      required: [deleted, repo_url]
+
+    FeedbackRequest:
+      type: object
+      properties:
+        repo_url: { type: string }
+        commit_sha: { type: string }
+        package_path: { type: string, default: "." }
+        feedback: { type: string }
+        github_token: { type: string, nullable: true }
+        failure_summary: { type: string, nullable: true }
+        failure_logs: { type: string, nullable: true }
+        failed_artifact_scope: { type: string, nullable: true }
+      required: [repo_url, commit_sha, feedback]
+
+    ResponseStatusRequest:
+      type: object
+      properties:
+        response_id: { type: string }
+        passed: { type: boolean }
+      required: [response_id, passed]
+
+    ResponseStatusResponse:
+      type: object
+      properties:
+        response_id: { type: string }
+        passed: { type: boolean }
+        cache_deleted: { type: integer, default: 0 }
+      required: [response_id, passed, cache_deleted]
+
+    TemplateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string, default: "" }
+        match_stack_tokens:
+          type: array
+          items: { type: string }
+        match_signals:
+          type: object
+          additionalProperties: true
+        priority: { type: integer, default: 0 }
+        template_content: { type: string, default: "" }
+        variables:
+          type: object
+          additionalProperties: true
+        is_active: { type: boolean, default: true }
+      required: [name]
+
+    TemplateSeedResponse:
+      type: object
+      properties:
+        inserted: { type: integer, default: 0 }
+        updated: { type: integer, default: 0 }
+        skipped: { type: integer, default: 0 }
+      required: [inserted, updated, skipped]
+
+    HealthResponse:
+      type: object
+      properties:
+        status: { type: string }
+        scope: { type: string }
+        supabase_configured: { type: boolean }
+      required: [status, scope, supabase_configured]
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail: {}
+      required: [detail]
+paths:
+  /health:
+    get:
+      security: []
+      summary: Public health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  /healthz:
+    get:
+      summary: Authenticated health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /analyze:
+    post:
+      summary: Analyze repository and generate artifacts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalyzeRequest' }
+      responses:
+        '200':
+          description: Analysis complete
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyzeResponse' }
+        '400': { description: Validation/pipeline error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /analyze/stream:
+    post:
+      summary: Analyze repository via Server-Sent Events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnalyzeRequest' }
+      responses:
+        '200':
+          description: SSE stream with progress/complete/error events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /feedback:
+    post:
+      summary: Improve cached analysis using feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedbackRequest' }
+      responses:
+        '200':
+          description: Improved artifacts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalyzeResponse' }
+        '404': { description: Cache not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /feedback/stream:
+    post:
+      summary: Feedback improvement via SSE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedbackRequest' }
+      responses:
+        '200':
+          description: SSE stream with progress/complete/error events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /examples/seed:
+    post:
+      summary: Seed example bank from explicit repositories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeedExampleBankRequest' }
+      responses:
+        '200':
+          description: Seed summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedExampleBankResponse' }
+
+  /examples/seed/popular:
+    post:
+      summary: Seed example bank from built-in popular repos
+      parameters:
+        - in: query
+          name: github_token
+          schema: { type: string }
+          required: false
+      responses:
+        '200':
+          description: Seed summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedExampleBankResponse' }
+
+  /examples/preview:
+    post:
+      summary: Preview matching examples
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewExamplesRequest' }
+      responses:
+        '200':
+          description: Example list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreviewExamplesResponse' }
+        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /cache:
+    delete:
+      summary: Delete cached analysis rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteCacheRequest' }
+      responses:
+        '200':
+          description: Delete summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteCacheResponse' }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /responses/status:
+    post:
+      summary: Mark logged response as passed/failed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResponseStatusRequest' }
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResponseStatusResponse' }
+        '404': { description: Response id not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /templates:
+    get:
+      summary: List templates
+      parameters:
+        - in: query
+          name: active_only
+          schema: { type: boolean, default: true }
+          required: false
+      responses:
+        '200':
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+
+    post:
+      summary: Create or update template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateRequest' }
+      responses:
+        '200':
+          description: Upsert result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '400': { description: Invalid payload, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /templates/seed:
+    post:
+      summary: Seed default templates
+      responses:
+        '200':
+          description: Seed result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateSeedResponse' }
+
+  /templates/{name}:
+    delete:
+      summary: Delete template by name
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: { type: boolean }
+                  name: { type: string }
+                required: [deleted, name]
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }

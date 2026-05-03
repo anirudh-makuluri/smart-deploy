@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { DeployConfig, SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
 	AlertDialog,
 	AlertDialogCancel,
@@ -14,7 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Clock, Database, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw, FolderGit2, Plus } from "lucide-react";
+import { AlertTriangle, TerminalSquare, Copy, Settings, CheckCircle2, Clock, Database, Layers, Edit2, Save, Lock, Globe, Trash2, Download, RefreshCw, FolderGit2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
 	canonicalDockerfileDeployPath,
@@ -27,14 +26,21 @@ type AddFileType = "dockerfile" | "compose";
 type PostScanResultsProps = {
 	results: SDArtifactsResponse;
 	deployment: DeployConfig;
+	packagePath?: string;
 	scanTime?: number;
 	onStartDeployment: () => void;
 	onCancel: () => void;
 	onUpdateResults?: (results: SDArtifactsResponse) => void;
-	onStartImproveScan?: (payload: { repoUrl: string; commitSha?: string; feedback: string }) => void;
+	onStartImproveScan?: (payload: {
+		repoUrl: string;
+		commitSha?: string;
+		packagePath?: string;
+		feedback: string;
+		failedArtifactScope?: string;
+	}) => void;
 };
 
-export default function PostScanResults({ results, scanTime, deployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
+export default function PostScanResults({ results, packagePath, scanTime, deployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
 	const dockerfileNames = useMemo(() => {
 		if (!results.dockerfiles) return [];
 		return Object.keys(results.dockerfiles).sort((a, b) =>
@@ -68,11 +74,14 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		return initialActiveTab;
 	}, [activeTab, dockerfileNames, initialActiveTab]);
 
+	const isDockerfileTab = dockerfileNames.includes(selectedTab);
+	const isInfraFileTab = isDockerfileTab || selectedTab === "compose" || selectedTab === "nginx";
+
 	const isEditingCurrentTab = isEditing && selectedTab === activeTab;
 	const deployPathValue = useMemo(() => {
-		if (selectedTab === "compose" || selectedTab === "nginx") return "";
+		if (!isDockerfileTab) return "";
 		return deployPathDraft || canonicalDockerfileDeployPath(selectedTab);
-	}, [deployPathDraft, selectedTab]);
+	}, [deployPathDraft, isDockerfileTab, selectedTab]);
 
 	const serviceDraftSeed = useMemo(
 		() =>
@@ -97,6 +106,11 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 	};
 
 	const handleEdit = () => {
+		if (!isInfraFileTab) {
+			toast.info("This tab is read-only.");
+			return;
+		}
+
 		let content = "";
 		if (selectedTab === "compose") content = results.docker_compose || "";
 		else if (selectedTab === "nginx") content = results.nginx_conf || "";
@@ -108,6 +122,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleSave = () => {
 		if (!onUpdateResults) return;
+		if (!isInfraFileTab) return;
 
 		const updatedResults = { ...results };
 		if (selectedTab === "compose") {
@@ -126,6 +141,10 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleDelete = () => {
 		if (!onUpdateResults) return;
+		if (!isInfraFileTab) {
+			toast.info("This tab is read-only.");
+			return;
+		}
 		if (selectedTab !== "compose" && selectedTab !== "nginx" && dockerfileNames.length <= 1) {
 			toast.error("At least one Dockerfile is required. Add another Dockerfile before deleting this one.");
 			return;
@@ -215,7 +234,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	const handleUpdateDeployPath = () => {
 		if (!onUpdateResults) return;
-		if (selectedTab === "compose" || selectedTab === "nginx") return;
+		if (!isDockerfileTab) return;
 
 		const raw = deployPathDraft.trim();
 		if (!isValidRepoRelativeDockerfilePath(raw)) {
@@ -309,7 +328,16 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 
 	function buildTemplateFeedback(r: SDArtifactsResponse): string {
 		const confidence = Math.round((r.confidence ?? 0) * 100);
-		const hadolintCount = Object.values(r.hadolint_results || {}).reduce((acc, curr) => acc + (curr ? curr.split("\\n").length : 0), 0);
+		const hadolintCount = Object.values(r.hadolint_results || {}).reduce((acc, curr) => {
+			if (!curr) return acc;
+			if (typeof curr === "string") return acc + curr.split("\n").filter(Boolean).length;
+			if (Array.isArray(curr)) return acc + curr.length;
+			if (typeof curr === "object") {
+				const issueCount = (curr as { issues?: unknown[] }).issues;
+				return acc + (Array.isArray(issueCount) ? issueCount.length : 1);
+			}
+			return acc + 1;
+		}, 0);
 		const riskCount = (r.risks && r.risks.length) || 0;
 		const serviceNames = (r.services || []).map((s) => s.name).join(", ") || "none";
 		const parts = [
@@ -325,18 +353,55 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 		if (!deployment?.url || !onStartImproveScan) return;
 		const template = buildTemplateFeedback(results);
 		const feedback = userFeedback.trim() ? `${template}\n\nAdditional feedback: ${userFeedback.trim()}` : template;
+		const failedArtifactScope =
+			selectedTab === "compose" ? "compose" :
+				selectedTab === "nginx" ? "nginx" :
+					selectedTab ? "dockerfile" : "general";
 		onStartImproveScan({
 			repoUrl: deployment.url,
 			commitSha: (results.commit_sha || deployment.commitSha) ?? undefined,
+			packagePath,
 			feedback,
+			failedArtifactScope,
 		});
 		setImproveDialogOpen(false);
 		setUserFeedback("");
 	}
 
 	const hasRisks = results.risks && results.risks.length > 0;
-	// Calculate total hadolint warnings across services
-	const hadolintCount = Object.values(results.hadolint_results || {}).reduce((acc, curr) => acc + (curr ? curr.split('\\n').length : 0), 0);
+	const commandRows = useMemo(() => flattenCommandRows(results.commands), [results.commands]);
+	const groupedCommandRows = useMemo(() => {
+		const grouped: Record<string, Array<{ label: string; command: string }>> = {};
+		for (const row of commandRows) {
+			if (!grouped[row.group]) grouped[row.group] = [];
+			grouped[row.group].push({ label: row.label, command: row.command });
+		}
+		return grouped;
+	}, [commandRows]);
+	const commandCount = commandRows.length;
+	const commandGroupNames = Object.keys(groupedCommandRows);
+	const stackTokens = results.stack_tokens || [];
+	const dockerfileCount = Object.keys(results.dockerfiles || {}).length;
+	const responseId = results.response_id || "n/a";
+	const selectedTabCopyText = useMemo(() => {
+		if (isDockerfileTab) return results.dockerfiles?.[selectedTab] || "";
+		if (selectedTab === "compose") return results.docker_compose || "";
+		if (selectedTab === "nginx") return results.nginx_conf || "";
+		return "";
+	}, [
+		isDockerfileTab,
+		results.docker_compose,
+		results.dockerfiles,
+		results.nginx_conf,
+		selectedTab,
+	]);
+	const fullPayloadJson = useMemo(() => {
+		try {
+			return JSON.stringify(results, null, 2);
+		} catch {
+			return String(results);
+		}
+	}, [results]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
@@ -509,86 +574,31 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 				</AlertDialogContent>
 			</AlertDialog>
 
-			{/* Metrics Grid */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-				{/* Confidence Card */}
-				<div className="group relative">
-					<div className="absolute -inset-0.5 bg-gradient-to-b from-primary/20 to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500" />
-					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
-						<div className="flex justify-between items-start mb-8">
-							<div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20">
-								<ShieldCheck className="size-5 text-primary" />
-							</div>
-							<Badge variant="outline" className={(results.confidence > 0.9 ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-amber-500/5 border-amber-500/20 text-amber-500') + " text-[10px] font-bold"}>{results.confidence > 0.9 ? 'STABLE' : 'UNSTABLE'}</Badge>
-						</div>
-						<div>
-							<div className="flex items-baseline gap-2 mb-1">
-								<h3 className="text-5xl font-black tracking-tighter text-white">{Math.round((results.confidence || 0) * 100)}%</h3>
-								<span className="text-xs font-bold text-primary uppercase tracking-widest">Confidence</span>
-							</div>
-							<p className="text-xs text-muted-foreground/60 leading-relaxed mb-4">AI probability of a successful deployment based on repo patterns.</p>
-							<div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-								<div
-									className="h-full bg-gradient-to-r from-primary/40 to-primary shadow-[0_0_15px_rgba(37,244,106,0.5)] transition-all duration-1000 ease-out"
-									style={{ width: `${Math.round((results.confidence || 0) * 100)}%` }}
-								/>
-							</div>
-						</div>
-					</Card>
+			{/* Scan Summary */}
+			<Card className="mb-8 border-white/10 bg-white/[0.02] rounded-2xl">
+				<div className="p-4 grid grid-cols-2 md:grid-cols-5 gap-2">
+					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">confidence</p>
+						<p className="text-sm font-bold text-white">{Math.round((results.confidence || 0) * 100)}%</p>
+					</div>
+					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">services</p>
+						<p className="text-sm font-bold text-white">{results.services?.length || 0}</p>
+					</div>
+					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">risks</p>
+						<p className="text-sm font-bold text-white">{results.risks?.length || 0}</p>
+					</div>
+					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">commands</p>
+						<p className="text-sm font-bold text-white">{commandCount}</p>
+					</div>
+					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
+						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">dockerfiles</p>
+						<p className="text-sm font-bold text-white">{dockerfileCount}</p>
+					</div>
 				</div>
-
-				{/* Linter Card */}
-				<div className="group relative">
-					<div className={`absolute -inset-0.5 bg-gradient-to-b ${hadolintCount > 0 ? 'from-amber-500/20' : 'from-emerald-500/20'} to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500`} />
-					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
-						<div className="flex justify-between items-start mb-8">
-							<div className={`p-2.5 rounded-xl border ${hadolintCount > 0 ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
-								{hadolintCount > 0 ? <AlertTriangle className="size-5 text-amber-500" /> : <CheckCircle2 className="size-5 text-emerald-400" />}
-							</div>
-							<Badge variant="outline" className={`${hadolintCount > 0 ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'} text-[10px] font-bold`}>
-								{hadolintCount > 0 ? 'WARNING' : 'OPTIMAL'}
-							</Badge>
-						</div>
-						<div>
-							<div className="flex items-baseline gap-2 mb-1">
-								<h3 className="text-5xl font-black tracking-tighter text-white">{hadolintCount > 0 ? hadolintCount : '0'}</h3>
-								<span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Lint Issues</span>
-							</div>
-							<p className="text-xs text-muted-foreground/60 leading-relaxed">
-								{hadolintCount > 0
-									? `${hadolintCount} non-critical issues detected in Dockerfile best practices.`
-									: "All Dockerfile layers follow security and size optimization best practices."}
-							</p>
-						</div>
-					</Card>
-				</div>
-
-				{/* Risks Card */}
-				<div className="group relative">
-					<div className={`absolute -inset-0.5 bg-gradient-to-b ${hasRisks ? 'from-amber-500/20' : 'from-emerald-500/20'} to-transparent rounded-2xl blur opacity-0 group-hover:opacity-100 transition duration-500`} />
-					<Card className="relative p-6 border-white/5 bg-white/[0.03] backdrop-blur-xl rounded-2xl overflow-hidden h-full flex flex-col justify-between transition-all duration-300 group-hover:border-white/10 group-hover:bg-white/[0.05]">
-						<div className="flex justify-between items-start mb-8">
-							<div className={`p-2.5 rounded-xl border ${hasRisks ? 'bg-amber-500/10 border-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
-								<Lock className={`size-5 ${hasRisks ? 'text-amber-500' : 'text-emerald-400'}`} />
-							</div>
-							<Badge variant="outline" className={`${hasRisks ? 'bg-amber-500/5 border-amber-500/20 text-amber-500' : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'} text-[10px] font-bold`}>
-								{hasRisks ? 'SECURITY' : 'SECURE'}
-							</Badge>
-						</div>
-						<div>
-							<div className="flex items-baseline gap-2 mb-1">
-								<h3 className="text-5xl font-black tracking-tighter text-white">{results.risks?.length || '0'}</h3>
-								<span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Risk Points</span>
-							</div>
-							<p className="text-xs text-muted-foreground/60 leading-relaxed">
-								{hasRisks
-									? `${results.risks.length} potential architectural risks or optimizations identified.`
-									: "No high-risk configurations or architectural anti-patterns detected."}
-							</p>
-						</div>
-					</Card>
-				</div>
-			</div >
+			</Card>
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:h-[850px]">
 				{/* Left Sidebar Info */}
@@ -607,6 +617,45 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 								</div>
 							))}
 						</div>
+					</section>
+
+					{/* Scan Metadata Segment */}
+					<section className="space-y-5">
+						<div className="flex items-center gap-2 px-1">
+							<div className="size-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Scan Metadata</h3>
+						</div>
+						<div className="grid grid-cols-2 gap-2.5">
+							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">response_id</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85 break-all">{responseId}</p>
+							</div>
+							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">commit_sha</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85 break-all">{results.commit_sha || "n/a"}</p>
+							</div>
+							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">counts</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85">
+									svc={results.services?.length || 0} df={dockerfileCount}
+								</p>
+							</div>
+							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">existing</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85">
+									docker={String(Boolean(results.has_existing_dockerfiles))} compose={String(Boolean(results.has_existing_compose))}
+								</p>
+							</div>
+						</div>
+						{stackTokens.length > 0 && (
+							<div className="flex flex-wrap gap-2">
+								{stackTokens.map((token) => (
+									<span key={token} className="px-2 py-1 rounded-md border border-white/10 bg-white/[0.02] text-[10px] font-mono text-white/80">
+										{token}
+									</span>
+								))}
+							</div>
+						)}
 					</section>
 
 					{/* Services Segment */}
@@ -755,29 +804,29 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 										<Plus className="size-3.5 mr-2" />
 										Add File
 									</Button>
-									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
-										<Edit2 className="size-3.5 mr-2" />
-										Modify File
-									</Button>
-									<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg" onClick={handleDelete}>
-										<Trash2 className="size-3.5 mr-2" />
-										Delete
-									</Button>
+									{isInfraFileTab && (
+										<>
+											<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={handleEdit}>
+												<Edit2 className="size-3.5 mr-2" />
+												Modify File
+											</Button>
+											<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg" onClick={handleDelete}>
+												<Trash2 className="size-3.5 mr-2" />
+												Delete
+											</Button>
+										</>
+									)}
 								</div>
 							)}
 							<div className="w-px h-4 bg-white/10 mx-1" />
-							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => copyToClipboard(
-								results.dockerfiles && results.dockerfiles[selectedTab] ? results.dockerfiles[selectedTab] :
-									selectedTab === "compose" ? results.docker_compose || "" :
-										selectedTab === "nginx" ? results.nginx_conf || "" : ""
-							)}>
+							<Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-white hover:bg-white/5 rounded-lg" onClick={() => copyToClipboard(selectedTabCopyText)}>
 								<Copy className="size-3.5 mr-2" />
 								Copy
 							</Button>
 						</div>
 					</div>
 
-					{selectedTab !== "compose" && selectedTab !== "nginx" && dockerfileNames.includes(selectedTab) && (
+					{isDockerfileTab && (
 						<div className="flex flex-wrap items-end gap-3 mb-4 px-1">
 							<div className="flex-1 min-w-[min(100%,220px)]">
 								<label htmlFor="deploy-dockerfile-path" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 mb-1.5">
@@ -864,7 +913,7 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 								/>
 							) : (
 								<div className="flex-1 p-6 font-mono text-[13px] text-white/80 overflow-y-auto whitespace-pre-wrap leading-[1.7] stealth-scrollbar selection:bg-primary/20 bg-grid-white/[0.02]">
-									{selectedTab !== "compose" && selectedTab !== "nginx" && (
+									{isDockerfileTab && (
 										results.dockerfiles && results.dockerfiles[selectedTab] ? (
 											<div dangerouslySetInnerHTML={{ __html: highlightSyntax(results.dockerfiles[selectedTab]) }} />
 										) : <span className="text-white/20 italic">No instructions generated for this module.</span>
@@ -884,6 +933,33 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 								</div>
 							)}
 						</div>
+						{isInfraFileTab && (
+							<div className="border-t border-white/5 bg-[#080808] px-4 py-3 max-h-52 overflow-y-auto stealth-scrollbar">
+								<div className="flex items-center justify-between gap-2 mb-2">
+									<p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Execution Commands</p>
+									<span className="text-[10px] font-mono text-white/60">{commandCount}</span>
+								</div>
+								{commandCount > 0 ? (
+									<div className="space-y-2">
+										{commandGroupNames.map((groupName) => (
+											<div key={groupName} className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
+												<p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1.5">{groupName}</p>
+												<div className="space-y-1.5">
+													{groupedCommandRows[groupName].map((entry, idx) => (
+														<div key={`${groupName}-${entry.label}-${idx}`} className="rounded-md border border-white/10 bg-[#050505] px-2.5 py-1.5">
+															<p className="text-[9px] uppercase tracking-wide text-muted-foreground/70">{entry.label}</p>
+															<code className="block mt-0.5 text-[10px] font-mono text-white/90 break-all">{entry.command}</code>
+														</div>
+													))}
+												</div>
+											</div>
+										))}
+									</div>
+								) : (
+									<p className="text-[11px] text-white/50 italic">No commands were returned in this scan payload.</p>
+								)}
+							</div>
+						)}
 					</Card >
 				</div >
 			</div >
@@ -927,6 +1003,33 @@ export default function PostScanResults({ results, scanTime, deployment, onCance
 					<span>Encrypted & Shared to {deployment.cloudProvider?.toUpperCase() || "Cloud"}</span>
 				</div>
 			</div>
+
+			<div className="mt-6">
+				<details className="rounded-xl border border-white/10 bg-white/[0.02]">
+					<summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3">
+						<span className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Full Payload</span>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="h-7 px-2 text-[10px] text-muted-foreground hover:text-white hover:bg-white/10"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								copyToClipboard(fullPayloadJson);
+							}}
+						>
+							<Copy className="size-3 mr-1" />
+							Copy JSON
+						</Button>
+					</summary>
+					<div className="border-t border-white/10 p-4">
+						<pre className="text-[11px] text-white/80 whitespace-pre-wrap break-words max-h-[28rem] overflow-auto stealth-scrollbar">
+							{fullPayloadJson}
+						</pre>
+					</div>
+				</details>
+			</div>
 		</div >
 	);
 }
@@ -953,5 +1056,53 @@ function highlightSyntax(code: string) {
 	escaped = escaped.replace(/(^|\s)(#.*)/g, '$1<span class="text-neutral-600 font-italic">$2</span>');
 
 	return escaped;
+}
+
+type CommandRow = {
+	group: string;
+	label: string;
+	command: string;
+};
+
+function flattenCommandRows(value: unknown): CommandRow[] {
+	const rows: CommandRow[] = [];
+
+	const visit = (node: unknown, path: string[]) => {
+		if (typeof node === "string") {
+			const group = path.length > 1 ? path.slice(0, -1).join(" / ") : "general";
+			const label = path.length > 0 ? path[path.length - 1] : "command";
+			rows.push({ group, label, command: node });
+			return;
+		}
+
+		if (Array.isArray(node)) {
+			node.forEach((item, index) => visit(item, [...path, String(index)]));
+			return;
+		}
+
+		if (node && typeof node === "object") {
+			Object.entries(node as Record<string, unknown>).forEach(([key, inner]) => {
+				visit(inner, [...path, key]);
+			});
+		}
+	};
+
+	visit(value, []);
+
+	return rows.map((row) => ({
+		...row,
+		label: row.label === "0" ? "command" : row.label,
+	}));
+}
+
+function formatJsonLimited(value: unknown, maxChars = 50000) {
+	let serialized = "";
+	try {
+		serialized = JSON.stringify(value, null, 2);
+	} catch {
+		serialized = String(value);
+	}
+	if (serialized.length <= maxChars) return serialized;
+	return `${serialized.slice(0, maxChars)}\n... [truncated ${serialized.length - maxChars} chars]`;
 }
 

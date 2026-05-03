@@ -12,14 +12,22 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	let body: { repo_url?: string; commit_sha?: string; feedback?: string };
+	let body: {
+		repo_url?: string;
+		commit_sha?: string;
+		package_path?: string;
+		feedback?: string;
+		failure_summary?: string;
+		failure_logs?: string;
+		failed_artifact_scope?: string;
+	};
 	try {
 		body = await req.json();
 	} catch (e) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { repo_url, commit_sha, feedback } = body;
+	const { repo_url, commit_sha, package_path, feedback, failure_summary, failure_logs, failed_artifact_scope } = body;
 
 	if (!repo_url) {
 		return NextResponse.json({ error: "Missing repo_url" }, { status: 400 });
@@ -38,14 +46,24 @@ export async function POST(req: Request) {
 			body: JSON.stringify({
 				repo_url,
 				...(commit_sha && { commit_sha }),
+				...(package_path && { package_path }),
 				feedback,
+				...(failure_summary && { failure_summary }),
+				...(failure_logs && { failure_logs }),
+				...(failed_artifact_scope && { failed_artifact_scope }),
 			}),
 		});
 
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error(`Feedback stream failed: ${response.status} ${errText}`);
-			throw new Error(`Feedback stream failed: ${response.status} ${errText}`);
+			const contentType = response.headers.get("content-type") || "application/json";
+			return new Response(errText, {
+				status: response.status,
+				headers: {
+					"Content-Type": contentType,
+				},
+			});
 		}
 
 		return new Response(response.body, {

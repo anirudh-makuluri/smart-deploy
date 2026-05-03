@@ -4,11 +4,16 @@ import { CheckCircle2, Circle, Loader2, XCircle, RefreshCw } from "lucide-react"
 import { SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { normalizeScanResultPayload } from "@/lib/scanResultNormalization";
 
 export type FeedbackProgressPayload = {
 	repoUrl: string;
 	commitSha?: string;
+	packagePath?: string;
 	feedback: string;
+	failureSummary?: string;
+	failureLogs?: string;
+	failedArtifactScope?: string;
 };
 
 type FeedbackProgressProps = {
@@ -28,7 +33,7 @@ const NODES = [
 ];
 
 export default function FeedbackProgress({ payload, repoName, serviceName, onComplete, onCancel }: FeedbackProgressProps) {
-	const { repoUrl, commitSha, feedback } = payload;
+	const { repoUrl, commitSha, packagePath, feedback, failureSummary, failureLogs, failedArtifactScope } = payload;
 	const [activeNode, setActiveNode] = useState<string>("feedback_coordinator");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -58,14 +63,40 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 					body: JSON.stringify({
 						repo_url: repoUrl,
 						...(commitSha && { commit_sha: commitSha }),
+						...(packagePath && { package_path: packagePath }),
 						feedback,
+						...(failureSummary && { failure_summary: failureSummary }),
+						...(failureLogs && { failure_logs: failureLogs }),
+						...(failedArtifactScope && { failed_artifact_scope: failedArtifactScope }),
 					}),
 					signal: abortControllerRef.current?.signal,
 				});
 
 				if (!response.ok) {
-					const data = await response.json().catch(() => ({}));
-					throw new Error(data.error || data.details || "Failed to start feedback stream");
+					const errText = await response.text();
+					try {
+						const parsed = JSON.parse(errText) as {
+							detail?: unknown;
+							message?: string;
+							error?: string;
+							details?: string;
+						};
+						const detailObj = Array.isArray(parsed.detail)
+							? (parsed.detail[0] as { reason?: string; code?: string } | undefined)
+							: (parsed.detail as { reason?: string; code?: string } | undefined);
+						if (detailObj && typeof detailObj === "object") {
+							throw new Error(detailObj.reason || detailObj.code || "Failed to start feedback stream");
+						}
+						throw new Error(
+							(typeof parsed?.detail === "string" && parsed.detail) ||
+							parsed?.details ||
+							parsed?.message ||
+							parsed?.error ||
+							`Failed to start feedback stream (${response.status})`
+						);
+					} catch {
+						throw new Error(errText || `Failed to start feedback stream (${response.status})`);
+					}
 				}
 
 				if (!response.body) {
@@ -116,14 +147,20 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 									}
 								} else if (status === "error") {
 									setFailedNode(node);
-									appendLog(`error: ${data.message || "Unknown error in node " + node}`);
+									appendLog(`error: ${formatStructuredError(data.message || data.detail || ("Unknown error in node " + node))}`);
 								}
 							} else if (eventType === "complete") {
 								appendLog("event: feedback complete");
 								setProgress(100);
+								const normalized = normalizeScanResultPayload(data);
+								if (!normalized) {
+									appendLog("error: Unable to parse feedback payload");
+									setFailedNode(activeNodeRef.current);
+									return;
+								}
 								// Record artifact generation metrics (best-effort; does not block UI).
 								try {
-									const dockerfilesCount = data?.dockerfiles ? Object.keys(data.dockerfiles).length : 0;
+									const dockerfilesCount = normalized?.dockerfiles ? Object.keys(normalized.dockerfiles).length : 0;
 									void fetch("/api/artifacts/generation", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
@@ -132,18 +169,18 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 											repoName,
 											serviceName,
 											dockerfilesCount,
-											hasExistingDockerfiles: Boolean(data?.has_existing_dockerfiles),
-											hasExistingCompose: Boolean(data?.has_existing_compose),
-											hasCompose: Boolean(data?.docker_compose?.trim()),
-											hasNginx: Boolean(data?.nginx_conf?.trim()),
+											hasExistingDockerfiles: Boolean(normalized?.has_existing_dockerfiles),
+											hasExistingCompose: Boolean(normalized?.has_existing_compose),
+											hasCompose: Boolean(normalized?.docker_compose?.trim()),
+											hasNginx: Boolean(normalized?.nginx_conf?.trim()),
 										}),
 									});
 								} catch {
 									// ignore
 								}
-								onCompleteRef.current(data as SDArtifactsResponse);
+								onCompleteRef.current(normalized as SDArtifactsResponse);
 							} else if (eventType === "error") {
-								const errorMsg = data.detail || data.message || "Unknown error";
+								const errorMsg = formatStructuredError(data.detail || data.message || data.error || "Unknown error");
 								appendLog(`error: ${errorMsg}`);
 								setFailedNode(activeNodeRef.current);
 							}
@@ -185,7 +222,7 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoUrl, commitSha, feedback, repoName, serviceName]);
+	}, [repoUrl, commitSha, packagePath, feedback, failureSummary, failureLogs, failedArtifactScope, repoName, serviceName]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">
@@ -311,4 +348,30 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 			</div>
 		</div>
 	);
+}
+
+function formatStructuredError(value: unknown): string {
+	if (value == null) return "Unknown error";
+	if (typeof value === "string") return value;
+	if (Array.isArray(value)) {
+		return value.map((item) => formatStructuredError(item)).join(" | ");
+	}
+	if (typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		const code = typeof record.code === "string" ? `[${record.code}] ` : "";
+		const message = typeof record.message === "string" ? record.message : "";
+		const issues = Array.isArray(record.issues)
+			? record.issues.map((issue) => `- ${formatStructuredError(issue)}`).join("\n")
+			: "";
+		const summary = `${code}${message}`.trim();
+		if (summary && issues) return `${summary}\n${issues}`;
+		if (summary) return summary;
+		if (issues) return issues;
+		try {
+			return JSON.stringify(record);
+		} catch {
+			return String(value);
+		}
+	}
+	return String(value);
 }

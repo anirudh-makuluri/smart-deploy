@@ -10,10 +10,6 @@ export async function POST(req: Request) {
 	const userId = session?.user?.id;
 	const token = userId ? await getGithubAccessTokenForUserId(userId, req.headers) : null;
 
-	if (!token) {
-		return NextResponse.json({ error: "GitHub not connected" }, { status: 401 });
-	}
-
 	let body;
 	try {
 		body = await req.json();
@@ -21,7 +17,7 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { full_name, package_path } = body;
+	const { full_name, package_path, service_name, commit_sha } = body;
 
 	if (!full_name) {
 		return NextResponse.json({ error: "Missing full_name" }, { status: 400 });
@@ -29,8 +25,10 @@ export async function POST(req: Request) {
 
 	const payload = {
 		repo_url: `https://github.com/${full_name}`,
-		github_token: token,
+		...(token ? { github_token: token } : {}),
 		...(package_path && { package_path }),
+		...(service_name && { service_name }),
+		...(commit_sha && { commit_sha }),
 	};
 
 	try {
@@ -47,7 +45,13 @@ export async function POST(req: Request) {
 		if (!response.ok) {
 			const errText = await response.text();
 			console.error(`Analyze stream failed: ${response.status} ${errText}`);
-			throw new Error(`Analyze stream failed: ${response.status} ${errText}`);
+			const contentType = response.headers.get("content-type") || "application/json";
+			return new Response(errText, {
+				status: response.status,
+				headers: {
+					"Content-Type": contentType,
+				},
+			});
 		}
 
 		// Stream directly to the client
