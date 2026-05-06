@@ -1,0 +1,365 @@
+{
+  "generatedAt": "2026-05-05T19:22:15.277Z",
+  "candidateUrl": null,
+  "results": [
+    {
+      "target": "baseline",
+      "caseId": "deploy-failure-logs",
+      "ms": 7,
+      "coverage": 25,
+      "matchedSignals": [
+        "log"
+      ],
+      "topSources": [
+        "temp-docs/TEMP_RENDER_002_render-mcp-server.md",
+        "temp-docs/TEMP_RENDER_056_high-availability-for-render-postgres.md",
+        "temp-docs/TEMP_RENDER_060_render-platform-maintenance.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Primary troubleshooting query. Should recover from recent deployment history and logs."
+    },
+    {
+      "target": "baseline",
+      "caseId": "local-startup",
+      "ms": 8,
+      "coverage": 100,
+      "matchedSignals": [
+        "npm install",
+        "BETTER_AUTH_SECRET",
+        "DATABASE_URL",
+        "SUPABASE_URL"
+      ],
+      "topSources": [
+        "docs/TROUBLESHOOTING.md",
+        "docs/SUPABASE_SETUP.md",
+        "README.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests startup guidance and environment variable recall."
+    },
+    {
+      "target": "baseline",
+      "caseId": "signin-waitlist",
+      "ms": 6,
+      "coverage": 67,
+      "matchedSignals": [
+        "approved_users",
+        "approved"
+      ],
+      "topSources": [
+        "docs/FAQ.md",
+        "README.md",
+        "docs/SUPABASE_SETUP.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks auth and approval flow retrieval."
+    },
+    {
+      "target": "baseline",
+      "caseId": "github-not-connected",
+      "ms": 7,
+      "coverage": 100,
+      "matchedSignals": [
+        "GitHub not connected",
+        "GitHub OAuth",
+        "token"
+      ],
+      "topSources": [
+        "docs/TROUBLESHOOTING.md",
+        "docs/FAQ.md",
+        "temp-docs/TEMP_RENDER_101_cron-jobs.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks GitHub auth troubleshooting."
+    },
+    {
+      "target": "baseline",
+      "caseId": "supabase-connection",
+      "ms": 7,
+      "coverage": 100,
+      "matchedSignals": [
+        "SUPABASE_URL",
+        "DATABASE_URL",
+        "schema.sql",
+        "relation does not exist"
+      ],
+      "topSources": [
+        "docs/TROUBLESHOOTING.md",
+        "docs/SUPABASE_SETUP.md",
+        "docs/FAQ.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests database setup guidance."
+    },
+    {
+      "target": "baseline",
+      "caseId": "websocket-not-connecting",
+      "ms": 5,
+      "coverage": 100,
+      "matchedSignals": [
+        "NEXT_PUBLIC_WS_URL",
+        "ws://localhost:4001",
+        "wss://",
+        "worker"
+      ],
+      "topSources": [
+        "docs/FAQ.md",
+        "docs/TROUBLESHOOTING.md",
+        "docs/ERROR_CATALOG.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks worker / websocket guidance."
+    },
+    {
+      "target": "baseline",
+      "caseId": "aws-permissions",
+      "ms": 5,
+      "coverage": 75,
+      "matchedSignals": [
+        "IAM",
+        "permissions",
+        "AWS_ACCESS_KEY_ID"
+      ],
+      "topSources": [
+        "README.md",
+        "docs/FAQ.md",
+        "docs/ERROR_CATALOG.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks AWS permission troubleshooting."
+    },
+    {
+      "target": "baseline",
+      "caseId": "custom-domain",
+      "ms": 5,
+      "coverage": 75,
+      "matchedSignals": [
+        "custom domain",
+        "DNS",
+        "Vercel"
+      ],
+      "topSources": [
+        "docs/TROUBLESHOOTING.md",
+        "temp-docs/TEMP_RENDER_111_configuring-namecheap-dns.md",
+        "temp-docs/TEMP_RENDER_092_configuring-dns-providers.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks domain/DNS guidance."
+    },
+    {
+      "target": "baseline",
+      "caseId": "self-hosting",
+      "ms": 6,
+      "coverage": 100,
+      "matchedSignals": [
+        "reverse proxy",
+        "WS_ALLOWED_ORIGINS",
+        "NEXT_PUBLIC_WS_URL",
+        "self-hosting"
+      ],
+      "topSources": [
+        "docs/TROUBLESHOOTING.md",
+        "docs/FAQ.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks self-hosting docs recall."
+    },
+    {
+      "target": "baseline",
+      "caseId": "deploy-health",
+      "ms": 6,
+      "coverage": 75,
+      "matchedSignals": [
+        "health",
+        "preview",
+        "logs"
+      ],
+      "topSources": [
+        "docs/ERROR_CATALOG.md",
+        "docs/SUPABASE_SETUP.md",
+        "temp-docs/TEMP_RENDER_054_best-practices-for-maximizing-uptime.md"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests follow-up diagnostic guidance."
+    },
+    {
+      "target": "moss",
+      "caseId": "deploy-failure-logs",
+      "ms": 0,
+      "coverage": 25,
+      "matchedSignals": [
+        "log"
+      ],
+      "topSources": [
+        "help-doc-358",
+        "help-doc-379",
+        "help-doc-203"
+      ],
+      "chunkCount": 6,
+      "notes": "Primary troubleshooting query. Should recover from recent deployment history and logs."
+    },
+    {
+      "target": "moss",
+      "caseId": "local-startup",
+      "ms": 0,
+      "coverage": 100,
+      "matchedSignals": [
+        "npm install",
+        "BETTER_AUTH_SECRET",
+        "DATABASE_URL",
+        "SUPABASE_URL"
+      ],
+      "topSources": [
+        "help-doc-199",
+        "help-doc-15",
+        "help-doc-64"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests startup guidance and environment variable recall."
+    },
+    {
+      "target": "moss",
+      "caseId": "signin-waitlist",
+      "ms": 0,
+      "coverage": 67,
+      "matchedSignals": [
+        "approved_users",
+        "approved"
+      ],
+      "topSources": [
+        "help-doc-89",
+        "help-doc-66",
+        "help-doc-46"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks auth and approval flow retrieval."
+    },
+    {
+      "target": "moss",
+      "caseId": "github-not-connected",
+      "ms": 0,
+      "coverage": 100,
+      "matchedSignals": [
+        "GitHub not connected",
+        "GitHub OAuth",
+        "token"
+      ],
+      "topSources": [
+        "help-doc-203",
+        "help-doc-67",
+        "help-doc-44"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks GitHub auth troubleshooting."
+    },
+    {
+      "target": "moss",
+      "caseId": "supabase-connection",
+      "ms": 0,
+      "coverage": 100,
+      "matchedSignals": [
+        "SUPABASE_URL",
+        "DATABASE_URL",
+        "schema.sql",
+        "relation does not exist"
+      ],
+      "topSources": [
+        "help-doc-69",
+        "help-doc-68",
+        "help-doc-197"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests database setup guidance."
+    },
+    {
+      "target": "moss",
+      "caseId": "websocket-not-connecting",
+      "ms": 0,
+      "coverage": 100,
+      "matchedSignals": [
+        "NEXT_PUBLIC_WS_URL",
+        "ws://localhost:4001",
+        "wss://",
+        "worker"
+      ],
+      "topSources": [
+        "help-doc-93",
+        "help-doc-92",
+        "help-doc-72"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks worker / websocket guidance."
+    },
+    {
+      "target": "moss",
+      "caseId": "aws-permissions",
+      "ms": 0,
+      "coverage": 75,
+      "matchedSignals": [
+        "UnauthorizedOperation",
+        "IAM",
+        "permissions"
+      ],
+      "topSources": [
+        "help-doc-73",
+        "help-doc-98",
+        "help-doc-211"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks AWS permission troubleshooting."
+    },
+    {
+      "target": "moss",
+      "caseId": "custom-domain",
+      "ms": 0,
+      "coverage": 75,
+      "matchedSignals": [
+        "custom domain",
+        "DNS",
+        "Vercel"
+      ],
+      "topSources": [
+        "help-doc-96",
+        "help-doc-47",
+        "help-doc-1095"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks domain/DNS guidance."
+    },
+    {
+      "target": "moss",
+      "caseId": "self-hosting",
+      "ms": 0,
+      "coverage": 75,
+      "matchedSignals": [
+        "reverse proxy",
+        "WS_ALLOWED_ORIGINS",
+        "NEXT_PUBLIC_WS_URL"
+      ],
+      "topSources": [
+        "help-doc-210",
+        "help-doc-72",
+        "help-doc-1097"
+      ],
+      "chunkCount": 6,
+      "notes": "Checks self-hosting docs recall."
+    },
+    {
+      "target": "moss",
+      "caseId": "deploy-health",
+      "ms": 0,
+      "coverage": 50,
+      "matchedSignals": [
+        "health",
+        "logs"
+      ],
+      "topSources": [
+        "help-doc-851",
+        "help-doc-61",
+        "help-doc-480"
+      ],
+      "chunkCount": 6,
+      "notes": "Tests follow-up diagnostic guidance."
+    }
+  ]
+}

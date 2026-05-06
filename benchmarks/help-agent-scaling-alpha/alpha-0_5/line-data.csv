@@ -1,0 +1,5 @@
+run_index,label,temp_docs,added_provider,baseline_avg_ms,baseline_median_ms,baseline_p95_ms,baseline_avg_coverage,moss_avg_ms,moss_median_ms,moss_p95_ms,moss_avg_coverage,moss_available,moss_reference_avg_ms,moss_reference_avg_coverage
+0,run-00-baseline,0,none,1,1,2,82,0,0,4,87,true,4,87
+1,run-01-render,120,render,6,6,9,82,0,0,0,82,true,4,87
+2,run-02-railway,139,railway,7,7,9,82,0,0,0,82,true,4,87
+3,run-03-vercel,319,vercel,17,18,19,84,0,0,1,79,true,4,87

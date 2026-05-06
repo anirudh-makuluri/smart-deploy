@@ -72,3 +72,5 @@ smartdeploy-key.pub
 *.exe
 .terraform/
 *.tfvars
+
+/temp-docs

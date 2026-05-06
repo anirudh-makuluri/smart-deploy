@@ -47,12 +47,14 @@ type MossQueryDoc = {
 
 type MossQueryResponse = {
 	docs?: MossQueryDoc[];
+	timeTakenInMs?: number;
+	timeTakenMs?: number;
 };
 
 type MossClientLike = {
 	createIndex: (name: string, docs: Array<{ id: string; text: string; metadata: Record<string, unknown> }>) => Promise<unknown>;
 	loadIndex: (name: string) => Promise<unknown>;
-	query: (name: string, question: string, options: { topK: number }) => Promise<MossQueryResponse>;
+	query: (name: string, question: string, options: { topK: number; alpha?: number }) => Promise<MossQueryResponse>;
 	addDocs?: (
 		name: string,
 		docs: Array<{ id: string; text: string; metadata?: Record<string, unknown> }>,
@@ -66,6 +68,26 @@ type MossHarness = {
 	cleanup: () => Promise<void>;
 };
 
+async function importEsm(specifier: string): Promise<Record<string, unknown>> {
+	// Keep native ESM dynamic import semantics even when this script runs under CJS.
+	const importer = new Function("s", "return import(s);") as (s: string) => Promise<Record<string, unknown>>;
+	return importer(specifier);
+}
+
+async function loadMossClientCtor(): Promise<(new (id: string, key: string) => MossClientLike) | null> {
+	const moduleSpecifiers = ["@moss-dev/moss"];
+	for (const specifier of moduleSpecifiers) {
+		try {
+			const mossModule = (await importEsm(specifier)) as Record<string, unknown>;
+			const ctor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
+			if (ctor) return ctor;
+		} catch {
+			// try next module
+		}
+	}
+	return null;
+}
+
 const root = path.join(__dirname, "..");
 const promptsPath = path.join(root, "benchmarks", "help-agent-benchmark.prompts.json");
 const defaultCandidateUrl = process.env.MOSS_BENCHMARK_URL?.trim() || "";
@@ -74,6 +96,7 @@ const defaultMossProjectId = "";
 const defaultMossProjectKey = "";
 const debugEnabled = process.env.HELP_AGENT_BENCHMARK_DEBUG === "1";
 const keepMossIndex = process.env.KEEP_MOSS_INDEX === "1";
+const mossAlphaRaw = process.env.MOSS_BENCHMARK_ALPHA?.trim() || "";
 
 function debugLog(message: string, details?: Record<string, unknown>) {
 	if (!debugEnabled) return;
@@ -204,6 +227,28 @@ function docsFromMossQuery(queryResponse: MossQueryResponse | null | undefined):
 	});
 }
 
+function parseMossAlpha(raw: string): number | null {
+	if (!raw) return null;
+	const value = Number(raw);
+	if (!Number.isFinite(value)) {
+		throw new Error(`Invalid MOSS_BENCHMARK_ALPHA: "${raw}" is not a finite number`);
+	}
+	if (value < 0 || value > 1) {
+		throw new Error(`Invalid MOSS_BENCHMARK_ALPHA: ${value} is out of range [0, 1]`);
+	}
+	return value;
+}
+
+function mossLatencyMs(queryResponse: MossQueryResponse | null | undefined): number | null {
+	const candidates = [queryResponse?.timeTakenInMs, queryResponse?.timeTakenMs];
+	for (const value of candidates) {
+		if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+			return Math.round(value);
+		}
+	}
+	return null;
+}
+
 function toMossIndexName(timestamp: number): string {
 	return `smart_deploy_help_bench_${timestamp}`;
 }
@@ -303,13 +348,13 @@ async function createMossHarness(): Promise<MossHarness | null> {
 		keepMossIndex,
 	});
 
-	const mossModule = await import("@moss-dev/moss-web");
-	const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
+	const MossClientCtor = await loadMossClientCtor();
 	if (!MossClientCtor) {
-		throw new Error("Failed to load MossClient from @moss-dev/moss-web");
+		throw new Error("Failed to load MossClient from @moss-dev/moss");
 	}
 
 	const client = new MossClientCtor(projectId, projectKey);
+	const mossAlpha = parseMossAlpha(mossAlphaRaw);
 	const indexName = toMossIndexName(Date.now());
 	const chunks = await getAllHelpDocChunks();
 	debugLog("Moss corpus prepared", { indexName, chunkCount: chunks.length });
@@ -334,11 +379,13 @@ async function createMossHarness(): Promise<MossHarness | null> {
 
 	return {
 		run: async (caseItem: BenchmarkCase) => {
-			const start = performance.now();
+			const fallbackStart = performance.now();
 			let queried: MossQueryResponse;
 			try {
+				const queryOptions: { topK: number; alpha?: number } = { topK: 6 };
+				if (mossAlpha !== null) queryOptions.alpha = mossAlpha;
 				debugLog("Moss query start", { indexName, caseId: caseItem.id });
-				queried = await client.query(indexName, caseItem.question, { topK: 6 });
+				queried = await client.query(indexName, caseItem.question, queryOptions);
 				debugLog("Moss query complete", { indexName, caseId: caseItem.id, docs: queried.docs?.length ?? 0 });
 			} catch (error) {
 				console.error("Moss query failed", {
@@ -348,7 +395,8 @@ async function createMossHarness(): Promise<MossHarness | null> {
 				});
 				throw error;
 			}
-			const ms = Math.round(performance.now() - start);
+			const msFromMoss = mossLatencyMs(queried);
+			const ms = msFromMoss ?? Math.round(performance.now() - fallbackStart);
 			const normalizedDocs = docsFromMossQuery(queried);
 			const { coverage, matchedSignals } = scoreCoverage(caseItem.expectedSignals, normalizedDocs);
 			return {
@@ -393,6 +441,7 @@ async function main() {
 		debugEnabled,
 		keepMossIndex,
 		candidateUrlMode: Boolean(defaultCandidateUrl),
+		mossAlpha: mossAlphaRaw || "(default)",
 	});
 
 	const cases = loadBenchmarkCases();

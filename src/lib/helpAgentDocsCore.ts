@@ -1,4 +1,6 @@
 import { listDocMarkdownFiles, readDocsMarkdownBySlug, readProjectReadme } from "@/lib/public-docsCore";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export type HelpDocChunk = {
 	id: string;
@@ -110,6 +112,21 @@ async function buildCorpus(): Promise<InternalChunk[]> {
 		if (!doc) continue;
 		const source = `docs/${doc.filename}`;
 		chunks.push(...buildChunksFromMarkdown(doc.content, source));
+	}
+
+	// Optional expanded corpus used by retrieval scaling experiments.
+	// Files in temp-docs are not part of public docs routes but are included in help retrieval.
+	const tempDocsDir = path.join(process.cwd(), "temp-docs");
+	try {
+		const tempNames = await fs.readdir(tempDocsDir);
+		for (const name of tempNames.sort((a, b) => a.localeCompare(b))) {
+			if (!name.endsWith(".md") || name.startsWith(".")) continue;
+			const fullPath = path.join(tempDocsDir, name);
+			const content = await fs.readFile(fullPath, "utf-8");
+			chunks.push(...buildChunksFromMarkdown(content, `temp-docs/${name}`));
+		}
+	} catch {
+		// temp-docs is optional; ignore when absent.
 	}
 
 	return chunks;

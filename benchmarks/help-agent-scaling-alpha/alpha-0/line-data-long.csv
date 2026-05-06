@@ -1,0 +1,9 @@
+run_index,label,temp_docs,target,avg_ms,median_ms,p95_ms,avg_coverage
+0,run-00-baseline,0,baseline,1,1,2,82
+0,run-00-baseline,0,moss,0,0,0,89
+1,run-01-render,120,baseline,6,6,7,82
+1,run-01-render,120,moss,0,0,0,77
+2,run-02-railway,139,baseline,7,7,8,82
+2,run-02-railway,139,moss,0,0,0,77
+3,run-03-vercel,319,baseline,18,17,21,84
+3,run-03-vercel,319,moss,0,0,0,79

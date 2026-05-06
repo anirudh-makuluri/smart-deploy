@@ -17,6 +17,11 @@ type MossClientLike = {
 	addDocs?: (name: string, docs: Array<{ id: string; text: string }>, options?: { upsert?: boolean }) => Promise<unknown>;
 };
 
+async function importEsm(specifier: string): Promise<Record<string, unknown>> {
+	const importer = new Function("s", "return import(s);") as (s: string) => Promise<Record<string, unknown>>;
+	return importer(specifier);
+}
+
 const mossProjectId = process.env.MOSS_PROJECT_ID?.trim() || "";
 const mossProjectKey = process.env.MOSS_PROJECT_KEY?.trim() || "";
 const mossIndexName = process.env.MOSS_HELP_AGENT_INDEX_NAME?.trim() || "smart_deploy_help_docs";
@@ -71,7 +76,7 @@ async function initializeMoss(): Promise<{ client: MossClientLike; indexName: st
 	if (!isMossEnabled()) return null;
 
 	try {
-		const mossModule = await import("@moss-dev/moss-web");
+		const mossModule = await importEsm("@moss-dev/moss");
 		const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 		if (!MossClientCtor) {
 			console.warn("Help-agent Moss disabled: failed to load MossClient");
