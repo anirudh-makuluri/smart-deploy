@@ -81,6 +81,7 @@ const APP_OVERVIEW_QUERY = `
 				repoName
 				url
 				branch
+				responseId
 				commitSha
 				envVars
 				liveUrl
@@ -138,6 +139,7 @@ const REPO_DEPLOYMENTS_QUERY = `
 			repoName
 			url
 			branch
+			responseId
 			commitSha
 			envVars
 			liveUrl

@@ -100,10 +100,12 @@ export default function DeployLogsView({
 		});
 	}
 
-	// While deploying (or viewing completed deploy logs): show deployment (step) logs.
-	// After deployment completes and on page refresh: show service logs (history + live).
+	// While deploying: show deployment logs.
+	// After completion: keep deployment logs visible and append service logs after them.
 	const showingDeployLogs = deployStatus === "running" || (showDeployLogs && deployLogEntries.length > 0 && (deployStatus === "success" || deployStatus === "error"));
-	const logsToRender = showingDeployLogs ? deployLogEntries : serviceLogs;
+	const logsToRender = showingDeployLogs
+		? (deployStatus === "running" ? deployLogEntries : [...deployLogEntries, ...serviceLogs])
+		: serviceLogs;
 	const showDeploymentHeader = showDeployLogs;
 
 	const completedSteps = showDeploymentHeader ? (steps?.filter(s => s.status === "success").length || 0) : 0;

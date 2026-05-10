@@ -32,12 +32,98 @@ create table if not exists public.deployments (
   -- Complex nested objects stay in JSONB
   ec2 jsonb,
   cloud_run jsonb,
-  scan_results jsonb
+  -- Link to full scan payload in analysis_responses
+  response_id uuid
 );
 
 create index if not exists idx_deployments_owner on public.deployments(owner_id);
 create index if not exists idx_deployments_region on public.deployments(aws_region);
 create index if not exists idx_deployments_provider on public.deployments(cloud_provider);
+
+-- Ensure existing deployments tables get the new pointer column.
+alter table public.deployments add column if not exists response_id uuid;
+create index if not exists idx_deployments_response_id on public.deployments(response_id);
+
+-- Full analysis responses are stored separately and linked by deployments.response_id
+create table if not exists public.analysis_responses (
+  id uuid primary key default gen_random_uuid(),
+  endpoint text not null,
+  repo_url text not null,
+  commit_sha text,
+  package_path text not null default '.',
+  service_name text,
+  from_cache boolean not null default false,
+  passed boolean not null default false,
+  payload jsonb not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_analysis_responses_repo_url on public.analysis_responses(repo_url);
+create index if not exists idx_analysis_responses_created_at on public.analysis_responses(created_at desc);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'deployments_response_id_fkey'
+  ) then
+    alter table public.deployments
+      add constraint deployments_response_id_fkey
+      foreign key (response_id)
+      references public.analysis_responses(id)
+      on delete set null;
+  end if;
+end $$;
+
+-- Backfill legacy deployments.scan_results into analysis_responses before dropping the old column.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'deployments'
+      and column_name = 'scan_results'
+  ) then
+    with migrated as (
+      select
+        d.id as deployment_id,
+        gen_random_uuid() as analysis_id,
+        d.url,
+        d.commit_sha,
+        d.service_name,
+        d.scan_results
+      from public.deployments d
+      where d.response_id is null
+        and d.scan_results is not null
+        and jsonb_typeof(d.scan_results) = 'object'
+        and d.scan_results <> '{}'::jsonb
+    ),
+    inserted as (
+      insert into public.analysis_responses (
+        id, endpoint, repo_url, commit_sha, package_path, service_name, from_cache, passed, payload
+      )
+      select
+        m.analysis_id,
+        '/legacy-migration',
+        coalesce(m.url, ''),
+        m.commit_sha,
+        '.',
+        m.service_name,
+        false,
+        false,
+        jsonb_set(m.scan_results, '{response_id}', to_jsonb(m.analysis_id::text), true)
+      from migrated m
+      on conflict (id) do nothing
+    )
+    update public.deployments d
+    set response_id = m.analysis_id
+    from migrated m
+    where d.id = m.deployment_id;
+
+    alter table public.deployments drop column if exists scan_results;
+  end if;
+end $$;
 
 -- Deployment history: stored per user so it survives deployment deletion
 create table if not exists public.deployment_history (
@@ -197,6 +283,7 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 
 -- RLS: disable or set policies as needed; service role bypasses RLS
 alter table public.deployments enable row level security;
+alter table public.analysis_responses enable row level security;
 alter table public.deployment_history enable row level security;
 alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;

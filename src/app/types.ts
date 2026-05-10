@@ -63,6 +63,8 @@ export type DeployConfig = {
 	repoName: string;
 	url: string;
 	branch: string;
+	/** Linked analysis_responses.id for the latest scan payload */
+	responseId?: string | null;
 	/** Commit SHA that was deployed; null if never deployed */
 	commitSha: string | null;
 	/** Environment variables as JSON string (optional for deployment) */

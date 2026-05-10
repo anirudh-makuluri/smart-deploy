@@ -198,7 +198,7 @@ export default function DeployWorkspace({
 
 	// ============== ADDITIONAL MEMOIZED DERIVED VALUES ==============
 	const showDeployLogs = React.useMemo(
-		() => isDeploying || deployStatus === "running" || deployStatus === "error",
+		() => isDeploying || deployStatus === "running" || deployStatus === "success" || deployStatus === "error",
 		[isDeploying, deployStatus]
 	);
 
@@ -296,7 +296,7 @@ export default function DeployWorkspace({
 	async function handleConfirmRejectScan() {
 		if (!deployment.repoName || !deployment.serviceName) return;
 		const scanResults = deployment.scanResults as { response_id?: string; commit_sha?: string } | null;
-		const responseId = scanResults?.response_id?.trim();
+		const responseId = deployment.responseId?.trim() || scanResults?.response_id?.trim();
 
 		try {
 			if (responseId) {
