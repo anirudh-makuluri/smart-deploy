@@ -11,13 +11,10 @@ export async function POST(req: Request) {
 	}
 
 	let body: {
-		repo_url?: string;
-		commit_sha?: string;
-		package_path?: string;
+		response_id?: string;
 		feedback?: string;
 		failure_summary?: string;
 		failure_logs?: string;
-		failed_artifact_scope?: string;
 	};
 	try {
 		body = await req.json();
@@ -25,10 +22,10 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { repo_url, commit_sha, package_path, feedback, failure_summary, failure_logs, failed_artifact_scope } = body;
+	const { response_id, feedback, failure_summary, failure_logs } = body;
 
-	if (!repo_url) {
-		return NextResponse.json({ error: "Missing repo_url" }, { status: 400 });
+	if (!response_id) {
+		return NextResponse.json({ error: "Missing response_id" }, { status: 400 });
 	}
 	if (!feedback) {
 		return NextResponse.json({ error: "Missing feedback" }, { status: 400 });
@@ -42,13 +39,10 @@ export async function POST(req: Request) {
 				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
 			},
 			body: JSON.stringify({
-				repo_url,
-				...(commit_sha && { commit_sha }),
-				...(package_path && { package_path }),
+				response_id,
 				feedback,
 				...(failure_summary && { failure_summary }),
 				...(failure_logs && { failure_logs }),
-				...(failed_artifact_scope && { failed_artifact_scope }),
 			}),
 		});
 
