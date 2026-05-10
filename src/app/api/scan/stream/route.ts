@@ -17,18 +17,27 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { full_name, package_path, service_name, commit_sha } = body;
+	const { repo_url, package_path, commit_sha } = body as {
+		repo_url: string;
+		package_path: string;
+		commit_sha: string;
+	};
 
-	if (!full_name) {
-		return NextResponse.json({ error: "Missing full_name" }, { status: 400 });
+	if (!repo_url || !repo_url.trim()) {
+		return NextResponse.json({ error: "Missing repo_url" }, { status: 400 });
+	}
+	if (!package_path || !package_path.trim()) {
+		return NextResponse.json({ error: "Missing package_path" }, { status: 400 });
+	}
+	if (!commit_sha || !commit_sha.trim()) {
+		return NextResponse.json({ error: "Missing commit_sha" }, { status: 400 });
 	}
 
 	const payload = {
-		repo_url: `https://github.com/${full_name}`,
+		repo_url: repo_url.trim(),
 		...(token ? { github_token: token } : {}),
-		...(package_path && { package_path }),
-		...(service_name && { service_name }),
-		...(commit_sha && { commit_sha }),
+		package_path: package_path.trim(),
+		commit_sha: commit_sha.trim(),
 	};
 
 	try {

@@ -1,494 +1,547 @@
-openapi: 3.1.0
-info:
-  title: SD-Artifacts Repo Analyzer
-  version: "1.0.0"
-servers:
-  - url: http://localhost:8080
-security:
-  - bearerAuth: []
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-  schemas:
-    TokenUsage:
-      type: object
-      properties:
-        input_tokens:
-          type: integer
-          default: 0
-        output_tokens:
-          type: integer
-          default: 0
-        total_tokens:
-          type: integer
-          default: 0
-      required: [input_tokens, output_tokens, total_tokens]
+---
+# SD-Artifacts API Endpoints Guide
+# Complete reference for all endpoints with curl examples
 
-    AnalyzeRequest:
-      type: object
-      properties:
-        repo_url:
-          type: string
-        github_token:
-          type: string
-          nullable: true
-        max_files:
-          type: integer
-          default: 50
-          nullable: true
-        package_path:
-          type: string
-          default: "."
-        service_name:
-          type: string
-          nullable: true
-        commit_sha:
-          type: string
-          nullable: true
-      required: [repo_url]
+# ==========================================
+# Authentication
+# ==========================================
+# All endpoints (except /health) require Bearer token authentication
+# Set header: Authorization: Bearer <SD_API_BEARER_TOKEN>
 
-    AnalyzeResponse:
-      type: object
-      properties:
-        response_id:
-          type: string
-          nullable: true
-        commit_sha:
-          type: string
-          default: "unknown"
-        stack_summary:
-          type: string
-        stack_tokens:
-          type: array
-          items: { type: string }
-        services:
-          type: array
-          items: { type: object, additionalProperties: true }
-        dockerfiles:
-          type: object
-          additionalProperties: { type: string }
-        docker_compose:
-          type: string
-          nullable: true
-        nginx_conf:
-          type: string
-          nullable: true
-        has_existing_dockerfiles:
-          type: boolean
-          default: false
-        has_existing_compose:
-          type: boolean
-          default: false
-        risks:
-          type: array
-          items: { type: string }
-        confidence:
-          type: number
-        hadolint_results:
-          type: object
-          additionalProperties: { type: string }
-        commands:
-          type: object
-          additionalProperties: true
-        build_verification:
-          type: object
-          additionalProperties: true
-        llm_outputs:
-          type: object
-          additionalProperties: true
-        token_usage:
-          $ref: '#/components/schemas/TokenUsage'
-      required:
-        - commit_sha
-        - stack_summary
-        - stack_tokens
-        - services
-        - dockerfiles
-        - has_existing_dockerfiles
-        - has_existing_compose
-        - risks
-        - confidence
-        - hadolint_results
-        - commands
-        - build_verification
-        - llm_outputs
-        - token_usage
+# ==========================================
+# 1. Health Checks
+# ==========================================
 
-    SeedExampleBankRequest:
-      type: object
-      properties:
-        repo_urls:
-          type: array
-          items: { type: string }
-        github_token:
-          type: string
-          nullable: true
-        max_files_per_repo:
-          type: integer
-          default: 20
-        permissive_only:
-          type: boolean
-          default: true
-      required: [repo_urls]
+health_check:
+  description: Check if API is running (no auth required)
+  method: GET
+  path: /health
+  response: |
+    {
+      "status": "ok",
+      "scope": "public",
+      "supabase_configured": true
+    }
+  curl: |
+    curl -X GET http://localhost:8080/health
 
-    SeedExampleBankResponse:
-      type: object
-      properties:
-        inserted: { type: integer }
-        updated: { type: integer }
-        skipped: { type: integer }
-        errors:
-          type: array
-          items: { type: string }
-      required: [inserted, updated, skipped, errors]
+health_check_authenticated:
+  description: Check if API is running with auth verification
+  method: GET
+  path: /healthz
+  auth: Required
+  response: |
+    {
+      "status": "ok",
+      "scope": "authenticated",
+      "supabase_configured": true
+    }
+  curl: |
+    curl -X GET http://localhost:8080/healthz \
+      -H "Authorization: Bearer YOUR_TOKEN"
 
-    PreviewExamplesRequest:
-      type: object
-      properties:
-        artifact_type:
-          type: string
-          enum: [dockerfile, compose]
-        detected_stack:
-          type: string
-        stack_tokens:
-          type: array
-          items: { type: string }
-        service:
-          type: object
-          nullable: true
-          additionalProperties: { type: string }
-        limit:
-          type: integer
-          default: 3
-      required: [artifact_type, detected_stack]
 
-    PreviewExamplesResponse:
-      type: object
-      properties:
-        examples:
-          type: array
-          items: { type: object, additionalProperties: true }
-      required: [examples]
+# ==========================================
+# 2. Repository Analysis
+# ==========================================
 
-    DeleteCacheRequest:
-      type: object
-      properties:
-        repo_url: { type: string }
-        commit_sha: { type: string, nullable: true }
-        package_path: { type: string, default: "." }
-        service_name: { type: string, nullable: true }
-      required: [repo_url]
+analyze_repo:
+  description: Analyze a repository and generate Dockerfiles
+  method: POST
+  path: /analyze
+  auth: Required
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "github_token": "optional_github_token",
+      "max_files": 50,
+      "package_path": ".",
+      "service_name": null,
+      "commit_sha": null
+    }
+  response_body: |
+    {
+      "response_id": "uuid-string",
+      "commit_sha": "abc123def456",
+      "stack_tokens": ["node", "typescript", "react"],
+      "files": [
+        {
+          "name": "Dockerfile",
+          "content": "FROM node:20-alpine\n...",
+          "location": "Dockerfile"
+        },
+        {
+          "name": "docker-compose.yml",
+          "content": "version: '3.8'\nservices:\n...",
+          "location": "docker-compose.yml"
+        }
+      ],
+      "risks": ["hadolint (web): DL3018 Pin versions in apk add"],
+      "confidence": 0.92,
+      "token_usage": {
+        "input_tokens": 2048,
+        "output_tokens": 1024,
+        "total_tokens": 3072
+      }
+    }
+  curl: |
+    curl -X POST http://localhost:8080/analyze \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "max_files": 50,
+        "package_path": "."
+      }'
 
-    DeleteCacheResponse:
-      type: object
-      properties:
-        deleted: { type: integer }
-        repo_url: { type: string }
-        commit_sha: { type: string, nullable: true }
-        package_path: { type: string, nullable: true }
-        service_name: { type: string, nullable: true }
-      required: [deleted, repo_url]
+analyze_repo_stream:
+  description: Analyze repository with real-time progress streaming (Server-Sent Events)
+  method: POST
+  path: /analyze/stream
+  auth: Required
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "github_token": "optional_github_token",
+      "max_files": 50,
+      "package_path": ".",
+      "service_name": null,
+      "commit_sha": null
+    }
+  response_format: Server-Sent Events (SSE)
+  response_events: |
+    event: progress
+    data: {"node": "scanner", "status": "completed"}
+    
+    event: progress
+    data: {"node": "planner", "status": "completed"}
+    
+    event: progress
+    data: {"node": "commands_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "docker_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "compose_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "nginx_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "preflight", "status": "completed"}
+    
+    event: progress
+    data: {"node": "verifier", "status": "completed"}
+    
+    event: complete
+    data: {final AnalyzeResponse JSON}
+  curl: |
+    curl -X POST http://localhost:8080/analyze/stream \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo"
+      }' \
+      --no-buffer
 
-    FeedbackRequest:
-      type: object
-      properties:
-        repo_url: { type: string }
-        commit_sha: { type: string }
-        package_path: { type: string, default: "." }
-        feedback: { type: string }
-        github_token: { type: string, nullable: true }
-        failure_summary: { type: string, nullable: true }
-        failure_logs: { type: string, nullable: true }
-        failed_artifact_scope: { type: string, nullable: true }
-      required: [repo_url, commit_sha, feedback]
 
-    ResponseStatusRequest:
-      type: object
-      properties:
-        response_id: { type: string }
-        passed: { type: boolean }
-      required: [response_id, passed]
+# ==========================================
+# 3. Feedback & Improvement
+# ==========================================
 
-    ResponseStatusResponse:
-      type: object
-      properties:
-        response_id: { type: string }
-        passed: { type: boolean }
-        cache_deleted: { type: integer, default: 0 }
-      required: [response_id, passed, cache_deleted]
+feedback_improve:
+  description: Improve analysis based on deployment feedback
+  method: POST
+  path: /feedback
+  auth: Required
+  requires_cache: true
+  note: Requires commit_sha to exist in cache from prior /analyze call
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "commit_sha": "abc123def456",
+      "package_path": ".",
+      "feedback": "The Dockerfile build fails with npm install timeout",
+      "github_token": "optional_github_token",
+      "failure_summary": "npm install timed out after 30 minutes",
+      "failure_logs": "timeout waiting for npm packages",
+      "failed_artifact_scope": "web/Dockerfile"
+    }
+  response: Same as analyze_repo (AnalyzeResponse)
+  curl: |
+    curl -X POST http://localhost:8080/feedback \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "commit_sha": "abc123def456",
+        "feedback": "Build fails with timeout"
+      }'
 
-    TemplateRequest:
-      type: object
-      properties:
-        name: { type: string }
-        description: { type: string, default: "" }
-        match_stack_tokens:
-          type: array
-          items: { type: string }
-        match_signals:
-          type: object
-          additionalProperties: true
-        priority: { type: integer, default: 0 }
-        template_content: { type: string, default: "" }
-        variables:
-          type: object
-          additionalProperties: true
-        is_active: { type: boolean, default: true }
-      required: [name]
+feedback_improve_stream:
+  description: Improve analysis with streaming progress
+  method: POST
+  path: /feedback/stream
+  auth: Required
+  requires_cache: true
+  request_body: Same as feedback_improve
+  response_format: Server-Sent Events (SSE)
+  curl: |
+    curl -X POST http://localhost:8080/feedback/stream \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "commit_sha": "abc123def456",
+        "feedback": "Build fails with timeout"
+      }' \
+      --no-buffer
 
-    TemplateSeedResponse:
-      type: object
-      properties:
-        inserted: { type: integer, default: 0 }
-        updated: { type: integer, default: 0 }
-        skipped: { type: integer, default: 0 }
-      required: [inserted, updated, skipped]
 
-    HealthResponse:
-      type: object
-      properties:
-        status: { type: string }
-        scope: { type: string }
-        supabase_configured: { type: boolean }
-      required: [status, scope, supabase_configured]
+# ==========================================
+# 4. Cache Management
+# ==========================================
 
-    ErrorResponse:
-      type: object
-      properties:
-        detail: {}
-      required: [detail]
-paths:
-  /health:
-    get:
-      security: []
-      summary: Public health check
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/HealthResponse' }
+delete_cached_analysis:
+  description: Delete a cached analysis by response_id
+  method: DELETE
+  path: /cache
+  auth: Required
+  request_body: |
+    {
+      "response_id": "uuid-from-prior-response"
+    }
+  response: |
+    {
+      "deleted": 1,
+      "response_id": "uuid-string",
+      "repo_url": "https://github.com/owner/repo",
+      "commit_sha": "abc123def456",
+      "package_path": ".",
+      "service_name": null
+    }
+  curl: |
+    curl -X DELETE http://localhost:8080/cache \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id"
+      }'
 
-  /healthz:
-    get:
-      summary: Authenticated health check
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/HealthResponse' }
-        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+response_status:
+  description: Mark a response as passed or failed (fails cache is deleted if failed)
+  method: POST
+  path: /responses/status
+  auth: Required
+  request_body: |
+    {
+      "response_id": "uuid-from-prior-response",
+      "passed": true
+    }
+  response: |
+    {
+      "response_id": "uuid-string",
+      "passed": true,
+      "cache_deleted": 0
+    }
+  note: If passed=false, the cache entry is automatically deleted
+  curl_passed: |
+    curl -X POST http://localhost:8080/responses/status \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id",
+        "passed": true
+      }'
+  curl_failed: |
+    curl -X POST http://localhost:8080/responses/status \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id",
+        "passed": false
+      }'
 
-  /analyze:
-    post:
-      summary: Analyze repository and generate artifacts
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AnalyzeRequest' }
-      responses:
-        '200':
-          description: Analysis complete
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AnalyzeResponse' }
-        '400': { description: Validation/pipeline error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '401': { description: Unauthorized, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
 
-  /analyze/stream:
-    post:
-      summary: Analyze repository via Server-Sent Events
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AnalyzeRequest' }
-      responses:
-        '200':
-          description: SSE stream with progress/complete/error events
-          content:
-            text/event-stream:
-              schema:
-                type: string
+# ==========================================
+# 5. Example Bank (Reference Examples)
+# ==========================================
 
-  /feedback:
-    post:
-      summary: Improve cached analysis using feedback
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/FeedbackRequest' }
-      responses:
-        '200':
-          description: Improved artifacts
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AnalyzeResponse' }
-        '404': { description: Cache not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+seed_example_bank:
+  description: Seed the example bank with repositories
+  method: POST
+  path: /examples/seed
+  auth: Required
+  request_body: |
+    {
+      "repo_urls": [
+        "https://github.com/owner/repo1",
+        "https://github.com/owner/repo2"
+      ],
+      "github_token": "optional_github_token",
+      "max_files_per_repo": 20,
+      "permissive_only": true
+    }
+  response: |
+    {
+      "inserted": 2,
+      "updated": 0,
+      "skipped": 0,
+      "errors": []
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/seed \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_urls": ["https://github.com/owner/repo"],
+        "max_files_per_repo": 20
+      }'
 
-  /feedback/stream:
-    post:
-      summary: Feedback improvement via SSE
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/FeedbackRequest' }
-      responses:
-        '200':
-          description: SSE stream with progress/complete/error events
-          content:
-            text/event-stream:
-              schema:
-                type: string
+seed_popular_examples:
+  description: Seed popular repositories into example bank
+  method: POST
+  path: /examples/seed/popular
+  auth: Required
+  query_params:
+    github_token: Optional
+  response: |
+    {
+      "inserted": 10,
+      "updated": 2,
+      "skipped": 1,
+      "errors": []
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/seed/popular \
+      -H "Authorization: Bearer YOUR_TOKEN"
 
-  /examples/seed:
-    post:
-      summary: Seed example bank from explicit repositories
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SeedExampleBankRequest' }
-      responses:
-        '200':
-          description: Seed summary
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SeedExampleBankResponse' }
+preview_examples:
+  description: Preview example Dockerfiles matching stack detection
+  method: POST
+  path: /examples/preview
+  auth: Required
+  request_body: |
+    {
+      "artifact_type": "dockerfile",
+      "detected_stack": "node typescript react",
+      "stack_tokens": ["node", "typescript", "react"],
+      "service": {
+        "name": "web",
+        "build_context": "apps/web"
+      },
+      "limit": 3
+    }
+  response: |
+    {
+      "examples": [
+        {
+          "name": "example-nextjs-docker",
+          "content": "FROM node:20-alpine\n...",
+          "similarity_score": 0.95
+        }
+      ]
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/preview \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "artifact_type": "dockerfile",
+        "detected_stack": "node typescript react",
+        "stack_tokens": ["node", "typescript", "react"],
+        "limit": 3
+      }'
 
-  /examples/seed/popular:
-    post:
-      summary: Seed example bank from built-in popular repos
-      parameters:
-        - in: query
-          name: github_token
-          schema: { type: string }
-          required: false
-      responses:
-        '200':
-          description: Seed summary
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SeedExampleBankResponse' }
 
-  /examples/preview:
-    post:
-      summary: Preview matching examples
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PreviewExamplesRequest' }
-      responses:
-        '200':
-          description: Example list
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PreviewExamplesResponse' }
-        '400': { description: Bad request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+# ==========================================
+# 6. Dockerfile Templates
+# ==========================================
 
-  /cache:
-    delete:
-      summary: Delete cached analysis rows
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/DeleteCacheRequest' }
-      responses:
-        '200':
-          description: Delete summary
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/DeleteCacheResponse' }
-        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '500': { description: Internal error, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+get_templates:
+  description: Get all Dockerfile templates
+  method: GET
+  path: /templates
+  auth: Required
+  query_params:
+    active_only: "true (default) or false"
+  response: |
+    {
+      "templates": [
+        {
+          "name": "pnpm_monorepo_turbo",
+          "description": "pnpm workspace with Turborepo",
+          "match_stack_tokens": ["pnpm", "turbo"],
+          "priority": 20,
+          "is_active": true
+        }
+      ]
+    }
+  curl: |
+    curl -X GET "http://localhost:8080/templates?active_only=true" \
+      -H "Authorization: Bearer YOUR_TOKEN"
 
-  /responses/status:
-    post:
-      summary: Mark logged response as passed/failed
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ResponseStatusRequest' }
-      responses:
-        '200':
-          description: Status updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ResponseStatusResponse' }
-        '404': { description: Response id not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+create_or_update_template:
+  description: Create or update a Dockerfile template
+  method: POST
+  path: /templates
+  auth: Required
+  request_body: |
+    {
+      "name": "custom_node_template",
+      "description": "Custom Node.js template",
+      "match_stack_tokens": ["node", "express"],
+      "match_signals": {
+        "has_package_json": true
+      },
+      "priority": 10,
+      "template_content": "FROM node:20-alpine\nWORKDIR /app\n...",
+      "variables": {
+        "port": 3000,
+        "node_version": "20"
+      },
+      "is_active": true
+    }
+  response: |
+    {
+      "name": "custom_node_template",
+      "created_at": "2026-05-08T12:00:00Z",
+      "updated_at": "2026-05-08T12:00:00Z"
+    }
+  curl: |
+    curl -X POST http://localhost:8080/templates \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "custom_template",
+        "description": "My custom template",
+        "match_stack_tokens": ["node"],
+        "priority": 10,
+        "template_content": "FROM node:20-alpine\n...",
+        "is_active": true
+      }'
 
-  /templates:
-    get:
-      summary: List templates
-      parameters:
-        - in: query
-          name: active_only
-          schema: { type: boolean, default: true }
-          required: false
-      responses:
-        '200':
-          description: Template list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  templates:
-                    type: array
-                    items: { type: object, additionalProperties: true }
+seed_default_templates:
+  description: Seed all default templates into database
+  method: POST
+  path: /templates/seed
+  auth: Required
+  response: |
+    {
+      "inserted": 15,
+      "updated": 2,
+      "skipped": 0
+    }
+  curl: |
+    curl -X POST http://localhost:8080/templates/seed \
+      -H "Authorization: Bearer YOUR_TOKEN"
 
-    post:
-      summary: Create or update template
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/TemplateRequest' }
-      responses:
-        '200':
-          description: Upsert result
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
-        '400': { description: Invalid payload, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+delete_template:
+  description: Delete a template by name
+  method: DELETE
+  path: /templates/{name}
+  auth: Required
+  response: |
+    {
+      "deleted": true,
+      "name": "template_name"
+    }
+  curl: |
+    curl -X DELETE "http://localhost:8080/templates/custom_template" \
+      -H "Authorization: Bearer YOUR_TOKEN"
 
-  /templates/seed:
-    post:
-      summary: Seed default templates
-      responses:
-        '200':
-          description: Seed result
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TemplateSeedResponse' }
 
-  /templates/{name}:
-    delete:
-      summary: Delete template by name
-      parameters:
-        - in: path
-          name: name
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Delete result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  deleted: { type: boolean }
-                  name: { type: string }
-                required: [deleted, name]
-        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+# ==========================================
+# Error Responses
+# ==========================================
+
+error_responses:
+  unauthorized:
+    status: 401
+    body: |
+      {
+        "detail": "Unauthorized"
+      }
+  
+  not_found:
+    status: 404
+    body: |
+      {
+        "detail": "No cached analysis found for repo@commit"
+      }
+  
+  bad_request:
+    status: 400
+    body: |
+      {
+        "detail": "scan failed"
+      }
+  
+  server_error:
+    status: 500
+    body: |
+      {
+        "detail": "Internal server error"
+      }
+
+
+# ==========================================
+# Environment Variables
+# ==========================================
+
+environment:
+  SD_API_BEARER_TOKEN: "API authentication token (required)"
+  SD_RAILPACK_VERIFY_ENABLED: "Enable optional build verification (default: false)"
+  SD_RAILPACK_VERIFY_TIMEOUT_SECONDS: "Build verification timeout (default: 300)"
+  SD_PREFLIGHT_STRICT: "Fail fast on preflight issues (default: true)"
+  SUPABASE_URL: "Supabase project URL"
+  SUPABASE_SERVICE_ROLE_KEY: "Supabase service role key"
+  BEDROCK_MODEL_ID: "AWS Bedrock model ID"
+  AWS_ACCESS_KEY_ID: "AWS credentials"
+  AWS_SECRET_ACCESS_KEY: "AWS credentials"
+  AWS_DEFAULT_REGION: "AWS region"
+
+
+# ==========================================
+# Workflow Stages
+# ==========================================
+
+workflow_nodes:
+  scanner:
+    description: "Scan repository structure and detect services"
+    outputs: "repo_scan, services, detected_stack, stack_tokens"
+  
+  planner:
+    description: "Plan Dockerfile placement for each service"
+    outputs: "services (with dockerfile_path, build_context)"
+  
+  commands_generator:
+    description: "Generate build/run command hints"
+    outputs: "command_hints"
+  
+  docker_gen:
+    description: "Generate Dockerfiles using templates or deterministic logic"
+    outputs: "dockerfiles dict"
+  
+  compose_gen:
+    description: "Generate docker-compose.yml for multi-service repos"
+    outputs: "docker_compose"
+    condition: "Multiple services with different paths"
+  
+  nginx_gen:
+    description: "Generate nginx.conf for reverse proxying"
+    outputs: "nginx_conf"
+  
+  build_verify:
+    description: "Optional: Verify Dockerfiles build successfully"
+    outputs: "build_verification"
+    condition: "SD_RAILPACK_VERIFY_ENABLED=true"
+  
+  preflight:
+    description: "Static validation of Dockerfiles and context"
+    outputs: "preflight_results"
+  
+  verifier:
+    description: "Final quality checks, hadolint, risk assessment"
+    outputs: "risks, confidence, hadolint_results"

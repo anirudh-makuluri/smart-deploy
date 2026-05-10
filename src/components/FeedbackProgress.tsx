@@ -57,12 +57,15 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 
 		const startStream = async () => {
 			try {
+				if (!commitSha) {
+					throw new Error("Missing commit_sha (required for feedback remediation)");
+				}
 				const response = await fetch("/api/feedback/stream", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
 						repo_url: repoUrl,
-						...(commitSha && { commit_sha: commitSha }),
+						commit_sha: commitSha,
 						...(packagePath && { package_path: packagePath }),
 						feedback,
 						...(failureSummary && { failure_summary: failureSummary }),
@@ -307,7 +310,7 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 							data-logs-scroll
 						>
 							{logs.map((log, i) => (
-								<div key={i} className="break-words">
+								<div key={i} className="wrap-break-word">
 									{log.includes("info:") ? (
 										<span className="text-blue-400">{log}</span>
 									) : log.includes("error:") ? (

@@ -5,13 +5,21 @@ import { SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { normalizeScanResultPayload } from "@/lib/scanResultNormalization";
+import { fetchLatestCommit } from "@/lib/graphqlClient";
+
+function githubOwnerRepoFromUrl(repoUrl: string): { owner: string; repo: string } | null {
+	const m = repoUrl.trim().match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i);
+	if (!m) return null;
+	return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
+}
 
 type ScanProgressProps = {
-	repoFullName: string;
+	/** Full GitHub repo URL (e.g. https://github.com/owner/repo). */
+	repoUrl: string;
 	/** Repo-relative package root for this service (monorepo); forwarded as package_path. */
-	packagePath?: string;
-	/** Optional commit SHA for cache-keyed analyze/stream lookups. */
-	commitSha?: string;
+	packagePath: string;
+	/** Branch whose HEAD commit is sent as commit_sha (always fetched from GitHub). */
+	branch: string;
 	repoName: string;
 	serviceName: string;
 	onComplete: (data: SDArtifactsResponse) => void;
@@ -28,7 +36,7 @@ const NODES = [
 	{ id: "verifier", label: "Verifier", desc: "Final health check validation" },
 ];
 
-export default function ScanProgress({ repoFullName, packagePath, commitSha, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
+export default function ScanProgress({ repoUrl, packagePath, branch, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
 	const [activeNode, setActiveNode] = useState<string>("scanner");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -52,14 +60,23 @@ export default function ScanProgress({ repoFullName, packagePath, commitSha, rep
 
 		const startStream = async () => {
 			try {
+				const parsed = githubOwnerRepoFromUrl(repoUrl);
+				if (!parsed) {
+					throw new Error("Could not parse owner/repo from repository URL");
+				}
+				const head = await fetchLatestCommit(parsed.owner, parsed.repo, branch);
+				const commitSha = head?.sha?.trim() || "";
+				if (!commitSha) {
+					throw new Error("Could not resolve commit SHA for this branch");
+				}
+
 				const response = await fetch("/api/scan/stream", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
-						full_name: repoFullName,
-						...(packagePath && { package_path: packagePath }),
-						...(serviceName && serviceName !== "." && { service_name: serviceName }),
-						...(commitSha && { commit_sha: commitSha }),
+						repo_url: repoUrl,
+						package_path: packagePath,
+						commit_sha: commitSha,
 					}),
 					signal: abortControllerRef.current?.signal,
 				});
@@ -233,7 +250,7 @@ export default function ScanProgress({ repoFullName, packagePath, commitSha, rep
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoFullName, packagePath, commitSha, repoName, serviceName]);
+	}, [repoUrl, packagePath, branch, repoName, serviceName]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">
@@ -305,7 +322,7 @@ export default function ScanProgress({ repoFullName, packagePath, commitSha, rep
 					<Card className="flex-1 min-h-[400px] flex flex-col bg-[#0d0d0d] border-[#1e1e1e] overflow-hidden">
 						<div className="flex-1 p-4 font-mono text-xs md:text-sm text-gray-300 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
 							{logs.map((log, i) => (
-								<div key={i} className="break-words">
+								<div key={i} className="wrap-break-word">
 									{log.includes('info:') ? (
 										<span className="text-blue-400">{log}</span>
 									) : log.includes('error:') ? (

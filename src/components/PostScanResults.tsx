@@ -59,6 +59,7 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 	const [isEditing, setIsEditing] = useState(false);
 	const [editContent, setEditContent] = useState("");
 	const [deployPathDraft, setDeployPathDraft] = useState("");
+	const [isEditingDeployPathInline, setIsEditingDeployPathInline] = useState(false);
 	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
 	const [addFileDialogOpen, setAddFileDialogOpen] = useState(false);
 	const [addFileType, setAddFileType] = useState<AddFileType>("dockerfile");
@@ -97,6 +98,7 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 	const selectTab = (nextTab: string) => {
 		setActiveTab(nextTab);
 		setIsEditing(false);
+		setIsEditingDeployPathInline(false);
 		setEditContent("");
 		if (nextTab === "compose" || nextTab === "nginx") {
 			setDeployPathDraft("");
@@ -214,12 +216,13 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 		}
 
 		const dockerfilePath = canonicalDockerfileDeployPath(rawPath);
-		if (updatedResults.dockerfiles[dockerfilePath] !== undefined) {
+		const dockerfiles = updatedResults.dockerfiles ?? (updatedResults.dockerfiles = {});
+		if (dockerfiles[dockerfilePath] !== undefined) {
 			toast.error(`A Dockerfile already exists at ${dockerfilePath}.`);
 			return;
 		}
 
-		updatedResults.dockerfiles[dockerfilePath] = addFileContent;
+		dockerfiles[dockerfilePath] = addFileContent;
 		onUpdateResults(updatedResults);
 		selectTab(dockerfilePath);
 		setAddFileDialogOpen(false);
@@ -289,6 +292,36 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 		onUpdateResults(updated);
 		selectTab(newKey);
 		toast.success("Deploy path updated; this path is used when writing files on the server.");
+	};
+
+	const beginInlineDeployPathEdit = () => {
+		if (!isDockerfileTab) return;
+		setDeployPathDraft(canonicalDockerfileDeployPath(selectedTab));
+		setIsEditingDeployPathInline(true);
+	};
+
+	const cancelInlineDeployPathEdit = () => {
+		setDeployPathDraft(canonicalDockerfileDeployPath(selectedTab));
+		setIsEditingDeployPathInline(false);
+	};
+
+	const commitInlineDeployPathEdit = () => {
+		if (!isDockerfileTab) return;
+		const currentPath = canonicalDockerfileDeployPath(selectedTab);
+		const raw = deployPathDraft.trim();
+		if (!raw) {
+			setDeployPathDraft(currentPath);
+			setIsEditingDeployPathInline(false);
+			return;
+		}
+		const nextPath = canonicalDockerfileDeployPath(raw);
+		if (nextPath === currentPath) {
+			setDeployPathDraft(currentPath);
+			setIsEditingDeployPathInline(false);
+			return;
+		}
+		handleUpdateDeployPath();
+		setIsEditingDeployPathInline(false);
 	};
 
 	const handleServiceDraftChange = (index: number, field: "build_context" | "port", value: string) => {
@@ -574,50 +607,10 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 				</AlertDialogContent>
 			</AlertDialog>
 
-			{/* Scan Summary */}
-			<Card className="mb-8 border-white/10 bg-white/[0.02] rounded-2xl">
-				<div className="p-4 grid grid-cols-2 md:grid-cols-5 gap-2">
-					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">confidence</p>
-						<p className="text-sm font-bold text-white">{Math.round((results.confidence || 0) * 100)}%</p>
-					</div>
-					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">services</p>
-						<p className="text-sm font-bold text-white">{results.services?.length || 0}</p>
-					</div>
-					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">risks</p>
-						<p className="text-sm font-bold text-white">{results.risks?.length || 0}</p>
-					</div>
-					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">commands</p>
-						<p className="text-sm font-bold text-white">{commandCount}</p>
-					</div>
-					<div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2">
-						<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">dockerfiles</p>
-						<p className="text-sm font-bold text-white">{dockerfileCount}</p>
-					</div>
-				</div>
-			</Card>
 
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:h-[850px]">
 				{/* Left Sidebar Info */}
 				<div className="col-span-1 lg:col-span-4 flex flex-col gap-10 h-full overflow-hidden pb-4">
-					{/* Tech Stack Segment */}
-					<section className="space-y-5">
-						<div className="flex items-center gap-2 px-1">
-							<div className="size-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(37,244,106,0.8)]" />
-							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Tech Stack</h3>
-						</div>
-						<div className="flex flex-wrap gap-2.5">
-							{results.stack_summary.split(' ').filter(w => w.length > 2 && !['app', 'with', 'server', 'application'].includes(w.toLowerCase())).map((tech, i) => (
-								<div key={i} className="px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/5 flex items-center gap-2 group hover:border-primary/30 transition-colors">
-									<div className="size-1.5 rounded-sm bg-white/20 group-hover:bg-primary transition-colors" />
-									<span className="text-xs font-medium text-white/80 group-hover:text-white">{tech}</span>
-								</div>
-							))}
-						</div>
-					</section>
 
 					{/* Scan Metadata Segment */}
 					<section className="space-y-5">
@@ -635,16 +628,12 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 								<p className="mt-1 text-[11px] font-mono text-white/85 break-all">{results.commit_sha || "n/a"}</p>
 							</div>
 							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
-								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">counts</p>
-								<p className="mt-1 text-[11px] font-mono text-white/85">
-									svc={results.services?.length || 0} df={dockerfileCount}
-								</p>
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">confidence</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85 break-all">{Math.round((results.confidence || 0) * 100)}%</p>
 							</div>
 							<div className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
-								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">existing</p>
-								<p className="mt-1 text-[11px] font-mono text-white/85">
-									docker={String(Boolean(results.has_existing_dockerfiles))} compose={String(Boolean(results.has_existing_compose))}
-								</p>
+								<p className="text-[9px] uppercase tracking-widest text-muted-foreground/60">risks</p>
+								<p className="mt-1 text-[11px] font-mono text-white/85 break-all">{results.risks?.length || 0}</p>
 							</div>
 						</div>
 						{stackTokens.length > 0 && (
@@ -658,104 +647,6 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 						)}
 					</section>
 
-					{/* Services Segment */}
-					<section className="space-y-5">
-						<div className="flex items-center gap-2 px-1">
-							<div className="size-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(37,244,106,0.8)]" />
-							<h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/80">Detected Services</h3>
-						</div>
-						<div className="grid gap-3">
-							{results.services?.map((svc, i) => (
-								<div
-									key={i}
-									className="group relative"
-									onDoubleClick={() => {
-										if (!onUpdateResults) return;
-										setEditingServiceIndex(i);
-									}}
-								>
-									<div className="absolute inset-0 bg-primary/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-									<div className="relative p-4 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between gap-4 group-hover:border-primary/20 transition-all">
-										{onUpdateResults && editingServiceIndex !== i && (
-											<Button
-												type="button"
-												size="icon"
-												variant="ghost"
-												className="absolute right-3 top-3 h-7 w-7 text-muted-foreground/60 hover:text-white hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"
-												onClick={() => setEditingServiceIndex(i)}
-											>
-												<Edit2 className="size-3.5" />
-											</Button>
-										)}
-										<div className="flex items-center gap-4 flex-1 min-w-0">
-											<div className="size-10 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-center p-2 group-hover:bg-primary/10 group-hover:border-primary/20 transition-colors">
-												{svc.name.includes('web') ? <Settings className="size-5 text-muted-foreground group-hover:text-primary" /> : <Database className="size-5 text-muted-foreground group-hover:text-primary" />}
-											</div>
-											<div className="min-w-0">
-												<p className="font-bold text-white text-sm tracking-tight">{svc.name}</p>
-												<p className="text-[10px] text-muted-foreground/50 font-mono mt-0.5">{svc.dockerfile_path}</p>
-												{editingServiceIndex === i && onUpdateResults ? (
-													<div className="mt-2.5 flex flex-wrap items-end gap-2">
-														<div className="min-w-[150px]">
-															<p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wide mb-1">ctx</p>
-															<Input
-																value={effectiveServiceDrafts[i]?.build_context ?? svc.build_context ?? "."}
-																onChange={(e) => handleServiceDraftChange(i, "build_context", e.target.value)}
-																placeholder="."
-																spellCheck={false}
-																autoComplete="off"
-																className="h-8 text-[11px] font-mono bg-white/[0.04] border-white/10 text-white/90"
-															/>
-														</div>
-														<div className="w-24">
-															<p className="text-[10px] text-muted-foreground/50 font-semibold uppercase tracking-wide mb-1">port</p>
-															<Input
-																type="number"
-																min={1}
-																max={65535}
-																value={effectiveServiceDrafts[i]?.port ?? String(svc.port || 8080)}
-																onChange={(e) => handleServiceDraftChange(i, "port", e.target.value)}
-																className="h-8 text-[11px] font-mono bg-white/[0.04] border-white/10 text-white/90"
-															/>
-														</div>
-														<Button
-															type="button"
-															size="sm"
-															variant="secondary"
-															className="h-8 px-3 text-[10px] uppercase tracking-wide bg-white/10 hover:bg-white/15 text-white border-white/10"
-															onClick={() => handleSaveServiceSettings(i)}
-														>
-															Save
-														</Button>
-														<Button
-															type="button"
-															size="sm"
-															variant="ghost"
-															className="h-8 px-3 text-[10px] uppercase tracking-wide text-muted-foreground hover:text-white"
-															onClick={() => setEditingServiceIndex(null)}
-														>
-															Cancel
-														</Button>
-													</div>
-												) : (
-													<>
-														<p className="text-[10px] text-muted-foreground/45 font-mono mt-0.5">ctx: {svc.build_context || "."}</p>
-														<p className="text-[10px] text-muted-foreground/45 font-mono mt-0.5">port: {svc.port || "Auto"}</p>
-													</>
-												)}
-											</div>
-										</div>
-										{editingServiceIndex !== i && (
-											<div className="text-right shrink-0 pl-2">
-												<span className="text-[10px] font-black text-white/20 group-hover:text-primary/50 tracking-tighter uppercase transition-colors">Port</span>
-												<p className="text-xs font-bold text-white/60 group-hover:text-white transition-colors">{svc.port || 'Auto'}</p>
-											</div>
-										)}
-									</div>
-								</div>
-							))}
-						</div>
-					</section>
 
 					{/* Deployment Risks Segment - Now the scrollable part of the sidebar if content overflows */}
 					<section className="space-y-5 flex-1 min-h-0 flex flex-col">
@@ -826,39 +717,6 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 						</div>
 					</div>
 
-					{isDockerfileTab && (
-						<div className="flex flex-wrap items-end gap-3 mb-4 px-1">
-							<div className="flex-1 min-w-[min(100%,220px)]">
-								<label htmlFor="deploy-dockerfile-path" className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5 mb-1.5">
-									<FolderGit2 className="size-3 opacity-70" />
-									Deploy path (repo-relative)
-								</label>
-								<Input
-									id="deploy-dockerfile-path"
-									value={deployPathValue}
-									onChange={(e) => setDeployPathDraft(e.target.value)}
-									className="font-mono text-xs h-9 bg-white/[0.04] border-white/10 text-white/90 placeholder:text-muted-foreground/40"
-									placeholder="client/Dockerfile"
-									spellCheck={false}
-									autoComplete="off"
-								/>
-								<p className="text-[10px] text-muted-foreground/50 mt-1.5 leading-snug">
-									This path is the object key in scan results and on EC2 (e.g. <span className="font-mono text-white/60">client/Dockerfile</span>). Folder-only names get <span className="font-mono text-white/60">/Dockerfile</span> appended on deploy unless you include a Dockerfile filename.
-								</p>
-							</div>
-							<Button
-								type="button"
-								size="sm"
-								variant="secondary"
-								className="h-9 shrink-0 bg-white/10 hover:bg-white/15 text-white border-white/10"
-								onClick={handleUpdateDeployPath}
-								disabled={!onUpdateResults}
-							>
-								Update path
-							</Button>
-						</div>
-					)}
-
 					<Card className="flex-1 flex flex-col bg-[#050505] border-white/5 shadow-2xl rounded-2xl overflow-hidden min-h-0">
 						{/* IDE Tabs */}
 						<div className="flex items-center bg-[#0a0a0a] border-b border-white/5 h-11 px-2.5 gap-1 overflow-x-auto no-scrollbar shrink-0">
@@ -902,6 +760,54 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 							)}
 						</div>
 
+						{/* Active file title / inline path editor */}
+						<div className="flex items-center justify-between h-10 px-4 border-b border-white/5 bg-[#080808] shrink-0">
+							<div className="flex items-center gap-2 min-w-0">
+								<FolderGit2 className="size-3.5 text-muted-foreground/70 shrink-0" />
+								{isDockerfileTab ? (
+									isEditingDeployPathInline ? (
+										<Input
+											value={deployPathValue}
+											onChange={(e) => setDeployPathDraft(e.target.value)}
+											onBlur={commitInlineDeployPathEdit}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													commitInlineDeployPathEdit();
+												} else if (e.key === "Escape") {
+													e.preventDefault();
+													cancelInlineDeployPathEdit();
+												}
+											}}
+											className="h-7 w-[min(560px,70vw)] font-mono text-xs bg-white/[0.04] border-white/10 text-white/90 placeholder:text-muted-foreground/40"
+											placeholder="client/Dockerfile"
+											spellCheck={false}
+											autoComplete="off"
+											autoFocus
+										/>
+									) : (
+										<button
+											type="button"
+											onDoubleClick={beginInlineDeployPathEdit}
+											className="font-mono text-xs text-white/85 hover:text-white transition-colors truncate text-left"
+											title="Double-click to edit deploy path"
+										>
+											{canonicalDockerfileDeployPath(selectedTab)}
+										</button>
+									)
+								) : (
+									<span className="font-mono text-xs text-white/75 truncate">
+										{selectedTab === "compose" ? "docker-compose.yml" : selectedTab === "nginx" ? "nginx.conf" : selectedTab}
+									</span>
+								)}
+							</div>
+							{isDockerfileTab && !isEditingDeployPathInline && (
+								<span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider ml-3 shrink-0">
+									Double-click name to edit
+								</span>
+							)}
+						</div>
+
 						{/* Code Content */}
 						<div className="relative overflow-y-auto flex-1 flex flex-col group/code stealth-scrollbar">
 							{isEditingCurrentTab ? (
@@ -933,33 +839,6 @@ export default function PostScanResults({ results, packagePath, scanTime, deploy
 								</div>
 							)}
 						</div>
-						{isInfraFileTab && (
-							<div className="border-t border-white/5 bg-[#080808] px-4 py-3 max-h-52 overflow-y-auto stealth-scrollbar">
-								<div className="flex items-center justify-between gap-2 mb-2">
-									<p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">Execution Commands</p>
-									<span className="text-[10px] font-mono text-white/60">{commandCount}</span>
-								</div>
-								{commandCount > 0 ? (
-									<div className="space-y-2">
-										{commandGroupNames.map((groupName) => (
-											<div key={groupName} className="rounded-lg border border-white/10 bg-white/[0.02] p-2.5">
-												<p className="text-[10px] uppercase tracking-wide text-muted-foreground/70 mb-1.5">{groupName}</p>
-												<div className="space-y-1.5">
-													{groupedCommandRows[groupName].map((entry, idx) => (
-														<div key={`${groupName}-${entry.label}-${idx}`} className="rounded-md border border-white/10 bg-[#050505] px-2.5 py-1.5">
-															<p className="text-[9px] uppercase tracking-wide text-muted-foreground/70">{entry.label}</p>
-															<code className="block mt-0.5 text-[10px] font-mono text-white/90 break-all">{entry.command}</code>
-														</div>
-													))}
-												</div>
-											</div>
-										))}
-									</div>
-								) : (
-									<p className="text-[11px] text-white/50 italic">No commands were returned in this scan payload.</p>
-								)}
-							</div>
-						)}
 					</Card >
 				</div >
 			</div >

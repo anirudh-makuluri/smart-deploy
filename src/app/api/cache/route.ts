@@ -16,6 +16,7 @@ export async function DELETE(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
+	// SD-Artifacts cache deletion is keyed by response_id.
 	const { response_id } = body as { response_id?: string };
 
 	if (!response_id || !response_id.trim()) {
@@ -30,7 +31,7 @@ export async function DELETE(req: Request) {
 				"Content-Type": "application/json",
 				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
 			},
-			body: JSON.stringify({ response_id })
+			body: JSON.stringify({ response_id }),
 		});
 
 		if (!response.ok) {

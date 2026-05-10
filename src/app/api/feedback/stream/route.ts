@@ -32,6 +32,9 @@ export async function POST(req: Request) {
 	if (!repo_url) {
 		return NextResponse.json({ error: "Missing repo_url" }, { status: 400 });
 	}
+	if (!commit_sha) {
+		return NextResponse.json({ error: "Missing commit_sha" }, { status: 400 });
+	}
 	if (!feedback) {
 		return NextResponse.json({ error: "Missing feedback" }, { status: 400 });
 	}
@@ -45,7 +48,7 @@ export async function POST(req: Request) {
 			},
 			body: JSON.stringify({
 				repo_url,
-				...(commit_sha && { commit_sha }),
+				commit_sha,
 				...(package_path && { package_path }),
 				feedback,
 				...(failure_summary && { failure_summary }),

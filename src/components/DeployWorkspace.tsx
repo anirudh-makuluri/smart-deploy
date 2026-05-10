@@ -295,7 +295,7 @@ export default function DeployWorkspace({
 
 	async function handleConfirmRejectScan() {
 		if (!deployment.repoName || !deployment.serviceName) return;
-		const scanResults = deployment.scanResults as { response_id?: string } | null;
+		const scanResults = deployment.scanResults as { response_id?: string; commit_sha?: string } | null;
 		const responseId = scanResults?.response_id?.trim();
 
 		try {
@@ -394,6 +394,10 @@ export default function DeployWorkspace({
 	}
 
 	function startScan() {
+		if (!repoUrl) {
+			toast.error("Unable to start scan: repository URL is missing.");
+			return;
+		}
 		setScanStartTime(Date.now());
 		setScanMode("scanning");
 		setActiveSection("scan");
@@ -454,8 +458,20 @@ export default function DeployWorkspace({
 			.join("\n")
 			.slice(-12000);
 
+		const resolvedCommitSha =
+			payload.commitSha ||
+			(payload as { commit_sha?: string } | null)?.commit_sha ||
+			((deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ?? undefined) ||
+			(deployment.commitSha ?? undefined);
+
+		if (!resolvedCommitSha) {
+			toast.error("Cannot start feedback remediation: missing commit SHA from scan results.");
+			return;
+		}
+
 		setImproveScanPayload({
 			...payload,
+			commitSha: resolvedCommitSha,
 			packagePath: payload.packagePath || analyzeServicePath || ".",
 			failedArtifactScope: payload.failedArtifactScope || "general",
 			failureSummary: payload.failureSummary || deployError || undefined,
@@ -537,9 +553,9 @@ export default function DeployWorkspace({
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
-								repoFullName={repoIdentifier}
-								packagePath={analyzeServicePath}
-								commitSha={(deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ?? deployment.commitSha ?? undefined}
+								repoUrl={repoUrl}
+								packagePath={analyzeServicePath || "."}
+								branch={effectiveBranch}
 								repoName={repoName}
 								serviceName={serviceName ?? ""}
 								onComplete={(data) => {
