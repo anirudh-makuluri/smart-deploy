@@ -66,6 +66,11 @@ type MossHarness = {
 	cleanup: () => Promise<void>;
 };
 
+async function loadOptionalMossModule(): Promise<unknown> {
+	const dynamicImport = new Function("moduleName", "return import(moduleName);") as (moduleName: string) => Promise<unknown>;
+	return dynamicImport("@moss-dev/moss-web");
+}
+
 const root = path.join(__dirname, "..");
 const promptsPath = path.join(root, "benchmarks", "help-agent-benchmark.prompts.json");
 const defaultCandidateUrl = process.env.MOSS_BENCHMARK_URL?.trim() || "";
@@ -303,7 +308,7 @@ async function createMossHarness(): Promise<MossHarness | null> {
 		keepMossIndex,
 	});
 
-	const mossModule = await import("@moss-dev/moss-web");
+	const mossModule = await loadOptionalMossModule();
 	const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 	if (!MossClientCtor) {
 		throw new Error("Failed to load MossClient from @moss-dev/moss-web");
