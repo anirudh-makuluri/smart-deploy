@@ -135,7 +135,7 @@ export function buildPrefilledScanResults(repoRoot: string, packagePath?: string
 	const dockerfiles = findRelevantDockerfiles(repoRoot, packagePath);
 	const composePath = findComposePath(repoRoot);
 	const dockerCompose = composePath ? fs.readFileSync(path.join(repoRoot, composePath), "utf8") : "";
-	const services = buildServices(repoRoot, dockerfiles, packagePath);
+	const services = buildServices(repoRoot, dockerfiles, packagePath) ?? [];
 	const mainPort = services[0]?.port || 8080;
 	const existingNginxConf = findExistingNginxConf(repoRoot, packagePath);
 	const nginxConf = existingNginxConf || generateRuleBasedNginxConf(mainPort);
@@ -145,6 +145,9 @@ export function buildPrefilledScanResults(repoRoot: string, packagePath?: string
 	}
 
 	return {
+		commit_sha: "",
+		stack_tokens: [],
+		files: [],
 		stack_summary: "Prefilled from repository infrastructure files",
 		services,
 		dockerfiles,

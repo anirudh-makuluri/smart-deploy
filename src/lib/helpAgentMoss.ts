@@ -23,6 +23,11 @@ const mossIndexName = process.env.MOSS_HELP_AGENT_INDEX_NAME?.trim() || "smart_d
 
 let initPromise: Promise<{ client: MossClientLike; indexName: string } | null> | null = null;
 
+async function loadOptionalMossModule(): Promise<unknown> {
+	const dynamicImport = new Function("moduleName", "return import(moduleName);") as (moduleName: string) => Promise<unknown>;
+	return dynamicImport("@moss-dev/moss-web");
+}
+
 function isMossEnabled(): boolean {
 	return Boolean(mossProjectId && mossProjectKey);
 }
@@ -71,7 +76,7 @@ async function initializeMoss(): Promise<{ client: MossClientLike; indexName: st
 	if (!isMossEnabled()) return null;
 
 	try {
-		const mossModule = await import("@moss-dev/moss-web");
+		const mossModule = await loadOptionalMossModule();
 		const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 		if (!MossClientCtor) {
 			console.warn("Help-agent Moss disabled: failed to load MossClient");

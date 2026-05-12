@@ -57,7 +57,7 @@ const scanResults: SDArtifactsResponse = {
 };
 
 describe("PostScanResults", () => {
-	it("allows editing detected service build context (ctx)", async () => {
+	it("allows editing Dockerfile content", async () => {
 		const onUpdateResults = vi.fn();
 
 		render(
@@ -70,18 +70,17 @@ describe("PostScanResults", () => {
 			/>
 		);
 
-		fireEvent.doubleClick(screen.getByText("web"));
-
-		const ctxInput = screen.getByPlaceholderText(".") as HTMLInputElement;
-		fireEvent.change(ctxInput, { target: { value: "apps/web" } });
-		fireEvent.click(screen.getByRole("button", { name: "Save" }));
+		fireEvent.click(screen.getByRole("button", { name: "Modify File" }));
+		const editor = document.querySelector("textarea") as HTMLTextAreaElement;
+		expect(editor).toBeTruthy();
+		fireEvent.change(editor, { target: { value: "FROM node:22-alpine\nWORKDIR /srv/app" } });
+		fireEvent.click(screen.getByRole("button", { name: "Push Changes" }));
 
 		await waitFor(() => {
 			expect(onUpdateResults).toHaveBeenCalled();
 		});
 
 		const updated = onUpdateResults.mock.calls.at(-1)?.[0] as SDArtifactsResponse;
-		expect(updated.services[0]?.build_context).toBe("apps/web");
-		expect(updated.services[0]?.port).toBe(8080);
+		expect(updated.dockerfiles?.Dockerfile).toBe("FROM node:22-alpine\nWORKDIR /srv/app");
 	});
 });

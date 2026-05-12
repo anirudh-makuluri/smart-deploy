@@ -106,6 +106,7 @@ export const typeDefs = `
     repoName: String!
     url: String!
     branch: String!
+    responseId: String
     commitSha: String
     envVars: String
     liveUrl: String
@@ -303,6 +304,7 @@ export const typeDefs = `
     repoName: String!
     url: String
     branch: String
+    responseId: String
     commitSha: String
     envVars: String
     liveUrl: String

@@ -198,7 +198,7 @@ export default function DeployWorkspace({
 
 	// ============== ADDITIONAL MEMOIZED DERIVED VALUES ==============
 	const showDeployLogs = React.useMemo(
-		() => isDeploying || deployStatus === "running" || deployStatus === "error",
+		() => isDeploying || deployStatus === "running" || deployStatus === "success" || deployStatus === "error",
 		[isDeploying, deployStatus]
 	);
 
@@ -285,6 +285,7 @@ export default function DeployWorkspace({
 			serviceName: serviceName,
 			url: deployment.url || repoUrl || "",
 			branch: branchToSave,
+			commitSha: results.commit_sha ?? deployment.commitSha ?? null,
 			scanResults: results,
 		});
 		setScanResults(results);
@@ -294,17 +295,19 @@ export default function DeployWorkspace({
 
 	async function handleConfirmRejectScan() {
 		if (!deployment.repoName || !deployment.serviceName) return;
+		const scanResults = deployment.scanResults as { response_id?: string; commit_sha?: string } | null;
+		const responseId = deployment.responseId?.trim() || scanResults?.response_id?.trim();
 
 		try {
-			const scanResults = deployment.scanResults as { commit_sha?: string } | null;
-			await fetch("/api/cache", {
-				method: "DELETE",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					repo_url: deployment.url,
-					commit_sha: scanResults?.commit_sha || deployment.commitSha,
-				}),
-			});
+			if (responseId) {
+				await fetch("/api/cache", {
+					method: "DELETE",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ response_id: responseId }),
+				});
+			} else {
+				console.warn("Skip cache deletion: scan result has no response_id");
+			}
 		} catch (err) {
 			console.error("Failed to clear backend cache:", err);
 		}
@@ -391,6 +394,10 @@ export default function DeployWorkspace({
 	}
 
 	function startScan() {
+		if (!repoUrl) {
+			toast.error("Unable to start scan: repository URL is missing.");
+			return;
+		}
 		setScanStartTime(Date.now());
 		setScanMode("scanning");
 		setActiveSection("scan");
@@ -444,7 +451,32 @@ export default function DeployWorkspace({
 	}
 
 	function onStartImproveScan(payload: FeedbackProgressPayload) {
-		setImproveScanPayload(payload);
+		const fallbackFailureLogs = (deployLogEntries || [])
+			.slice(-80)
+			.map((entry) => `${entry.timestamp || ""} ${entry.message || ""}`.trim())
+			.filter(Boolean)
+			.join("\n")
+			.slice(-12000);
+
+		const resolvedCommitSha =
+			payload.commitSha ||
+			(payload as { commit_sha?: string } | null)?.commit_sha ||
+			((deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ?? undefined) ||
+			(deployment.commitSha ?? undefined);
+
+		if (!resolvedCommitSha) {
+			toast.error("Cannot start feedback remediation: missing commit SHA from scan results.");
+			return;
+		}
+
+		setImproveScanPayload({
+			...payload,
+			commitSha: resolvedCommitSha,
+			packagePath: payload.packagePath || analyzeServicePath || ".",
+			failedArtifactScope: payload.failedArtifactScope || "general",
+			failureSummary: payload.failureSummary || deployError || undefined,
+			failureLogs: payload.failureLogs || fallbackFailureLogs || undefined,
+		});
 		setActiveSection("scan");
 	}
 
@@ -521,8 +553,9 @@ export default function DeployWorkspace({
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 							<ScanProgress
-								repoFullName={repoIdentifier}
-								packagePath={analyzeServicePath}
+								repoUrl={repoUrl}
+								packagePath={analyzeServicePath || "."}
+								branch={effectiveBranch}
 								repoName={repoName}
 								serviceName={serviceName ?? ""}
 								onComplete={(data) => {
@@ -542,6 +575,7 @@ export default function DeployWorkspace({
 							<PostScanResults
 								key={`${deployment.repoName}:${deployment.serviceName}`}
 								results={effectiveScanResults as SDArtifactsResponse}
+								packagePath={analyzeServicePath}
 								onUpdateResults={(updated) => {
 									setScanResults(updated);
 									onScanComplete(updated);
@@ -663,6 +697,7 @@ export default function DeployWorkspace({
 						configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : configSnapshotFromDeployConfig(deployment)}
 						repoUrl={deployment.url}
 						commitSha={(deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ?? deployment.commitSha ?? undefined}
+							packagePath={analyzeServicePath}
 							onStartImproveScan={onStartImproveScan}
 						/>
 					</div>

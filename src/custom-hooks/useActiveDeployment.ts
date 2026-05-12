@@ -11,6 +11,7 @@ function createDefaultDeployment(repoName: string, serviceName: string, repoUrl?
 		serviceName,
 		url: repoUrl || "",
 		branch: branch || "",
+		responseId: null,
 		commitSha: null,
 		envVars: null,
 		liveUrl: null,

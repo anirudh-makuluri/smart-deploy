@@ -11,6 +11,11 @@ type MossClientLike = {
 	addDocs?: (name: string, docs: Array<{ id: string; text: string }>, options?: { upsert?: boolean }) => Promise<unknown>;
 };
 
+async function loadOptionalMossModule(): Promise<unknown> {
+	const dynamicImport = new Function("moduleName", "return import(moduleName);") as (moduleName: string) => Promise<unknown>;
+	return dynamicImport("@moss-dev/moss-web");
+}
+
 function toMossText(source: string, section: string, content: string): string {
 	return [
 		`SOURCE: ${source}`,
@@ -30,7 +35,7 @@ async function main() {
 		throw new Error("Missing MOSS_PROJECT_ID or MOSS_PROJECT_KEY in environment");
 	}
 
-	const mossModule = await import("@moss-dev/moss-web");
+	const mossModule = await loadOptionalMossModule();
 	const MossClientCtor = (mossModule as { MossClient?: new (id: string, key: string) => MossClientLike }).MossClient;
 	if (!MossClientCtor) {
 		throw new Error("Failed to load MossClient from @moss-dev/moss-web");

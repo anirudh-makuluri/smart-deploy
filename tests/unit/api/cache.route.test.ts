@@ -22,7 +22,7 @@ describe("DELETE /api/cache", () => {
 		const res = await DELETE(
 			new Request("http://localhost/api/cache", {
 				method: "DELETE",
-				body: JSON.stringify({ repo_url: "https://github.com/acme/repo" }),
+				body: JSON.stringify({ response_id: "r-1" }),
 			})
 		);
 
@@ -38,7 +38,7 @@ describe("DELETE /api/cache", () => {
 		expect(res.status).toBe(400);
 	});
 
-	it("returns 400 when repo_url is missing", async () => {
+	it("returns 400 when response_id is missing", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		const { DELETE } = await import("@/app/api/cache/route");
 		const res = await DELETE(
@@ -62,7 +62,7 @@ describe("DELETE /api/cache", () => {
 		const res = await DELETE(
 			new Request("http://localhost/api/cache", {
 				method: "DELETE",
-				body: JSON.stringify({ repo_url: "https://github.com/acme/repo", commit_sha: "abc123" }),
+				body: JSON.stringify({ response_id: "r-1" }),
 			})
 		);
 
@@ -82,7 +82,7 @@ describe("DELETE /api/cache", () => {
 		const res = await DELETE(
 			new Request("http://localhost/api/cache", {
 				method: "DELETE",
-				body: JSON.stringify({ repo_url: "https://github.com/acme/repo" }),
+				body: JSON.stringify({ response_id: "r-1" }),
 			})
 		);
 

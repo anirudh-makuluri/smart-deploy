@@ -184,8 +184,11 @@ export function generateBuildspec(params: {
 	}
 
 	if (hasCompose) {
-		const b64 = Buffer.from(scanResults!.docker_compose, "utf8").toString("base64");
-		preBuildCmds.push(`echo "${b64}" | base64 -d > docker-compose.yml`);
+		const composeContent = scanResults?.docker_compose;
+		if (composeContent) {
+			const b64 = Buffer.from(composeContent, "utf8").toString("base64");
+			preBuildCmds.push(`echo "${b64}" | base64 -d > docker-compose.yml`);
+		}
 	}
 
 	preBuildCmds.push(

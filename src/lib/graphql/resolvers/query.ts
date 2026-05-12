@@ -425,6 +425,7 @@ function transformDeployment(deployment: any) {
 		revision: deployment.revision,
 		url: deployment.url || "",
 		branch: deployment.branch || "main",
+		responseId: deployment.responseId ?? null,
 		commitSha: deployment.commitSha || undefined,
 		envVars: deployment.envVars || undefined,
 		liveUrl: deployment.liveUrl || undefined,

@@ -338,6 +338,7 @@ async function redeployInstance(params: {
 		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 		mainPort,
 		scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
+		commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 	});
 	let ssmResult: { success: boolean };
 	try {
@@ -473,6 +474,7 @@ async function launchNewInstance(params: {
 		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 		mainPort,
 		scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
+		commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 	});
 
 	send("Deploying containers via SSM...", "deploy");

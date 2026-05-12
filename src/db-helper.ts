@@ -3,6 +3,93 @@ import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, Re
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
 import { v4 as uuidv4 } from "uuid";
 
+function hasOwnKey<T extends object>(obj: T, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function toOptionalTrimmedString(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const trimmed = value.trim();
+	return trimmed ? trimmed : null;
+}
+
+function normalizeScanResults(value: unknown): Record<string, unknown> | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const record = value as Record<string, unknown>;
+	if (Object.keys(record).length === 0) return null;
+	return record;
+}
+
+type DeploymentDbRow = Record<string, unknown>;
+type AnalysisPayloadMap = Map<string, Record<string, unknown>>;
+
+async function upsertAnalysisResponse(args: {
+	id: string;
+	payload: Record<string, unknown>;
+	repoUrl: string;
+	commitSha: string | null;
+	serviceName: string;
+}) {
+	const supabase = getSupabaseServer();
+	const { error } = await supabase
+		.from("analysis_responses")
+		.upsert(
+			{
+				id: args.id,
+				endpoint: "/analyze",
+				repo_url: args.repoUrl || "",
+				commit_sha: args.commitSha,
+				package_path: ".",
+				service_name: args.serviceName || null,
+				from_cache: false,
+				payload: args.payload,
+			},
+			{ onConflict: "id" }
+		);
+	if (error) throw new Error(error.message);
+}
+
+async function fetchAnalysisPayloadMap(rows: DeploymentDbRow[]): Promise<AnalysisPayloadMap> {
+	const responseIds = Array.from(
+		new Set(
+			rows
+				.map((row) => toOptionalTrimmedString(row.response_id))
+				.filter((v): v is string => Boolean(v))
+		)
+	);
+	if (responseIds.length === 0) return new Map();
+
+	const supabase = getSupabaseServer();
+	const { data, error } = await supabase
+		.from("analysis_responses")
+		.select("id,payload")
+		.in("id", responseIds);
+	if (error) throw new Error(error.message);
+
+	const payloadMap: AnalysisPayloadMap = new Map();
+	for (const row of (data || []) as Array<Record<string, unknown>>) {
+		const id = toOptionalTrimmedString(row.id);
+		if (!id) continue;
+		const payload = normalizeScanResults(row.payload);
+		if (!payload) continue;
+		payloadMap.set(id, payload);
+	}
+	return payloadMap;
+}
+
+function attachAnalysisPayload(rows: DeploymentDbRow[], payloadMap: AnalysisPayloadMap): DeploymentDbRow[] {
+	return rows.map((row) => {
+		const responseId = toOptionalTrimmedString(row.response_id);
+		const payload = responseId ? payloadMap.get(responseId) : null;
+		const payloadWithResponseId = payload ? { ...payload, response_id: payload.response_id ?? responseId } : {};
+		return {
+			...row,
+			response_id: responseId,
+			scan_results: payloadWithResponseId,
+		};
+	});
+}
+
 /**
  * Transform database row (snake_case) to DeployConfig (camelCase)
  */
@@ -25,6 +112,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		first_deployment,
 		last_deployment,
 		revision,
+		response_id,
 		ec2,
 		cloud_run,
 		scan_results,
@@ -37,6 +125,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		serviceName: service_name || "",
 		url: url || "",
 		branch: branch || "",
+		responseId: response_id ?? null,
 		commitSha: commit_sha ?? null,
 		envVars: env_vars ?? undefined,
 		liveUrl: live_url ?? null,
@@ -59,7 +148,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
  * Transform DeployConfig (camelCase) to database row (snake_case)
  */
 function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
-	return {
+	const row: Record<string, unknown> = {
 		url: config.url,
 		branch: config.branch,
 		commit_sha: config.commitSha,
@@ -72,8 +161,11 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 		status: config.status,
 		ec2: config.ec2,
 		cloud_run: config.cloudRun,
-		scan_results: config.scanResults,
 	};
+	if (config.responseId !== undefined) {
+		row.response_id = config.responseId;
+	}
+	return row;
 }
 
 function normalizeRepoIdentifier(value: string): string {
@@ -148,6 +240,11 @@ export const dbHelper = {
 			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
 
 			const supabase = getSupabaseServer();
+			const configRecord = deployConfig as unknown as Record<string, unknown>;
+			const hasScanResultsInput = hasOwnKey(configRecord, "scanResults");
+			const rawScanResultsInput = configRecord.scanResults;
+			const rawScanResults = hasScanResultsInput ? normalizeScanResults(configRecord.scanResults) : null;
+			const explicitResponseId = toOptionalTrimmedString(configRecord.responseId);
 
 			if (deployConfig.status === "stopped") {
 				await supabase.from("deployments").delete()
@@ -167,7 +264,32 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (fetchError) return { error: fetchError.message };
-			
+
+			let nextResponseId: string | null = explicitResponseId ?? toOptionalTrimmedString(existing?.response_id);
+			if (hasScanResultsInput) {
+				if (!rawScanResults) {
+					const isExplicitClear =
+						rawScanResultsInput === null ||
+						(rawScanResultsInput &&
+							typeof rawScanResultsInput === "object" &&
+							!Array.isArray(rawScanResultsInput) &&
+							Object.keys(rawScanResultsInput as Record<string, unknown>).length === 0);
+					if (isExplicitClear) {
+						nextResponseId = null;
+					}
+				} else {
+					const payloadResponseId = toOptionalTrimmedString(rawScanResults.response_id);
+					nextResponseId = explicitResponseId ?? payloadResponseId ?? nextResponseId ?? uuidv4();
+					await upsertAnalysisResponse({
+						id: nextResponseId,
+						payload: { ...rawScanResults, response_id: nextResponseId },
+						repoUrl: String(deployConfig.url ?? existing?.url ?? ""),
+						commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? deployConfig.commitSha ?? null,
+						serviceName,
+					});
+				}
+			}
+
 			if (!existing) {
 				// Create new deployment with provided data
 				const insertPayload: Record<string, unknown> = {
@@ -179,6 +301,7 @@ export const dbHelper = {
 					last_deployment: new Date().toISOString(),
 					revision: 1,
 					...deployConfigToRow(deployConfig),
+					response_id: nextResponseId,
 				};
 
 				const { error: insertError } = await supabase.from("deployments").insert(insertPayload);
@@ -191,6 +314,9 @@ export const dbHelper = {
 				revision: (existing.revision ?? 0) + 1,
 				...deployConfigToRow(deployConfig),
 			};
+			if (hasScanResultsInput || explicitResponseId !== null) {
+				updatePayload.response_id = nextResponseId;
+			}
 
 			// Update last_deployment only if commitSha changes
 			if (deployConfig.commitSha !== existing.commit_sha) {
@@ -263,7 +389,11 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-		const deployments = (rows || []).map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			const hydratedRows = attachAnalysisPayload(
+				(rows || []) as DeploymentDbRow[],
+				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
+			);
+			const deployments = hydratedRows.map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
 		} catch (error) {
 			console.error("getUserDeployments error:", error);
@@ -282,7 +412,11 @@ export const dbHelper = {
 
 			if (error) return { error: error.message };
 
-			const deployments = (rows || [])
+			const hydratedRows = attachAnalysisPayload(
+				(rows || []) as DeploymentDbRow[],
+				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
+			);
+			const deployments = hydratedRows
 				.filter((row: Record<string, unknown>) => matchesRepoIdentifier(row, repoIdentifier))
 				.map((row: Record<string, unknown>) => rowToDeployConfig(row));
 			return { deployments };
@@ -326,7 +460,11 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (error || !row) return { error: "Deployment not found" };
-			return { deployment: rowToDeployConfig(row) };
+			const hydratedRows = attachAnalysisPayload(
+				[row as DeploymentDbRow],
+				await fetchAnalysisPayloadMap([row as DeploymentDbRow])
+			);
+			return { deployment: rowToDeployConfig(hydratedRows[0]) };
 		} catch (error) {
 			console.error("getDeployment error:", error);
 			return { error: error instanceof Error ? error.message : String(error) };

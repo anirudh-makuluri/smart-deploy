@@ -63,6 +63,8 @@ export type DeployConfig = {
 	repoName: string;
 	url: string;
 	branch: string;
+	/** Linked analysis_responses.id for the latest scan payload */
+	responseId?: string | null;
 	/** Commit SHA that was deployed; null if never deployed */
 	commitSha: string | null;
 	/** Environment variables as JSON string (optional for deployment) */
@@ -167,27 +169,39 @@ export type DeploymentHistoryEntry = {
 };
 
 export type SDArtifactsResponse = {
-	commit_sha?: string;
-	stack_summary: string;
-	services: {
+	response_id?: string | null;
+	commit_sha: string;
+	stack_tokens: string[];
+	files: {
 		name: string;
-		build_context: string;
-		port: number;
-		dockerfile_path: string;
-		language?: string;
-		framework?: string;
+		content: string;
+		location: string;
 	}[];
-	dockerfiles: Record<string, string>;
-	docker_compose: string;
-	nginx_conf: string;
-	has_existing_dockerfiles: boolean;
-	has_existing_compose: boolean;
 	risks: string[];
 	confidence: number;
-	hadolint_results: Record<string, string>;
 	token_usage: {
 		input_tokens: number;
 		output_tokens: number;
 		total_tokens: number;
 	};
+	// Legacy/derived fields still used by current UI components.
+	stack_summary?: string;
+	services?: {
+		name: string;
+		build_context: string;
+		port: number;
+		dockerfile_path: string;
+		execution_root?: string;
+		language?: string;
+		framework?: string;
+	}[];
+	dockerfiles?: Record<string, string>;
+	docker_compose?: string | null;
+	nginx_conf?: string | null;
+	has_existing_dockerfiles?: boolean;
+	has_existing_compose?: boolean;
+	hadolint_results?: Record<string, string | Record<string, unknown> | unknown[]>;
+	commands?: Record<string, unknown> | string[];
+	build_verification?: Record<string, unknown>;
+	llm_outputs?: Record<string, unknown>;
 };

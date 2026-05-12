@@ -4,11 +4,22 @@ import { CheckCircle2, Circle, Loader2, XCircle, Terminal } from "lucide-react";
 import { SDArtifactsResponse } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { normalizeScanResultPayload } from "@/lib/scanResultNormalization";
+import { fetchLatestCommit } from "@/lib/graphqlClient";
+
+function githubOwnerRepoFromUrl(repoUrl: string): { owner: string; repo: string } | null {
+	const m = repoUrl.trim().match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?(?:\/|$)/i);
+	if (!m) return null;
+	return { owner: m[1], repo: m[2].replace(/\.git$/i, "") };
+}
 
 type ScanProgressProps = {
-	repoFullName: string;
+	/** Full GitHub repo URL (e.g. https://github.com/owner/repo). */
+	repoUrl: string;
 	/** Repo-relative package root for this service (monorepo); forwarded as package_path. */
-	packagePath?: string;
+	packagePath: string;
+	/** Branch whose HEAD commit is sent as commit_sha (always fetched from GitHub). */
+	branch: string;
 	repoName: string;
 	serviceName: string;
 	onComplete: (data: SDArtifactsResponse) => void;
@@ -25,7 +36,7 @@ const NODES = [
 	{ id: "verifier", label: "Verifier", desc: "Final health check validation" },
 ];
 
-export default function ScanProgress({ repoFullName, packagePath, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
+export default function ScanProgress({ repoUrl, packagePath, branch, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
 	const [activeNode, setActiveNode] = useState<string>("scanner");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -49,18 +60,50 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 
 		const startStream = async () => {
 			try {
+				const parsed = githubOwnerRepoFromUrl(repoUrl);
+				if (!parsed) {
+					throw new Error("Could not parse owner/repo from repository URL");
+				}
+				const head = await fetchLatestCommit(parsed.owner, parsed.repo, branch);
+				const commitSha = head?.sha?.trim() || "";
+				if (!commitSha) {
+					throw new Error("Could not resolve commit SHA for this branch");
+				}
+
 				const response = await fetch("/api/scan/stream", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
-						full_name: repoFullName,
-						...(packagePath && { package_path: packagePath }),
+						repo_url: repoUrl,
+						package_path: packagePath,
+						commit_sha: commitSha,
 					}),
 					signal: abortControllerRef.current?.signal,
 				});
 
 				if (!response.ok) {
-					throw new Error("Failed to start analysis stream");
+					const errText = await response.text();
+					try {
+						const parsed = JSON.parse(errText) as {
+							detail?: unknown;
+							message?: string;
+							error?: string;
+						};
+						const detailObj = Array.isArray(parsed.detail)
+							? (parsed.detail[0] as { reason?: string; code?: string } | undefined)
+							: (parsed.detail as { reason?: string; code?: string } | undefined);
+						if (detailObj && typeof detailObj === "object") {
+							throw new Error(detailObj.reason || detailObj.code || "Failed to start analysis stream");
+						}
+						throw new Error(
+							(typeof parsed?.detail === "string" && parsed.detail) ||
+							parsed?.message ||
+							parsed?.error ||
+							`Failed to start analysis stream (${response.status})`
+						);
+					} catch {
+						throw new Error(errText || `Failed to start analysis stream (${response.status})`);
+					}
 				}
 
 				if (!response.body) {
@@ -118,14 +161,20 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 									}
 								} else if (status === "error") {
 									setFailedNode(node);
-									appendLog(`error: ${data.message || 'Unknown error in node ' + node}`);
+									appendLog(`error: ${formatStructuredError(data.message || data.detail || ('Unknown error in node ' + node))}`);
 								}
 							} else if (eventType === "complete") {
 								appendLog("event: analysis complete");
 								setProgress(100);
+								const normalized = normalizeScanResultPayload(data);
+								if (!normalized) {
+									appendLog("error: Unable to parse complete scan payload");
+									setFailedNode(activeNodeRef.current);
+									return;
+								}
 								// Record artifact generation metrics (best-effort; does not block UI).
 								try {
-									const dockerfilesCount = data?.dockerfiles ? Object.keys(data.dockerfiles).length : 0;
+									const dockerfilesCount = normalized?.dockerfiles ? Object.keys(normalized.dockerfiles).length : 0;
 									void fetch("/api/artifacts/generation", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
@@ -134,18 +183,18 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 											repoName,
 											serviceName,
 											dockerfilesCount,
-											hasExistingDockerfiles: Boolean(data?.has_existing_dockerfiles),
-											hasExistingCompose: Boolean(data?.has_existing_compose),
-											hasCompose: Boolean(data?.docker_compose?.trim()),
-											hasNginx: Boolean(data?.nginx_conf?.trim()),
+											hasExistingDockerfiles: Boolean(normalized?.has_existing_dockerfiles),
+											hasExistingCompose: Boolean(normalized?.has_existing_compose),
+											hasCompose: Boolean(normalized?.docker_compose?.trim()),
+											hasNginx: Boolean(normalized?.nginx_conf?.trim()),
 										}),
 									});
 								} catch {
 									// ignore
 								}
-								onCompleteRef.current(data);
+								onCompleteRef.current(normalized as SDArtifactsResponse);
 							} else if (eventType === "error") {
-								const errorMsg = data.detail || data.message || "Unknown error";
+								const errorMsg = formatStructuredError(data.detail || data.message || data.error || "Unknown error");
 								console.error("SSE Error event received:", errorMsg);
 								appendLog(`error: ${errorMsg}`);
 								setFailedNode(activeNodeRef.current);
@@ -201,7 +250,7 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 				abortControllerRef.current.abort();
 			}
 		};
-	}, [repoFullName, packagePath, repoName, serviceName]);
+	}, [repoUrl, packagePath, branch, repoName, serviceName]);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] bg-background/50 animate-in fade-in duration-500">
@@ -273,7 +322,7 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 					<Card className="flex-1 min-h-[400px] flex flex-col bg-[#0d0d0d] border-[#1e1e1e] overflow-hidden">
 						<div className="flex-1 p-4 font-mono text-xs md:text-sm text-gray-300 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
 							{logs.map((log, i) => (
-								<div key={i} className="break-words">
+								<div key={i} className="wrap-break-word">
 									{log.includes('info:') ? (
 										<span className="text-blue-400">{log}</span>
 									) : log.includes('error:') ? (
@@ -316,4 +365,30 @@ export default function ScanProgress({ repoFullName, packagePath, repoName, serv
 			</div>
 		</div>
 	);
+}
+
+function formatStructuredError(value: unknown): string {
+	if (value == null) return "Unknown error";
+	if (typeof value === "string") return value;
+	if (Array.isArray(value)) {
+		return value.map((item) => formatStructuredError(item)).join(" | ");
+	}
+	if (typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		const code = typeof record.code === "string" ? `[${record.code}] ` : "";
+		const message = typeof record.message === "string" ? record.message : "";
+		const issues = Array.isArray(record.issues)
+			? record.issues.map((issue) => `- ${formatStructuredError(issue)}`).join("\n")
+			: "";
+		const summary = `${code}${message}`.trim();
+		if (summary && issues) return `${summary}\n${issues}`;
+		if (summary) return summary;
+		if (issues) return issues;
+		try {
+			return JSON.stringify(record);
+		} catch {
+			return String(value);
+		}
+	}
+	return String(value);
 }

@@ -16,21 +16,22 @@ export async function DELETE(req: Request) {
 		return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 	}
 
-	const { repo_url, commit_sha } = body;
+	// SD-Artifacts cache deletion is keyed by response_id.
+	const { response_id } = body as { response_id?: string };
 
-	if (!repo_url) {
-		return NextResponse.json({ error: "Missing repo_url" }, { status: 400 });
+	if (!response_id || !response_id.trim()) {
+		return NextResponse.json({ error: "Missing response_id" }, { status: 400 });
 	}
 
 	try {
-		console.log("Deleting cache for", repo_url, commit_sha || "(all)");
+		console.log("Deleting cache for response_id", response_id);
 		const response = await fetch(`${process.env.SD_API_BASE_URL}/cache`, {
 			method: "DELETE",
 			headers: {
 				"Content-Type": "application/json",
 				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
 			},
-			body: JSON.stringify({ repo_url, commit_sha })
+			body: JSON.stringify({ response_id }),
 		});
 
 		if (!response.ok) {

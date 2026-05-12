@@ -11,7 +11,7 @@ import {
 	AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button } from "./ui/button";
-import { ChevronDown, Search, X, Plus, Minus, Download } from "lucide-react";
+import { ChevronDown, ChevronUp, Search, X, Plus, Minus, Download } from "lucide-react";
 
 type LogEntry = { timestamp?: string; message?: string };
 
@@ -64,6 +64,7 @@ export default function ServiceLogs({
 	const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
 	const [selectedLog, setSelectedLog] = React.useState<LogEntry | null>(null);
 	const [logFilter, setLogFilter] = React.useState<LogFilter>("ALL");
+	const [visiblePages, setVisiblePages] = React.useState(1);
 
 	type KeywordRule = { mode: "include" | "exclude"; keyword: string };
 
@@ -138,6 +139,7 @@ export default function ServiceLogs({
 	React.useEffect(() => {
 		setExtraHistory([]);
 		setHasMoreHistory(true);
+		setVisiblePages(1);
 		isLoadingHistoryRef.current = false;
 		extraHistoryRef.current = [];
 		hasMoreHistoryRef.current = true;
@@ -172,8 +174,9 @@ export default function ServiceLogs({
 
 	const limitedLogs = React.useMemo(() => {
 		if (!displayLimit || displayLimit <= 0) return combinedLogs;
-		return combinedLogs.slice(-displayLimit);
-	}, [combinedLogs, displayLimit]);
+		const visibleCount = displayLimit * visiblePages;
+		return combinedLogs.slice(-visibleCount);
+	}, [combinedLogs, displayLimit, visiblePages]);
 
 	const filteredLogs = React.useMemo(() => {
 		const includeRules = keywordRules.filter((r) => r.mode === "include");
@@ -310,7 +313,6 @@ export default function ServiceLogs({
 
 	const loadMoreOlderLogs = React.useCallback(async () => {
 		if (!serviceName) return;
-		if (displayLimit && displayLimit > 0) return;
 		if (!hasMoreHistoryRef.current) return;
 		if (isLoadingHistoryRef.current) return;
 
@@ -371,7 +373,26 @@ export default function ServiceLogs({
 			isLoadingHistoryRef.current = false;
 			setIsLoadingOlderLogs(false);
 		}
-	}, [displayLimit, repoName, serviceName]);
+	}, [repoName, serviceName]);
+
+	const handleLoadNextPage = React.useCallback(async () => {
+		if (!displayLimit || displayLimit <= 0) return;
+
+		const nextPages = visiblePages + 1;
+		const nextVisibleCount = nextPages * displayLimit;
+		setVisiblePages(nextPages);
+
+		if (combinedLogs.length >= nextVisibleCount) return;
+		if (!serviceName) return;
+		if (!hasMoreHistoryRef.current) return;
+		await loadMoreOlderLogs();
+	}, [combinedLogs.length, displayLimit, loadMoreOlderLogs, serviceName, visiblePages]);
+
+	const canLoadMorePages = React.useMemo(() => {
+		if (!displayLimit || displayLimit <= 0) return false;
+		const visibleCount = displayLimit * visiblePages;
+		return combinedLogs.length > visibleCount || hasMoreHistory;
+	}, [combinedLogs.length, displayLimit, hasMoreHistory, visiblePages]);
 
 	// When the user scrolls near the very top, fetch the next chunk of older logs.
 	React.useEffect(() => {
@@ -404,6 +425,20 @@ export default function ServiceLogs({
 			{/* Filter toolbar */}
 			<div className="flex flex-col border-b border-border/40 bg-card/80">
 				<div className="flex items-center gap-2 px-3 py-2">
+					{displayLimit && displayLimit > 0 && (
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="h-7 gap-1.5 text-xs"
+							onClick={() => void handleLoadNextPage()}
+							disabled={!canLoadMorePages || isLoadingOlderLogs}
+							title={canLoadMorePages ? "Load next logs page" : "No more logs"}
+						>
+							<ChevronUp className="size-3.5" />
+							Next logs
+						</Button>
+					)}
 					{(["ALL", "ERROR", "WARN", "BUILD", "DEPLOY"] as LogFilter[]).map((f) => (
 						<button
 							key={f}

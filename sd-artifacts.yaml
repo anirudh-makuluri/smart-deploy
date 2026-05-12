@@ -1,0 +1,547 @@
+---
+# SD-Artifacts API Endpoints Guide
+# Complete reference for all endpoints with curl examples
+
+# ==========================================
+# Authentication
+# ==========================================
+# All endpoints (except /health) require Bearer token authentication
+# Set header: Authorization: Bearer <SD_API_BEARER_TOKEN>
+
+# ==========================================
+# 1. Health Checks
+# ==========================================
+
+health_check:
+  description: Check if API is running (no auth required)
+  method: GET
+  path: /health
+  response: |
+    {
+      "status": "ok",
+      "scope": "public",
+      "supabase_configured": true
+    }
+  curl: |
+    curl -X GET http://localhost:8080/health
+
+health_check_authenticated:
+  description: Check if API is running with auth verification
+  method: GET
+  path: /healthz
+  auth: Required
+  response: |
+    {
+      "status": "ok",
+      "scope": "authenticated",
+      "supabase_configured": true
+    }
+  curl: |
+    curl -X GET http://localhost:8080/healthz \
+      -H "Authorization: Bearer YOUR_TOKEN"
+
+
+# ==========================================
+# 2. Repository Analysis
+# ==========================================
+
+analyze_repo:
+  description: Analyze a repository and generate Dockerfiles
+  method: POST
+  path: /analyze
+  auth: Required
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "github_token": "optional_github_token",
+      "max_files": 50,
+      "package_path": ".",
+      "service_name": null,
+      "commit_sha": null
+    }
+  response_body: |
+    {
+      "response_id": "uuid-string",
+      "commit_sha": "abc123def456",
+      "stack_tokens": ["node", "typescript", "react"],
+      "files": [
+        {
+          "name": "Dockerfile",
+          "content": "FROM node:20-alpine\n...",
+          "location": "Dockerfile"
+        },
+        {
+          "name": "docker-compose.yml",
+          "content": "version: '3.8'\nservices:\n...",
+          "location": "docker-compose.yml"
+        }
+      ],
+      "risks": ["hadolint (web): DL3018 Pin versions in apk add"],
+      "confidence": 0.92,
+      "token_usage": {
+        "input_tokens": 2048,
+        "output_tokens": 1024,
+        "total_tokens": 3072
+      }
+    }
+  curl: |
+    curl -X POST http://localhost:8080/analyze \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "max_files": 50,
+        "package_path": "."
+      }'
+
+analyze_repo_stream:
+  description: Analyze repository with real-time progress streaming (Server-Sent Events)
+  method: POST
+  path: /analyze/stream
+  auth: Required
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "github_token": "optional_github_token",
+      "max_files": 50,
+      "package_path": ".",
+      "service_name": null,
+      "commit_sha": null
+    }
+  response_format: Server-Sent Events (SSE)
+  response_events: |
+    event: progress
+    data: {"node": "scanner", "status": "completed"}
+    
+    event: progress
+    data: {"node": "planner", "status": "completed"}
+    
+    event: progress
+    data: {"node": "commands_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "docker_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "compose_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "nginx_gen", "status": "completed"}
+    
+    event: progress
+    data: {"node": "preflight", "status": "completed"}
+    
+    event: progress
+    data: {"node": "verifier", "status": "completed"}
+    
+    event: complete
+    data: {final AnalyzeResponse JSON}
+  curl: |
+    curl -X POST http://localhost:8080/analyze/stream \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo"
+      }' \
+      --no-buffer
+
+
+# ==========================================
+# 3. Feedback & Improvement
+# ==========================================
+
+feedback_improve:
+  description: Improve analysis based on deployment feedback
+  method: POST
+  path: /feedback
+  auth: Required
+  requires_cache: true
+  note: Requires commit_sha to exist in cache from prior /analyze call
+  request_body: |
+    {
+      "repo_url": "https://github.com/owner/repo",
+      "commit_sha": "abc123def456",
+      "package_path": ".",
+      "feedback": "The Dockerfile build fails with npm install timeout",
+      "github_token": "optional_github_token",
+      "failure_summary": "npm install timed out after 30 minutes",
+      "failure_logs": "timeout waiting for npm packages",
+      "failed_artifact_scope": "web/Dockerfile"
+    }
+  response: Same as analyze_repo (AnalyzeResponse)
+  curl: |
+    curl -X POST http://localhost:8080/feedback \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "commit_sha": "abc123def456",
+        "feedback": "Build fails with timeout"
+      }'
+
+feedback_improve_stream:
+  description: Improve analysis with streaming progress
+  method: POST
+  path: /feedback/stream
+  auth: Required
+  requires_cache: true
+  request_body: Same as feedback_improve
+  response_format: Server-Sent Events (SSE)
+  curl: |
+    curl -X POST http://localhost:8080/feedback/stream \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_url": "https://github.com/owner/repo",
+        "commit_sha": "abc123def456",
+        "feedback": "Build fails with timeout"
+      }' \
+      --no-buffer
+
+
+# ==========================================
+# 4. Cache Management
+# ==========================================
+
+delete_cached_analysis:
+  description: Delete a cached analysis by response_id
+  method: DELETE
+  path: /cache
+  auth: Required
+  request_body: |
+    {
+      "response_id": "uuid-from-prior-response"
+    }
+  response: |
+    {
+      "deleted": 1,
+      "response_id": "uuid-string",
+      "repo_url": "https://github.com/owner/repo",
+      "commit_sha": "abc123def456",
+      "package_path": ".",
+      "service_name": null
+    }
+  curl: |
+    curl -X DELETE http://localhost:8080/cache \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id"
+      }'
+
+response_status:
+  description: Mark a response as passed or failed (fails cache is deleted if failed)
+  method: POST
+  path: /responses/status
+  auth: Required
+  request_body: |
+    {
+      "response_id": "uuid-from-prior-response",
+      "passed": true
+    }
+  response: |
+    {
+      "response_id": "uuid-string",
+      "passed": true,
+      "cache_deleted": 0
+    }
+  note: If passed=false, the cache entry is automatically deleted
+  curl_passed: |
+    curl -X POST http://localhost:8080/responses/status \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id",
+        "passed": true
+      }'
+  curl_failed: |
+    curl -X POST http://localhost:8080/responses/status \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "response_id": "your-response-id",
+        "passed": false
+      }'
+
+
+# ==========================================
+# 5. Example Bank (Reference Examples)
+# ==========================================
+
+seed_example_bank:
+  description: Seed the example bank with repositories
+  method: POST
+  path: /examples/seed
+  auth: Required
+  request_body: |
+    {
+      "repo_urls": [
+        "https://github.com/owner/repo1",
+        "https://github.com/owner/repo2"
+      ],
+      "github_token": "optional_github_token",
+      "max_files_per_repo": 20,
+      "permissive_only": true
+    }
+  response: |
+    {
+      "inserted": 2,
+      "updated": 0,
+      "skipped": 0,
+      "errors": []
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/seed \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "repo_urls": ["https://github.com/owner/repo"],
+        "max_files_per_repo": 20
+      }'
+
+seed_popular_examples:
+  description: Seed popular repositories into example bank
+  method: POST
+  path: /examples/seed/popular
+  auth: Required
+  query_params:
+    github_token: Optional
+  response: |
+    {
+      "inserted": 10,
+      "updated": 2,
+      "skipped": 1,
+      "errors": []
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/seed/popular \
+      -H "Authorization: Bearer YOUR_TOKEN"
+
+preview_examples:
+  description: Preview example Dockerfiles matching stack detection
+  method: POST
+  path: /examples/preview
+  auth: Required
+  request_body: |
+    {
+      "artifact_type": "dockerfile",
+      "detected_stack": "node typescript react",
+      "stack_tokens": ["node", "typescript", "react"],
+      "service": {
+        "name": "web",
+        "build_context": "apps/web"
+      },
+      "limit": 3
+    }
+  response: |
+    {
+      "examples": [
+        {
+          "name": "example-nextjs-docker",
+          "content": "FROM node:20-alpine\n...",
+          "similarity_score": 0.95
+        }
+      ]
+    }
+  curl: |
+    curl -X POST http://localhost:8080/examples/preview \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "artifact_type": "dockerfile",
+        "detected_stack": "node typescript react",
+        "stack_tokens": ["node", "typescript", "react"],
+        "limit": 3
+      }'
+
+
+# ==========================================
+# 6. Dockerfile Templates
+# ==========================================
+
+get_templates:
+  description: Get all Dockerfile templates
+  method: GET
+  path: /templates
+  auth: Required
+  query_params:
+    active_only: "true (default) or false"
+  response: |
+    {
+      "templates": [
+        {
+          "name": "pnpm_monorepo_turbo",
+          "description": "pnpm workspace with Turborepo",
+          "match_stack_tokens": ["pnpm", "turbo"],
+          "priority": 20,
+          "is_active": true
+        }
+      ]
+    }
+  curl: |
+    curl -X GET "http://localhost:8080/templates?active_only=true" \
+      -H "Authorization: Bearer YOUR_TOKEN"
+
+create_or_update_template:
+  description: Create or update a Dockerfile template
+  method: POST
+  path: /templates
+  auth: Required
+  request_body: |
+    {
+      "name": "custom_node_template",
+      "description": "Custom Node.js template",
+      "match_stack_tokens": ["node", "express"],
+      "match_signals": {
+        "has_package_json": true
+      },
+      "priority": 10,
+      "template_content": "FROM node:20-alpine\nWORKDIR /app\n...",
+      "variables": {
+        "port": 3000,
+        "node_version": "20"
+      },
+      "is_active": true
+    }
+  response: |
+    {
+      "name": "custom_node_template",
+      "created_at": "2026-05-08T12:00:00Z",
+      "updated_at": "2026-05-08T12:00:00Z"
+    }
+  curl: |
+    curl -X POST http://localhost:8080/templates \
+      -H "Authorization: Bearer YOUR_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "name": "custom_template",
+        "description": "My custom template",
+        "match_stack_tokens": ["node"],
+        "priority": 10,
+        "template_content": "FROM node:20-alpine\n...",
+        "is_active": true
+      }'
+
+seed_default_templates:
+  description: Seed all default templates into database
+  method: POST
+  path: /templates/seed
+  auth: Required
+  response: |
+    {
+      "inserted": 15,
+      "updated": 2,
+      "skipped": 0
+    }
+  curl: |
+    curl -X POST http://localhost:8080/templates/seed \
+      -H "Authorization: Bearer YOUR_TOKEN"
+
+delete_template:
+  description: Delete a template by name
+  method: DELETE
+  path: /templates/{name}
+  auth: Required
+  response: |
+    {
+      "deleted": true,
+      "name": "template_name"
+    }
+  curl: |
+    curl -X DELETE "http://localhost:8080/templates/custom_template" \
+      -H "Authorization: Bearer YOUR_TOKEN"
+
+
+# ==========================================
+# Error Responses
+# ==========================================
+
+error_responses:
+  unauthorized:
+    status: 401
+    body: |
+      {
+        "detail": "Unauthorized"
+      }
+  
+  not_found:
+    status: 404
+    body: |
+      {
+        "detail": "No cached analysis found for repo@commit"
+      }
+  
+  bad_request:
+    status: 400
+    body: |
+      {
+        "detail": "scan failed"
+      }
+  
+  server_error:
+    status: 500
+    body: |
+      {
+        "detail": "Internal server error"
+      }
+
+
+# ==========================================
+# Environment Variables
+# ==========================================
+
+environment:
+  SD_API_BEARER_TOKEN: "API authentication token (required)"
+  SD_RAILPACK_VERIFY_ENABLED: "Enable optional build verification (default: false)"
+  SD_RAILPACK_VERIFY_TIMEOUT_SECONDS: "Build verification timeout (default: 300)"
+  SD_PREFLIGHT_STRICT: "Fail fast on preflight issues (default: true)"
+  SUPABASE_URL: "Supabase project URL"
+  SUPABASE_SERVICE_ROLE_KEY: "Supabase service role key"
+  BEDROCK_MODEL_ID: "AWS Bedrock model ID"
+  AWS_ACCESS_KEY_ID: "AWS credentials"
+  AWS_SECRET_ACCESS_KEY: "AWS credentials"
+  AWS_DEFAULT_REGION: "AWS region"
+
+
+# ==========================================
+# Workflow Stages
+# ==========================================
+
+workflow_nodes:
+  scanner:
+    description: "Scan repository structure and detect services"
+    outputs: "repo_scan, services, detected_stack, stack_tokens"
+  
+  planner:
+    description: "Plan Dockerfile placement for each service"
+    outputs: "services (with dockerfile_path, build_context)"
+  
+  commands_generator:
+    description: "Generate build/run command hints"
+    outputs: "command_hints"
+  
+  docker_gen:
+    description: "Generate Dockerfiles using templates or deterministic logic"
+    outputs: "dockerfiles dict"
+  
+  compose_gen:
+    description: "Generate docker-compose.yml for multi-service repos"
+    outputs: "docker_compose"
+    condition: "Multiple services with different paths"
+  
+  nginx_gen:
+    description: "Generate nginx.conf for reverse proxying"
+    outputs: "nginx_conf"
+  
+  build_verify:
+    description: "Optional: Verify Dockerfiles build successfully"
+    outputs: "build_verification"
+    condition: "SD_RAILPACK_VERIFY_ENABLED=true"
+  
+  preflight:
+    description: "Static validation of Dockerfiles and context"
+    outputs: "preflight_results"
+  
+  verifier:
+    description: "Final quality checks, hadolint, risk assessment"
+    outputs: "risks, confidence, hadolint_results"
