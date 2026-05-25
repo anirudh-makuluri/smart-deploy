@@ -81,6 +81,7 @@ const APP_OVERVIEW_QUERY = `
 				repoName
 				url
 				branch
+				kind
 				responseId
 				commitSha
 				envVars
@@ -126,6 +127,8 @@ const APP_OVERVIEW_QUERY = `
 					language
 					framework
 					port
+					deployMode
+					serviceType
 				}
 			}
 		}
@@ -139,6 +142,7 @@ const REPO_DEPLOYMENTS_QUERY = `
 			repoName
 			url
 			branch
+			kind
 			responseId
 			commitSha
 			envVars
@@ -189,6 +193,8 @@ const REPO_SERVICES_QUERY = `
 				language
 				framework
 				port
+				deployMode
+				serviceType
 			}
 		}
 	}
@@ -478,6 +484,8 @@ const DETECT_SERVICES_MUTATION = `
 				language
 				framework
 				port
+				deployMode
+				serviceType
 			}
 			packageManager
 		}
@@ -493,6 +501,8 @@ const DETECT_SERVICES_RESULT_FIELDS = `
 		language
 		framework
 		port
+		deployMode
+		serviceType
 	}
 	packageManager
 `;
@@ -578,6 +588,20 @@ const PREFILL_INFRA_MUTATION = `
 	}
 `;
 
+const BUILD_DIRECT_STATIC_CONFIG_MUTATION = `
+	mutation BuildDirectStaticConfig($url: String!, $branch: String, $servicePath: String!, $serviceType: String!) {
+		buildDirectStaticConfig(
+			url: $url
+			branch: $branch
+			servicePath: $servicePath
+			serviceType: $serviceType
+		) {
+			branch
+			results
+		}
+	}
+`;
+
 const LATEST_COMMIT_QUERY = `
 	query LatestCommit($owner: String!, $repo: String!, $branch: String) {
 		latestCommit(owner: $owner, repo: $repo, branch: $branch) {
@@ -624,6 +648,11 @@ export type PrefillInfraResult = {
 	found: boolean;
 	branch?: string;
 	results?: SDArtifactsResponse | null;
+};
+
+export type DirectStaticConfigResult = {
+	branch?: string;
+	results: SDArtifactsResponse;
 };
 
 export async function deleteDeployment(repoName: string, serviceName: string): Promise<void> {
@@ -720,6 +749,25 @@ export async function prefillInfra(url: string, branch?: string, packagePath?: s
 	if (packagePath) variables.packagePath = packagePath;
 	const data = await graphQLRequest<{ prefillInfra: PrefillInfraResult }>(PREFILL_INFRA_MUTATION, variables);
 	return data.prefillInfra;
+}
+
+export async function buildDirectStaticConfig(
+	url: string,
+	branch: string | undefined,
+	servicePath: string,
+	serviceType: string
+): Promise<DirectStaticConfigResult> {
+	const variables: Record<string, unknown> = {
+		url,
+		servicePath,
+		serviceType,
+	};
+	if (branch) variables.branch = branch;
+	const data = await graphQLRequest<{ buildDirectStaticConfig: DirectStaticConfigResult }>(
+		BUILD_DIRECT_STATIC_CONFIG_MUTATION,
+		variables
+	);
+	return data.buildDirectStaticConfig;
 }
 
 export async function fetchLatestCommit(owner: string, repo: string, branch?: string): Promise<LatestCommit> {

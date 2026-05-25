@@ -15,11 +15,12 @@ import { fetchLatestCommit } from "@/lib/graphqlClient";
 interface DeployOptionsProps {
 	onDeploy: (commitSha?: string) => void;
 	disabled?: boolean;
+	title?: string;
 	repo: repoType | undefined;
 	branch: string;
 }
 
-export default function DeployOptions({ onDeploy, disabled, repo, branch }: DeployOptionsProps) {
+export default function DeployOptions({ onDeploy, disabled, title, repo, branch }: DeployOptionsProps) {
 	const [isFetchingCommit, setIsFetchingCommit] = useState(false);
 
 	const handleDeployLatestCommit = async () => {
@@ -43,6 +44,7 @@ export default function DeployOptions({ onDeploy, disabled, repo, branch }: Depl
 			<DropdownMenuTrigger asChild>
 				<Button
 					disabled={disabled || isFetchingCommit}
+					title={title}
 					className="landing-build-blue hover:opacity-45 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
 				>
 					<Rocket className="h-4 w-4" />

@@ -15,6 +15,7 @@ create table if not exists public.deployments (
   -- Core deployment fields
   url text not null default '',
   branch text not null default '',
+  kind text not null default 'container',
   commit_sha text,
   env_vars text,
   live_url text,
@@ -42,6 +43,7 @@ create index if not exists idx_deployments_provider on public.deployments(cloud_
 
 -- Ensure existing deployments tables get the new pointer column.
 alter table public.deployments add column if not exists response_id uuid;
+alter table public.deployments add column if not exists kind text not null default 'container';
 create index if not exists idx_deployments_response_id on public.deployments(response_id);
 
 -- Full analysis responses are stored separately and linked by deployments.response_id

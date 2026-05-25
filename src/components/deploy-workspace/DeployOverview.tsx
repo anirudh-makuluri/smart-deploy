@@ -17,6 +17,8 @@ type DeployOverviewProps = {
 	region?: string;
 	isDeploying?: boolean;
 	isRefreshingPreview?: boolean;
+	deployDisabled?: boolean;
+	deployDisabledReason?: string;
 	onRedeploy?: (commitSha?: string) => void;
 	onRefreshPreview?: () => void;
 	onEditConfiguration?: () => void;
@@ -111,6 +113,8 @@ export default function DeployOverview({
 	region = "us-west-2",
 	isDeploying = false,
 	isRefreshingPreview = false,
+	deployDisabled: deployDisabledProp,
+	deployDisabledReason,
 	onRedeploy,
 	onRefreshPreview,
 	onEditConfiguration,
@@ -128,7 +132,7 @@ export default function DeployOverview({
 	const customUrlRaw = deployment.liveUrl?.trim();
 	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
 	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
-	const deployDisabled = isDeploymentDisabled(deployment);
+	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
 	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" || !!ec2Casted.instanceId;
@@ -169,6 +173,7 @@ export default function DeployOverview({
 						<DeployOptions
 							onDeploy={onRedeploy}
 							disabled={isDeploying || deployDisabled}
+							title={deployDisabled ? deployDisabledReason : undefined}
 							repo={repo}
 							branch={resolveWorkspaceBranch(repo, deployment.branch) || ""}
 						/>

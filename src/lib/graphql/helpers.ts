@@ -19,6 +19,7 @@ import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 import { dbHelper } from "@/db-helper";
 import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
+import { classifyServiceForDetection } from "@/lib/serviceDetectionClassification";
 import config from "@/config";
 import fs from "fs";
 import path from "path";
@@ -119,12 +120,20 @@ export function toDetectedService(s: any, repoRoot: string): DetectedServiceInfo
 	const pathRel =
 		s.relativePath ??
 		(path.isAbsolute(s.workdir) ? path.relative(repoRoot, s.workdir).replace(/\\/g, "/") : s.workdir.replace(/\\/g, "/"));
+	const classification = classifyServiceForDetection(repoRoot, {
+		workdir: s.workdir,
+		relativePath: pathRel,
+		framework: s.framework,
+		dockerfile: s.dockerfile,
+	});
 	return {
 		name: s.name,
 		path: pathRel,
 		language: s.language || "",
 		framework: s.framework,
 		port: s.port,
+		deployMode: classification.deployMode,
+		...(classification.serviceType ? { serviceType: classification.serviceType } : {}),
 	};
 }
 

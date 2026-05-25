@@ -106,6 +106,7 @@ export const typeDefs = `
     repoName: String!
     url: String!
     branch: String!
+    kind: String
     responseId: String
     commitSha: String
     envVars: String
@@ -134,6 +135,8 @@ export const typeDefs = `
     language: String!
     framework: String
     port: Int
+    deployMode: String!
+    serviceType: String
   }
 
   type RepoServices {
@@ -279,6 +282,11 @@ export const typeDefs = `
     results: SDArtifacts
   }
 
+  type DirectStaticConfigResult {
+    branch: String
+    results: JSON!
+  }
+
   type RefreshResult {
     status: String!
     message: String!
@@ -304,6 +312,7 @@ export const typeDefs = `
     repoName: String!
     url: String
     branch: String
+    kind: String
     responseId: String
     commitSha: String
     envVars: String
@@ -429,6 +438,13 @@ export const typeDefs = `
       branch: String
       packagePath: String
     ): PrefillResult!
+
+    buildDirectStaticConfig(
+      url: String!
+      branch: String
+      servicePath: String!
+      serviceType: String!
+    ): DirectStaticConfigResult!
 
     # Refresh repos from GitHub
     refreshRepos: RefreshResult!

@@ -8,7 +8,7 @@ function makeRepoRecord(overrides: Partial<RepoServicesRecord> = {}): RepoServic
 		branch: "main",
 		repo_owner: "acme",
 		repo_name: "shop",
-		services: [{ name: "web", path: "apps/web", language: "ts" }],
+		services: [{ name: "web", path: "apps/web", language: "ts", deployMode: "container" }],
 		is_monorepo: true,
 		updated_at: new Date().toISOString(),
 		...overrides,
@@ -51,8 +51,8 @@ describe("countDeployedServicesForRepo", () => {
 	it("counts all services when a repo-level deployment exists", () => {
 		const record = makeRepoRecord({
 			services: [
-				{ name: "web", path: "apps/web", language: "ts" },
-				{ name: "api", path: "apps/api", language: "ts" },
+				{ name: "web", path: "apps/web", language: "ts", deployMode: "container" },
+				{ name: "api", path: "apps/api", language: "ts", deployMode: "container" },
 			],
 		});
 		const deployments = [makeDeployment({ serviceName: ".", status: "running" })];

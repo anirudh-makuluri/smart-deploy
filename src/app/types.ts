@@ -34,6 +34,17 @@ export type repoType = {
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
 export type DeploymentTarget = 'ec2' | 'cloud_run';
+export type DeploymentKind = 'container' | 'direct-static';
+export type StaticServiceType =
+	| 'vite'
+	| 'cra'
+	| 'vue'
+	| 'angular'
+	| 'svelte'
+	| 'astro'
+	| 'next-export'
+	| 'static-html';
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
@@ -63,6 +74,7 @@ export type DeployConfig = {
 	repoName: string;
 	url: string;
 	branch: string;
+	kind?: DeploymentKind;
 	/** Linked analysis_responses.id for the latest scan payload */
 	responseId?: string | null;
 	/** Commit SHA that was deployed; null if never deployed */
@@ -125,6 +137,8 @@ export type DetectedServiceInfo = {
 	language: string;
 	framework?: string;
 	port?: number | null;
+	deployMode: DeploymentKind;
+	serviceType?: StaticServiceType;
 };
 
 /** Stored record per user+repo for detected services metadata. */
@@ -204,4 +218,15 @@ export type SDArtifactsResponse = {
 	commands?: Record<string, unknown> | string[];
 	build_verification?: Record<string, unknown>;
 	llm_outputs?: Record<string, unknown>;
+
+	// Direct static deployment fields
+	serviceType?: StaticServiceType;
+	framework?: string;
+	language?: string;
+	workdir?: string;
+	package_manager?: PackageManager;
+	install?: string[];
+	build?: string[];
+	output_dir?: string;
+	spa_fallback?: boolean;
 };

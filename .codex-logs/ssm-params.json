@@ -1,0 +1,1 @@
+{"commands":["sudo nginx -t","echo ---ERROR---","sudo tail -n 80 /var/log/nginx/error.log","echo ---ACCESS---","sudo tail -n 40 /var/log/nginx/access.log","echo ---INDEX---","ls -la /usr/share/nginx/html","echo ---CONF---","sudo sed -n '1,220p' /etc/nginx/nginx.conf"]}

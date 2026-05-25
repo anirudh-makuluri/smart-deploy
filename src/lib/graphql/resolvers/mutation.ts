@@ -14,6 +14,7 @@ import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace, Gi
 import { detectMultiService, discoverServiceCatalog, sanitizeFolderServiceId } from "@/lib/multiServiceDetector";
 import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
+import { buildDirectStaticScanResults, isDirectStaticServiceType } from "@/lib/directStaticConfig";
 import { getSubnetIds } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
 import { addVercelDnsRecord } from "@/lib/vercelDns";
@@ -337,7 +338,7 @@ export async function addRepoServiceRoot(
 			let nextSvc: DetectedServiceInfo;
 			const first = subCfg.services[0];
 			if (!first) {
-				nextSvc = { name: serviceName, path: pathKey, language: "unknown" };
+				nextSvc = { name: serviceName, path: pathKey, language: "unknown", deployMode: "container" };
 			} else {
 				const mapped = toDetectedService(
 					{ ...first, name: serviceName, relativePath: pathKey },
@@ -733,6 +734,77 @@ export async function prefillInfra(
 			};
 		} catch (inner: unknown) {
 			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to prefill infrastructure");
+			throw new Error(message);
+		} finally {
+			try {
+				fs.rmSync(tmpDir, { recursive: true, force: true });
+			} catch {
+				// ignore cleanup errors
+			}
+		}
+	});
+}
+
+/**
+ * Mutation.buildDirectStaticConfig
+ * Builds deterministic direct-static deployment config for a detected static service.
+ */
+export async function buildDirectStaticConfig(
+	_: unknown,
+	{
+		url,
+		branch,
+		servicePath,
+		serviceType,
+	}: { url: string; branch?: string; servicePath: string; serviceType: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("buildDirectStaticConfig", async () => {
+		if (!ctx.githubToken) throw new Error("GitHub not connected");
+
+		const urlTrimmed = String(url ?? "").trim();
+		let branchTrimmed = String(branch ?? "").trim();
+		const servicePathTrimmed = String(servicePath ?? ".").trim() || ".";
+		const serviceTypeTrimmed = String(serviceType ?? "").trim();
+
+		if (!urlTrimmed) throw new Error("Missing url");
+		if (!isDirectStaticServiceType(serviceTypeTrimmed)) {
+			throw new Error("Unsupported service type for direct static config");
+		}
+
+		let repoUrl = urlTrimmed.replace(/\.git$/, "");
+		if (!repoUrl.startsWith("http")) {
+			repoUrl = repoUrl.includes("/") ? `https://github.com/${repoUrl}` : "";
+		}
+		if (!repoUrl || !repoUrl.includes("github.com")) {
+			throw new Error("Invalid repository URL");
+		}
+
+		const parsed = parseGithubOwnerRepo(repoUrl);
+		if (!parsed) throw new Error("Could not parse GitHub owner/repo from URL");
+
+		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "direct-static-config-"));
+
+		try {
+			if (!branchTrimmed) {
+				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.githubToken);
+				branchTrimmed = default_branch;
+			}
+
+			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(
+				parsed.owner,
+				parsed.repo,
+				branchTrimmed,
+				ctx.githubToken,
+				tmpDir
+			);
+
+			return {
+				branch: effectiveBranch,
+				results: buildDirectStaticScanResults(repoRoot, servicePathTrimmed, serviceTypeTrimmed),
+			};
+		} catch (inner: unknown) {
+			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to build direct static config");
 			throw new Error(message);
 		} finally {
 			try {

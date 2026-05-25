@@ -369,6 +369,22 @@ docker system prune -af --volumes 2>/dev/null || true
  */
 type ScanServiceForDocker = { dockerfile_path?: string; build_context?: string };
 type DeployCommandsInput = Record<string, unknown> | string[] | undefined;
+type DirectStaticScriptInput = {
+	repoUrl: string;
+	branch: string;
+	token: string;
+	commitSha?: string;
+	envFileContentBase64: string;
+	workdir: string;
+	install: string[];
+	build: string[];
+	outputDir: string;
+	packageManager?: string;
+};
+
+function shellSingleQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
 
 function extractDeployCommands(commands: DeployCommandsInput): string[] {
 	if (!commands) return [];
@@ -386,6 +402,150 @@ function buildCommandExecutionScript(commands: string[]): string {
 	if (commands.length === 0) return "";
 	const lines = commands.map((cmd, idx) => `echo "Running deploy command ${idx + 1}/${commands.length}: ${cmd.replace(/"/g, '\\"')}"\n${cmd}`);
 	return `echo "Executing scan_results.commands for deployment..."\n${lines.join("\n\n")}\n`;
+}
+
+function buildStaticRuntimeBootstrapScript(packageManager?: string): string {
+	const pm = (packageManager || "npm").trim().toLowerCase();
+	const ensurePackageManager = (() => {
+		if (pm === "pnpm") {
+			return `if ! command -v pnpm >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable || true
+    corepack prepare pnpm@latest --activate || true
+  fi
+  command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+fi`;
+		}
+		if (pm === "yarn") {
+			return `if ! command -v yarn >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable || true
+    corepack prepare yarn@stable --activate || true
+  fi
+  command -v yarn >/dev/null 2>&1 || npm install -g yarn
+fi`;
+		}
+		if (pm === "bun") {
+			return `export BUN_INSTALL=/root/.bun
+export PATH="$BUN_INSTALL/bin:$PATH"
+if ! command -v bun >/dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="$BUN_INSTALL/bin:$PATH"
+fi`;
+		}
+		return "";
+	})();
+
+	return `if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+  dnf install -y nodejs 2>/dev/null || yum install -y nodejs
+fi
+
+${ensurePackageManager}
+`;
+}
+
+function buildDirectStaticCommandScript(
+	workdir: string,
+	install: string[],
+	build: string[],
+	outputDir: string
+): string {
+	const safeWorkdir = shellSingleQuote(workdir || ".");
+	const safeOutputDir = shellSingleQuote(outputDir || "dist");
+	const installScript = install.length > 0
+		? install.map((cmd, idx) => `echo "Running install command ${idx + 1}/${install.length}: ${cmd.replace(/"/g, '\\"')}"\n${cmd}`).join("\n\n")
+		: `echo "No install command configured; skipping dependency install."`;
+	const buildScript = build.length > 0
+		? build.map((cmd, idx) => `echo "Running build command ${idx + 1}/${build.length}: ${cmd.replace(/"/g, '\\"')}"\n${cmd}`).join("\n\n")
+		: `echo "No build command configured; skipping build phase."`;
+
+	return `WORKDIR=${safeWorkdir}
+OUTPUT_DIR=${safeOutputDir}
+TARGET_BASE=/var/www/app
+
+cd /home/ec2-user/app
+
+if [ ! -d "$WORKDIR" ]; then
+  echo "ERROR: Static workdir '$WORKDIR' does not exist."
+  exit 1
+fi
+
+cd "$WORKDIR"
+
+${installScript}
+
+${buildScript}
+
+if [ "$OUTPUT_DIR" = "." ]; then
+  TARGET_DIR="$TARGET_BASE"
+  mkdir -p "$TARGET_DIR"
+  rm -rf "$TARGET_DIR"/*
+  tar --exclude='.git' --exclude='node_modules' --exclude='.next' --exclude='.turbo' --exclude='coverage' --exclude='.pnpm-store' -cf - . | tar -xf - -C "$TARGET_DIR"
+else
+  if [ ! -d "$OUTPUT_DIR" ]; then
+    echo "ERROR: Static output directory '$OUTPUT_DIR' does not exist."
+    exit 1
+  fi
+  TARGET_DIR="$TARGET_BASE/$OUTPUT_DIR"
+  mkdir -p "$TARGET_DIR"
+  rm -rf "$TARGET_DIR"/*
+  tar -cf - -C "$OUTPUT_DIR" . | tar -xf - -C "$TARGET_DIR"
+fi
+
+chown -R nginx:nginx "$TARGET_DIR" 2>/dev/null || true
+find "$TARGET_DIR" -type d -exec chmod 755 {} \\; 2>/dev/null || true
+find "$TARGET_DIR" -type f -exec chmod 644 {} \\; 2>/dev/null || true
+nginx -t && systemctl reload nginx
+`;
+}
+
+export function buildStaticFirstDeployScript(params: DirectStaticScriptInput): string {
+	const authenticatedUrl = githubAuthenticatedCloneUrl(params.repoUrl, params.token);
+	const branch = params.branch.trim();
+	return `set -e
+echo "=== SSM first deploy: static site build and publish ==="
+
+${buildStaticRuntimeBootstrapScript(params.packageManager)}
+
+mkdir -p /home/ec2-user/app
+rm -rf /home/ec2-user/app/*
+cd /home/ec2-user
+git clone -b ${branch} ${authenticatedUrl} app
+cd /home/ec2-user/app
+${params.commitSha ? `git checkout ${params.commitSha}` : ""}
+git gc --aggressive --prune=now 2>/dev/null || true
+
+${params.envFileContentBase64 ? `echo '${params.envFileContentBase64}' | base64 -d > .env` : "touch .env"}
+
+${buildDirectStaticCommandScript(params.workdir, params.install, params.build, params.outputDir)}
+
+echo "====================================== Static deployment complete! ======================================"
+`;
+}
+
+export function buildStaticRedeployScript(params: DirectStaticScriptInput): string {
+	const authenticatedUrl = githubAuthenticatedCloneUrl(params.repoUrl, params.token);
+	const branch = params.branch.trim();
+	return `set -e
+echo "=== SSM redeploy: static site build and publish ==="
+
+${buildStaticRuntimeBootstrapScript(params.packageManager)}
+
+cd /home/ec2-user/app
+git remote set-url origin '${authenticatedUrl}'
+git fetch origin
+git checkout ${branch}
+git reset --hard origin/${branch}
+${params.commitSha ? `git checkout ${params.commitSha}` : ""}
+git gc --aggressive --prune=now 2>/dev/null || true
+
+${params.envFileContentBase64 ? `echo '${params.envFileContentBase64}' | base64 -d > .env` : "touch .env"}
+
+${buildDirectStaticCommandScript(params.workdir, params.install, params.build, params.outputDir)}
+
+echo "====================================== Static redeploy complete! ======================================"
+`;
 }
 
 export function buildFirstDeployScript(params: {
@@ -935,6 +1095,39 @@ nginx -t && systemctl reload nginx
 
 echo "====================================== Instance setup complete! ======================================"
 `;
+}
+
+/**
+ * Generates a minimal user-data script for direct static deployments.
+ * Installs git, nginx, and SSM. Build tooling is installed later in SSM
+ * based on the detected package manager and commands.
+ */
+export function generateStaticUserDataScript(nginxConf: string): string {
+	return [
+		"#!/bin/bash",
+		"set -e",
+		"trap 'EXIT_CODE=$?; echo \"Script error at line $LINENO, exit code $EXIT_CODE\"; exit $EXIT_CODE' ERR",
+		"",
+		"rm -rf /var/lib/cloud/data/tmp_* 2>/dev/null || true",
+		"rm -rf /var/lib/cloud/instances/*/sem/* 2>/dev/null || true",
+		"",
+		// Amazon Linux 2023 already includes curl-minimal; installing full curl conflicts and aborts cloud-init.
+		"dnf install -y git nginx tar 2>/dev/null || yum install -y git nginx tar",
+		"dnf install -y amazon-ssm-agent 2>/dev/null || yum install -y amazon-ssm-agent 2>/dev/null || true",
+		"systemctl enable --now amazon-ssm-agent 2>/dev/null || true",
+		"",
+		"mkdir -p /home/ec2-user/app",
+		"mkdir -p /var/www/app",
+		"systemctl enable --now nginx",
+		"cat > /etc/nginx/nginx.conf << 'NGINXEOF'",
+		nginxConf,
+		"NGINXEOF",
+		"rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/00-default.conf /etc/nginx/conf.d/ssl.conf 2>/dev/null || true",
+		"nginx -t && systemctl reload nginx",
+		"",
+		"echo \"====================================== Static instance setup complete! ======================================\"",
+		"",
+	].join("\n");
 }
 
 /**
