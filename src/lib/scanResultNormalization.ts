@@ -1,6 +1,6 @@
 import type { SDArtifactsResponse } from "@/app/types";
 
-function defaultArtifacts(): SDArtifactsResponse {
+export function defaultArtifacts(): SDArtifactsResponse {
 	return {
 		response_id: null,
 		commit_sha: "unknown",

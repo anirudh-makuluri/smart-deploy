@@ -1,4 +1,10 @@
-import { DeployConfig, DeployStep } from "@/app/types";
+import {
+	DeployConfig,
+	DeploymentHealthCheck,
+	DeploymentHealthStatus,
+	DeploymentRemediationAttempt,
+	DeployStep,
+} from "@/app/types";
 import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 import { getDeploymentDisplayUrl } from "@/lib/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,6 +19,23 @@ export type DeployCompleteWsPayload = {
 	vercelDnsAdded?: boolean;
 	vercelDnsError?: string | null;
 	customUrl?: string | null;
+};
+
+export type DeploymentHealthStatusWsPayload = {
+	status: DeploymentHealthStatus;
+	check: Omit<DeploymentHealthCheck, "id"> & { id?: string };
+};
+
+export type RemediationPlanReadyWsPayload = {
+	attempt: DeploymentRemediationAttempt;
+};
+
+export type MonitoringWindowWsPayload = {
+	startedAt?: string;
+	endsAt?: string;
+	windowSec?: number;
+	status?: "healthy" | "unhealthy";
+	error?: string | null;
 };
 
 export type UseWorkerWebSocketSessionParams = {
@@ -153,6 +176,16 @@ export function useWorkerWebSocketSession({
 	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<ServiceLogEntry[]>([]);
 	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+	const [latestHealthCheck, setLatestHealthCheck] = useState<DeploymentHealthStatusWsPayload["check"] | null>(null);
+	const [latestRemediationAttempt, setLatestRemediationAttempt] = useState<DeploymentRemediationAttempt | null>(null);
+	const [monitoringState, setMonitoringState] = useState<{
+		active: boolean;
+		startedAt?: string;
+		endsAt?: string;
+		windowSec?: number;
+		finalStatus?: "healthy" | "unhealthy";
+		error?: string | null;
+	}>({ active: false });
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
@@ -412,6 +445,47 @@ export function useWorkerWebSocketSession({
 							onDeployFinishedRef.current?.(completePayload);
 							break;
 						}
+						case "deployment_health_status": {
+							const healthPayload = (payload as DeploymentHealthStatusWsPayload | undefined) ?? null;
+							if (healthPayload?.check) {
+								setLatestHealthCheck(healthPayload.check);
+							}
+							break;
+						}
+						case "monitoring_window_started": {
+							const monitoringPayload = (payload as MonitoringWindowWsPayload | undefined) ?? {};
+							setMonitoringState({
+								active: true,
+								startedAt: monitoringPayload.startedAt,
+								endsAt: monitoringPayload.endsAt,
+								windowSec: monitoringPayload.windowSec,
+								error: null,
+							});
+							break;
+						}
+						case "monitoring_window_completed": {
+							const monitoringPayload = (payload as MonitoringWindowWsPayload | undefined) ?? {};
+							setMonitoringState({
+								active: false,
+								startedAt: monitoringPayload.startedAt,
+								endsAt: monitoringPayload.endsAt,
+								windowSec: monitoringPayload.windowSec,
+								finalStatus: monitoringPayload.status,
+								error: monitoringPayload.error ?? null,
+							});
+							if (monitoringPayload.status === "unhealthy") {
+								setDeployStatus("error");
+								setDeployError(monitoringPayload.error ?? "Deployment became unhealthy during monitoring.");
+							}
+							break;
+						}
+						case "remediation_plan_ready": {
+							const remediationPayload = (payload as RemediationPlanReadyWsPayload | undefined) ?? null;
+							if (remediationPayload?.attempt) {
+								setLatestRemediationAttempt(remediationPayload.attempt);
+							}
+							break;
+						}
 						default:
 							break;
 					}
@@ -559,6 +633,9 @@ export function useWorkerWebSocketSession({
 		setDeployStatus("running");
 		setSteps([...defaultSteps]);
 		setDeployLogEntries([]);
+		setLatestHealthCheck(null);
+		setLatestRemediationAttempt(null);
+		setMonitoringState({ active: false });
 
 		if (typeof window !== "undefined") {
 			try {
@@ -600,6 +677,9 @@ export function useWorkerWebSocketSession({
 		initiateServiceLogs,
 		serviceLogs,
 		hasConnectedOnce,
+		latestHealthCheck,
+		latestRemediationAttempt,
+		monitoringState,
 		setOnDeployFinished,
 	};
 }

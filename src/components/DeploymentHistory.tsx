@@ -16,6 +16,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
 import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
+import DeploymentHistoryPhase2Details from "@/components/deployment-history/DeploymentHistoryPhase2Details";
 
 type DeploymentHistoryPageData = {
 	history: DeploymentHistoryEntry[];
@@ -173,10 +174,12 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 										)}
 									</div>
 								)}
+								<DeploymentHistoryPhase2Details entry={entry} compact />
 							</div>
 						</AccordionTrigger>
 						<AccordionContent className="pb-4">
 							<div className="space-y-4">
+								<DeploymentHistoryPhase2Details entry={entry} />
 								{/* Step logs */}
 								<div>
 									<p className="text-xs font-medium text-muted-foreground mb-2">Logs</p>

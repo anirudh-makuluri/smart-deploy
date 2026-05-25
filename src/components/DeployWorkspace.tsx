@@ -16,7 +16,14 @@ import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
-import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import {
+	DeployConfig,
+	DeploymentFailureAnalysis,
+	DeploymentRemediationAttempt,
+	DetectedServiceInfo,
+	repoType,
+	SDArtifactsResponse,
+} from "@/app/types";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
@@ -28,13 +35,62 @@ import PostScanResults from "@/components/PostScanResults";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { controlDeployment, deleteDeployment, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
+import {
+	approveDeploymentRemediation,
+	controlDeployment,
+	deleteDeployment,
+	fetchLatestCommit,
+	prefillInfra,
+	rejectDeploymentRemediation,
+} from "@/lib/graphqlClient";
 import { authClient } from "@/lib/auth-client";
+import { buildArtifactRemediationFeedbackPayload, buildFailureLogs } from "@/lib/remediationFeedback";
+import { buildRemediationDiffPreview } from "@/lib/remediationDiff";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
 	const p = path?.trim().replace(/^\.\/+/, "").replace(/\/+$/, "") ?? "";
 	if (!p || p === ".") return undefined;
 	return p;
+}
+
+type GeneratedRemediationReview = {
+	attempt: DeploymentRemediationAttempt;
+	scanResults: SDArtifactsResponse;
+	analysis: DeploymentFailureAnalysis;
+};
+
+function buildGeneratedRemediationAttempt(args: {
+	attempt: DeploymentRemediationAttempt;
+	analysis: DeploymentFailureAnalysis;
+	currentScanResults: SDArtifactsResponse | Record<string, never> | null;
+	proposedScanResults: SDArtifactsResponse;
+}): DeploymentRemediationAttempt {
+	const { attempt, analysis, currentScanResults, proposedScanResults } = args;
+	const diffPreview = buildRemediationDiffPreview({
+		currentScanResults,
+		proposedScanResults,
+	});
+	const filesToModify = diffPreview
+		.map((entry) => entry.target.replace(/^artifact:/, ""))
+		.filter(Boolean);
+
+	return {
+		...attempt,
+		summary: analysis.summary,
+		root_cause: analysis.rootCause,
+		evidence: analysis.evidence,
+		changes: [
+			{
+				title: "Apply AI-guided artifact updates",
+				description: analysis.concreteFixInstructions,
+				target: analysis.failedArtifactScope,
+			},
+		],
+		diff_preview: diffPreview,
+		files_to_modify: filesToModify,
+		expected_outcome:
+			analysis.expectedOutcome ?? "Updated generated deployment artifacts should produce a healthy deployment on retry.",
+	};
 }
 
 export type DeployWorkspaceProps = {
@@ -75,6 +131,10 @@ export default function DeployWorkspace({
 	const [showPauseResumeConfirm, setShowPauseResumeConfirm] = React.useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
+	const [generatingRemediationAttempt, setGeneratingRemediationAttempt] = React.useState<DeploymentRemediationAttempt | null>(null);
+	const [generatingRemediationAnalysis, setGeneratingRemediationAnalysis] = React.useState<DeploymentFailureAnalysis | null>(null);
+	const [generatedRemediationReview, setGeneratedRemediationReview] = React.useState<GeneratedRemediationReview | null>(null);
+	const [dismissedRemediationAttemptId, setDismissedRemediationAttemptId] = React.useState<string | null>(null);
 	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
 	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
 	const [isChangingDeploymentState, setIsChangingDeploymentState] = React.useState(false);
@@ -148,7 +208,19 @@ export default function DeployWorkspace({
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+	const {
+		steps,
+		sendDeployConfig,
+		deployConfigRef,
+		deployStatus,
+		deployError,
+		serviceLogs,
+		deployLogEntries,
+		latestHealthCheck,
+		latestRemediationAttempt,
+		monitoringState,
+		setOnDeployFinished,
+	} =
 		useWorkerWebSocket();
 
 	React.useEffect(() => {
@@ -158,11 +230,39 @@ export default function DeployWorkspace({
 		};
 	}, [onDeployFinishedCallback, setOnDeployFinished]);
 
+	React.useEffect(() => {
+		if (!latestRemediationAttempt?.id) return;
+		if (dismissedRemediationAttemptId && dismissedRemediationAttemptId !== latestRemediationAttempt.id) {
+			setDismissedRemediationAttemptId(null);
+		}
+	}, [dismissedRemediationAttemptId, latestRemediationAttempt?.id]);
+
+	React.useEffect(() => {
+		if (!latestRemediationAttempt?.id) return;
+		if (generatedRemediationReview?.attempt.id && generatedRemediationReview.attempt.id !== latestRemediationAttempt.id) {
+			setGeneratedRemediationReview(null);
+		}
+		if (generatingRemediationAttempt?.id && generatingRemediationAttempt.id !== latestRemediationAttempt.id) {
+			setGeneratingRemediationAttempt(null);
+			setGeneratingRemediationAnalysis(null);
+		}
+	}, [generatedRemediationReview?.attempt.id, generatingRemediationAttempt?.id, latestRemediationAttempt?.id]);
+
 	const { history: deploymentHistory, total: historyTotal, isLoading: isLoadingHistory } = useDeploymentHistoryWithSync({
 		repoName,
 		serviceName: serviceName ?? "",
 		deployStatus: deployStatus,
 	});
+
+	const visibleRemediationAttempt = React.useMemo(() => {
+		if (generatedRemediationReview?.attempt.id) {
+			if (dismissedRemediationAttemptId === generatedRemediationReview.attempt.id) return null;
+			return generatedRemediationReview.attempt;
+		}
+		if (!latestRemediationAttempt?.id) return null;
+		if (dismissedRemediationAttemptId === latestRemediationAttempt.id) return null;
+		return latestRemediationAttempt;
+	}, [dismissedRemediationAttemptId, generatedRemediationReview, latestRemediationAttempt]);
 
 	const workspaceDeployState = React.useMemo(() => {
 		if (isDeploying || deployStatus === "running") return "running";
@@ -327,44 +427,36 @@ export default function DeployWorkspace({
 		setShowRejectConfirm(true);
 	}
 
-	async function handleDeploy(commitSha?: string) {
-		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
-			return console.log("Unauthenticated or missing deploy context");
+	async function fetchGithubToken(): Promise<string | null> {
+		try {
+			const res = await fetch("/api/github/access-token", { method: "GET" });
+			if (!res.ok) return null;
+			const payload = (await res.json()) as { token?: string };
+			return typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : null;
+		} catch {
+			return null;
 		}
-		if (deployDisabled) {
-			toast.error("Deployment requires at least one Dockerfile and nginx.conf.");
+	}
+
+	async function startDeployWithConfig(nextConfig: DeployConfig) {
+		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
+			console.log("Unauthenticated or missing deploy context");
 			return;
 		}
 
-		let githubToken: string | null = null;
-		try {
-			const res = await fetch("/api/github/access-token", { method: "GET" });
-			if (res.ok) {
-				const payload = (await res.json()) as { token?: string };
-				githubToken = typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : null;
-			}
-		} catch {
-			// ignore; handled below
-		}
+		const githubToken = await fetchGithubToken();
 		if (!githubToken) {
 			toast.error("GitHub is not connected. Sign in with GitHub to deploy.");
 			return;
 		}
 
-		const payload: DeployConfig = {
-			...deployment,
-			branch: effectiveBranch,
-			scanResults: effectiveScanResults || deployment.scanResults,
-			...(commitSha && { commitSha }),
-		};
-
-		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
-		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
+		const ownerFromUrl = nextConfig.url?.match(/github\.com[/]([^/]+)/)?.[1];
+		const repoNameFromUrl = nextConfig.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
 		const owner = repoOwner || ownerFromUrl;
 		const currentRepoName = repoName || repoNameFromUrl;
 
 		if (owner && currentRepoName) {
-			fetchLatestCommit(owner, currentRepoName, payload.branch)
+			fetchLatestCommit(owner, currentRepoName, nextConfig.branch)
 				.then((commit) => {
 					if (commit) {
 						setDeployingCommitInfo({
@@ -381,16 +473,34 @@ export default function DeployWorkspace({
 		}
 
 		posthog.capture("deploy_clicked", {
-			repo_name: payload.repoName ?? null,
-			service_name: payload.serviceName ?? null,
-			branch: payload.branch ?? null,
-			commit_sha: payload.commitSha ?? null,
-			has_scan_results: Boolean(payload.scanResults),
+			repo_name: nextConfig.repoName ?? null,
+			service_name: nextConfig.serviceName ?? null,
+			branch: nextConfig.branch ?? null,
+			commit_sha: nextConfig.commitSha ?? null,
+			has_scan_results: Boolean(nextConfig.scanResults),
 		});
 
 		setIsDeploying(true);
-		sendDeployConfig(payload, githubToken, session?.user?.id);
+		sendDeployConfig(nextConfig, githubToken, session?.user?.id);
 		setActiveSection("logs");
+	}
+
+	async function handleDeploy(commitSha?: string) {
+		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
+			return console.log("Unauthenticated or missing deploy context");
+		}
+		if (deployDisabled) {
+			toast.error("Deployment requires at least one Dockerfile and nginx.conf.");
+			return;
+		}
+
+		const payload: DeployConfig = {
+			...deployment,
+			branch: effectiveBranch,
+			scanResults: effectiveScanResults || deployment.scanResults,
+			...(commitSha && { commitSha }),
+		};
+		await startDeployWithConfig(payload);
 	}
 
 	function startScan() {
@@ -480,6 +590,112 @@ export default function DeployWorkspace({
 		setActiveSection("scan");
 	}
 
+	async function analyzeRemediationAttempt(attempt: DeploymentRemediationAttempt): Promise<DeploymentFailureAnalysis | null> {
+		const configSnapshot = configSnapshotFromDeployConfig({
+			...deployment,
+			scanResults: effectiveScanResults || deployment.scanResults,
+		});
+		try {
+			const response = await fetch("/api/llm/analyze-failure", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					steps,
+					configSnapshot,
+					healthCheck: latestHealthCheck ?? null,
+					deployError: deployError ?? attempt.summary,
+				}),
+			});
+			const data = (await response.json()) as {
+				analysis?: DeploymentFailureAnalysis;
+				error?: string;
+				details?: string;
+			};
+			if (!response.ok) {
+				throw new Error(data.error || data.details || "Failed to analyze deployment failure.");
+			}
+			if (!data.analysis) {
+				throw new Error("The remediation analysis did not return structured guidance.");
+			}
+			return data.analysis;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to analyze deployment failure.";
+			toast.error(message);
+			return null;
+		}
+	}
+
+	async function handleApproveRemediationAttempt(attempt: DeploymentRemediationAttempt) {
+		try {
+			if (generatedRemediationReview?.attempt.id === attempt.id && generatedRemediationReview.scanResults) {
+				await approveDeploymentRemediation(attempt.id);
+				await fetchRepoDeployments(repoIdentifier);
+				await onScanComplete(generatedRemediationReview.scanResults);
+				setGeneratedRemediationReview(null);
+				setGeneratingRemediationAttempt(null);
+				setGeneratingRemediationAnalysis(null);
+				setDismissedRemediationAttemptId(null);
+				toast.success("Redeploying with approved remediation changes...");
+				await startDeployWithConfig({
+					...deployment,
+					branch: effectiveBranch,
+					scanResults: generatedRemediationReview.scanResults,
+					commitSha: generatedRemediationReview.scanResults.commit_sha ?? deployment.commitSha ?? null,
+				});
+				return;
+			}
+
+			const analysis = await analyzeRemediationAttempt(attempt);
+			if (!analysis) return;
+
+			const nextDeployConfig = {
+				...deployment,
+				scanResults: effectiveScanResults || deployment.scanResults,
+			};
+			const payload = buildArtifactRemediationFeedbackPayload({
+				deployConfig: nextDeployConfig,
+				analysis,
+				failureLogs: buildFailureLogs(steps),
+				packagePath: analyzeServicePath || ".",
+			});
+
+			if (!payload) {
+				toast.error("Cannot start remediation: missing repository URL or commit SHA.");
+				return;
+			}
+
+			setDismissedRemediationAttemptId(null);
+			setGeneratingRemediationAttempt(attempt);
+			setGeneratingRemediationAnalysis(analysis);
+			setGeneratedRemediationReview(null);
+			setImproveScanPayload({
+				...payload,
+				mode: "deployment_remediation",
+				title: `Preparing recovery plan ${attempt.attempt_number}`,
+				description: "SmartDeploy is analyzing the failure and generating a draft fix for your review.",
+			});
+			setActiveSection("scan");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to approve remediation attempt.";
+			toast.error(message);
+		}
+	}
+
+	async function handleRejectRemediationAttempt(attempt: DeploymentRemediationAttempt) {
+		try {
+			await rejectDeploymentRemediation(attempt.id);
+			setGeneratedRemediationReview(null);
+			setGeneratingRemediationAttempt(null);
+			setGeneratingRemediationAnalysis(null);
+			setDismissedRemediationAttemptId(attempt.id);
+			await fetchRepoDeployments(repoIdentifier);
+			toast.success("Remediation attempt rejected.");
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to reject remediation attempt.";
+			toast.error(message);
+		}
+	}
+
 	async function handlePauseResumeDeployment() {
 		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
 
@@ -534,14 +750,43 @@ export default function DeployWorkspace({
 								payload={improveScanPayload}
 								repoName={repoName}
 								serviceName={serviceName ?? ""}
-								onComplete={(data) => {
+								onComplete={async (data) => {
+									setImproveScanPayload(null);
+									if (generatingRemediationAttempt) {
+										const analysis = generatingRemediationAnalysis ?? {
+											summary: "Smart Deploy generated updated deployment artifacts for review.",
+											rootCause: "Review the updated deployment artifacts before retrying.",
+											concreteFixInstructions: "Inspect the diff and redeploy only if the generated changes look correct.",
+											evidence: [],
+											failedArtifactScope: "general" as const,
+											expectedOutcome: "A corrected artifact set should produce a healthy deployment.",
+										};
+										const reviewAttempt = buildGeneratedRemediationAttempt({
+											attempt: generatingRemediationAttempt,
+											analysis,
+											currentScanResults: effectiveScanResults,
+											proposedScanResults: data,
+										});
+										setGeneratingRemediationAttempt(null);
+										setGeneratingRemediationAnalysis(null);
+										setGeneratedRemediationReview({
+											attempt: reviewAttempt,
+											scanResults: data,
+											analysis,
+										});
+										setActiveSection("logs");
+										toast.success("Recovery plan ready. Review the diff before redeploying.");
+										return;
+									}
 									setScanResults(data);
 									setScanMode("results");
-									onScanComplete(data);
+									await onScanComplete(data);
 									setImproveScanPayload(null);
 									toast.success("Scan results updated");
 								}}
 								onCancel={() => {
+									setGeneratingRemediationAttempt(null);
+									setGeneratingRemediationAnalysis(null);
 									setImproveScanPayload(null);
 									setScanMode(hasScanResults ? "results" : "idle");
 								}}
@@ -692,6 +937,19 @@ export default function DeployWorkspace({
 							deployError={deployError}
 							deployingCommitInfo={deployingCommitInfo}
 							steps={steps}
+							latestHealthCheck={latestHealthCheck}
+							latestRemediationAttempt={visibleRemediationAttempt}
+							monitoringState={monitoringState}
+							onApproveRemediation={
+								visibleRemediationAttempt
+									? () => handleApproveRemediationAttempt(visibleRemediationAttempt)
+									: undefined
+							}
+							onRejectRemediation={
+								visibleRemediationAttempt
+									? () => handleRejectRemediationAttempt(visibleRemediationAttempt)
+									: undefined
+							}
 							repoNameForLogs={repoName}
 							serviceNameForLogs={currentServiceName}
 						configSnapshot={deployConfigRef.current ? configSnapshotFromDeployConfig(deployConfigRef.current) : configSnapshotFromDeployConfig(deployment)}

@@ -1,4 +1,12 @@
-import type { DeployConfig, DeploymentHistoryEntry, DetectedServiceInfo, RepoServicesRecord, SDArtifactsResponse, repoType } from "@/app/types";
+import type {
+	DeployConfig,
+	DeploymentHistoryEntry,
+	DeploymentRemediationAttempt,
+	DetectedServiceInfo,
+	RepoServicesRecord,
+	SDArtifactsResponse,
+	repoType,
+} from "@/app/types";
 
 type GraphQLResponse<T> = {
 	data?: T;
@@ -88,12 +96,18 @@ const APP_OVERVIEW_QUERY = `
 				screenshotUrl
 				serviceName
 				status
+				lifecycleState
 				firstDeployment
 				lastDeployment
 				revision
 				cloudProvider
 				deploymentTarget
 				awsRegion
+				autoFixEnabled
+				maxAutoFixRetries
+				healthMonitoringWindowSec
+				latestHealthStatus
+				latestHealthCheckAt
 				ec2 {
 					success
 					baseUrl
@@ -146,12 +160,18 @@ const REPO_DEPLOYMENTS_QUERY = `
 			screenshotUrl
 			serviceName
 			status
+			lifecycleState
 			firstDeployment
 			lastDeployment
 			revision
 			cloudProvider
 			deploymentTarget
 			awsRegion
+			autoFixEnabled
+			maxAutoFixRetries
+			healthMonitoringWindowSec
+			latestHealthStatus
+			latestHealthCheckAt
 			ec2 {
 				success
 				baseUrl
@@ -328,6 +348,43 @@ const DEPLOYMENT_HISTORY_QUERY = `
 					endedAt
 				}
 				configSnapshot
+				remediationAttempts {
+					id
+					attempt_number
+					trigger_type
+					health_failure_type
+					summary
+					root_cause
+					evidence
+					risk_level
+					confidence
+					diff_preview
+					files_to_modify
+					expected_outcome
+					can_auto_apply
+					approved_by_user
+					applied
+					success
+					status
+					error
+					created_at
+					updated_at
+					changes {
+						title
+						description
+						target
+					}
+				}
+				healthChecks {
+					id
+					url
+					status
+					http_status
+					failure_type
+					latency_ms
+					error_message
+					checked_at
+				}
 			}
 			page
 			limit
@@ -357,11 +414,79 @@ const DEPLOYMENT_HISTORY_ALL_QUERY = `
 					endedAt
 				}
 				configSnapshot
+				remediationAttempts {
+					id
+					attempt_number
+					trigger_type
+					health_failure_type
+					summary
+					root_cause
+					evidence
+					risk_level
+					confidence
+					diff_preview
+					files_to_modify
+					expected_outcome
+					can_auto_apply
+					approved_by_user
+					applied
+					success
+					status
+					error
+					created_at
+					updated_at
+					changes {
+						title
+						description
+						target
+					}
+				}
+				healthChecks {
+					id
+					url
+					status
+					http_status
+					failure_type
+					latency_ms
+					error_message
+					checked_at
+				}
 			}
 			page
 			limit
 			total
 		}
+	}
+`;
+
+const DEPLOYMENT_REMEDIATION_ATTEMPT_FIELDS = `
+	id
+	repo_name
+	service_name
+	deployment_history_id
+	attempt_number
+	trigger_type
+	health_failure_type
+	summary
+	root_cause
+	evidence
+	risk_level
+	confidence
+	diff_preview
+	files_to_modify
+	expected_outcome
+	can_auto_apply
+	approved_by_user
+	applied
+	success
+	status
+	error
+	created_at
+	updated_at
+	changes {
+		title
+		description
+		target
 	}
 `;
 
@@ -380,6 +505,68 @@ export async function fetchDeploymentHistoryAllPage(page = 1, limit = 10): Promi
 	);
 	return data.deploymentHistoryAll;
 }
+
+export async function fetchDeploymentRemediationAttempt(attemptId: string): Promise<DeploymentRemediationAttempt | null> {
+	const data = await graphQLRequest<{ deploymentRemediationAttempt: DeploymentRemediationAttempt | null }>(
+		DEPLOYMENT_REMEDIATION_ATTEMPT_QUERY,
+		{ attemptId }
+	);
+	return data.deploymentRemediationAttempt ?? null;
+}
+
+export async function fetchDeploymentRemediationDiff(attemptId: string): Promise<Record<string, unknown>[] | string[]> {
+	const data = await graphQLRequest<{ deploymentRemediationDiff: Record<string, unknown>[] | string[] }>(
+		DEPLOYMENT_REMEDIATION_DIFF_QUERY,
+		{ attemptId }
+	);
+	return data.deploymentRemediationDiff ?? [];
+}
+
+export async function approveDeploymentRemediation(attemptId: string): Promise<DeploymentRemediationAttempt> {
+	const data = await graphQLRequest<{ approveDeploymentRemediation: DeploymentRemediationAttempt }>(
+		APPROVE_DEPLOYMENT_REMEDIATION_MUTATION,
+		{ attemptId }
+	);
+	return data.approveDeploymentRemediation;
+}
+
+export async function rejectDeploymentRemediation(attemptId: string): Promise<DeploymentRemediationAttempt> {
+	const data = await graphQLRequest<{ rejectDeploymentRemediation: DeploymentRemediationAttempt }>(
+		REJECT_DEPLOYMENT_REMEDIATION_MUTATION,
+		{ attemptId }
+	);
+	return data.rejectDeploymentRemediation;
+}
+
+const DEPLOYMENT_REMEDIATION_ATTEMPT_QUERY = `
+	query DeploymentRemediationAttempt($attemptId: String!) {
+		deploymentRemediationAttempt(attemptId: $attemptId) {
+			${DEPLOYMENT_REMEDIATION_ATTEMPT_FIELDS}
+		}
+	}
+`;
+
+const DEPLOYMENT_REMEDIATION_DIFF_QUERY = `
+	query DeploymentRemediationDiff($attemptId: String!) {
+		deploymentRemediationDiff(attemptId: $attemptId)
+	}
+`;
+
+const APPROVE_DEPLOYMENT_REMEDIATION_MUTATION = `
+	mutation ApproveDeploymentRemediation($attemptId: String!) {
+		approveDeploymentRemediation(attemptId: $attemptId) {
+			${DEPLOYMENT_REMEDIATION_ATTEMPT_FIELDS}
+		}
+	}
+`;
+
+const REJECT_DEPLOYMENT_REMEDIATION_MUTATION = `
+	mutation RejectDeploymentRemediation($attemptId: String!) {
+		rejectDeploymentRemediation(attemptId: $attemptId) {
+			${DEPLOYMENT_REMEDIATION_ATTEMPT_FIELDS}
+		}
+	}
+`;
 
 const DELETE_DEPLOYMENT_MUTATION = `
 	mutation DeleteDeployment($payload: DeleteDeploymentInput!) {

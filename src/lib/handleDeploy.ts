@@ -12,6 +12,8 @@ import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
+import { toDeploymentHealthCheck, verifyDeploymentUrlHealth } from "./deploymentHealth";
+import { queueRemediationAttempt } from "./remediationOrchestrator";
 
 // AWS imports
 import { setupAWSCredentials } from "./aws";
@@ -96,6 +98,7 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "database", label: "🗄️ Database (RDS)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "verify", label: "Verify application URL" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"ec2-codebuild": [
@@ -103,6 +106,7 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "build", label: "🐳 Build image (CodeBuild)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "verify", label: "Verify application URL" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"cloud_run": [
@@ -135,7 +139,7 @@ async function saveDeploymentToDB(
 	serviceDetails: ServiceDeployDetails | null | undefined,
 	customUrl?: string | null,
 	durationMs?: number
-): Promise<void> {
+): Promise<{ historyId?: string }> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
 		captureServerEvent({
@@ -149,7 +153,7 @@ async function saveDeploymentToDB(
 				duration_ms: durationMs ?? null,
 			},
 		});
-		return;
+		return {};
 	}
 
 	try {
@@ -242,6 +246,7 @@ async function saveDeploymentToDB(
 			});
 		} else {
 			console.log("Deployment history recorded:", historyResponse.id);
+			return { historyId: typeof historyResponse.id === "string" ? historyResponse.id : undefined };
 		}
 	} catch (error) {
 		console.error("Error saving deployment to DB:", error);
@@ -257,6 +262,7 @@ async function saveDeploymentToDB(
 			},
 		});
 	}
+	return {};
 }
 
 function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], message: string): void {
@@ -278,10 +284,227 @@ function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], 
 	}
 }
 
+function pushDeployLog(ws: any, deploySteps: DeployStep[], stepId: string, message: string): void {
+	const trackedSend = ws ? (ws as any).__deploySend : undefined;
+	if (typeof trackedSend === "function") {
+		trackedSend(message, stepId);
+		return;
+	}
+	const step = deploySteps.find((entry) => entry.id === stepId);
+	if (step) {
+		step.logs.push(message);
+		step.startedAt = step.startedAt ?? new Date().toISOString();
+		if (step.status === "pending") step.status = "in_progress";
+	}
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "deploy_logs",
+				payload: {
+					id: stepId,
+					msg: message,
+					time: new Date().toISOString(),
+				},
+			})
+		);
+	}
+}
+
+function completeDeployStep(deploySteps: DeployStep[], stepId: string, status: "success" | "error"): void {
+	const step = deploySteps.find((entry) => entry.id === stepId);
+	if (!step) return;
+	step.status = status;
+	step.endedAt = new Date().toISOString();
+}
+
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
 	ec2?: EC2Details;
 };
+
+const MONITORING_INTERVAL_MS = 30_000;
+
+async function monitorDeploymentHealthWindow(args: {
+	ws: any;
+	deployConfig: DeployConfig;
+	monitorUrl: string;
+	userID?: string;
+	deploymentHistoryId?: string;
+	windowSec: number;
+}) {
+	const { ws, deployConfig, monitorUrl, userID, deploymentHistoryId, windowSec } = args;
+	const startedAt = new Date();
+	const endsAt = new Date(startedAt.getTime() + windowSec * 1000);
+
+	const trackedSend = ws ? (ws as any).__deploySend : undefined;
+	const log = (message: string) => {
+		if (typeof trackedSend === "function") {
+			trackedSend(message, "done");
+			return;
+		}
+		pushDeployLog(ws, [], "done", message);
+	};
+
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "monitoring_window_started",
+				payload: {
+					startedAt: startedAt.toISOString(),
+					endsAt: endsAt.toISOString(),
+					windowSec,
+				},
+			})
+		);
+	}
+
+	log(`Starting ${windowSec}-second monitoring window for ${monitorUrl}.`);
+	if (userID) {
+		await dbHelper.updateDeploymentRuntimeState({
+			repoName: deployConfig.repoName,
+			serviceName: deployConfig.serviceName,
+			userID,
+			status: "running",
+			lifecycleState: "monitoring",
+			latestHealthStatus: "healthy",
+			latestHealthCheckAt: startedAt.toISOString(),
+			liveUrl: monitorUrl,
+		});
+	}
+
+	let finalStatus: "healthy" | "unhealthy" = "healthy";
+	let finalError: string | null = null;
+
+	while (Date.now() + MONITORING_INTERVAL_MS <= endsAt.getTime()) {
+		await new Promise((resolve) => setTimeout(resolve, MONITORING_INTERVAL_MS));
+		const verification = await verifyDeploymentUrlHealth(monitorUrl);
+		const persisted = userID
+			? await dbHelper.addDeploymentHealthCheck({
+				userID,
+				repoName: deployConfig.repoName,
+				serviceName: deployConfig.serviceName,
+				deploymentHistoryId: deploymentHistoryId ?? null,
+				url: monitorUrl,
+				status: verification.status,
+				httpStatus: verification.httpStatus,
+				failureType: verification.failureType,
+				latencyMs: verification.latencyMs,
+				errorMessage: verification.errorMessage,
+				checkedAt: verification.checkedAt,
+			})
+			: null;
+
+		const healthCheckPayload =
+			persisted?.healthCheck ??
+			toDeploymentHealthCheck({
+				repoName: deployConfig.repoName,
+				serviceName: deployConfig.serviceName,
+				url: monitorUrl,
+				result: verification,
+				deploymentHistoryId: deploymentHistoryId ?? null,
+			});
+
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(
+				JSON.stringify({
+					type: "deployment_health_status",
+					payload: {
+						status: verification.status,
+						check: healthCheckPayload,
+					},
+				})
+			);
+		}
+
+		if (userID) {
+			await dbHelper.updateDeploymentRuntimeState({
+				repoName: deployConfig.repoName,
+				serviceName: deployConfig.serviceName,
+				userID,
+				latestHealthStatus: verification.status,
+				latestHealthCheckAt: verification.checkedAt,
+			});
+		}
+
+		if (verification.status !== "healthy") {
+			finalStatus = "unhealthy";
+			finalError =
+				verification.errorMessage ||
+				`Monitoring detected unhealthy status ${verification.status}.`;
+			log(`Monitoring detected an unhealthy deployment: ${finalError}`);
+			if (userID) {
+				await dbHelper.updateDeploymentRuntimeState({
+					repoName: deployConfig.repoName,
+					serviceName: deployConfig.serviceName,
+					userID,
+					status: "failed",
+					lifecycleState: "failed",
+					latestHealthStatus: verification.status,
+					latestHealthCheckAt: verification.checkedAt,
+				});
+
+				const queued = await queueRemediationAttempt({
+					deployConfig: {
+						...deployConfig,
+						status: "failed",
+						lifecycleState: "failed",
+						latestHealthStatus: verification.status,
+						latestHealthCheckAt: verification.checkedAt,
+					},
+					userID,
+					deploymentHistoryId,
+					triggerType: "post_deploy_unhealthy",
+					healthCheck: healthCheckPayload,
+					errorMessage: finalError,
+				});
+
+				if (queued.status === "queued" && ws?.readyState === ws?.OPEN) {
+					ws.send(JSON.stringify({ type: "remediation_plan_ready", payload: { attempt: queued.attempt } }));
+				} else if (queued.status === "exhausted") {
+					log(`Remediation retry limit reached (${queued.maxRetries}).`);
+				}
+			}
+			break;
+		}
+
+		log(`Monitoring check healthy (${verification.httpStatus ?? "n/a"}) in ${verification.latencyMs}ms.`);
+	}
+
+	if (finalStatus === "healthy" && userID) {
+		await dbHelper.updateDeploymentRuntimeState({
+			repoName: deployConfig.repoName,
+			serviceName: deployConfig.serviceName,
+			userID,
+			status: "running",
+			lifecycleState: "healthy",
+			latestHealthStatus: "healthy",
+			latestHealthCheckAt: new Date().toISOString(),
+			activeRemediationSessionId: null,
+			activeRemediationAttemptCount: 0,
+		});
+	}
+
+	log(
+		finalStatus === "healthy"
+			? "Monitoring window completed with no health regressions."
+			: `Monitoring window stopped because the deployment became unhealthy.${finalError ? ` ${finalError}` : ""}`,
+	);
+
+	if (ws?.readyState === ws?.OPEN) {
+		ws.send(
+			JSON.stringify({
+				type: "monitoring_window_completed",
+				payload: {
+					startedAt: startedAt.toISOString(),
+					endsAt: endsAt.toISOString(),
+					windowSec,
+					status: finalStatus,
+					error: finalError,
+				},
+			})
+		);
+	}
+}
 
 async function sendDeployComplete(
 	ws: any,
@@ -295,6 +518,64 @@ async function sendDeployComplete(
 	serviceDetails?: ServiceDeployDetails | null,
 	durationMs?: number
 ) {
+	let finalSuccess = success;
+	const finalizedDeployConfig: DeployConfig = { ...deployConfig };
+	const verificationUrl = vercelDns?.success ? vercelDns.customUrl : deployUrl;
+	let deployErrorMessage: string | undefined;
+	let healthCheckPayload: ReturnType<typeof toDeploymentHealthCheck> | null = null;
+
+	if (finalSuccess && deploymentTarget === "ec2" && verificationUrl?.trim()) {
+		pushDeployLog(ws, deploySteps, "verify", `Verifying application URL: ${verificationUrl}`);
+		const verification = await verifyDeploymentUrlHealth(verificationUrl);
+		healthCheckPayload = toDeploymentHealthCheck({
+			repoName: finalizedDeployConfig.repoName,
+			serviceName: finalizedDeployConfig.serviceName,
+			url: verificationUrl,
+			result: verification,
+		});
+		finalizedDeployConfig.latestHealthStatus = verification.status;
+		finalizedDeployConfig.latestHealthCheckAt = verification.checkedAt;
+
+		if (verification.status === "healthy") {
+			finalizedDeployConfig.lifecycleState = "healthy";
+			pushDeployLog(
+				ws,
+				deploySteps,
+				"verify",
+				`Application URL healthy (${verification.httpStatus ?? "n/a"}) in ${verification.latencyMs}ms.`,
+			);
+			completeDeployStep(deploySteps, "verify", "success");
+		} else {
+			finalSuccess = false;
+			finalizedDeployConfig.status = "failed";
+			finalizedDeployConfig.lifecycleState = "failed";
+			deployErrorMessage =
+				verification.errorMessage ||
+				`Deployment URL failed verification with status ${verification.status}.`;
+			pushDeployLog(ws, deploySteps, "verify", `URL verification failed: ${deployErrorMessage}`);
+			completeDeployStep(deploySteps, "verify", "error");
+		}
+
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(
+				JSON.stringify({
+					type: "deployment_health_status",
+					payload: {
+						status: verification.status,
+						check: healthCheckPayload,
+					},
+				})
+			);
+		}
+	} else if (finalSuccess) {
+		finalizedDeployConfig.lifecycleState = "healthy";
+		finalizedDeployConfig.activeRemediationSessionId = null;
+		finalizedDeployConfig.activeRemediationAttemptCount = 0;
+	} else {
+		finalizedDeployConfig.lifecycleState = "failed";
+	}
+	completeDeployStep(deploySteps, "done", finalSuccess ? "success" : "error");
+
 	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
 	console.log("Saving deployment result to database...");
 	if (!userID) {
@@ -304,11 +585,12 @@ async function sendDeployComplete(
 			"Warning: deploy metadata was not persisted because userID is missing."
 		);
 	}
+	let persistenceResult: { historyId?: string } = {};
 	try {
-		await saveDeploymentToDB(
-			deployConfig,
+		persistenceResult = await saveDeploymentToDB(
+			finalizedDeployConfig,
 			deployUrl,
-			success,
+			finalSuccess,
 			deploySteps,
 			userID,
 			serviceDetails,
@@ -324,6 +606,43 @@ async function sendDeployComplete(
 		);
 	}
 
+	if (userID && healthCheckPayload) {
+		const healthResult = await dbHelper.addDeploymentHealthCheck({
+			userID,
+			repoName: healthCheckPayload.repo_name,
+			serviceName: healthCheckPayload.service_name,
+			deploymentHistoryId: persistenceResult.historyId ?? null,
+			url: healthCheckPayload.url,
+			status: healthCheckPayload.status,
+			httpStatus: healthCheckPayload.http_status,
+			failureType: healthCheckPayload.failure_type,
+			latencyMs: healthCheckPayload.latency_ms,
+			errorMessage: healthCheckPayload.error_message,
+			checkedAt: healthCheckPayload.checked_at,
+		});
+		if (healthResult.error) {
+			console.error("Failed to persist deployment health check:", healthResult.error);
+		}
+	}
+
+	if (!finalSuccess && userID && deploymentTarget === "ec2") {
+		const queued = await queueRemediationAttempt({
+			deployConfig: finalizedDeployConfig,
+			userID,
+			deploymentHistoryId: persistenceResult.historyId,
+			triggerType: "deploy_failure",
+			steps: deploySteps,
+			healthCheck: healthCheckPayload,
+			errorMessage: deployErrorMessage ?? undefined,
+		});
+
+		if (queued.status === "queued" && ws?.readyState === ws?.OPEN) {
+			ws.send(JSON.stringify({ type: "remediation_plan_ready", payload: { attempt: queued.attempt } }));
+		} else if (queued.status === "exhausted") {
+			pushDeployLog(ws, deploySteps, "done", `Remediation retry limit reached (${queued.maxRetries}).`);
+		}
+	}
+
 	// PostHog: server-truth event (never blocks deploy completion).
 	if (userID) {
 		const failedStep = deploySteps.find((s) => s.status === "error")?.id ?? null;
@@ -331,12 +650,12 @@ async function sendDeployComplete(
 			distinctId: userID,
 			event: "deploy_completed",
 			properties: {
-				success,
+				success: finalSuccess,
 				duration_ms: durationMs ?? null,
-				repo_name: deployConfig.repoName ?? null,
-				service_name: deployConfig.serviceName ?? null,
-				branch: deployConfig.branch ?? null,
-				commit_sha: deployConfig.commitSha ?? null,
+				repo_name: finalizedDeployConfig.repoName ?? null,
+				service_name: finalizedDeployConfig.serviceName ?? null,
+				branch: finalizedDeployConfig.branch ?? null,
+				commit_sha: finalizedDeployConfig.commitSha ?? null,
 				failed_step: failedStep,
 				steps_count: deploySteps.length,
 				has_custom_domain: Boolean(vercelDns?.success && vercelDns.customUrl),
@@ -349,15 +668,17 @@ async function sendDeployComplete(
 			deployUrl: string | null;
 			success: boolean;
 			deploymentTarget: string | null;
+			error?: string;
 			vercelDnsAdded?: boolean;
 			vercelDnsError?: string | null;
 			customUrl?: string | null;
 			ec2?: EC2Details;
 		} = {
 			deployUrl: deployUrl ?? null,
-			success,
+			success: finalSuccess,
 			deploymentTarget: deploymentTarget ?? null,
 		};
+		if (!finalSuccess && deployErrorMessage) payload.error = deployErrorMessage;
 		if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
 		if (vercelDns) {
 			payload.vercelDnsAdded = vercelDns.success;
@@ -368,6 +689,24 @@ async function sendDeployComplete(
 			}
 		}
 		ws.send(JSON.stringify({ type: "deploy_complete", payload }));
+	}
+
+	const monitoringWindowSec =
+		typeof finalizedDeployConfig.healthMonitoringWindowSec === "number"
+			? Math.max(0, finalizedDeployConfig.healthMonitoringWindowSec)
+			: 300;
+	const monitoringUrl = vercelDns?.success ? vercelDns.customUrl : deployUrl;
+	if (finalSuccess && deploymentTarget === "ec2" && monitoringWindowSec > 0 && monitoringUrl?.trim()) {
+		void monitorDeploymentHealthWindow({
+			ws,
+			deployConfig: finalizedDeployConfig,
+			monitorUrl: monitoringUrl,
+			userID,
+			deploymentHistoryId: persistenceResult.historyId,
+			windowSec: monitoringWindowSec,
+		}).catch((error) => {
+			console.error("Monitoring window failed:", error);
+		});
 	}
 }
 

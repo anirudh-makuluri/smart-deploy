@@ -43,6 +43,14 @@ create index if not exists idx_deployments_provider on public.deployments(cloud_
 -- Ensure existing deployments tables get the new pointer column.
 alter table public.deployments add column if not exists response_id uuid;
 create index if not exists idx_deployments_response_id on public.deployments(response_id);
+alter table public.deployments add column if not exists lifecycle_state text default 'idle';
+alter table public.deployments add column if not exists auto_fix_enabled boolean not null default true;
+alter table public.deployments add column if not exists max_auto_fix_retries int default 2;
+alter table public.deployments add column if not exists health_monitoring_window_sec int default 300;
+alter table public.deployments add column if not exists latest_health_status text;
+alter table public.deployments add column if not exists latest_health_check_at timestamptz;
+alter table public.deployments add column if not exists active_remediation_session_id uuid;
+alter table public.deployments add column if not exists active_remediation_attempt_count int not null default 0;
 
 -- Full analysis responses are stored separately and linked by deployments.response_id
 create table if not exists public.analysis_responses (
@@ -145,6 +153,62 @@ create index if not exists idx_deployment_history_user_repo_service
   on public.deployment_history(user_id, repo_name, service_name);
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
+
+-- Phase 2 remediation attempts: structured retry proposals and outcomes for a deployment attempt.
+create table if not exists public.deployment_remediation_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  repo_name text not null,
+  service_name text not null,
+  deployment_history_id uuid references public.deployment_history(id) on delete set null,
+  session_id uuid,
+  attempt_number int not null,
+  trigger_type text not null,
+  health_failure_type text,
+  summary text not null,
+  root_cause text,
+  evidence jsonb not null default '[]',
+  risk_level text,
+  confidence double precision,
+  changes jsonb not null default '[]',
+  diff_preview jsonb not null default '[]',
+  files_to_modify jsonb not null default '[]',
+  expected_outcome text,
+  can_auto_apply boolean not null default false,
+  approved_by_user boolean,
+  applied boolean not null default false,
+  success boolean,
+  status text not null default 'proposed',
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_deployment_remediation_attempts_user_repo_service
+  on public.deployment_remediation_attempts(user_id, repo_name, service_name, created_at desc);
+create index if not exists idx_deployment_remediation_attempts_history
+  on public.deployment_remediation_attempts(deployment_history_id, attempt_number);
+create index if not exists idx_deployment_remediation_attempts_session
+  on public.deployment_remediation_attempts(session_id, attempt_number);
+
+-- Phase 2 health checks: persisted URL health verification and monitoring observations.
+create table if not exists public.deployment_health_checks (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  repo_name text not null,
+  service_name text not null,
+  deployment_history_id uuid references public.deployment_history(id) on delete set null,
+  url text not null,
+  status text not null,
+  http_status int,
+  failure_type text,
+  latency_ms int,
+  error_message text,
+  checked_at timestamptz not null default now()
+);
+create index if not exists idx_deployment_health_checks_user_repo_service
+  on public.deployment_health_checks(user_id, repo_name, service_name, checked_at desc);
+create index if not exists idx_deployment_health_checks_history
+  on public.deployment_health_checks(deployment_history_id, checked_at desc);
 
 -- Help-agent chats: one row per completed Q/A exchange.
 create table if not exists public.help_agent_chats (
@@ -285,6 +349,8 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;
 alter table public.deployment_history enable row level security;
+alter table public.deployment_remediation_attempts enable row level security;
+alter table public.deployment_health_checks enable row level security;
 alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;

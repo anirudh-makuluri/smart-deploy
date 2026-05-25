@@ -59,7 +59,7 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		}
 	}
 
-	if (deployConfig?.status !== "running") return;
+	if (deployConfig?.status !== "running" && deployConfig?.status !== "failed") return;
 
 	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object") {
 		const ec2Details = deployConfig.ec2 as EC2Details;

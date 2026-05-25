@@ -1,5 +1,17 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
-import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
+import {
+	DeployConfig,
+	DeploymentHealthCheck,
+	DeploymentHistoryEntry,
+	DeploymentRemediationAttempt,
+	DeploymentRemediationChange,
+	DetectedServiceInfo,
+	RepoServicesRecord,
+	RemediationAttemptStatus,
+	RemediationRiskLevel,
+	RemediationTriggerType,
+	repoType,
+} from "./app/types";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,6 +30,31 @@ function normalizeScanResults(value: unknown): Record<string, unknown> | null {
 	const record = value as Record<string, unknown>;
 	if (Object.keys(record).length === 0) return null;
 	return record;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item) => (typeof item === "string" ? item.trim() : ""))
+		.filter(Boolean);
+}
+
+function normalizeRemediationChanges(value: unknown): DeploymentRemediationChange[] {
+	if (!Array.isArray(value)) return [];
+	const changes: DeploymentRemediationChange[] = [];
+	for (const item of value) {
+		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+		const record = item as Record<string, unknown>;
+		const title = toOptionalTrimmedString(record.title);
+		const description = toOptionalTrimmedString(record.description);
+		if (!title || !description) continue;
+		changes.push({
+			title,
+			description,
+			target: toOptionalTrimmedString(record.target),
+		});
+	}
+	return changes;
 }
 
 type DeploymentDbRow = Record<string, unknown>;
@@ -113,6 +150,14 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		last_deployment,
 		revision,
 		response_id,
+		auto_fix_enabled,
+		max_auto_fix_retries,
+		health_monitoring_window_sec,
+		lifecycle_state,
+		latest_health_status,
+		latest_health_check_at,
+		active_remediation_session_id,
+		active_remediation_attempt_count,
 		ec2,
 		cloud_run,
 		scan_results,
@@ -131,12 +176,22 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		liveUrl: live_url ?? null,
 		screenshotUrl: screenshot_url ?? null,
 		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
+		lifecycleState: (lifecycle_state as DeployConfig["lifecycleState"]) ?? "idle",
 		firstDeployment: first_deployment ?? null,
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
 		cloudProvider: (cloud_provider as "aws" | "gcp") || "aws",
 		deploymentTarget: (deployment_target as "ec2" | "cloud_run") || "ec2",
 		awsRegion: aws_region || "",
+		autoFixEnabled: typeof auto_fix_enabled === "boolean" ? auto_fix_enabled : true,
+		maxAutoFixRetries: typeof max_auto_fix_retries === "number" ? max_auto_fix_retries : null,
+		healthMonitoringWindowSec:
+			typeof health_monitoring_window_sec === "number" ? health_monitoring_window_sec : null,
+		latestHealthStatus: (latest_health_status as DeployConfig["latestHealthStatus"]) ?? "unknown",
+		latestHealthCheckAt: toOptionalTrimmedString(latest_health_check_at),
+		activeRemediationSessionId: toOptionalTrimmedString(active_remediation_session_id),
+		activeRemediationAttemptCount:
+			typeof active_remediation_attempt_count === "number" ? active_remediation_attempt_count : 0,
 		ec2: (ec2 as Record<string, unknown>) || {},
 		cloudRun: (cloud_run as Record<string, unknown>) || {},
 		scanResults: (scan_results || {}) as Record<string, unknown>,
@@ -159,6 +214,14 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 		deployment_target: config.deploymentTarget,
 		aws_region: config.awsRegion,
 		status: config.status,
+		lifecycle_state: config.lifecycleState ?? "idle",
+		auto_fix_enabled: config.autoFixEnabled ?? true,
+		max_auto_fix_retries: config.maxAutoFixRetries ?? null,
+		health_monitoring_window_sec: config.healthMonitoringWindowSec ?? null,
+		latest_health_status: config.latestHealthStatus ?? null,
+		latest_health_check_at: config.latestHealthCheckAt ?? null,
+		active_remediation_session_id: config.activeRemediationSessionId ?? null,
+		active_remediation_attempt_count: config.activeRemediationAttemptCount ?? 0,
 		ec2: config.ec2,
 		cloud_run: config.cloudRun,
 	};
@@ -166,6 +229,97 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 		row.response_id = config.responseId;
 	}
 	return row;
+}
+
+function mapRemediationAttemptRow(row: Record<string, unknown>): DeploymentRemediationAttempt {
+	return {
+		id: String(row.id ?? ""),
+		repo_name: String(row.repo_name ?? ""),
+		service_name: String(row.service_name ?? ""),
+		deployment_history_id: toOptionalTrimmedString(row.deployment_history_id),
+		session_id: toOptionalTrimmedString(row.session_id),
+		attempt_number: Number(row.attempt_number ?? 0),
+		trigger_type: (toOptionalTrimmedString(row.trigger_type) as RemediationTriggerType) ?? "deploy_failure",
+		health_failure_type: toOptionalTrimmedString(row.health_failure_type) as DeploymentRemediationAttempt["health_failure_type"],
+		summary: String(row.summary ?? ""),
+		root_cause: toOptionalTrimmedString(row.root_cause),
+		evidence: normalizeStringArray(row.evidence),
+		risk_level: toOptionalTrimmedString(row.risk_level) as RemediationRiskLevel | null,
+		confidence: typeof row.confidence === "number" ? row.confidence : null,
+		changes: normalizeRemediationChanges(row.changes),
+		diff_preview: Array.isArray(row.diff_preview) ? (row.diff_preview as Record<string, unknown>[] | string[]) : null,
+		files_to_modify: normalizeStringArray(row.files_to_modify),
+		expected_outcome: toOptionalTrimmedString(row.expected_outcome),
+		can_auto_apply: Boolean(row.can_auto_apply),
+		approved_by_user: typeof row.approved_by_user === "boolean" ? row.approved_by_user : null,
+		applied: Boolean(row.applied),
+		success: typeof row.success === "boolean" ? row.success : null,
+		status: (toOptionalTrimmedString(row.status) as RemediationAttemptStatus) ?? "proposed",
+		error: toOptionalTrimmedString(row.error),
+		created_at: String(row.created_at ?? ""),
+		updated_at: toOptionalTrimmedString(row.updated_at),
+	};
+}
+
+function mapHealthCheckRow(row: Record<string, unknown>): DeploymentHealthCheck {
+	return {
+		id: String(row.id ?? ""),
+		repo_name: String(row.repo_name ?? ""),
+		service_name: String(row.service_name ?? ""),
+		deployment_history_id: toOptionalTrimmedString(row.deployment_history_id),
+		url: String(row.url ?? ""),
+		status: (toOptionalTrimmedString(row.status) as DeploymentHealthCheck["status"]) ?? "unknown",
+		http_status: typeof row.http_status === "number" ? row.http_status : null,
+		failure_type: toOptionalTrimmedString(row.failure_type) as DeploymentHealthCheck["failure_type"],
+		latency_ms: typeof row.latency_ms === "number" ? row.latency_ms : null,
+		error_message: toOptionalTrimmedString(row.error_message),
+		checked_at: String(row.checked_at ?? ""),
+	};
+}
+
+async function fetchRemediationAttemptsByHistoryIds(historyIds: string[]) {
+	if (historyIds.length === 0) return new Map<string, DeploymentRemediationAttempt[]>();
+	const supabase = getSupabaseServer();
+	const { data, error } = await supabase
+		.from("deployment_remediation_attempts")
+		.select("*")
+		.in("deployment_history_id", historyIds)
+		.order("attempt_number", { ascending: true })
+		.order("created_at", { ascending: true });
+	if (error) throw new Error(error.message);
+
+	const mapped = new Map<string, DeploymentRemediationAttempt[]>();
+	for (const row of (data || []) as Record<string, unknown>[]) {
+		const attempt = mapRemediationAttemptRow(row);
+		const historyId = attempt.deployment_history_id;
+		if (!historyId) continue;
+		const existing = mapped.get(historyId) ?? [];
+		existing.push(attempt);
+		mapped.set(historyId, existing);
+	}
+	return mapped;
+}
+
+async function fetchHealthChecksByHistoryIds(historyIds: string[]) {
+	if (historyIds.length === 0) return new Map<string, DeploymentHealthCheck[]>();
+	const supabase = getSupabaseServer();
+	const { data, error } = await supabase
+		.from("deployment_health_checks")
+		.select("*")
+		.in("deployment_history_id", historyIds)
+		.order("checked_at", { ascending: true });
+	if (error) throw new Error(error.message);
+
+	const mapped = new Map<string, DeploymentHealthCheck[]>();
+	for (const row of (data || []) as Record<string, unknown>[]) {
+		const check = mapHealthCheckRow(row);
+		const historyId = check.deployment_history_id;
+		if (!historyId) continue;
+		const existing = mapped.get(historyId) ?? [];
+		existing.push(check);
+		mapped.set(historyId, existing);
+	}
+	return mapped;
 }
 
 function normalizeRepoIdentifier(value: string): string {
@@ -236,17 +390,18 @@ function dedupeRepoSyncRows(rows: Record<string, unknown>[]) {
 export const dbHelper = {
 	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
 		try {
-			const { repoName, serviceName } = deployConfig;
+			const normalizedDeployConfig = withDeployInfraDefaults(deployConfig);
+			const { repoName, serviceName } = normalizedDeployConfig;
 			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
 
 			const supabase = getSupabaseServer();
-			const configRecord = deployConfig as unknown as Record<string, unknown>;
+			const configRecord = normalizedDeployConfig as unknown as Record<string, unknown>;
 			const hasScanResultsInput = hasOwnKey(configRecord, "scanResults");
 			const rawScanResultsInput = configRecord.scanResults;
 			const rawScanResults = hasScanResultsInput ? normalizeScanResults(configRecord.scanResults) : null;
 			const explicitResponseId = toOptionalTrimmedString(configRecord.responseId);
 
-			if (deployConfig.status === "stopped") {
+			if (normalizedDeployConfig.status === "stopped") {
 				await supabase.from("deployments").delete()
 					.eq("repo_name", repoName)
 					.eq("service_name", serviceName);
@@ -283,8 +438,8 @@ export const dbHelper = {
 					await upsertAnalysisResponse({
 						id: nextResponseId,
 						payload: { ...rawScanResults, response_id: nextResponseId },
-						repoUrl: String(deployConfig.url ?? existing?.url ?? ""),
-						commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? deployConfig.commitSha ?? null,
+						repoUrl: String(normalizedDeployConfig.url ?? existing?.url ?? ""),
+						commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? normalizedDeployConfig.commitSha ?? null,
 						serviceName,
 					});
 				}
@@ -300,7 +455,7 @@ export const dbHelper = {
 					first_deployment: new Date().toISOString(),
 					last_deployment: new Date().toISOString(),
 					revision: 1,
-					...deployConfigToRow(deployConfig),
+					...deployConfigToRow(normalizedDeployConfig),
 					response_id: nextResponseId,
 				};
 
@@ -312,19 +467,19 @@ export const dbHelper = {
 			// Build update payload
 			const updatePayload: Record<string, unknown> = {
 				revision: (existing.revision ?? 0) + 1,
-				...deployConfigToRow(deployConfig),
+				...deployConfigToRow(normalizedDeployConfig),
 			};
 			if (hasScanResultsInput || explicitResponseId !== null) {
 				updatePayload.response_id = nextResponseId;
 			}
 
 			// Update last_deployment only if commitSha changes
-			if (deployConfig.commitSha !== existing.commit_sha) {
+			if (normalizedDeployConfig.commitSha !== existing.commit_sha) {
 				updatePayload.last_deployment = new Date().toISOString();
 			}
 
 			// Update first_deployment only if status changes from didnt_deploy to running
-			if (existing.status === "didnt_deploy" && deployConfig.status === "running") {
+			if (existing.status === "didnt_deploy" && normalizedDeployConfig.status === "running") {
 				updatePayload.first_deployment = new Date().toISOString();
 			}
 
@@ -580,6 +735,296 @@ export const dbHelper = {
 		}
 	},
 
+	addDeploymentRemediationAttempt: async function (args: {
+		userID: string;
+		repoName: string;
+		serviceName: string;
+		deploymentHistoryId?: string | null;
+		sessionId?: string | null;
+		attemptNumber: number;
+		triggerType: RemediationTriggerType;
+		healthFailureType?: DeploymentRemediationAttempt["health_failure_type"];
+		summary: string;
+		rootCause?: string | null;
+		evidence?: string[];
+		riskLevel?: RemediationRiskLevel | null;
+		confidence?: number | null;
+		changes?: DeploymentRemediationChange[];
+		diffPreview?: Record<string, unknown>[] | string[] | null;
+		filesToModify?: string[];
+		expectedOutcome?: string | null;
+		canAutoApply?: boolean;
+		approvedByUser?: boolean | null;
+		applied?: boolean;
+		success?: boolean | null;
+		status?: RemediationAttemptStatus;
+		error?: string | null;
+	}) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployment_remediation_attempts")
+				.insert({
+					user_id: args.userID,
+					repo_name: args.repoName,
+					service_name: args.serviceName,
+					deployment_history_id: args.deploymentHistoryId ?? null,
+					session_id: args.sessionId ?? null,
+					attempt_number: args.attemptNumber,
+					trigger_type: args.triggerType,
+					health_failure_type: args.healthFailureType ?? null,
+					summary: args.summary,
+					root_cause: args.rootCause ?? null,
+					evidence: args.evidence ?? [],
+					risk_level: args.riskLevel ?? null,
+					confidence: args.confidence ?? null,
+					changes: args.changes ?? [],
+					diff_preview: args.diffPreview ?? [],
+					files_to_modify: args.filesToModify ?? [],
+					expected_outcome: args.expectedOutcome ?? null,
+					can_auto_apply: args.canAutoApply ?? false,
+					approved_by_user: args.approvedByUser ?? null,
+					applied: args.applied ?? false,
+					success: args.success ?? null,
+					status: args.status ?? "proposed",
+					error: args.error ?? null,
+				})
+				.select("*")
+				.single();
+
+			if (error) return { error: error.message };
+			return { attempt: mapRemediationAttemptRow((data ?? {}) as Record<string, unknown>) };
+		} catch (error) {
+			console.error("addDeploymentRemediationAttempt error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	updateDeploymentRemediationAttempt: async function (
+		id: string,
+		userID: string,
+		patch: {
+			healthFailureType?: DeploymentRemediationAttempt["health_failure_type"];
+			summary?: string;
+			rootCause?: string | null;
+			evidence?: string[];
+			riskLevel?: RemediationRiskLevel | null;
+			confidence?: number | null;
+			changes?: DeploymentRemediationChange[];
+			diffPreview?: Record<string, unknown>[] | string[] | null;
+			filesToModify?: string[];
+			expectedOutcome?: string | null;
+			canAutoApply?: boolean;
+			approvedByUser?: boolean | null;
+			applied?: boolean;
+			success?: boolean | null;
+			status?: RemediationAttemptStatus;
+			error?: string | null;
+			deploymentHistoryId?: string | null;
+		}
+	) {
+		try {
+			const supabase = getSupabaseServer();
+			const updatePayload: Record<string, unknown> = {
+				updated_at: new Date().toISOString(),
+			};
+			if (patch.healthFailureType !== undefined) updatePayload.health_failure_type = patch.healthFailureType;
+			if (patch.summary !== undefined) updatePayload.summary = patch.summary;
+			if (patch.rootCause !== undefined) updatePayload.root_cause = patch.rootCause;
+			if (patch.evidence !== undefined) updatePayload.evidence = patch.evidence;
+			if (patch.riskLevel !== undefined) updatePayload.risk_level = patch.riskLevel;
+			if (patch.confidence !== undefined) updatePayload.confidence = patch.confidence;
+			if (patch.changes !== undefined) updatePayload.changes = patch.changes;
+			if (patch.diffPreview !== undefined) updatePayload.diff_preview = patch.diffPreview;
+			if (patch.filesToModify !== undefined) updatePayload.files_to_modify = patch.filesToModify;
+			if (patch.expectedOutcome !== undefined) updatePayload.expected_outcome = patch.expectedOutcome;
+			if (patch.canAutoApply !== undefined) updatePayload.can_auto_apply = patch.canAutoApply;
+			if (patch.approvedByUser !== undefined) updatePayload.approved_by_user = patch.approvedByUser;
+			if (patch.applied !== undefined) updatePayload.applied = patch.applied;
+			if (patch.success !== undefined) updatePayload.success = patch.success;
+			if (patch.status !== undefined) updatePayload.status = patch.status;
+			if (patch.error !== undefined) updatePayload.error = patch.error;
+			if (patch.deploymentHistoryId !== undefined) updatePayload.deployment_history_id = patch.deploymentHistoryId;
+
+			const { data, error } = await supabase
+				.from("deployment_remediation_attempts")
+				.update(updatePayload)
+				.eq("id", id)
+				.eq("user_id", userID)
+				.select("*")
+				.single();
+
+			if (error) return { error: error.message };
+			return { attempt: mapRemediationAttemptRow((data ?? {}) as Record<string, unknown>) };
+		} catch (error) {
+			console.error("updateDeploymentRemediationAttempt error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getDeploymentRemediationAttempts: async function (
+		repoName: string,
+		serviceName: string,
+		userID: string,
+		deploymentHistoryId?: string | null
+	) {
+		try {
+			const supabase = getSupabaseServer();
+			let query = supabase
+				.from("deployment_remediation_attempts")
+				.select("*")
+				.eq("user_id", userID)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("attempt_number", { ascending: true })
+				.order("created_at", { ascending: true });
+			if (deploymentHistoryId) {
+				query = query.eq("deployment_history_id", deploymentHistoryId);
+			}
+			const { data, error } = await query;
+			if (error) return { error: error.message };
+			return {
+				attempts: ((data || []) as Record<string, unknown>[]).map(mapRemediationAttemptRow),
+			};
+		} catch (error) {
+			console.error("getDeploymentRemediationAttempts error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getDeploymentRemediationAttempt: async function (id: string, userID: string) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployment_remediation_attempts")
+				.select("*")
+				.eq("id", id)
+				.eq("user_id", userID)
+				.maybeSingle();
+			if (error) return { error: error.message };
+			if (!data) return { attempt: null };
+			return { attempt: mapRemediationAttemptRow((data ?? {}) as Record<string, unknown>) };
+		} catch (error) {
+			console.error("getDeploymentRemediationAttempt error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	addDeploymentHealthCheck: async function (args: {
+		userID: string;
+		repoName: string;
+		serviceName: string;
+		deploymentHistoryId?: string | null;
+		url: string;
+		status: DeploymentHealthCheck["status"];
+		httpStatus?: number | null;
+		failureType?: DeploymentHealthCheck["failure_type"];
+		latencyMs?: number | null;
+		errorMessage?: string | null;
+		checkedAt?: string;
+	}) {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployment_health_checks")
+				.insert({
+					user_id: args.userID,
+					repo_name: args.repoName,
+					service_name: args.serviceName,
+					deployment_history_id: args.deploymentHistoryId ?? null,
+					url: args.url,
+					status: args.status,
+					http_status: args.httpStatus ?? null,
+					failure_type: args.failureType ?? null,
+					latency_ms: args.latencyMs ?? null,
+					error_message: args.errorMessage ?? null,
+					checked_at: args.checkedAt ?? new Date().toISOString(),
+				})
+				.select("*")
+				.single();
+			if (error) return { error: error.message };
+			return { healthCheck: mapHealthCheckRow((data ?? {}) as Record<string, unknown>) };
+		} catch (error) {
+			console.error("addDeploymentHealthCheck error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getDeploymentHealthChecks: async function (
+		repoName: string,
+		serviceName: string,
+		userID: string,
+		options?: { deploymentHistoryId?: string | null; limit?: number }
+	) {
+		try {
+			const supabase = getSupabaseServer();
+			let query = supabase
+				.from("deployment_health_checks")
+				.select("*")
+				.eq("user_id", userID)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.order("checked_at", { ascending: false });
+			if (options?.deploymentHistoryId) {
+				query = query.eq("deployment_history_id", options.deploymentHistoryId);
+			}
+			if (typeof options?.limit === "number" && options.limit > 0) {
+				query = query.limit(options.limit);
+			}
+			const { data, error } = await query;
+			if (error) return { error: error.message };
+			return {
+				healthChecks: ((data || []) as Record<string, unknown>[]).map(mapHealthCheckRow),
+			};
+		} catch (error) {
+			console.error("getDeploymentHealthChecks error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	updateDeploymentRuntimeState: async function (args: {
+		repoName: string;
+		serviceName: string;
+		userID: string;
+		status?: DeployConfig["status"];
+		lifecycleState?: DeployConfig["lifecycleState"];
+		latestHealthStatus?: DeployConfig["latestHealthStatus"];
+		latestHealthCheckAt?: string | null;
+		liveUrl?: string | null;
+		activeRemediationSessionId?: string | null;
+		activeRemediationAttemptCount?: number | null;
+	}) {
+		try {
+			const supabase = getSupabaseServer();
+			const updatePayload: Record<string, unknown> = {};
+			if (args.status !== undefined) updatePayload.status = args.status;
+			if (args.lifecycleState !== undefined) updatePayload.lifecycle_state = args.lifecycleState;
+			if (args.latestHealthStatus !== undefined) updatePayload.latest_health_status = args.latestHealthStatus;
+			if (args.latestHealthCheckAt !== undefined) updatePayload.latest_health_check_at = args.latestHealthCheckAt;
+			if (args.liveUrl !== undefined) updatePayload.live_url = args.liveUrl;
+			if (args.activeRemediationSessionId !== undefined) {
+				updatePayload.active_remediation_session_id = args.activeRemediationSessionId;
+			}
+			if (args.activeRemediationAttemptCount !== undefined) {
+				updatePayload.active_remediation_attempt_count = args.activeRemediationAttemptCount;
+			}
+			if (Object.keys(updatePayload).length === 0) return { success: true };
+
+			const { error } = await supabase
+				.from("deployments")
+				.update(updatePayload)
+				.eq("repo_name", args.repoName)
+				.eq("service_name", args.serviceName)
+				.eq("owner_id", args.userID);
+
+			if (error) return { error: error.message };
+			return { success: true };
+		} catch (error) {
+			console.error("updateDeploymentRuntimeState error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	recordHelpAgentChat: async function (args: {
 		userID: string;
 		question: string;
@@ -679,6 +1124,14 @@ export const dbHelper = {
 
 			if (error) return { error };
 
+			const historyIds = ((rows || []) as Record<string, unknown>[])
+				.map((row) => toOptionalTrimmedString(row.id))
+				.filter((value): value is string => Boolean(value));
+			const [attemptsByHistoryId, healthChecksByHistoryId] = await Promise.all([
+				fetchRemediationAttemptsByHistoryIds(historyIds),
+				fetchHealthChecksByHistoryIds(historyIds),
+			]);
+
 			const history: DeploymentHistoryEntry[] = (rows || []).map((row: Record<string, unknown>) => ({
 				id: row.id as string,
 				repo_name: row.repo_name as string,
@@ -691,6 +1144,8 @@ export const dbHelper = {
 				commitMessage: row.commit_message as string | undefined,
 				branch: row.branch as string | undefined,
 				durationMs: row.duration_ms as number | undefined,
+				remediationAttempts: attemptsByHistoryId.get(String(row.id ?? "")) ?? [],
+				healthChecks: healthChecksByHistoryId.get(String(row.id ?? "")) ?? [],
 			}));
 
 			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
@@ -719,6 +1174,14 @@ export const dbHelper = {
 
 			if (error) return { error };
 
+			const historyIds = ((rows || []) as Record<string, unknown>[])
+				.map((row) => toOptionalTrimmedString(row.id))
+				.filter((value): value is string => Boolean(value));
+			const [attemptsByHistoryId, healthChecksByHistoryId] = await Promise.all([
+				fetchRemediationAttemptsByHistoryIds(historyIds),
+				fetchHealthChecksByHistoryIds(historyIds),
+			]);
+
 			const history = (rows || []).map((row: Record<string, unknown>) => ({
 				id: row.id as string,
 				repo_name: row.repo_name as string,
@@ -731,6 +1194,8 @@ export const dbHelper = {
 				commitMessage: row.commit_message as string | undefined,
 				branch: row.branch as string | undefined,
 				durationMs: row.duration_ms as number | undefined,
+				remediationAttempts: attemptsByHistoryId.get(String(row.id ?? "")) ?? [],
+				healthChecks: healthChecksByHistoryId.get(String(row.id ?? "")) ?? [],
 			}));
 
 			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };

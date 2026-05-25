@@ -20,26 +20,17 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { Download, Loader2, Search } from "lucide-react";
-import type { DeployStep } from "@/app/types";
+import type { DeployStep, DeploymentHistoryEntry } from "@/app/types";
 import { DeploymentLogsModal, type DeploymentLogsModalPrefetched } from "@/components/DeploymentLogsModal";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
+import { summarizeDeploymentHistoryPhase2 } from "@/lib/deploymentHistorySummary";
 
 const statusOptions = ["all", "success", "failed"] as const;
 const envOptions = ["all", "production", "staging", "development"] as const;
 
-type DeploymentHistoryRow = {
-	id: string;
-	repo_name: string;
-	service_name: string;
-	timestamp: string;
-	success: boolean;
-	commitSha?: string;
-	commitMessage?: string;
-	branch?: string;
-	durationMs?: number;
+type DeploymentHistoryRow = DeploymentHistoryEntry & {
 	steps: DeployStep[];
-	configSnapshot: Record<string, unknown>;
 };
 
 function toRelativeTime(timestamp: string): string {
@@ -200,7 +191,9 @@ export default function DeploymentHistoryTable() {
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{filtered.map((row) => (
+							{filtered.map((row) => {
+								const phase2Summary = summarizeDeploymentHistoryPhase2(row);
+								return (
 								<TableRow
 									key={row.id}
 									onClick={() =>
@@ -227,11 +220,25 @@ export default function DeploymentHistoryTable() {
 										>
 											{row.success ? "SUCCESS" : "FAILED"}
 										</Badge>
+										{phase2Summary.primaryLabel && (
+											<div className="mt-2 text-xs text-muted-foreground max-w-40">
+												{phase2Summary.primaryLabel}
+											</div>
+										)}
 									</TableCell>
 									<TableCell>
 										<div className="text-foreground font-medium">{row.service_name}</div>
 										{row.repo_name && (
 											<div className="text-xs text-muted-foreground truncate max-w-60">{row.repo_name}</div>
+										)}
+										{phase2Summary.badges.length > 0 && (
+											<div className="mt-2 flex flex-wrap gap-1">
+												{phase2Summary.badges.map((badge) => (
+													<Badge key={badge.label} variant="outline" className="border-border/60 text-[10px] text-muted-foreground">
+														{badge.label}
+													</Badge>
+												))}
+											</div>
 										)}
 									</TableCell>
 									<TableCell>
@@ -258,7 +265,8 @@ export default function DeploymentHistoryTable() {
 										</span>
 									</TableCell>
 								</TableRow>
-							))}
+								);
+							})}
 						</TableBody>
 					</Table>
 				)}

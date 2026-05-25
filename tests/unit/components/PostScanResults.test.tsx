@@ -83,4 +83,18 @@ describe("PostScanResults", () => {
 		const updated = onUpdateResults.mock.calls.at(-1)?.[0] as SDArtifactsResponse;
 		expect(updated.dockerfiles?.Dockerfile).toBe("FROM node:22-alpine\nWORKDIR /srv/app");
 	});
+
+	it("renders safely when scan results are missing", () => {
+		render(
+			<PostScanResults
+				results={null}
+				deployment={deployment}
+				onStartDeployment={vi.fn()}
+				onCancel={vi.fn()}
+				onUpdateResults={vi.fn()}
+			/>
+		);
+
+		expect(screen.getAllByText("Post-Scan Results").length).toBeGreaterThan(0);
+	});
 });

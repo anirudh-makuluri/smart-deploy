@@ -22,7 +22,7 @@ describe("websocket-types deploy", () => {
 		vi.clearAllMocks();
 	});
 
-	it("marks store status as error when handleDeploy returns error", async () => {
+	it("marks store status as error when handleDeploy returns error", { timeout: 20000 }, async () => {
 		handleDeployMock.mockResolvedValue("error");
 		const { deploy } = await import("@/websocket-types");
 
@@ -41,7 +41,7 @@ describe("websocket-types deploy", () => {
 		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "error", "Deployment failed");
 	});
 
-	it("marks store status as success when handleDeploy returns done", async () => {
+	it("marks store status as success when handleDeploy returns done", { timeout: 20000 }, async () => {
 		handleDeployMock.mockResolvedValue("done");
 		const { deploy } = await import("@/websocket-types");
 

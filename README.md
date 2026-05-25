@@ -38,6 +38,7 @@
 - [Workflow](#workflow)
 - [Core experience](#core-experience)
 - [Architecture overview](#architecture-overview)
+- [Phase 2 remediation](#phase-2-remediation)
 - [Tech stack](#tech-stack)
 - [Quick start](#quick-start)
 - [Production notes](#production-notes)
@@ -63,6 +64,7 @@ Smart Deploy is built for that middle ground. The goal is not to hide infrastruc
 - Shows a blueprint view before deploy so you can inspect the deployment path
 - Explains how each generated or existing infrastructure file is used in the deploy
 - Keeps logs, health, status, and preview output connected to the same deployment workflow
+- Adds a user-approved remediation loop for EC2 deploy failures and unhealthy post-deploy URLs
 - Supports AWS and GCP deployment paths while keeping the deploy surface grounded in real infrastructure concepts
 
 ## Workflow
@@ -109,6 +111,17 @@ Smart Deploy treats infrastructure files as first-class product output, not hidd
 - `nginx.conf` shows how requests are routed
 
 The product makes these files visible so the deployment stays inspectable.
+
+## Phase 2 remediation
+
+Phase 2 makes Smart Deploy behave more like a DevOps agent, while keeping the user in control.
+
+- It verifies the deployed EC2 URL before marking a deploy healthy.
+- It monitors successful deploys for 5 minutes.
+- If deploy verification or monitoring fails, it proposes a remediation attempt.
+- The user approves the whole retry attempt and can inspect a diff first.
+- Artifact fixes still route through `sd-artifacts` feedback streaming.
+- Phase 2 does not edit application source code.
 
 ## Architecture overview
 
@@ -190,6 +203,7 @@ Variables needed for AWS deploys:
 |----------|-------|
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | IAM credentials |
 | `AWS_REGION` | AWS region for deploy operations |
+| `NEXT_PUBLIC_SMARTDEPLOY_PHASE2_AUTOFIX_DEFAULT` | Optional global rollout flag. Set to `false` to disable Phase 2 auto-fix by default for new deployments |
 
 ### 5. Approve a user
 

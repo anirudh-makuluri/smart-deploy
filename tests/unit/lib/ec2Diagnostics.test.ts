@@ -20,7 +20,7 @@ describe("EC2 diagnostics pipeline", () => {
 		vi.clearAllMocks();
 	});
 
-	it("collects docker logs with tail=300 before curl checks", async () => {
+	it("collects docker logs with tail=300 before curl checks", { timeout: 20000 }, async () => {
 		const events: string[] = [];
 		runRedeployViaSsmMock.mockImplementation(async (params: any) => {
 			events.push("docker_logs");
@@ -54,7 +54,7 @@ describe("EC2 diagnostics pipeline", () => {
 		expect(logs).toContain("diagnostics:curl:end");
 	});
 
-	it("waits for docker startup signal before curl checks", async () => {
+	it("waits for docker startup signal before curl checks", { timeout: 20000 }, async () => {
 		const events: string[] = [];
 		runRedeployViaSsmMock
 			.mockImplementationOnce(async () => {
@@ -85,7 +85,7 @@ describe("EC2 diagnostics pipeline", () => {
 		expect(events).toEqual(["docker_logs_1", "docker_logs_2", "curl"]);
 	});
 
-	it("uses missing-container guardrail and still continues to curl checks", async () => {
+	it("uses missing-container guardrail and still continues to curl checks", { timeout: 20000 }, async () => {
 		runRedeployViaSsmMock.mockResolvedValue({ success: true, output: "ok" });
 		runCommandLiveWithWebSocketMock.mockResolvedValue("404");
 

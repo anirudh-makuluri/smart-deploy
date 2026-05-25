@@ -6,7 +6,8 @@ import ServiceLogs from "@/components/ServiceLogs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Loader2, HelpCircle, CheckCircle2, XCircle, Clock, GitCommit, User, Calendar, RefreshCw } from "lucide-react";
-import { DeployStep } from "@/app/types";
+import { DeploymentHealthCheck, DeploymentRemediationAttempt, DeployStep } from "@/app/types";
+import RemediationPlanCard from "@/components/deploy-workspace/RemediationPlanCard";
 
 export type DeployStatus = "not-started" | "running" | "success" | "error";
 
@@ -21,6 +22,18 @@ type DeployLogsViewProps = {
 	deployError?: string | null;
 	deployingCommitInfo?: CommitInfo | null;
 	steps?: DeployStep[];
+	latestHealthCheck?: (Omit<DeploymentHealthCheck, "id"> & { id?: string }) | null;
+	latestRemediationAttempt?: DeploymentRemediationAttempt | null;
+	monitoringState?: {
+		active: boolean;
+		startedAt?: string;
+		endsAt?: string;
+		windowSec?: number;
+		finalStatus?: "healthy" | "unhealthy";
+		error?: string | null;
+	};
+	onApproveRemediation?: () => void;
+	onRejectRemediation?: () => void;
 	configSnapshot?: any;
 	repoUrl?: string;
 	commitSha?: string;
@@ -46,6 +59,11 @@ export default function DeployLogsView({
 	deployError,
 	deployingCommitInfo,
 	steps,
+	latestHealthCheck,
+	latestRemediationAttempt,
+	monitoringState,
+	onApproveRemediation,
+	onRejectRemediation,
 	configSnapshot,
 	repoUrl,
 	commitSha,
@@ -131,6 +149,8 @@ export default function DeployLogsView({
 					? "An error occurred during deployment"
 					: "Ready to deploy"
 		: "Historical + live service output";
+	const hasGeneratedRemediationDiff =
+		Array.isArray(latestRemediationAttempt?.diff_preview) && latestRemediationAttempt.diff_preview.length > 0;
 
 	return (
 		<div className="flex h-full min-h-0 flex-col gap-6">
@@ -224,6 +244,52 @@ export default function DeployLogsView({
 					</div>
 				</div>
 			</div>
+
+			{monitoringState?.active && (
+				<Alert className="border-primary/30 bg-primary/10 text-foreground">
+					<AlertTitle className="font-semibold text-primary">Post-deploy monitoring active</AlertTitle>
+					<AlertDescription className="text-sm">
+						{monitoringState.windowSec
+							? `Smart Deploy is monitoring the URL for ${Math.round(monitoringState.windowSec / 60)} minutes.`
+							: "Smart Deploy is monitoring the deployment URL."}
+						{latestHealthCheck?.status ? ` Latest status: ${latestHealthCheck.status}.` : ""}
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{!monitoringState?.active && monitoringState?.finalStatus === "healthy" && (
+				<Alert className="border-emerald-500/30 bg-emerald-500/10 text-foreground">
+					<AlertTitle className="font-semibold text-emerald-500">Monitoring completed</AlertTitle>
+					<AlertDescription className="text-sm">
+						The deployment stayed healthy through the monitoring window.
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{!monitoringState?.active && monitoringState?.finalStatus === "unhealthy" && (
+				<Alert className="border-destructive/40 bg-destructive/10 text-foreground">
+					<AlertTitle className="font-semibold text-destructive">Monitoring detected an issue</AlertTitle>
+					<AlertDescription className="text-sm">
+						{monitoringState.error || "The deployment became unhealthy during the monitoring window."}
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{latestRemediationAttempt && (
+				<RemediationPlanCard
+					attempt={latestRemediationAttempt}
+					title={hasGeneratedRemediationDiff ? "Recovery plan ready" : "Let Smart Deploy investigate"}
+					description={
+						hasGeneratedRemediationDiff
+							? "I analyzed the failure and prepared updated deployment artifacts. Review the exact diff, then redeploy only if the plan looks right."
+							: "I can inspect the failure, generate a concrete artifact fix with sd-artifacts, and show you the exact diff before anything is redeployed."
+					}
+					approveLabel={hasGeneratedRemediationDiff ? "Redeploy with this plan" : "Investigate and prepare fix"}
+					rejectLabel={hasGeneratedRemediationDiff ? "Discard draft" : "Not now"}
+					onApprove={onApproveRemediation}
+					onReject={onRejectRemediation}
+				/>
+			)}
 
 			{showDeployLogs && deployError && (
 				<Alert className="border-destructive/50 bg-destructive/10 text-foreground flex flex-col gap-3">

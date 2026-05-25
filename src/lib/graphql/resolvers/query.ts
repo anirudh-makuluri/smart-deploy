@@ -226,6 +226,47 @@ export async function deploymentHistoryAll(
 }
 
 /**
+ * Query.deploymentRemediationAttempt
+ * Loads one remediation attempt for the authenticated user
+ */
+export async function deploymentRemediationAttempt(
+	_: unknown,
+	{ attemptId }: { attemptId: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("deploymentRemediationAttempt", async () => {
+		const userID = requireUser(ctx);
+		const attemptIdStr = String(attemptId ?? "").trim();
+		if (!attemptIdStr) throw new Error("attemptId is required");
+
+		const response = await dbHelper.getDeploymentRemediationAttempt(attemptIdStr, userID);
+		if (response.error) throw new Error(String(response.error));
+		return response.attempt ?? null;
+	});
+}
+
+/**
+ * Query.deploymentRemediationDiff
+ * Returns the diff preview for one remediation attempt
+ */
+export async function deploymentRemediationDiff(
+	_: unknown,
+	{ attemptId }: { attemptId: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("deploymentRemediationDiff", async () => {
+		const userID = requireUser(ctx);
+		const attemptIdStr = String(attemptId ?? "").trim();
+		if (!attemptIdStr) throw new Error("attemptId is required");
+
+		const response = await dbHelper.getDeploymentRemediationAttempt(attemptIdStr, userID);
+		if (response.error) throw new Error(String(response.error));
+		if (!response.attempt) throw new Error("Remediation attempt not found");
+		return response.attempt.diff_preview ?? [];
+	});
+}
+
+/**
  * Query.session
  * Returns current session info with user repos
  */
@@ -334,6 +375,41 @@ function mapStatusToEnum(status: string | null | undefined): string {
 	return "didnt_deploy";
 }
 
+function mapLifecycleStateToEnum(state: string | null | undefined): string {
+	if (!state) return "idle";
+
+	const stateSet = new Set([
+		"idle",
+		"deploying",
+		"verifying",
+		"failed",
+		"awaiting_remediation_approval",
+		"applying_remediation",
+		"redeploying",
+		"monitoring",
+		"healthy",
+		"remediation_exhausted",
+		"remediation_rejected",
+	]);
+	return stateSet.has(state.toLowerCase()) ? state.toLowerCase() : "idle";
+}
+
+function mapHealthStatusToEnum(status: string | null | undefined): string | null {
+	if (!status) return null;
+	const normalized = status.toLowerCase();
+	const allowed = new Set([
+		"unknown",
+		"healthy",
+		"degraded",
+		"unreachable",
+		"timeout",
+		"http_error",
+		"redirect_loop",
+		"tls_error",
+	]);
+	return allowed.has(normalized) ? normalized : null;
+}
+
 /**
  * Map database cloudProvider to GraphQL enum value
  */
@@ -420,6 +496,7 @@ function transformDeployment(deployment: any) {
 		serviceName: deployment.serviceName,
 		ownerID: deployment.ownerID,
 		status: mapStatusToEnum(deployment.status),
+		lifecycleState: mapLifecycleStateToEnum(deployment.lifecycleState),
 		firstDeployment: deployment.firstDeployment,
 		lastDeployment: deployment.lastDeployment,
 		revision: deployment.revision,
@@ -434,6 +511,12 @@ function transformDeployment(deployment: any) {
 		cloudProvider: deployment.cloudProvider ? mapCloudProviderToEnum(deployment.cloudProvider) : null,
 		deploymentTarget: deployment.deploymentTarget ? mapDeploymentTargetToEnum(deployment.deploymentTarget) : null,
 		awsRegion: deployment.awsRegion || undefined,
+		autoFixEnabled: typeof deployment.autoFixEnabled === "boolean" ? deployment.autoFixEnabled : true,
+		maxAutoFixRetries: typeof deployment.maxAutoFixRetries === "number" ? deployment.maxAutoFixRetries : undefined,
+		healthMonitoringWindowSec:
+			typeof deployment.healthMonitoringWindowSec === "number" ? deployment.healthMonitoringWindowSec : undefined,
+		latestHealthStatus: mapHealthStatusToEnum(deployment.latestHealthStatus),
+		latestHealthCheckAt: deployment.latestHealthCheckAt || undefined,
 		ec2: sanitizeEc2Details(deployment.ec2),
 		cloudRun: nullifyIfEmpty(deployment.cloudRun),
 	};

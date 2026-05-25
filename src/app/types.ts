@@ -35,6 +35,44 @@ export type repoType = {
 export type CloudProvider = 'aws' | 'gcp';
 export type DeploymentTarget = 'ec2' | 'cloud_run';
 
+export type DeploymentLifecycleState =
+	| 'idle'
+	| 'deploying'
+	| 'verifying'
+	| 'failed'
+	| 'awaiting_remediation_approval'
+	| 'applying_remediation'
+	| 'redeploying'
+	| 'monitoring'
+	| 'healthy'
+	| 'remediation_exhausted'
+	| 'remediation_rejected';
+
+export type DeploymentHealthStatus =
+	| 'unknown'
+	| 'healthy'
+	| 'degraded'
+	| 'unreachable'
+	| 'timeout'
+	| 'http_error'
+	| 'redirect_loop'
+	| 'tls_error';
+
+export type DeploymentHealthFailureType =
+	| 'dns_failure'
+	| 'connection_refused'
+	| 'timeout'
+	| 'tls_error'
+	| 'redirect_loop'
+	| 'http_error'
+	| 'unknown';
+
+export type FailedArtifactScope = 'dockerfile' | 'nginx' | 'compose' | 'general';
+
+export type RemediationRiskLevel = 'safe' | 'moderate' | 'risky';
+export type RemediationAttemptStatus = 'not_needed' | 'proposed' | 'approved' | 'rejected' | 'applied' | 'failed';
+export type RemediationTriggerType = 'deploy_failure' | 'post_deploy_unhealthy';
+
 // ── Per-service deployment details (stored after deploy; reused on redeploy) ──
 
 export type EC2Details = {
@@ -76,6 +114,8 @@ export type DeployConfig = {
 	serviceName: string;
 	/** Deployment status */
 	status: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
+	/** Fine-grained runtime lifecycle for Phase 2 orchestration */
+	lifecycleState?: DeploymentLifecycleState | null;
 	/** ISO timestamp when first deployed; null if never deployed */
 	firstDeployment: string | null;
 	/** ISO timestamp of most recent deployment; null if never deployed */
@@ -88,6 +128,20 @@ export type DeployConfig = {
 	deploymentTarget: DeploymentTarget;
 	/** AWS region (defaults to value from config) */
 	awsRegion: string;
+	/** Whether Phase 2 remediation is enabled for this deployment */
+	autoFixEnabled?: boolean;
+	/** Maximum remediation retries allowed for this deployment */
+	maxAutoFixRetries?: number | null;
+	/** Number of seconds to monitor after a successful deploy */
+	healthMonitoringWindowSec?: number | null;
+	/** Latest persisted health classification for the deployment URL */
+	latestHealthStatus?: DeploymentHealthStatus | null;
+	/** ISO timestamp of the latest health check */
+	latestHealthCheckAt?: string | null;
+	/** Active remediation session id while Phase 2 retries are in progress */
+	activeRemediationSessionId?: string | null;
+	/** Number of remediation attempts used in the active session */
+	activeRemediationAttemptCount?: number | null;
 	/** AWS EC2 deployment details (null if not deployed to EC2 or status === didnt_deploy) */
 	ec2: EC2Details | null;
 	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
@@ -166,6 +220,67 @@ export type DeploymentHistoryEntry = {
 	branch?: string;
 	/** Deployment duration in milliseconds */
 	durationMs?: number;
+	/** Phase 2 remediation attempts linked to this deployment attempt */
+	remediationAttempts?: DeploymentRemediationAttempt[];
+	/** Recorded health checks linked to this deployment attempt */
+	healthChecks?: DeploymentHealthCheck[];
+};
+
+export type DeploymentRemediationChange = {
+	title: string;
+	description: string;
+	target?: string | null;
+};
+
+export type DeploymentRemediationAttempt = {
+	id: string;
+	repo_name: string;
+	service_name: string;
+	deployment_history_id?: string | null;
+	session_id?: string | null;
+	attempt_number: number;
+	trigger_type: RemediationTriggerType;
+	health_failure_type?: DeploymentHealthFailureType | null;
+	summary: string;
+	root_cause?: string | null;
+	evidence?: string[];
+	risk_level?: RemediationRiskLevel | null;
+	confidence?: number | null;
+	changes?: DeploymentRemediationChange[];
+	diff_preview?: Record<string, unknown>[] | string[] | null;
+	files_to_modify?: string[];
+	expected_outcome?: string | null;
+	can_auto_apply?: boolean;
+	approved_by_user?: boolean | null;
+	applied?: boolean;
+	success?: boolean | null;
+	status: RemediationAttemptStatus;
+	error?: string | null;
+	created_at: string;
+	updated_at?: string | null;
+};
+
+export type DeploymentHealthCheck = {
+	id: string;
+	repo_name: string;
+	service_name: string;
+	deployment_history_id?: string | null;
+	url: string;
+	status: DeploymentHealthStatus;
+	http_status?: number | null;
+	failure_type?: DeploymentHealthFailureType | null;
+	latency_ms?: number | null;
+	error_message?: string | null;
+	checked_at: string;
+};
+
+export type DeploymentFailureAnalysis = {
+	summary: string;
+	rootCause: string;
+	concreteFixInstructions: string;
+	evidence: string[];
+	failedArtifactScope: FailedArtifactScope;
+	expectedOutcome?: string | null;
 };
 
 export type SDArtifactsResponse = {

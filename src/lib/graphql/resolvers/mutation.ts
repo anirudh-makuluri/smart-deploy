@@ -56,6 +56,13 @@ function resolveMutationErrorMessage(
 	return fallback;
 }
 
+async function getOwnedRemediationAttempt(attemptId: string, userID: string) {
+	const response = await dbHelper.getDeploymentRemediationAttempt(attemptId, userID);
+	if (response.error) throw new Error(String(response.error));
+	if (!response.attempt) throw new Error("Remediation attempt not found");
+	return response.attempt;
+}
+
 // ──────────────────────────────────────────────────────────────
 // Mutation Resolvers
 // ──────────────────────────────────────────────────────────────
@@ -532,6 +539,76 @@ export async function updateCustomDomain(
 			message,
 			customUrl: formattedCustomUrl,
 		};
+	});
+}
+
+/**
+ * Mutation.approveDeploymentRemediation
+ * Persists approval before the retry flow continues in the UI
+ */
+export async function approveDeploymentRemediation(
+	_: unknown,
+	{ attemptId }: { attemptId: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("approveDeploymentRemediation", async () => {
+		const userID = requireUser(ctx);
+		const attemptIdStr = String(attemptId ?? "").trim();
+		if (!attemptIdStr) throw new Error("attemptId is required");
+
+		const existingAttempt = await getOwnedRemediationAttempt(attemptIdStr, userID);
+		const response = await dbHelper.updateDeploymentRemediationAttempt(attemptIdStr, userID, {
+			approvedByUser: true,
+			status: "approved",
+		});
+		if (response.error || !response.attempt) {
+			throw new Error(String(response.error ?? "Failed to approve remediation attempt"));
+		}
+
+		const runtimeState = await dbHelper.updateDeploymentRuntimeState({
+			repoName: existingAttempt.repo_name,
+			serviceName: existingAttempt.service_name,
+			userID,
+			lifecycleState: "applying_remediation",
+		});
+		if (runtimeState.error) throw new Error(String(runtimeState.error));
+
+		return response.attempt;
+	});
+}
+
+/**
+ * Mutation.rejectDeploymentRemediation
+ * Persists rejection and closes out the current remediation loop
+ */
+export async function rejectDeploymentRemediation(
+	_: unknown,
+	{ attemptId }: { attemptId: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("rejectDeploymentRemediation", async () => {
+		const userID = requireUser(ctx);
+		const attemptIdStr = String(attemptId ?? "").trim();
+		if (!attemptIdStr) throw new Error("attemptId is required");
+
+		const existingAttempt = await getOwnedRemediationAttempt(attemptIdStr, userID);
+		const response = await dbHelper.updateDeploymentRemediationAttempt(attemptIdStr, userID, {
+			approvedByUser: false,
+			status: "rejected",
+		});
+		if (response.error || !response.attempt) {
+			throw new Error(String(response.error ?? "Failed to reject remediation attempt"));
+		}
+
+		const runtimeState = await dbHelper.updateDeploymentRuntimeState({
+			repoName: existingAttempt.repo_name,
+			serviceName: existingAttempt.service_name,
+			userID,
+			lifecycleState: "remediation_rejected",
+		});
+		if (runtimeState.error) throw new Error(String(runtimeState.error));
+
+		return response.attempt;
 	});
 }
 

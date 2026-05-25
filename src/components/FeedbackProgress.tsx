@@ -14,6 +14,9 @@ export type FeedbackProgressPayload = {
 	failureSummary?: string;
 	failureLogs?: string;
 	failedArtifactScope?: string;
+	mode?: "scan_improvement" | "deployment_remediation";
+	title?: string;
+	description?: string;
 };
 
 type FeedbackProgressProps = {
@@ -34,6 +37,12 @@ const NODES = [
 
 export default function FeedbackProgress({ payload, repoName, serviceName, onComplete, onCancel }: FeedbackProgressProps) {
 	const { repoUrl, commitSha, packagePath, feedback, failureSummary, failureLogs, failedArtifactScope } = payload;
+	const title = payload.title || (payload.mode === "deployment_remediation" ? "Preparing Recovery Plan" : "Improving Scan Results");
+	const description =
+		payload.description ||
+		(payload.mode === "deployment_remediation"
+			? "SmartDeploy is preparing updated deployment artifacts for your review before any retry happens"
+			: "SmartDeploy is applying your feedback to improve Dockerfiles, compose, and nginx");
 	const [activeNode, setActiveNode] = useState<string>("feedback_coordinator");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
@@ -234,8 +243,8 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 					<RefreshCw className="size-5 text-primary" />
 				</div>
 				<div>
-					<h2 className="text-xl font-semibold text-foreground tracking-tight">Improving Scan Results</h2>
-					<p className="text-sm text-muted-foreground">SmartDeploy is applying your feedback to improve Dockerfiles, compose, and nginx</p>
+					<h2 className="text-xl font-semibold text-foreground tracking-tight">{title}</h2>
+					<p className="text-sm text-muted-foreground">{description}</p>
 				</div>
 			</div>
 

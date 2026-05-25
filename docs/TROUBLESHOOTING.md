@@ -173,6 +173,29 @@ Also see [Custom Domains](./CUSTOM_DOMAINS.md).
 
 ---
 
+## Phase 2 remediation does not start
+
+### Symptoms
+- Deploy fails but no remediation attempt appears
+- Approve retry is unavailable
+- Monitoring reports unhealthy status but no retry plan is created
+
+### Quick checks
+- Confirm the deployment target is EC2.
+- Confirm `autoFixEnabled` is true for that deployment.
+- Confirm `maxAutoFixRetries` is greater than the current attempt count.
+- Confirm the deployment has a repo URL and commit SHA.
+- Confirm `/api/feedback/stream` is healthy.
+
+### Fix
+- If Phase 2 was globally disabled, set `NEXT_PUBLIC_SMARTDEPLOY_PHASE2_AUTOFIX_DEFAULT=true` or remove the flag.
+- Re-run a deploy after restoring commit SHA and artifact generation inputs.
+- If retries are exhausted, increase `maxAutoFixRetries` for the deployment or redeploy manually to start a fresh session.
+
+Also see [Phase 2 Operations](./PHASE2_OPERATIONS.md).
+
+---
+
 ## Self-hosted instance runs out of memory
 
 ### Symptoms

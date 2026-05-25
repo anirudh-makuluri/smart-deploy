@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
-import type { DeployStep } from "@/app/types";
+import type {
+	DeploymentFailureAnalysis,
+	DeploymentHealthCheck,
+	DeployStep,
+	FailedArtifactScope,
+} from "@/app/types";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { callLLMWithFallback } from "@/lib/llmProviders";
+import { inferFailedArtifactScope } from "@/lib/remediationFeedback";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,14 +20,19 @@ export async function POST(req: Request) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	let body: { steps: DeployStep[]; configSnapshot: Record<string, unknown> };
+	let body: {
+		steps: DeployStep[];
+		configSnapshot: Record<string, unknown>;
+		healthCheck?: Omit<DeploymentHealthCheck, "id"> | DeploymentHealthCheck | null;
+		deployError?: string | null;
+	};
 	try {
 		body = await req.json();
 	} catch {
 		return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
 	}
 
-	const { steps, configSnapshot } = body;
+	const { steps, configSnapshot, healthCheck, deployError } = body;
 	if (!Array.isArray(steps) || !configSnapshot) {
 		return NextResponse.json(
 			{ error: "steps (array) and configSnapshot (object) required" },
@@ -37,19 +48,50 @@ export async function POST(req: Request) {
 		.join("\n\n");
 
 	const configText = JSON.stringify(configSnapshot, null, 2);
+	const healthText = healthCheck
+		? JSON.stringify(
+			{
+				status: healthCheck.status,
+				failure_type: healthCheck.failure_type ?? null,
+				error_message: healthCheck.error_message ?? null,
+				http_status: healthCheck.http_status ?? null,
+				url: healthCheck.url,
+			},
+			null,
+			2
+		)
+		: "none";
 
-	const prompt = `A deployment failed. Below are the deployment step logs and the configuration that was used.
+	const prompt = `A deployment failed or became unhealthy after deploy. Below are the deployment step logs and the configuration that was used.
 
 Deployment configuration used:
 ${configText}
 
+Reported deployment error:
+${deployError || "none"}
+
+Latest health result:
+${healthText}
+
 Deployment logs (by step):
 ${logsText}
 
-Analyze why the deployment likely failed. In a clear, concise response:
-1. Identify the most likely cause(s) of the failure (e.g. wrong command, missing env var, platform mismatch).
-2. Give concrete steps the user can take to fix the issue and succeed on the next deploy (e.g. "Set build_cmd to X", "Add NODE_ENV=production to env vars").
-Keep the answer practical and short (a few paragraphs at most). Use plain text, no markdown code fences.`;
+Analyze why the deployment likely failed. Return strict JSON with exactly these keys:
+{
+  "summary": string,
+  "rootCause": string,
+  "concreteFixInstructions": string,
+  "evidence": string[],
+  "failedArtifactScope": "dockerfile" | "nginx" | "compose" | "general",
+  "expectedOutcome": string
+}
+
+Rules:
+- Be concrete and practical.
+- Focus on infra/deployment artifacts and runtime wiring, not application source code changes.
+- evidence must be 1 to 5 short strings drawn from the logs or health results.
+- failedArtifactScope should identify which generated artifact area most likely needs changes.
+- Do not wrap the JSON in markdown fences.`;
 
 	try {
 		const llm = await callLLMWithFallback(prompt, {
@@ -59,22 +101,114 @@ Keep the answer practical and short (a few paragraphs at most). Use plain text, 
 			localModelDefault: "llama3.2",
 			localTimeoutMs: 20_000,
 		});
-		return NextResponse.json({ response: llm.text, source: "llm", model: llm.model, provider: llm.provider });
+		const analysis = parseFailureAnalysis(llm.text, steps, configSnapshot, healthCheck, deployError);
+		return NextResponse.json({
+			response: formatFailureAnalysisText(analysis),
+			analysis,
+			source: "llm",
+			model: llm.model,
+			provider: llm.provider,
+		});
 	} catch (error: unknown) {
 		console.error("analyze-failure LLM error:", error);
-		const fallback = buildHeuristicFailureAnalysis(steps, configSnapshot);
+		const analysis = buildHeuristicFailureAnalysis(steps, configSnapshot, healthCheck, deployError);
 		return NextResponse.json({
-			response: fallback,
+			response: formatFailureAnalysisText(analysis),
+			analysis,
 			source: "heuristic-fallback",
 			warning: error instanceof Error ? error.message : "LLM unavailable",
 		});
 	}
 }
 
+function parseLooseJson(raw: string): unknown {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	try {
+		return JSON.parse(trimmed);
+	} catch {
+		const firstBrace = trimmed.indexOf("{");
+		const lastBrace = trimmed.lastIndexOf("}");
+		if (firstBrace >= 0 && lastBrace > firstBrace) {
+			return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+		}
+		throw new Error("Invalid JSON payload");
+	}
+}
+
+function normalizeEvidence(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter((entry): entry is string => typeof entry === "string")
+		.map((entry) => entry.trim())
+		.filter(Boolean)
+		.slice(0, 5);
+}
+
+function normalizeFailedArtifactScope(value: unknown, fallbackText: string): FailedArtifactScope {
+	if (value === "dockerfile" || value === "nginx" || value === "compose" || value === "general") {
+		return value;
+	}
+	return inferFailedArtifactScope(fallbackText);
+}
+
+function parseFailureAnalysis(
+	rawText: string,
+	steps: DeployStep[],
+	configSnapshot: Record<string, unknown>,
+	healthCheck?: Omit<DeploymentHealthCheck, "id"> | DeploymentHealthCheck | null,
+	deployError?: string | null,
+): DeploymentFailureAnalysis {
+	try {
+		const parsed = parseLooseJson(rawText);
+		if (!parsed || typeof parsed !== "object") {
+			throw new Error("Parsed analysis is not an object");
+		}
+		const record = parsed as Record<string, unknown>;
+		const fallback = buildHeuristicFailureAnalysis(steps, configSnapshot, healthCheck, deployError);
+		return {
+			summary: typeof record.summary === "string" && record.summary.trim() ? record.summary.trim() : fallback.summary,
+			rootCause: typeof record.rootCause === "string" && record.rootCause.trim() ? record.rootCause.trim() : fallback.rootCause,
+			concreteFixInstructions:
+				typeof record.concreteFixInstructions === "string" && record.concreteFixInstructions.trim()
+					? record.concreteFixInstructions.trim()
+					: fallback.concreteFixInstructions,
+			evidence: normalizeEvidence(record.evidence).length > 0 ? normalizeEvidence(record.evidence) : fallback.evidence,
+			failedArtifactScope: normalizeFailedArtifactScope(
+				record.failedArtifactScope,
+				[
+					String(record.summary ?? ""),
+					String(record.rootCause ?? ""),
+					String(record.concreteFixInstructions ?? ""),
+					...normalizeEvidence(record.evidence),
+				].join("\n")
+			),
+			expectedOutcome:
+				typeof record.expectedOutcome === "string" && record.expectedOutcome.trim()
+					? record.expectedOutcome.trim()
+					: fallback.expectedOutcome ?? null,
+		};
+	} catch {
+		return buildHeuristicFailureAnalysis(steps, configSnapshot, healthCheck, deployError);
+	}
+}
+
+function formatFailureAnalysisText(analysis: DeploymentFailureAnalysis): string {
+	return [
+		analysis.summary,
+		`Likely root cause: ${analysis.rootCause}`,
+		analysis.evidence.length > 0 ? `Evidence:\n${analysis.evidence.map((line) => `- ${line}`).join("\n")}` : "",
+		`Concrete fix instructions: ${analysis.concreteFixInstructions}`,
+		analysis.expectedOutcome ? `Expected outcome: ${analysis.expectedOutcome}` : "",
+	].filter(Boolean).join("\n\n");
+}
+
 function buildHeuristicFailureAnalysis(
 	steps: DeployStep[],
-	configSnapshot: Record<string, unknown>
-): string {
+	configSnapshot: Record<string, unknown>,
+	healthCheck?: Omit<DeploymentHealthCheck, "id"> | DeploymentHealthCheck | null,
+	deployError?: string | null,
+): DeploymentFailureAnalysis {
 	const allLogs = steps.flatMap((s) => s.logs ?? []);
 	const logText = allLogs.join("\n");
 	const failedSteps = steps.filter((s) => s.status === "error");
@@ -101,16 +235,25 @@ function buildHeuristicFailureAnalysis(
 		? configSnapshot.deploymentTarget
 		: "unknown";
 
-	const topLogs = allLogs.slice(-8).map((l) => `- ${l}`).join("\n");
-	const suggested = hints.slice(0, 3).map((h, i) => `${i + 1}. ${h}`).join("\n");
+	const evidence = [
+		deployError?.trim() || null,
+		healthCheck?.failure_type ? `Health failure type: ${healthCheck.failure_type}` : null,
+		healthCheck?.error_message?.trim() || null,
+		...allLogs.slice(-3).map((line) => line.trim()),
+	].filter((value): value is string => Boolean(value)).slice(0, 5);
+	const concreteFixInstructions = hints.slice(0, 3).join(" ");
+	const scopeSource = [logText, deployError, healthCheck?.error_message, healthCheck?.failure_type].filter(Boolean).join("\n");
 
-	return [
-		"LLM providers are currently unavailable, so this is a heuristic analysis.",
-		`Most likely failure area: ${failedStepLabels || "unknown step"}.`,
-		`Deployment target: ${deploymentTarget}.`,
-		suggested || "1. Inspect the most recent error logs and retry after fixing the first concrete error.",
-		topLogs ? `Recent log lines:\n${topLogs}` : "",
-	].filter(Boolean).join("\n\n");
+	return {
+		summary: "LLM providers are currently unavailable, so Smart Deploy prepared a heuristic failure analysis.",
+		rootCause: `Most likely failure area: ${failedStepLabels || "unknown step"} on ${deploymentTarget}.`,
+		concreteFixInstructions:
+			concreteFixInstructions ||
+			"Inspect the most recent failing logs, adjust the generated deployment artifacts for the failing step, and retry the deployment.",
+		evidence: evidence.length > 0 ? evidence : ["No concrete diagnostic lines were available in the most recent deploy logs."],
+		failedArtifactScope: inferFailedArtifactScope(scopeSource),
+		expectedOutcome: "Updated generated deployment artifacts should produce a healthy deployment on the next retry.",
+	};
 }
 
 export function prioritizeDiagnosticsLogs(steps: DeployStep[]): DeployStep[] {

@@ -15,20 +15,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, GitBranch, GitCommit, History, Loader2 } from "lucide-react";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
+import type { DeploymentHistoryEntry } from "@/app/types";
+import DeploymentHistoryPhase2Details from "@/components/deployment-history/DeploymentHistoryPhase2Details";
 
-type DeploymentHistoryAllEntry = {
-	id: string;
-	repo_name: string;
-	service_name: string;
-	timestamp: string;
-	success: boolean;
-	steps: { id: string; label: string; logs: string[]; status: string; startedAt?: string; endedAt?: string }[];
-	configSnapshot: Record<string, unknown>;
-	commitSha?: string;
-	commitMessage?: string;
-	branch?: string;
-	durationMs?: number;
-};
+type DeploymentHistoryAllEntry = DeploymentHistoryEntry;
 
 export default function DeploymentHistoryAll() {
 	const [page, setPage] = React.useState(1);
@@ -124,10 +114,12 @@ export default function DeploymentHistoryAll() {
 										)}
 									</div>
 								)}
+								<DeploymentHistoryPhase2Details entry={entry} compact />
 							</div>
 						</AccordionTrigger>
 						<AccordionContent className="pb-4">
 							<div className="space-y-4">
+								<DeploymentHistoryPhase2Details entry={entry} />
 								<div>
 									<p className="text-xs font-medium text-muted-foreground mb-2">Logs</p>
 									<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">

@@ -66,6 +66,61 @@ export const typeDefs = `
 	failed
   }
 
+  enum DeploymentLifecycleState {
+    idle
+    deploying
+    verifying
+    failed
+    awaiting_remediation_approval
+    applying_remediation
+    redeploying
+    monitoring
+    healthy
+    remediation_exhausted
+    remediation_rejected
+  }
+
+  enum DeploymentHealthStatus {
+    unknown
+    healthy
+    degraded
+    unreachable
+    timeout
+    http_error
+    redirect_loop
+    tls_error
+  }
+
+  enum DeploymentHealthFailureType {
+    dns_failure
+    connection_refused
+    timeout
+    tls_error
+    redirect_loop
+    http_error
+    unknown
+  }
+
+  enum RemediationRiskLevel {
+    safe
+    moderate
+    risky
+  }
+
+  enum RemediationAttemptStatus {
+    not_needed
+    proposed
+    approved
+    rejected
+    applied
+    failed
+  }
+
+  enum RemediationTriggerType {
+    deploy_failure
+    post_deploy_unhealthy
+  }
+
   enum CloudProvider {
     aws
     gcp
@@ -113,12 +168,18 @@ export const typeDefs = `
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus!
+    lifecycleState: DeploymentLifecycleState
     firstDeployment: String
     lastDeployment: String
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
     awsRegion: String
+    autoFixEnabled: Boolean
+    maxAutoFixRetries: Int
+    healthMonitoringWindowSec: Int
+    latestHealthStatus: DeploymentHealthStatus
+    latestHealthCheckAt: String
     ec2: EC2Details
     cloudRun: CloudRunDetails
     scanResults: JSON!
@@ -206,6 +267,55 @@ export const typeDefs = `
     commitMessage: String
     branch: String
     durationMs: Int
+    remediationAttempts: [DeploymentRemediationAttempt!]!
+    healthChecks: [DeploymentHealthCheck!]!
+  }
+
+  type DeploymentRemediationChange {
+    title: String!
+    description: String!
+    target: String
+  }
+
+  type DeploymentRemediationAttempt {
+    id: String!
+    repo_name: String!
+    service_name: String!
+    deployment_history_id: String
+    attempt_number: Int!
+    trigger_type: RemediationTriggerType!
+    health_failure_type: DeploymentHealthFailureType
+    summary: String!
+    root_cause: String
+    evidence: [String!]!
+    risk_level: RemediationRiskLevel
+    confidence: Float
+    changes: [DeploymentRemediationChange!]!
+    diff_preview: JSON
+    files_to_modify: [String!]!
+    expected_outcome: String
+    can_auto_apply: Boolean
+    approved_by_user: Boolean
+    applied: Boolean
+    success: Boolean
+    status: RemediationAttemptStatus!
+    error: String
+    created_at: String!
+    updated_at: String
+  }
+
+  type DeploymentHealthCheck {
+    id: String!
+    repo_name: String!
+    service_name: String!
+    deployment_history_id: String
+    url: String!
+    status: DeploymentHealthStatus!
+    http_status: Int
+    failure_type: DeploymentHealthFailureType
+    latency_ms: Int
+    error_message: String
+    checked_at: String!
   }
 
   type DeploymentHistoryPage {
@@ -311,12 +421,18 @@ export const typeDefs = `
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus
+    lifecycleState: DeploymentLifecycleState
     firstDeployment: String
     lastDeployment: String
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
     awsRegion: String
+    autoFixEnabled: Boolean
+    maxAutoFixRetries: Int
+    healthMonitoringWindowSec: Int
+    latestHealthStatus: DeploymentHealthStatus
+    latestHealthCheckAt: String
     ec2: JSON
     cloudRun: JSON
     scanResults: JSON
@@ -363,6 +479,12 @@ export const typeDefs = `
 
     # All deployment history for authenticated user
     deploymentHistoryAll(page: Int, limit: Int): DeploymentHistoryPage!
+
+    # One remediation attempt for the authenticated user
+    deploymentRemediationAttempt(attemptId: String!): DeploymentRemediationAttempt
+
+    # Diff preview payload for a remediation attempt
+    deploymentRemediationDiff(attemptId: String!): JSON!
 
     # Current session info with repos
     session(limit: Int): Session!
@@ -412,6 +534,12 @@ export const typeDefs = `
       serviceName: String!
       customUrl: String
     ): UpdateCustomDomainResult!
+
+    # Approve a remediation attempt before retrying deployment
+    approveDeploymentRemediation(attemptId: String!): DeploymentRemediationAttempt!
+
+    # Reject a remediation attempt and stop the current retry flow
+    rejectDeploymentRemediation(attemptId: String!): DeploymentRemediationAttempt!
 
     # Verify DNS subdomain availability
     verifyDns(

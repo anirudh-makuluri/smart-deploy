@@ -20,11 +20,12 @@ import {
 	isValidRepoRelativeDockerfilePath,
 	syncDockerfilePathInCompose,
 } from "@/lib/dockerfileDeployPath";
+import { defaultArtifacts, normalizeScanResultPayload } from "@/lib/scanResultNormalization";
 
 type AddFileType = "dockerfile" | "compose";
 
 type PostScanResultsProps = {
-	results: SDArtifactsResponse;
+	results: SDArtifactsResponse | null | undefined;
 	deployment: DeployConfig;
 	packagePath?: string;
 	scanTime?: number;
@@ -40,7 +41,12 @@ type PostScanResultsProps = {
 	}) => void;
 };
 
-export default function PostScanResults({ results, packagePath, scanTime, deployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
+export default function PostScanResults({ results: rawResults, packagePath, scanTime, deployment, onCancel, onUpdateResults, onStartImproveScan }: PostScanResultsProps) {
+	const results = useMemo(
+		() => normalizeScanResultPayload(rawResults) ?? defaultArtifacts(),
+		[rawResults]
+	);
+
 	const dockerfileNames = useMemo(() => {
 		if (!results.dockerfiles) return [];
 		return Object.keys(results.dockerfiles).sort((a, b) =>
