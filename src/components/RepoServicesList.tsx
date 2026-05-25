@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Github, AlertTriangle, FolderPlus } from "lucide-react";
+import { AlertTriangle, FolderPlus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,10 +14,12 @@ import {
 } from "@/components/ui/sheet";
 import { DetectedServiceInfo, DeployConfig, repoType } from "@/app/types";
 import { getDeploymentForService } from "@/lib/utils";
+import ServiceTypeIcon, { ServiceTypeBadge } from "@/components/ServiceTypeIcon";
 
 export type RepoCatalogActions = {
 	busy: boolean;
 	onAddService: (rootPath: string, displayName?: string) => Promise<boolean>;
+	onRefresh?: () => Promise<boolean>;
 };
 
 type RepoServicesListProps = {
@@ -74,6 +76,17 @@ export default function RepoServicesList({
 				<div className="flex flex-wrap items-center gap-2">
 					{catalogActions && !loading && !error && (
 						<>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								className="shrink-0"
+								disabled={busy}
+								onClick={() => void catalogActions.onRefresh?.()}
+							>
+								<RefreshCw className={`size-4 mr-1.5 ${busy ? "animate-spin" : ""}`} />
+								Refresh detection
+							</Button>
 							<Button
 								type="button"
 								variant="outline"
@@ -155,13 +168,18 @@ export default function RepoServicesList({
 									}`}
 							>
 								<div className="flex items-center gap-3">
-									<Github className="size-6 shrink-0 text-muted-foreground" />
-									<span className="font-semibold text-foreground truncate">
-										@{repoName}/{svc.name}
-									</span>
+									<ServiceTypeIcon deployMode={svc.deployMode} serviceType={svc.serviceType} />
+									<div className="min-w-0 flex-1">
+										<div className="font-semibold text-foreground truncate">
+											@{repoName}/{svc.name}
+										</div>
+									</div>
 								</div>
 								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
 									{svc.path === "." ? "Root: ." : svc.path}
+								</div>
+								<div className="mt-2">
+									<ServiceTypeBadge deployMode={svc.deployMode} serviceType={svc.serviceType} />
 								</div>
 								<div className="mt-3 flex flex-col gap-2">
 									<div className="flex items-center gap-2">

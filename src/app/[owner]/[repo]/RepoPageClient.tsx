@@ -12,8 +12,10 @@ import RepoServicesList from "@/components/RepoServicesList";
 import {
 	resolveRepo,
 	detectRepoServices,
+	fetchRepoServices,
 	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
 	addRepoServiceRoot,
+	buildDirectStaticConfig,
 	type DetectServicesResult,
 } from "@/lib/graphqlClient";
 import { getDeploymentForService, normalizeRepoUrl } from "@/lib/utils";
@@ -85,40 +87,56 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	});
 
 	const repo = repoFromStore ?? repoQuery.data ?? null;
+	const detectionBranch = repo?.default_branch ?? "";
 	const isLoadingRepo = !repo && repoQuery.isLoading;
 	const repoNotFound = !repo && !repoQuery.isLoading && (repoQuery.isError || repoQuery.data === null);
 
 	const cachedServices = React.useMemo(() => {
-		const inMemory = getDetectedRepoCache(repoUrl);
+		const inMemory = getDetectedRepoCache(repoUrl, detectionBranch);
 		if (inMemory?.services?.length !== undefined) {
 			return inMemory.services;
 		}
 
-		const record = repoServices.find((r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl);
+		const record = repoServices.find(
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl && (detectionBranch ? r.branch === detectionBranch : true)
+		);
 		if (record?.services?.length) return record.services;
 
 		return null;
-	}, [getDetectedRepoCache, repoServices, normalizedRepoUrl, repoUrl]);
+	}, [detectionBranch, getDetectedRepoCache, repoServices, normalizedRepoUrl, repoUrl]);
+
+	const storedRepoServicesQuery = useQuery({
+		queryKey: ["stored-repo-services"],
+		enabled: Boolean(repo) && !cachedServices && repoServices.length === 0,
+		staleTime: 60_000,
+		queryFn: async () => {
+			const records = await fetchRepoServices();
+			mergeRepoServices(records ?? []);
+			return records ?? [];
+		},
+	});
 
 	React.useEffect(() => {
-		const inMemory = getDetectedRepoCache(repoUrl);
+		const inMemory = getDetectedRepoCache(repoUrl, detectionBranch);
 		if (inMemory?.services?.length !== undefined) return;
 
-		const record = repoServices.find((r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl);
+		const record = repoServices.find(
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl && (detectionBranch ? r.branch === detectionBranch : true)
+		);
 		if (!record?.services?.length) return;
 
-		setDetectedRepoCache(repoUrl, {
+		setDetectedRepoCache(repoUrl, detectionBranch, {
 			services: record.services,
 			isMonorepo: record.is_monorepo ?? false,
 			isMultiService: record.services.length > 1,
 			packageManager: undefined,
 		});
-	}, [getDetectedRepoCache, normalizedRepoUrl, repoServices, repoUrl, setDetectedRepoCache]);
+	}, [detectionBranch, getDetectedRepoCache, normalizedRepoUrl, repoServices, repoUrl, setDetectedRepoCache]);
 
 	const applyCatalogResult = React.useCallback(
 		(data: DetectServicesResult) => {
 			const list = data.services ?? [];
-			setDetectedRepoCache(repoUrl, {
+			setDetectedRepoCache(repoUrl, repo?.default_branch, {
 				services: list,
 				isMonorepo: data.isMonorepo ?? false,
 				isMultiService: data.isMultiService ?? list.length > 1,
@@ -153,7 +171,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	const servicesQuery = useQuery({
 		queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
-		enabled: Boolean(repo) && !cachedServices,
+		enabled: Boolean(repo) && !cachedServices && !storedRepoServicesQuery.isLoading,
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
@@ -166,7 +184,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 				updated_at: new Date().toISOString(),
 				services: list,
 			};
-			setDetectedRepoCache(repoUrl, {
+			setDetectedRepoCache(repoUrl, repo?.default_branch, {
 				services: list,
 				isMonorepo: data.isMonorepo ?? false,
 				isMultiService: data.isMultiService ?? false,
@@ -180,6 +198,21 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const catalogActions = React.useMemo(
 		() => ({
 			busy: catalogBusy,
+			onRefresh: async () => {
+				if (!repo) return false;
+				setCatalogBusy(true);
+				try {
+					const data = await detectRepoServices(repoUrl, repo.default_branch ?? "");
+					applyCatalogResult(data);
+					toast.success("Service detection refreshed");
+					return true;
+				} catch (e) {
+					toast.error(getErrorMessage(e as Error, "Failed to refresh service detection"));
+					return false;
+				} finally {
+					setCatalogBusy(false);
+				}
+			},
 			onAddService: async (rootPath: string, displayName?: string) => {
 				setCatalogBusy(true);
 				try {
@@ -202,7 +235,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		() => cachedServices ?? [],
 		[cachedServices]
 	);
-	const loading = !cachedServices && servicesQuery.isLoading;
+	const loading = !cachedServices && (storedRepoServicesQuery.isLoading || servicesQuery.isLoading);
 	const error = servicesQuery.error
 		? getErrorMessage(servicesQuery.error as Error | { message?: string } | string, "Failed to load services")
 		: null;
@@ -241,7 +274,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		if (!storeActiveService) return null;
 		// "Deploy all on one instance" sets activeServiceName to "."; that row is not in detected services.
 		if (storeActiveService === "." && services.length > 0) {
-			return { name: ".", path: ".", language: "unknown" };
+			return { name: ".", path: ".", language: "unknown", deployMode: "container" };
 		}
 		return services.find((svc: DetectedServiceInfo) => svc.name === storeActiveService) ?? null;
 	}, [activeRepo, routeRepoLower, services, storeActiveService]);
@@ -301,18 +334,33 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			? getDeploymentForService(repoDeployments, repo.html_url, normalizedServiceName, repo.name)
 			: null;
 
-		if (!existingDeployment && repo) {
+		if (repo && (!existingDeployment || Object.keys(existingDeployment.scanResults ?? {}).length === 0)) {
 			try {
+				let nextBranch = repo.default_branch ?? "";
+				let nextScanResults: Record<string, unknown> = {};
+
+				if (svc.deployMode === "direct-static" && svc.serviceType) {
+					const staticConfig = await buildDirectStaticConfig(
+						repo.html_url,
+						repo.default_branch ?? "",
+						svc.path,
+						svc.serviceType
+					);
+					nextBranch = staticConfig.branch || nextBranch;
+					nextScanResults = staticConfig.results as Record<string, unknown>;
+				}
+
 				await updateDeploymentById({
 					repoName: repo.name,
 					serviceName: normalizedServiceName,
 					url: repo.html_url,
-					branch: repo.default_branch ?? "",
+					branch: nextBranch,
+					kind: svc.deployMode,
 					status: "didnt_deploy",
 					cloudProvider: "aws",
 					deploymentTarget: "ec2",
 					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
-					scanResults: {} as never,
+					scanResults: nextScanResults as never,
 				});
 			} catch (e) {
 				// Non-blocking: still allow the workspace to open using the local draft deployment.

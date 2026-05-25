@@ -935,7 +935,13 @@ function FlowUI({
 			return;
 		}
 		const interval = window.setInterval(() => {
-			setScanLine((prev) => (prev + 1) % scanFrameCount);
+			setScanLine((prev) => {
+				if (prev >= scanFrameCount - 1) {
+					window.clearInterval(interval);
+					return prev;
+				}
+				return prev + 1;
+			});
 		}, scanTickIntervalMs);
 		return () => window.clearInterval(interval);
 	}, [activeStep, isVisible]);
@@ -958,15 +964,31 @@ function FlowUI({
 			return [{ id: nextLogId.current, text: scanLogMessages[0], phase: "scan" }];
 		});
 
-		let cursor = 0;
-
 		const interval = window.setInterval(() => {
-			cursor = (cursor + 1) % scanLogMessages.length;
-			nextLogId.current += 1;
+			let shouldStop = false;
 			setScanLogs((previous) => {
-				const next = [...previous, { id: nextLogId.current, text: scanLogMessages[cursor], phase: "scan" as const }];
-				return next.slice(-10);
+				if (previous.length >= scanLogMessages.length) {
+					shouldStop = true;
+					return previous;
+				}
+
+				const nextIndex = previous.length;
+				nextLogId.current += 1;
+				const next = [
+					...previous,
+					{ id: nextLogId.current, text: scanLogMessages[nextIndex], phase: "scan" as const },
+				];
+
+				if (next.length >= scanLogMessages.length) {
+					shouldStop = true;
+				}
+
+				return next;
 			});
+
+			if (shouldStop) {
+				window.clearInterval(interval);
+			}
 		}, scanLogIntervalMs);
 
 		return () => window.clearInterval(interval);

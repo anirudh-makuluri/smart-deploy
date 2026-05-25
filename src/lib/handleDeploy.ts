@@ -41,6 +41,16 @@ import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
 
+function hasDirectStaticConfig(deployConfig: DeployConfig): boolean {
+	const scanResults = deployConfig.scanResults;
+	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return false;
+	const record = scanResults as Record<string, unknown>;
+	const outputDir = typeof record.output_dir === "string" ? record.output_dir.trim() : "";
+	if (!outputDir) return false;
+	if (deployConfig.kind === "direct-static") return true;
+	return typeof record.serviceType === "string" || Array.isArray(record.install) || Array.isArray(record.build);
+}
+
 /**
  * Main deployment handler - routes to AWS (default) or GCP
  */
@@ -55,11 +65,12 @@ export async function handleDeploy(
 	}
 ): Promise<string> {
 	const deployStartTime = Date.now();
+	const isDirectStatic = hasDirectStaticConfig(deployConfig);
 	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
 		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
 		: {};
 	const dockerfileCount = Object.keys(scanResultsCasted || {}).length;
-	if (dockerfileCount < 1) {
+	if (!isDirectStatic && dockerfileCount < 1) {
 		throw new Error("Deployment requires at least one Dockerfile in scan results.");
 	}
 	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
@@ -526,6 +537,9 @@ async function handleAWSCodeBuildDeploy(
 	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
 		? (scanResults as SDArtifactsResponse)
 		: null;
+	const directStaticConfig = hasDirectStaticConfig(deployConfig)
+		? (scanResults as Record<string, unknown>)
+		: null;
 	const rootCommands = (() => {
 		const raw = scanResults && typeof scanResults === "object" && "commands" in scanResults
 			? (scanResults as Record<string, unknown>).commands
@@ -542,7 +556,7 @@ async function handleAWSCodeBuildDeploy(
 
 	const target: DeploymentTarget = "ec2";
 	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, rootCommands.length > 0 ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
+	sendDeploySteps(ws, (rootCommands.length > 0 || directStaticConfig) ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
 
 	// ── Auth: verify AWS credentials via SDK ──
 	send("Authenticating with AWS...", "auth");
@@ -557,8 +571,12 @@ async function handleAWSCodeBuildDeploy(
 	// if (identity.Arn) send(`Authenticated as: ${identity.Arn}`, "auth");
 	// send("✅ AWS credentials verified", "auth");
 
-	if (rootCommands.length > 0) {
-		send("Using scan_results.commands deployment path (skipping CodeBuild/ECR)...", "deploy");
+	if (directStaticConfig || rootCommands.length > 0) {
+		if (directStaticConfig) {
+			send("Using direct-static deployment path (skipping CodeBuild/ECR)...", "deploy");
+		} else {
+			send("Using scan_results.commands deployment path (skipping CodeBuild/ECR)...", "deploy");
+		}
 		const multiServiceConfig: MultiServiceConfig = {
 			isMultiService: (scanResultsTyped?.services?.length || 0) > 1,
 			services: (scanResultsTyped?.services || []).map(s => ({

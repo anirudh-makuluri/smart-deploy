@@ -1,5 +1,5 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
-import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord, StaticServiceType } from "./app/types";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
 import { v4 as uuidv4 } from "uuid";
 
@@ -18,6 +18,44 @@ function normalizeScanResults(value: unknown): Record<string, unknown> | null {
 	const record = value as Record<string, unknown>;
 	if (Object.keys(record).length === 0) return null;
 	return record;
+}
+
+function normalizeStaticServiceType(value: unknown): StaticServiceType | undefined {
+	return value === "vite" ||
+		value === "cra" ||
+		value === "vue" ||
+		value === "angular" ||
+		value === "svelte" ||
+		value === "astro" ||
+		value === "next-export" ||
+		value === "static-html"
+		? value
+		: undefined;
+}
+
+function normalizeDetectedServiceInfo(value: unknown): DetectedServiceInfo | null {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const record = value as Record<string, unknown>;
+	const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : "";
+	const path = typeof record.path === "string" && record.path.trim() ? record.path.trim() : ".";
+	if (!name) return null;
+
+	return {
+		name,
+		path,
+		language: typeof record.language === "string" && record.language.trim() ? record.language : "unknown",
+		framework: typeof record.framework === "string" && record.framework.trim() ? record.framework : undefined,
+		port: typeof record.port === "number" ? record.port : null,
+		deployMode: record.deployMode === "direct-static" ? "direct-static" : "container",
+		serviceType: normalizeStaticServiceType(record.serviceType),
+	};
+}
+
+function normalizeDetectedServiceList(value: unknown): DetectedServiceInfo[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.map((item) => normalizeDetectedServiceInfo(item))
+		.filter((item): item is DetectedServiceInfo => Boolean(item));
 }
 
 type DeploymentDbRow = Record<string, unknown>;
@@ -101,6 +139,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		owner_id,
 		url,
 		branch,
+		kind,
 		commit_sha,
 		env_vars,
 		live_url,
@@ -125,6 +164,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		serviceName: service_name || "",
 		url: url || "",
 		branch: branch || "",
+		kind: (kind as DeployConfig["kind"]) || "container",
 		responseId: response_id ?? null,
 		commitSha: commit_sha ?? null,
 		envVars: env_vars ?? undefined,
@@ -151,6 +191,7 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 	const row: Record<string, unknown> = {
 		url: config.url,
 		branch: config.branch,
+		kind: config.kind,
 		commit_sha: config.commitSha,
 		env_vars: config.envVars,
 		live_url: config.liveUrl,
@@ -797,7 +838,7 @@ export const dbHelper = {
 				branch: row.branch as string,
 				repo_owner: row.repo_owner as string,
 				repo_name: row.repo_name as string,
-				services: (row.services as DetectedServiceInfo[]) ?? [],
+				services: normalizeDetectedServiceList(row.services),
 				is_monorepo: (row.is_monorepo as boolean) ?? false,
 				updated_at: row.updated_at as string,
 			};
@@ -824,7 +865,7 @@ export const dbHelper = {
 			branch: r.branch as string,
 			repo_owner: r.repo_owner as string,
 			repo_name: r.repo_name as string,
-			services: (r.services as DetectedServiceInfo[]) ?? [],
+			services: normalizeDetectedServiceList(r.services),
 			is_monorepo: (r.is_monorepo as boolean) ?? false,
 			updated_at: r.updated_at as string,
 			}));

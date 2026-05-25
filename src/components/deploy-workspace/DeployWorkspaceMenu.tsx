@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Boxes, FileSearch, LayoutDashboard, Logs, Settings2, History } from "lucide-react";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
+import type { DeploymentKind } from "@/app/types";
 
 type MenuItem = { id: "overview" | "setup" | "scan" | "blueprint" | "logs" | "history"; label: string };
 
@@ -21,6 +22,7 @@ type DeployWorkspaceMenuProps = {
 	footer?: React.ReactNode;
 	collapsed?: boolean;
 	onToggleCollapsed?: () => void;
+	deploymentKind?: DeploymentKind;
 };
 
 const MENU_ICONS: Record<MenuSection, React.ComponentType<{ className?: string }>> = {
@@ -38,7 +40,18 @@ export default function DeployWorkspaceMenu({
 	footer,
 	collapsed = false,
 	onToggleCollapsed,
+	deploymentKind = "container",
 }: DeployWorkspaceMenuProps) {
+	const menuItems = React.useMemo(
+		() =>
+			MENU_ITEMS.map((item) =>
+				item.id === "scan"
+					? { ...item, label: deploymentKind === "direct-static" ? "Configure" : "Scan" }
+					: item
+			),
+		[deploymentKind]
+	);
+
 	return (
 		<nav className="flex h-full min-h-0 flex-col">
 			<div className={`border-b border-white/6 ${collapsed ? "px-3 py-4" : "px-4 py-4"}`}>
@@ -52,7 +65,7 @@ export default function DeployWorkspaceMenu({
 				</div>
 			</div>
 			<div className={`flex flex-1 flex-col gap-1 overflow-auto stealth-scrollbar ${collapsed ? "p-2" : "p-3"}`}>
-				{MENU_ITEMS.map((item) => (
+				{menuItems.map((item) => (
 					(() => {
 						const Icon = MENU_ICONS[item.id];
 						return (

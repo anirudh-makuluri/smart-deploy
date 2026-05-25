@@ -1,4 +1,5 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
+import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -297,6 +298,13 @@ export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 	if (!deployment) return true;
 
 	const scanResults = deployment.scanResults;
+	if (getDeploymentKind(deployment) === "direct-static") {
+		if (!isDirectStaticScanResults(scanResults)) return true;
+		const hasOutputDir = Boolean(scanResults.output_dir?.trim());
+		const hasNginxConf = Boolean(scanResults.nginx_conf?.trim());
+		return !(hasOutputDir && hasNginxConf);
+	}
+
 	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
 		? (scanResults as SDArtifactsResponse)
 		: null;

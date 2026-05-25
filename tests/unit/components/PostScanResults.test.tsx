@@ -29,6 +29,8 @@ const deployment: DeployConfig = {
 const scanResults: SDArtifactsResponse = {
 	commit_sha: "abc123",
 	stack_summary: "Node Express app",
+	stack_tokens: [],
+	files: [],
 	services: [
 		{
 			name: "web",

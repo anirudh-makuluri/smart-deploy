@@ -60,10 +60,10 @@ type AppState = {
 	mergeRepoServices: (records: RepoServicesRecord[]) => void;
 	/** Refetch repo services only (e.g. after visiting a repo page that ran detect-services). */
 	refetchRepoServices: () => Promise<void>;
-	/** Get cached detect-services result for a repo (normalized URL). */
-	getDetectedRepoCache: (repoUrl: string) => DetectedRepoCacheEntry | undefined;
+	/** Get cached detect-services result for a repo + branch. */
+	getDetectedRepoCache: (repoUrl: string, branch?: string) => DetectedRepoCacheEntry | undefined;
 	/** Set cached detect-services result for a repo. */
-	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => void;
+	setDetectedRepoCache: (repoUrl: string, branch: string | undefined, data: DetectedRepoCacheEntry) => void;
 	updateDeploymentById: (deployment: Partial<DeployConfig> & { repoName: string; serviceName: string }) => Promise<void>;
 	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
@@ -76,6 +76,12 @@ type AppState = {
 
 function normalizeRepoUrlForCache(url: string): string {
 	return url.replace(/\.git$/, '').toLowerCase().trim();
+}
+
+function repoBranchCacheKey(repoUrl: string, branch?: string): string {
+	const normalizedUrl = normalizeRepoUrlForCache(repoUrl);
+	const normalizedBranch = (branch ?? "").trim().toLowerCase();
+	return normalizedBranch ? `${normalizedUrl}::${normalizedBranch}` : normalizedUrl;
 }
 
 function normalizeRepoIdentifier(value: string): string {
@@ -117,8 +123,8 @@ function mergeDeploymentLists(existing: DeployConfig[], incoming: DeployConfig[]
 	return sortDeployments(Array.from(merged.values()).map(withDeployInfraDefaults));
 }
 
-function repoServicesKey(record: Pick<RepoServicesRecord, "repo_url">): string {
-	return normalizeRepoUrlForCache(record.repo_url);
+function repoServicesKey(record: Pick<RepoServicesRecord, "repo_url" | "branch">): string {
+	return repoBranchCacheKey(record.repo_url, record.branch);
 }
 
 function mergeRepoServicesLists(
@@ -255,13 +261,13 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 	},
 
-	getDetectedRepoCache: (repoUrl: string) => {
-		const key = normalizeRepoUrlForCache(repoUrl);
+	getDetectedRepoCache: (repoUrl: string, branch?: string) => {
+		const key = repoBranchCacheKey(repoUrl, branch);
 		return get().detectedRepoCache[key];
 	},
 
-	setDetectedRepoCache: (repoUrl: string, data: DetectedRepoCacheEntry) => {
-		const key = normalizeRepoUrlForCache(repoUrl);
+	setDetectedRepoCache: (repoUrl: string, branch: string | undefined, data: DetectedRepoCacheEntry) => {
+		const key = repoBranchCacheKey(repoUrl, branch);
 		set((state) => ({
 			detectedRepoCache: { ...state.detectedRepoCache, [key]: data },
 		}));

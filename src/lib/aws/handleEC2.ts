@@ -23,9 +23,12 @@ import {
 	getInstanceState,
 	buildFirstDeployScript,
 	buildRedeployScript,
+	buildStaticFirstDeployScript,
+	buildStaticRedeployScript,
 	buildEcrDeployScript,
 	buildEcrComposeDeployScript,
 	generateEcrUserDataScript,
+	generateStaticUserDataScript,
 	runRedeployViaSsm,
 	ensureInstanceSsmReady,
 	SSM_PROFILE_NAME,
@@ -61,6 +64,24 @@ export type EC2Result = {
 	amiId: string;
 	sharedAlbDns?: string;
 };
+
+type DirectStaticDeployDetails = {
+	workdir: string;
+	install: string[];
+	build: string[];
+	outputDir: string;
+	packageManager?: string;
+};
+
+function hasDirectStaticScanResults(deployConfig: DeployConfig): boolean {
+	const scanResults = deployConfig.scanResults;
+	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return false;
+	const record = scanResults as Record<string, unknown>;
+	const outputDir = typeof record.output_dir === "string" ? record.output_dir.trim() : "";
+	if (!outputDir) return false;
+	if (deployConfig.kind === "direct-static") return true;
+	return typeof record.serviceType === "string" || Array.isArray(record.install) || Array.isArray(record.build);
+}
 
 // ─── Pure helpers (env / compose / user-data) ───────────────────────────────
 
@@ -115,6 +136,29 @@ function buildEnvBase64(
 	if (dbConnectionString) envEntries.push({ key: "DATABASE_URL", value: dbConnectionString });
 	const raw = buildEnvFileContent(envEntries);
 	return { envBase64: raw ? Buffer.from(raw, "utf8").toString("base64") : "" };
+}
+
+function getDirectStaticDeployDetails(deployConfig: DeployConfig): DirectStaticDeployDetails | null {
+	if (!hasDirectStaticScanResults(deployConfig)) return null;
+	const scanResults = deployConfig.scanResults;
+	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return null;
+	const record = scanResults as Record<string, unknown>;
+	const workdir = typeof record.workdir === "string" && record.workdir.trim() ? record.workdir.trim() : ".";
+	const outputDir = typeof record.output_dir === "string" && record.output_dir.trim() ? record.output_dir.trim() : "";
+	const install = Array.isArray(record.install)
+		? record.install.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+		: [];
+	const build = Array.isArray(record.build)
+		? record.build.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+		: [];
+	if (!outputDir) return null;
+	return {
+		workdir,
+		install,
+		build,
+		outputDir,
+		packageManager: typeof record.package_manager === "string" ? record.package_manager : undefined,
+	};
 }
 
 /**
@@ -324,22 +368,36 @@ async function redeployInstance(params: {
 	const scanResults = deployConfig.scanResults;
 	send("Reusing existing instance (SSM redeploy)...", "deploy");
 	await ensureInstanceSsmReady(existingInstanceId, region, ws, send);
-	const scanResultsCasted = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults 
+	const directStatic = getDirectStaticDeployDetails(deployConfig);
+	const scanResultsCasted = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults
 		? (scanResults as Record<string, unknown>)
 		: ({} as Record<string, unknown>);
-	
-	const script = buildRedeployScript({
-		repoUrl: deployConfig.url,
-		branch: deployConfig.branch?.trim() || "",
-		token,
-		commitSha: deployConfig.commitSha ?? undefined,
-		envFileContentBase64: envBase64,
-		dockerCompose: (scanResultsCasted.docker_compose as string) || "",
-		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
-		mainPort,
-		scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
-		commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
-	});
+
+	const script = directStatic
+		? buildStaticRedeployScript({
+			repoUrl: deployConfig.url,
+			branch: deployConfig.branch?.trim() || "",
+			token,
+			commitSha: deployConfig.commitSha ?? undefined,
+			envFileContentBase64: envBase64,
+			workdir: directStatic.workdir,
+			install: directStatic.install,
+			build: directStatic.build,
+			outputDir: directStatic.outputDir,
+			packageManager: directStatic.packageManager,
+		})
+		: buildRedeployScript({
+			repoUrl: deployConfig.url,
+			branch: deployConfig.branch?.trim() || "",
+			token,
+			commitSha: deployConfig.commitSha ?? undefined,
+			envFileContentBase64: envBase64,
+			dockerCompose: (scanResultsCasted.docker_compose as string) || "",
+			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
+			mainPort,
+			scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
+			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
+		});
 	let ssmResult: { success: boolean };
 	try {
 		ssmResult = await runRedeployViaSsm({ instanceId: existingInstanceId, region, script, send });
@@ -401,6 +459,7 @@ async function launchNewInstance(params: {
 }): Promise<{ instanceId: string; publicIp: string; detectedPort: number | null; success: boolean }> {
 	const { deployConfig, instanceName, region, services, token, envBase64, mainPort, wsPort, net, amiId, ws, send } = params;
 	const keyName = "smartdeploy";
+	const directStatic = getDirectStaticDeployDetails(deployConfig);
 
 	await ensureSSMInstanceProfile(region, ws);
 	await ensureKeyPair(keyName, region, ws);
@@ -408,17 +467,19 @@ async function launchNewInstance(params: {
 	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
 		? ((deployConfig.scanResults as Record<string, unknown>)?.nginx_conf as string) || ""
 		: "";
-	
-	const userData = generateUserDataScript(
-		deployConfig.url,
-		deployConfig.branch?.trim() || "",
-		token,
-		envBase64,
-		mainPort,
-		wsPort,
-		nginxConf,
-		deployConfig.commitSha ?? undefined,
-	);
+
+	const userData = directStatic
+		? generateStaticUserDataScript(nginxConf)
+		: generateUserDataScript(
+			deployConfig.url,
+			deployConfig.branch?.trim() || "",
+			token,
+			envBase64,
+			mainPort,
+			wsPort,
+			nginxConf,
+			deployConfig.commitSha ?? undefined,
+		);
 	const tmpFile = path.join(os.tmpdir(), `ec2-userdata-${Date.now()}.sh`);
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
@@ -460,31 +521,46 @@ async function launchNewInstance(params: {
 
 	await waitForUserData(instanceId, region, ws, send);
 
-	// Now deploy containers via SSM (Dockerfiles, compose, build/run)
+	// Now deploy application artifacts via SSM
 	send("Waiting for SSM agent to be ready...", "deploy");
 	await ensureInstanceSsmReady(instanceId, region, ws, send);
 
 	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "docker_compose" in deployConfig.scanResults 
 		? (deployConfig.scanResults as Record<string, unknown>)
 		: ({} as Record<string, unknown>);
-	
-	const firstDeployScript = buildFirstDeployScript({
-		envFileContentBase64: envBase64,
-		dockerCompose: (scanResultsCasted.docker_compose as string) || "",
-		dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
-		mainPort,
-		scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
-		commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
-	});
 
-	send("Deploying containers via SSM...", "deploy");
+	const firstDeployScript = directStatic
+		? buildStaticFirstDeployScript({
+			repoUrl: deployConfig.url,
+			branch: deployConfig.branch?.trim() || "",
+			token,
+			commitSha: deployConfig.commitSha ?? undefined,
+			envFileContentBase64: envBase64,
+			workdir: directStatic.workdir,
+			install: directStatic.install,
+			build: directStatic.build,
+			outputDir: directStatic.outputDir,
+			packageManager: directStatic.packageManager,
+		})
+		: buildFirstDeployScript({
+			envFileContentBase64: envBase64,
+			dockerCompose: (scanResultsCasted.docker_compose as string) || "",
+			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
+			mainPort,
+			scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
+			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
+		});
+
+	send(directStatic ? "Publishing static site via SSM..." : "Deploying containers via SSM...", "deploy");
 	const ssmResult = await runRedeployViaSsm({ instanceId, region, script: firstDeployScript, send });
 	if (!ssmResult.success) {
-		send("Container deployment failed via SSM. Instance will be reused on next deploy.", "deploy");
+		send(`${directStatic ? "Static deployment" : "Container deployment"} failed via SSM. Instance will be reused on next deploy.`, "deploy");
 		return { instanceId, publicIp, detectedPort: null, success: false };
 	}
 
-	const detectedPort = await detectRespondingPort(publicIp, services, instanceId, region, ws, send);
+	const detectedPort = await detectRespondingPort(publicIp, services, instanceId, region, ws, send, {
+		skipDockerDiagnostics: Boolean(directStatic),
+	});
 
 	if (!detectedPort) {
 		send("Instance failed to respond on any known ports. Instance will be reused on next deploy.", "deploy");
@@ -689,8 +765,12 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 					}
 				}
 
-				// Check for success signal (either legacy user-data or ECR minimal user-data)
-				if (clean.includes("Deployment complete!") || clean.includes("Instance setup complete!")) {
+				// Check for success signals from the different user-data flows.
+				if (
+					clean.includes("Deployment complete!") ||
+					clean.includes("Instance setup complete!") ||
+					clean.includes("Static instance setup complete!")
+				) {
 					if (cloudInitFailureDetected) {
 						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
 					} else {
@@ -819,29 +899,33 @@ export async function detectRespondingPort(
 		dockerSignalPollMs?: number;
 		curlAttempts?: number;
 		curlPollMs?: number;
+		skipDockerDiagnostics?: boolean;
 	}
 ): Promise<number | null> {
 	const dockerSignalAttempts = options?.dockerSignalAttempts ?? 12;
 	const dockerSignalPollMs = options?.dockerSignalPollMs ?? 5000;
 	const curlAttempts = options?.curlAttempts ?? 12;
 	const curlPollMs = options?.curlPollMs ?? 5000;
+	const skipDockerDiagnostics = options?.skipDockerDiagnostics ?? false;
 	let sawDockerStartupSignal = false;
 
-	send("Waiting for startup signal in container logs before curl checks...", "deploy");
-	for (let attempt = 1; attempt <= dockerSignalAttempts; attempt++) {
-		const diagnostic = await runPreCurlDiagnostics({ instanceId, region, send });
-		if (diagnostic.sawStartupSignal) {
-			sawDockerStartupSignal = true;
-			send(`Startup signal found in docker logs (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
-			break;
-		}
-		if (attempt < dockerSignalAttempts) {
-			send(`No startup signal in docker logs yet (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
-			await new Promise((r) => setTimeout(r, dockerSignalPollMs));
+	if (!skipDockerDiagnostics) {
+		send("Waiting for startup signal in container logs before curl checks...", "deploy");
+		for (let attempt = 1; attempt <= dockerSignalAttempts; attempt++) {
+			const diagnostic = await runPreCurlDiagnostics({ instanceId, region, send });
+			if (diagnostic.sawStartupSignal) {
+				sawDockerStartupSignal = true;
+				send(`Startup signal found in docker logs (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
+				break;
+			}
+			if (attempt < dockerSignalAttempts) {
+				send(`No startup signal in docker logs yet (attempt ${attempt}/${dockerSignalAttempts}).`, "deploy");
+				await new Promise((r) => setTimeout(r, dockerSignalPollMs));
+			}
 		}
 	}
 
-	if (!sawDockerStartupSignal) {
+	if (!skipDockerDiagnostics && !sawDockerStartupSignal) {
 		send(
 			"No startup signal detected in docker logs; proceeding with curl checks as fallback.",
 			"deploy"
@@ -852,7 +936,7 @@ export async function detectRespondingPort(
 		const { runCommandLiveWithWebSocket } = await import("@/server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
 		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
-		send("Waiting for application to be ready (this may take a minute)...", "deploy");
+		send(skipDockerDiagnostics ? "Waiting for nginx to be ready (this may take a minute)..." : "Waiting for application to be ready (this may take a minute)...", "deploy");
 		send("diagnostics:curl:start", "deploy");
 		for (let attempt = 1; attempt <= curlAttempts; attempt++) {
 			for (const port of candidates) {
@@ -914,12 +998,15 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 			language: s.language,
 		}));
 
-		const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "services" in deployConfig.scanResults
-			? (deployConfig.scanResults as Record<string, unknown>).services as Array<{ build_context: string }> | undefined
+		const scanResultsRecord = deployConfig.scanResults && typeof deployConfig.scanResults === "object"
+			? (deployConfig.scanResults as Record<string, unknown>)
 			: undefined;
-		
+		const scanResultsCasted = scanResultsRecord && "services" in scanResultsRecord
+			? scanResultsRecord.services as Array<{ build_context: string }> | undefined
+			: undefined;
 		const mainService = scanResultsCasted?.[0];
-		const requestedWorkdir = normalizePathForMatch(mainService?.build_context);
+		const directStaticWorkdir = typeof scanResultsRecord?.workdir === "string" ? scanResultsRecord.workdir : undefined;
+		const requestedWorkdir = normalizePathForMatch(mainService?.build_context || directStaticWorkdir);
 		if (requestedWorkdir && requestedWorkdir !== ".") {
 			const byWorkdir = allServices.find((svc) => {
 				const svcDir = normalizePathForMatch(svc.dir);
@@ -932,6 +1019,13 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 		}
 
 		const serviceName = deployConfig.serviceName?.trim();
+		if (serviceName?.startsWith("@")) {
+			const packageSuffix = serviceName.split("/").pop()?.toLowerCase();
+			const byPackageName = allServices.find((svc) => svc.name.toLowerCase() === packageSuffix);
+			if (byPackageName) {
+				return [byPackageName];
+			}
+		}
 		if (serviceName?.startsWith(`${repoName}-`)) {
 			const suffix = serviceName.slice(repoName.length + 1).toLowerCase();
 			const byName = allServices.find((svc) => svc.name.toLowerCase() === suffix);
@@ -945,7 +1039,9 @@ function resolveServices(repoName: string, deployConfig: DeployConfig, multi: Mu
 	const scanServices = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "services" in deployConfig.scanResults
 		? (deployConfig.scanResults as Record<string, unknown>).services as Array<{ port?: number }> | undefined
 		: undefined;
-	
+	if (hasDirectStaticScanResults(deployConfig)) {
+		return [{ name: repoName, dir: ".", port: 80 }];
+	}
 	const mainServicePort = scanServices?.[0]?.port || 8080;
 	return [{ name: repoName, dir: ".", port: mainServicePort }];
 }
