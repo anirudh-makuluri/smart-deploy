@@ -12,7 +12,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 test("landing page renders premium hero and has no horizontal overflow", async ({ page }) => {
 	await page.goto("/");
 
-	await expect(page.getByRole("heading", { name: "Deploy your app without the black box." })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Deploy anything. Inspect everything." })).toBeVisible();
 	await expect(page.getByRole("banner").getByRole("link", { name: "Docs" })).toBeVisible();
 	await expect(page.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Changelog" })).toBeVisible();
 	await expectNoHorizontalOverflow(page);

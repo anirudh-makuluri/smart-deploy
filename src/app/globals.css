@@ -238,20 +238,58 @@ button {
 }
 
 .landing-hero-bg {
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 18%, transparent) 0, transparent 28%),
-    radial-gradient(circle at 85% 18%, color-mix(in srgb, var(--chart-3) 14%, transparent) 0, transparent 22%),
-    radial-gradient(circle at 50% 100%, color-mix(in srgb, white 6%, transparent) 0, transparent 26%),
-    linear-gradient(180deg, color-mix(in srgb, var(--background) 96%, white 4%), color-mix(in srgb, var(--muted) 45%, var(--background) 55%));
+  background: var(--background);
 }
 
-.landing-hero-wave {
+.landing-blueprint-frame {
+  backdrop-filter: blur(12px);
+}
+
+.landing-blueprint-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(circle at center, black 28%, transparent 90%);
+}
+
+.landing-blueprint-track {
   background:
-    radial-gradient(circle at 18% 18%, color-mix(in srgb, var(--primary) 18%, transparent) 0, transparent 24%),
-    radial-gradient(circle at 78% 26%, color-mix(in srgb, var(--chart-3) 16%, transparent) 0, transparent 28%);
-  filter: blur(40px);
-  animation: landing-wave 18s ease-in-out infinite;
-  pointer-events: none;
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.06));
+}
+
+.landing-blueprint-dot-wrap {
+  height: 0.7rem;
+  animation: landing-blueprint-travel var(--resolve-duration, 5.8s) linear infinite;
+}
+
+.landing-blueprint-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: white;
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.08),
+    0 0 22px rgba(255, 255, 255, 0.7);
+  animation: landing-blueprint-dot-color var(--resolve-duration, 7.6s) linear infinite;
+}
+
+.landing-blueprint-node {
+  position: relative;
+}
+
+.landing-blueprint-node::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid rgba(37, 244, 106, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(37, 244, 106, 0.1),
+    0 0 28px rgba(37, 244, 106, 0.22);
+  opacity: 0;
+  animation: landing-node-resolve var(--resolve-duration, 5.8s) ease-out infinite;
+  animation-delay: var(--resolve-delay, 0s);
 }
 
 .landing-panel {
@@ -422,6 +460,68 @@ button {
   }
 }
 
+@keyframes landing-blueprint-travel {
+  0%,
+  10% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  84% {
+    transform: translateX(calc(100% - 0.7rem));
+    opacity: 1;
+  }
+  94%,
+  100% {
+    transform: translateX(calc(100% - 0.7rem));
+    opacity: 0;
+  }
+}
+
+@keyframes landing-node-resolve {
+  0% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  9%,
+  100% {
+    opacity: 0.16;
+    transform: scale(1);
+  }
+}
+
+@keyframes landing-blueprint-dot-color {
+  0%,
+  13%,
+  17.5%,
+  30.5%,
+  35%,
+  48%,
+  52.5%,
+  65.5%,
+  70%,
+  83%,
+  87%,
+  100% {
+    background: white;
+    box-shadow:
+      0 0 0 4px rgba(255, 255, 255, 0.08),
+      0 0 22px rgba(255, 255, 255, 0.7);
+  }
+  14%,
+  31.5%,
+  49%,
+  66.5%,
+  84% {
+    background: rgb(37, 244, 106);
+    box-shadow:
+      0 0 0 4px rgba(37, 244, 106, 0.12),
+      0 0 24px rgba(37, 244, 106, 0.75);
+  }
+}
+
 .spin-animation {
   animation: spin 1s linear infinite;
 }
@@ -468,6 +568,13 @@ button {
   @media (prefers-reduced-motion: reduce) {
     .scroll-smooth {
       scroll-behavior: auto;
+    }
+
+    .landing-hero-wave,
+    .landing-blueprint-dot-wrap,
+    .landing-blueprint-dot,
+    .landing-blueprint-node::after {
+      animation: none;
     }
   }
 }

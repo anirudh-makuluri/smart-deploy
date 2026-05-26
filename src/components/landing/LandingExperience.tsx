@@ -5,16 +5,15 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion, useReducedMotion } from "framer-motion";
 import {
-	Activity,
 	ArrowRight,
-	CheckCircle2,
+	Boxes,
 	CloudCog,
-	GitBranchPlus,
-	Layers3,
-	Search,
+	FolderGit2,
+	Hammer,
+	Monitor,
+	Route as RouteIcon,
 	ShieldCheck,
 	Sparkles,
-	TriangleAlert,
 	type LucideIcon,
 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
@@ -35,6 +34,18 @@ type WhyCard = {
 	proof: string;
 	icon: LucideIcon;
 };
+
+type HeroNodeShape = "repo" | "services" | "build" | "route" | "preview";
+
+type HeroNode = {
+	id: string;
+	label: string;
+	shape: HeroNodeShape;
+};
+
+const HERO_BLUEPRINT_LOOP_MS = 7600;
+const HERO_BLUEPRINT_TRAVEL_START = 0.14;
+const HERO_BLUEPRINT_TRAVEL_END = 0.84;
 
 const whyCards: WhyCard[] = [
 	{
@@ -100,6 +111,25 @@ const supportedPythonFrameworks = [
 
 const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
 
+const heroNodes: HeroNode[] = [
+	{ id: "repo", label: "Repo", shape: "repo" },
+	{ id: "services", label: "Services", shape: "services" },
+	{ id: "build", label: "Build", shape: "build" },
+	{ id: "route", label: "Route", shape: "route" },
+	{ id: "preview", label: "Live", shape: "preview" },
+];
+
+function heroNodeArrivalSeconds(index: number, count: number): string {
+	if (count <= 1) {
+		return `${(HERO_BLUEPRINT_LOOP_MS * HERO_BLUEPRINT_TRAVEL_START) / 1000}s`;
+	}
+
+	const progress = index / (count - 1);
+	const timing =
+		HERO_BLUEPRINT_TRAVEL_START + (HERO_BLUEPRINT_TRAVEL_END - HERO_BLUEPRINT_TRAVEL_START) * progress;
+	return `${(HERO_BLUEPRINT_LOOP_MS * timing) / 1000}s`;
+}
+
 function formatDurationMs(ms: number | null): string {
 	if (ms === null) return "--";
 	if (ms < 1000) return `${ms} ms`;
@@ -108,6 +138,98 @@ function formatDurationMs(ms: number | null): string {
 	const m = Math.floor(s / 60);
 	const sec = Math.round(s % 60);
 	return `${m}m ${sec}s`;
+}
+
+function HeroBlueprintGlyph({ shape }: { shape: HeroNodeShape }) {
+	const iconMap: Record<HeroNodeShape, LucideIcon> = {
+		repo: FolderGit2,
+		services: Boxes,
+		build: Hammer,
+		route: RouteIcon,
+		preview: Monitor,
+	};
+
+	const Icon = iconMap[shape];
+	const frameClass =
+		shape === "preview"
+			? "border-primary/36 bg-primary/16 text-primary"
+			: "border-white/20 bg-white/[0.08] text-white/86";
+
+	return (
+		<div className={`flex h-8 w-8 items-center justify-center rounded-xl border ${frameClass}`}>
+			<Icon className="h-4 w-4" strokeWidth={1.8} />
+		</div>
+	);
+}
+
+function HeroBlueprintCanvas() {
+	const prefersReducedMotion = useReducedMotion();
+
+	return (
+		<motion.div
+			initial={prefersReducedMotion ? false : { opacity: 0, y: 22 }}
+			animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+			transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.14 }}
+			className="landing-blueprint-frame relative overflow-hidden rounded-[2rem] bg-[#0a1020]"
+			style={
+				{
+					"--resolve-duration": `${HERO_BLUEPRINT_LOOP_MS}ms`,
+				} as React.CSSProperties
+			}
+		>
+			<div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0))]" />
+			<div className="pointer-events-none absolute inset-0 landing-blueprint-grid opacity-50" aria-hidden />
+			<div className="relative">
+				<div className="flex items-center justify-between gap-3 border-b border-white/6 px-4 py-3 sm:px-5">
+					<div className="min-w-0">
+						<p className="truncate text-[10px] font-semibold uppercase tracking-[0.24em] text-white/42 sm:text-[11px]">
+							acme/platform
+						</p>
+						<p className="mt-1 text-sm text-white/72">main</p>
+					</div>
+					<div
+						className="landing-blueprint-status rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#5f9cff]"
+						aria-live="polite"
+					>
+						Blueprint ready
+					</div>
+				</div>
+
+				<div className="px-4 pb-6 pt-7 sm:px-5 sm:pb-7 sm:pt-9">
+					<div className="relative">
+						<div className="landing-blueprint-track absolute left-4 right-4 top-[1.35rem] h-px sm:left-6 sm:right-6" />
+						{!prefersReducedMotion ? (
+							<div className="landing-blueprint-dot-wrap absolute left-4 right-4 top-[1rem] sm:left-6 sm:right-6" aria-hidden>
+								<div className="landing-blueprint-dot" />
+							</div>
+						) : null}
+
+						<div className="grid grid-cols-[repeat(5,minmax(0,1fr))] items-start gap-2 sm:gap-3">
+							{heroNodes.map((node, index) => (
+								<div key={node.id} className="flex min-w-0 flex-col items-center text-center">
+									<div
+										className="landing-blueprint-node flex h-11 w-11 items-center justify-center rounded-[1.4rem] border border-white/7 bg-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:h-[3.25rem] sm:w-[3.25rem]"
+										style={
+											prefersReducedMotion
+												? undefined
+												: ({
+														"--resolve-delay": heroNodeArrivalSeconds(index, heroNodes.length),
+													} as React.CSSProperties)
+										}
+									>
+										<HeroBlueprintGlyph shape={node.shape} />
+									</div>
+									<p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/66 sm:text-[11px]">
+										{node.label}
+									</p>
+								</div>
+							))}
+						</div>
+					</div>
+				</div>
+			</div>
+		</motion.div>
+	);
 }
 
 function SectionIntro({
@@ -295,6 +417,7 @@ function FinalCTA({ primaryHref, primaryCopy }: { primaryHref: string; primaryCo
 export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperienceProps) {
 	const primaryHref = isSignedIn ? "/home" : "/auth";
 	const primaryCopy = isSignedIn ? "Open Dashboard" : "Open Smart Deploy";
+	const prefersReducedMotion = useReducedMotion();
 
 	React.useEffect(() => {
 		const hash = window.location.hash;
@@ -351,27 +474,53 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 			</header>
 
 			<main>
-				<section className="landing-hero-bg relative flex min-h-[calc(100svh-4.5rem)] items-center overflow-hidden px-6 py-12 sm:min-h-[calc(100svh-4.5rem)] lg:px-10 lg:py-16">
-					<div className="landing-hero-wave pointer-events-none absolute inset-x-0 top-0 h-112 opacity-55" aria-hidden />
-					<div className="landing-grid-overlay pointer-events-none absolute inset-0 opacity-30" aria-hidden />
-					<div className="relative z-10 mx-auto w-full max-w-6xl text-center">
-						<p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">Deploy workspace, rebuilt for clarity</p>
-						<h1 className="mx-auto mt-6 max-w-4xl text-4xl font-semibold leading-[1.03] tracking-tight text-foreground sm:text-6xl lg:text-7xl">
-							Deploy your app with full transparency and the same ease you expect.
-						</h1>
-						<p className="mx-auto mt-8 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-							Pick a repo, scan, preview, deploy, recover with AI if needed, and ship with confidence.
-						</p>
-						<div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-							<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(37,244,106,0.45)]">
-								<Link href={primaryHref}>
-									{primaryCopy}
-									<ArrowRight className="size-4" />
-								</Link>
-							</Button>
-							<Button asChild size="lg" variant="outline">
-								<a href="#flow">Watch full deploy flow</a>
-							</Button>
+				<section className="landing-hero-bg relative overflow-hidden px-6 sm:px-8 lg:px-10">
+					<div className="relative z-10 mx-auto grid min-h-[calc(92svh-4.5rem)] w-full max-w-7xl items-start gap-12 py-14 sm:py-16 lg:min-h-[calc(88svh-4.5rem)] lg:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] lg:gap-10 lg:py-20">
+						<div className="max-w-2xl pt-4 lg:pt-12">
+							<motion.h1
+								initial={prefersReducedMotion ? false : { opacity: 0, y: 24 }}
+								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+								transition={prefersReducedMotion ? undefined : { duration: 0.55, ease: "easeOut" }}
+								className="max-w-xl text-5xl font-semibold leading-[0.93] tracking-[-0.045em] text-white sm:text-6xl lg:text-[5.4rem]"
+							>
+								<span className="block">Deploy anything.</span>
+								<span className="mt-1.5 block">Inspect everything.</span>
+							</motion.h1>
+							<motion.p
+								initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
+								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+								transition={prefersReducedMotion ? undefined : { duration: 0.52, ease: "easeOut", delay: 0.08 }}
+								className="mt-7 max-w-[24rem] text-lg leading-8 text-white/72 sm:text-[1.3rem]"
+							>
+								See the deploy path before release.
+							</motion.p>
+							<motion.div
+								initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+								transition={prefersReducedMotion ? undefined : { duration: 0.48, ease: "easeOut", delay: 0.16 }}
+								className="mt-11 flex flex-wrap items-center gap-3"
+							>
+								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.55)]">
+									<Link href={primaryHref}>
+										{primaryCopy}
+										<ArrowRight className="size-4" />
+									</Link>
+								</Button>
+								<Button
+									asChild
+									size="lg"
+									variant="outline"
+									className="border-white/16 bg-white/[0.03] text-white hover:bg-white/[0.08] hover:text-white"
+								>
+									<a href="#flow">See How It Works</a>
+								</Button>
+							</motion.div>
+						</div>
+
+						<div className="relative pt-2 lg:pt-16">
+							<div className="mx-auto w-full max-w-[44rem] lg:ml-auto">
+								<HeroBlueprintCanvas />
+							</div>
 						</div>
 					</div>
 				</section>

@@ -132,7 +132,7 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const shouldCheckSession = isAuthPage || isPrivateHome;
+	const shouldCheckSession = isAuthPage || isPrivateHome || isLanding;
 
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	if (shouldCheckSession) {
@@ -165,6 +165,10 @@ export async function proxy(req : NextRequest) {
 	}
 
 	if (session && isAuthPage) {
+		return NextResponse.redirect(new URL("/home", req.url));
+	}
+
+	if (session && isLanding) {
 		return NextResponse.redirect(new URL("/home", req.url));
 	}
 
