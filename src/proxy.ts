@@ -132,7 +132,9 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const shouldCheckSession = isAuthPage || isPrivateHome || isLanding;
+	const hasSessionCookie = SESSION_COOKIE_NAMES.some((cookieName) => req.cookies.has(cookieName));
+	const shouldCheckSession =
+		isAuthPage || isPrivateHome || (isLanding && hasSessionCookie);
 
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	if (shouldCheckSession) {
