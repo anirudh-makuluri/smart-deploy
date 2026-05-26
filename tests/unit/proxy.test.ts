@@ -73,6 +73,9 @@ describe("proxy approval guard", () => {
 			nextUrl: new URL("http://localhost:3000/"),
 			url: "http://localhost:3000/",
 			headers: new Headers(),
+			cookies: {
+				has: () => true,
+			},
 		} as never);
 
 		expect(response.status).toBe(307);

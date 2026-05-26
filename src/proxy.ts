@@ -132,7 +132,9 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const hasSessionCookie = SESSION_COOKIE_NAMES.some((cookieName) => req.cookies.has(cookieName));
+	const hasSessionCookie = SESSION_COOKIE_NAMES.some(
+		(cookieName) => req.cookies?.has?.(cookieName) ?? false
+	);
 	const shouldCheckSession =
 		isAuthPage || isPrivateHome || (isLanding && hasSessionCookie);
 
