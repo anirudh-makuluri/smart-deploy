@@ -132,7 +132,11 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const shouldCheckSession = isAuthPage || isPrivateHome;
+	const hasSessionCookie = SESSION_COOKIE_NAMES.some(
+		(cookieName) => req.cookies?.has?.(cookieName) ?? false
+	);
+	const shouldCheckSession =
+		isAuthPage || isPrivateHome || (isLanding && hasSessionCookie);
 
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	if (shouldCheckSession) {
@@ -165,6 +169,10 @@ export async function proxy(req : NextRequest) {
 	}
 
 	if (session && isAuthPage) {
+		return NextResponse.redirect(new URL("/home", req.url));
+	}
+
+	if (session && isLanding) {
 		return NextResponse.redirect(new URL("/home", req.url));
 	}
 

@@ -63,6 +63,25 @@ describe("proxy approval guard", () => {
 		expect(response.status).toBe(200);
 	});
 
+	it("redirects authenticated users away from the landing page before render", async () => {
+		mockConfig.WAITING_LIST_ENABLED = false;
+		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "approved@example.com" } });
+		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fetch should not be called"));
+
+		const { proxy } = await import("@/proxy");
+		const response = await proxy({
+			nextUrl: new URL("http://localhost:3000/"),
+			url: "http://localhost:3000/",
+			headers: new Headers(),
+			cookies: {
+				has: () => true,
+			},
+		} as never);
+
+		expect(response.status).toBe(307);
+		expect(response.headers.get("location")).toBe("http://localhost:3000/home");
+	});
+
 	it("allows approved users to access protected pages", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "approved@example.com" } });
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({

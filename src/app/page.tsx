@@ -2,6 +2,7 @@ import { LandingExperience } from "@/components/landing/LandingExperience";
 import { getGlobalDeployMetricsForPublic } from "@/lib/metrics/deployMetrics";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,9 @@ export default async function Home() {
 	} catch (error) {
 		// Keep landing page available when auth storage is temporarily unavailable.
 		console.error("Failed to read auth session for /:", error);
+	}
+	if (session) {
+		redirect("/home");
 	}
 	const publicMetrics = await getGlobalDeployMetricsForPublic();
 
