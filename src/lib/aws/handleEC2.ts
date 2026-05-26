@@ -986,7 +986,7 @@ function normalizePathForMatch(p?: string | null): string {
 	return (p ?? "").replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "").trim().toLowerCase();
 }
 
-function resolveServices(repoName: string, deployConfig: DeployConfig, multi: MultiServiceConfig): ServiceDef[] {
+export function resolveServices(repoName: string, deployConfig: DeployConfig, multi: MultiServiceConfig): ServiceDef[] {
 	if (multi.isMultiService && multi.services.length > 0) {
 		const allServices = multi.services.map(s => ({
 			name: s.name,
@@ -1146,7 +1146,7 @@ export async function handleEC2(
 		});
 		sharedAlbDns = alb.sharedAlbDns;
 		serviceUrls = alb.serviceUrls;
-		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+		if (services.length === 1 && !customBaseUrl) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
 	} catch (e: any) {
 		send(`⚠️ Warning: ALB configuration skipped or failed: ${e.message}`, "deploy");
 		send(`Falling back to direct instance IP.`, "deploy");
@@ -1358,7 +1358,7 @@ export async function handleEC2FromEcr(params: {
 		});
 		sharedAlbDns = alb.sharedAlbDns;
 		serviceUrls = alb.serviceUrls;
-		if (services.length === 1) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
+		if (services.length === 1 && !customBaseUrl) baseUrl = serviceUrls.get(services[0].name) || baseUrl;
 	} catch (e: any) {
 		send(`⚠️ ALB configuration skipped: ${e.message}`, "deploy");
 		const fallbackBase = detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`;

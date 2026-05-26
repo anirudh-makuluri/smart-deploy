@@ -13,6 +13,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { DetectedServiceInfo, DeployConfig, repoType } from "@/app/types";
+import { isDraftDeploymentStatus, isLiveDeploymentStatus } from "@/lib/deploymentStatus";
 import { getDeploymentForService } from "@/lib/utils";
 import ServiceTypeIcon, { ServiceTypeBadge } from "@/components/ServiceTypeIcon";
 
@@ -133,8 +134,8 @@ export default function RepoServicesList({
 							resolvedRepo.name
 						);
 						const status = deployment?.status;
-						const isOnline = status === "running";
-						const isDraft = deployment && status !== "running" && status !== "failed";
+						const isOnline = isLiveDeploymentStatus(status);
+						const isDraft = deployment && isDraftDeploymentStatus(status);
 						const hasNoDeployment = !deployment;
 						const isFailed = status === "failed";
 						const liveUrl = deployment?.liveUrl;

@@ -41,8 +41,52 @@ const defaultSteps: DeployStep[] = [
 	{ id: "setup", label: "Setup", logs: [], status: "pending" },
 	{ id: "docker", label: "Build", logs: [], status: "pending" },
 	{ id: "deploy", label: "Deploy", logs: [], status: "pending" },
+	{ id: "verify", label: "Verify", logs: [], status: "pending" },
 	{ id: "done", label: "Done", logs: [], status: "pending" },
 ];
+
+function getFallbackStepLabel(stepId: string): string {
+	switch (stepId) {
+		case "auth":
+			return "Authentication";
+		case "clone":
+			return "Cloning repository";
+		case "database":
+			return "Database";
+		case "setup":
+			return "Setup";
+		case "build":
+		case "docker":
+			return "Build";
+		case "deploy":
+			return "Deploy";
+		case "verify":
+			return "Verify";
+		case "rollback":
+			return "Rollback";
+		case "done":
+			return "Done";
+		default:
+			return stepId
+				.replace(/[_-]+/g, " ")
+				.replace(/\b\w/g, (char) => char.toUpperCase());
+	}
+}
+
+function normalizeDeploySteps(steps: { id: string; label: string }[]): { id: string; label: string }[] {
+	const next = [...steps];
+	const hasVerify = next.some((step) => step.id === "verify");
+	const doneIndex = next.findIndex((step) => step.id === "done");
+	if (!hasVerify) {
+		const verifyStep = { id: "verify", label: "Verify deployment" };
+		if (doneIndex >= 0) {
+			next.splice(doneIndex, 0, verifyStep);
+		} else {
+			next.push(verifyStep);
+		}
+	}
+	return next;
+}
 
 const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
 
@@ -201,15 +245,15 @@ export function useWorkerWebSocketSession({
 		setSteps((prev) => {
 			const existing = prev.find((step) => step.id === id);
 			if (!existing) {
-				return [...prev, { id, label: id, logs: [msg], status: "in_progress" }];
+				return [...prev, { id, label: getFallbackStepLabel(id), logs: [msg], status: "in_progress" }];
 			}
 			return prev.map((step) =>
 				step.id === id
 					? {
 						...step,
-						status: msg.includes("success")
+						status: msg.startsWith("SUCCESS:") || msg.toLowerCase().includes("success")
 							? "success"
-							: msg.includes("error")
+							: msg.startsWith("ERROR:") || msg.toLowerCase().includes("error")
 								? "error"
 								: step.status === "pending"
 									? "in_progress"
@@ -309,7 +353,9 @@ export function useWorkerWebSocketSession({
 							}
 							break;
 						case "deploy_steps": {
-							const nextSteps = (payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? [];
+							const nextSteps = normalizeDeploySteps(
+								(payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? []
+							);
 							setSteps((prev) => {
 								const byId = new Map(prev.map((step) => [step.id, step]));
 								return nextSteps.map((step) => ({

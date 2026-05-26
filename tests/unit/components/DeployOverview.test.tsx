@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import type { DeployConfig } from "@/app/types";
@@ -56,10 +56,37 @@ describe("DeployOverview", () => {
 		expect(screen.getByText("No live URL yet. Deploy to generate a preview snapshot.")).toBeInTheDocument();
 	});
 
+	it("treats stale didnt_deploy rows with preview evidence as running", () => {
+		render(
+			<DeployOverview
+				deployment={makeDeployment({
+					status: "didnt_deploy",
+					screenshotUrl: "https://cdn.example.com/shot.png",
+				})}
+			/>
+		);
+		expect(screen.getAllByText("running").length).toBeGreaterThan(0);
+		expect(screen.getByRole("link", { name: /visit site/i })).toHaveAttribute("href", "https://web.example.com");
+	});
+
+	it("keeps draft deployments with only a custom domain in didnt_deploy", () => {
+		const { container } = render(
+			<DeployOverview
+				deployment={makeDeployment({
+					status: "didnt_deploy",
+					liveUrl: "https://preview.example.com",
+					screenshotUrl: null,
+				})}
+			/>
+		);
+
+		expect(within(container).getAllByText("didnt_deploy").length).toBeGreaterThan(0);
+		expect(within(container).queryByText("running")).not.toBeInTheDocument();
+	});
+
 	it("renders screenshot when screenshot_url exists", () => {
-		render(<DeployOverview deployment={makeDeployment({ screenshotUrl: "https://cdn.example.com/shot.png" })} />);
-		const screenshot = screen.getByAltText("Screenshot of web");
-		expect(screenshot).toBeInTheDocument();
+		const { container } = render(<DeployOverview deployment={makeDeployment({ screenshotUrl: "https://cdn.example.com/shot.png" })} />);
+		expect(within(container).getAllByAltText("Screenshot of web").length).toBeGreaterThan(0);
 	});
 
 	it("shows endpoint links for custom URL and instance IP", () => {

@@ -19,8 +19,10 @@ import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
+import { isDraftDeploymentStatus, resolveDeploymentStatus, transitionDeploymentStatus } from "@/lib/deploymentStatus";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Rocket, Search, ShieldCheck, AlertCircle, Layers } from "lucide-react";
@@ -92,8 +94,13 @@ export default function DeployWorkspace({
 	);
 
 	const effectiveDeploymentStatus = React.useMemo(
-		() => deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy"),
-		[deployment.status, hasStoredLiveUrl]
+		() =>
+			resolveDeploymentStatus({
+				status: deployment.status,
+				liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+				screenshotUrl: deployment.screenshotUrl,
+			}),
+		[deployment.liveUrl, deployment.screenshotUrl, deployment.status, hasStoredLiveUrl]
 	);
 
 	// ============== CALLBACKS ==============
@@ -265,14 +272,20 @@ export default function DeployWorkspace({
 		if (!hasScanResults) return "Run smart scan first.";
 		if (deploymentConfigInvalid) return "At least one Dockerfile and nginx.conf are required.";
 		return "";
-	}, [deploymentConfigInvalid, directStaticDeploySupported, hasScanResults, isDirectStatic]);
+	}, [deploymentConfigInvalid, hasScanResults, isDirectStatic]);
 
 	const isDraft = React.useMemo(
-		() => effectiveDeploymentStatus === "didnt_deploy",
+		() => isDraftDeploymentStatus(effectiveDeploymentStatus),
 		[effectiveDeploymentStatus]
 	);
+	const canPauseResumeDeployment = deployment.status === "running" || deployment.status === "paused";
 	const pauseResumeAction = deployment.status === "paused" ? "resume" : "pause";
-	const pauseResumeNextStatus: DeployConfig["status"] = deployment.status === "paused" ? "running" : "paused";
+	const pauseResumeNextStatus: DeployConfig["status"] =
+		!canPauseResumeDeployment
+			? deployment.status
+			: deployment.status === "paused"
+				? transitionDeploymentStatus(deployment.status, "resume_requested")
+				: transitionDeploymentStatus(deployment.status, "pause_requested");
 	const pauseResumeDialogTitle = deployment.status === "paused" ? "Resume Deployment?" : "Pause Deployment?";
 	const pauseResumeDialogDescription =
 		deployment.status === "paused"
@@ -417,6 +430,14 @@ export default function DeployWorkspace({
 		});
 
 		setIsDeploying(true);
+		await updateDeploymentById({
+			repoName: payload.repoName,
+			serviceName: payload.serviceName,
+			url: payload.url || repoUrl || "",
+			branch: payload.branch,
+			commitSha: payload.commitSha,
+			status: transitionDeploymentStatus(payload.status, "deploy_requested"),
+		});
 		sendDeployConfig(payload, githubToken, session?.user?.id);
 		setActiveSection("logs");
 	}
@@ -509,7 +530,7 @@ export default function DeployWorkspace({
 	}
 
 	async function handlePauseResumeDeployment() {
-		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
+		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState || !canPauseResumeDeployment) return;
 
 		setIsChangingDeploymentState(true);
 		try {
@@ -540,17 +561,39 @@ export default function DeployWorkspace({
 		setIsChangingDeploymentState(true);
 		try {
 			const deletedScanResults = effectiveScanResults;
-			const deletedKind = deployment.kind;
+			const draftDeployment = withDeployInfraDefaults({
+				id: `draft-${deployment.repoName}-${deployment.serviceName}`,
+				repoName: deployment.repoName,
+				serviceName: deployment.serviceName,
+				url: deployment.url,
+				branch: deployment.branch,
+				kind: deployment.kind ?? getDeploymentKind(deployment),
+				responseId: deployment.responseId ?? null,
+				commitSha: null,
+				envVars: deployment.envVars ?? null,
+				liveUrl: null,
+				screenshotUrl: null,
+				status: "didnt_deploy",
+				firstDeployment: null,
+				lastDeployment: null,
+				revision: 0,
+				cloudProvider: deployment.cloudProvider,
+				deploymentTarget: deployment.deploymentTarget,
+				awsRegion: deployment.awsRegion,
+				ec2: null,
+				cloudRun: null,
+				scanResults: deletedScanResults ?? deployment.scanResults ?? {},
+			} as DeployConfig);
 			await deleteDeployment(deployment.repoName, deployment.serviceName);
 			useAppData.getState().removeDeployment(deployment.repoName, deployment.serviceName);
-			if (deletedKind === "direct-static" && isDirectStaticScanResults(deletedScanResults)) {
+			await updateDeploymentById(draftDeployment);
+			if (deletedScanResults && Object.keys(deletedScanResults).length > 0) {
 				setScanResults(deletedScanResults as SDArtifactsResponse);
 			} else {
 				setScanResults(null);
 			}
-			toast.success("Deployment deleted.");
+			toast.success("Deployment deleted. Draft restored.");
 			setShowDeleteConfirm(false);
-			setActiveSection("setup");
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Failed to delete deployment";
 			toast.error(message);

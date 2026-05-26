@@ -1,6 +1,7 @@
 "use client";
 
 import { DeployConfig, repoType } from "@/app/types";
+import { isInProgressDeploymentStatus } from "@/lib/deploymentStatus";
 import { EllipsisVertical, ExternalLink, GitBranch } from "lucide-react";
 import {
 	DropdownMenu,
@@ -16,8 +17,13 @@ import { toast } from "sonner";
 import { controlDeployment, deleteDeployment } from "@/lib/graphqlClient";
 
 const statusStyles: Record<string, string> = {
+	deploying: "bg-sky-500/15 text-sky-500 border-sky-500/30",
+	verifying: "bg-cyan-500/15 text-cyan-500 border-cyan-500/30",
+	retrying: "bg-orange-500/15 text-orange-500 border-orange-500/30",
+	rolling_back: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30",
 	running: "bg-primary/20 text-primary border-primary/40",
 	paused: "bg-amber-400/20 text-amber-400 border-amber-400/40",
+	failed: "bg-destructive/15 text-destructive border-destructive/30",
 	stopped: "bg-muted/40 text-muted-foreground border-muted-foreground/30",
 };
 
@@ -30,6 +36,7 @@ export default function DashboardDeploymentItem({
 }) {
 	const { removeDeployment, updateDeploymentById } = useAppData();
 	const [isDeleting, setIsDeleting] = useState(false);
+	const canPauseResume = deployConfig.status === "running" || deployConfig.status === "paused";
 
 	async function changeStatus(action: string) {
 		// Delete = full remove: Cloud Run + DB, no traces left
@@ -84,12 +91,14 @@ export default function DashboardDeploymentItem({
 						<EllipsisVertical className="size-4" />
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end" className="border-border bg-card">
-						<DropdownMenuItem
-							onClick={() => changeStatus(deployConfig.status === "running" ? "pause" : "resume")}
-							className="text-foreground focus:bg-secondary focus:text-foreground"
-						>
-							{deployConfig.status === "running" ? "Pause" : "Resume"}
-						</DropdownMenuItem>
+						{canPauseResume ? (
+							<DropdownMenuItem
+								onClick={() => changeStatus(deployConfig.status === "running" ? "pause" : "resume")}
+								className="text-foreground focus:bg-secondary focus:text-foreground"
+							>
+								{deployConfig.status === "running" ? "Pause" : "Resume"}
+							</DropdownMenuItem>
+						) : null}
 						<DropdownMenuItem
 							onClick={() => changeStatus("stop")}
 							disabled={isDeleting}
@@ -114,6 +123,9 @@ export default function DashboardDeploymentItem({
 					</a>
 				) : null;
 			})()}
+			{isInProgressDeploymentStatus(deployConfig.status) ? (
+				<p className="mt-2 text-xs text-muted-foreground">Deployment lifecycle is in progress.</p>
+			) : null}
 			{repo && (
 				<div className="mt-4 pt-4 border-t border-border">
 					<a

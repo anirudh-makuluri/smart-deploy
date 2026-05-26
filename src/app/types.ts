@@ -1,3 +1,5 @@
+import type { DeploymentStatus } from "@/lib/deploymentStatus";
+
 export type repoType = {
 	id: string;
 	name: string;
@@ -87,7 +89,7 @@ export type DeployConfig = {
 	screenshotUrl: string | null;
 	serviceName: string;
 	/** Deployment status */
-	status: 'running' | 'paused' | 'stopped' | 'didnt_deploy' | 'failed';
+	status: DeploymentStatus;
 	/** ISO timestamp when first deployed; null if never deployed */
 	firstDeployment: string | null;
 	/** ISO timestamp of most recent deployment; null if never deployed */

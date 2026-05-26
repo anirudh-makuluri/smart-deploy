@@ -30,7 +30,7 @@ Near-term non-goals:
 
 ## Next Steps
 
-- [ ] Canonical deployment state machine
+- [x] Canonical deployment state machine
   Define one trusted lifecycle for deploy, retry, verify, rollback, pause, and failure states.
 
 - [ ] Automatic rollback on failed rollout

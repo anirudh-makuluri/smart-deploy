@@ -4,6 +4,7 @@ import { deleteVercelDnsRecord } from "@/lib/vercelDns";
 import { dbHelper } from "@/db-helper";
 import config from "@/config";
 import { DeployConfig, EC2Details } from "@/app/types";
+import { transitionDeploymentStatus } from "@/lib/deploymentStatus";
 import { runCommandLiveWithOutput } from "@/server-helper";
 
 export type DeleteDeploymentArgs = {
@@ -175,10 +176,18 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 
 			if (action === "pause") {
 				await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }));
+				await dbHelper.updateDeployments(
+					{ ...deployConfig, status: transitionDeploymentStatus(deployConfig.status, "pause_requested") },
+					userID
+				);
 				return { status: "success", message: "EC2 instance stopping" };
 			}
 			if (action === "resume") {
 				await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
+				await dbHelper.updateDeployments(
+					{ ...deployConfig, status: transitionDeploymentStatus(deployConfig.status, "resume_requested") },
+					userID
+				);
 				return { status: "success", message: "EC2 instance starting" };
 			}
 			return { status: "error", message: "Invalid action for AWS EC2. Must be pause or resume." };
@@ -205,6 +214,16 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 
 	try {
 		const output = await runCommandLiveWithOutput("gcloud", args);
+		if (repoName && serviceName && action !== "stop") {
+			const { deployment } = await requireDeployment(sanitizeName(repoName), sanitizeName(serviceName), userID);
+			if (deployment) {
+				const nextStatus =
+					action === "pause"
+						? transitionDeploymentStatus(deployment.status, "pause_requested")
+						: transitionDeploymentStatus(deployment.status, "resume_requested");
+				await dbHelper.updateDeployments({ ...deployment, status: nextStatus }, userID);
+			}
+		}
 		return { status: "success", message: output };
 	} catch (cmdErr: any) {
 		if (action === "stop" && cmdErr.message?.includes("could not be found")) {

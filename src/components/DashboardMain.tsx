@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { addPublicRepo } from "@/lib/graphqlClient";
+import { isDraftDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
 import { toast } from "sonner";
 import { RepoServicesRecord } from "@/app/types";
 import LanguageIcon from "./LanguageIcon";
@@ -49,11 +50,11 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 		);
 		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
-		const activeRepoDeployments = repoDeployments.filter((d) => d.status !== "didnt_deploy");
+		const activeRepoDeployments = repoDeployments.filter((d) => !isDraftDeploymentStatus(d.status));
 		const hasFailed = repoDeployments.some((d) => d.status === "failed");
 		const deployedServicesCount = countDeployedServicesForRepo(record, repoDeployments);
 		const isDeployed = deployedServicesCount > 0;
-		const isCrashed = activeRepoDeployments.some((d) => d.status === "stopped" || d.status === "paused");
+		const isCrashed = activeRepoDeployments.some((d) => isProblemDeploymentStatus(d.status) && d.status !== "failed");
 
 		const subtitle = isCrashed
 			? "Crashed"

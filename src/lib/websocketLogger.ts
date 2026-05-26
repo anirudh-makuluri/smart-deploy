@@ -1,9 +1,7 @@
 import { DeployStep } from "../app/types";
 
 /**
- * Creates a simple WebSocket logger function that sends messages to the client
- * @param ws - WebSocket connection
- * @returns A send function that logs messages to the WebSocket
+ * Creates a simple WebSocket logger function that sends messages to the client.
  */
 export function createWebSocketLogger(ws: any) {
 	return (msg: string, id: string) => {
@@ -15,12 +13,48 @@ export function createWebSocketLogger(ws: any) {
 
 		if (ws && ws.readyState === ws.OPEN) {
 			const object = {
-				type: 'deploy_logs',
-				payload: { id, msg, time: new Date().toISOString() }
+				type: "deploy_logs",
+				payload: { id, msg, time: new Date().toISOString() },
 			};
 			ws.send(JSON.stringify(object));
 		}
 	};
+}
+
+function getFallbackStepLabel(stepId: string): string {
+	switch (stepId) {
+		case "auth":
+			return "Authentication";
+		case "clone":
+			return "Clone repository";
+		case "database":
+			return "Database";
+		case "setup":
+			return "Setup";
+		case "build":
+		case "docker":
+			return "Build";
+		case "deploy":
+			return "Deploy";
+		case "verify":
+			return "Verify";
+		case "rollback":
+			return "Rollback";
+		case "done":
+			return "Done";
+		default:
+			return stepId
+				.replace(/[_-]+/g, " ")
+				.replace(/\b\w/g, (char) => char.toUpperCase());
+	}
+}
+
+function isSuccessLog(msg: string): boolean {
+	return msg.startsWith("SUCCESS:") || msg.startsWith("OK:");
+}
+
+function isErrorLog(msg: string): boolean {
+	return msg.startsWith("ERROR:");
 }
 
 /**
@@ -38,7 +72,7 @@ export function createDeployStepsLogger(
 ) {
 	const { onStepsChange, broadcast } = options ?? {};
 
-	// Dedup state: track last message per step to collapse rapid repeats
+	// Dedup state: track last message per step to collapse rapid repeats.
 	const lastMsg = new Map<string, { text: string; count: number; ts: number }>();
 	const DEDUP_WINDOW_MS = 5000;
 
@@ -47,7 +81,6 @@ export function createDeployStepsLogger(
 		const nowMs = Date.now();
 		const trimmed = msg.trim();
 
-		// Duplicate suppression: skip identical consecutive messages within window
 		const prev = lastMsg.get(id);
 		if (prev && prev.text === trimmed && nowMs - prev.ts < DEDUP_WINDOW_MS) {
 			prev.count++;
@@ -55,26 +88,31 @@ export function createDeployStepsLogger(
 			return;
 		}
 
-		// Flush pending repeat count from previous message before moving on
 		if (prev && prev.count > 1) {
 			const repeatNote = `  [repeated x${prev.count}]`;
-			const lastStep = deploySteps.find(s => s.id === id);
+			const lastStep = deploySteps.find((step) => step.id === id);
 			if (lastStep) lastStep.logs.push(repeatNote);
 			broadcast?.(id, repeatNote);
 		}
 		lastMsg.set(id, { text: trimmed, count: 1, ts: nowMs });
 
-		let stepIndex = deploySteps.findIndex(s => s.id === id);
+		let stepIndex = deploySteps.findIndex((step) => step.id === id);
 		if (stepIndex === -1) {
-			deploySteps.push({ id, label: msg, logs: [msg], status: 'in_progress', startedAt: now });
+			deploySteps.push({
+				id,
+				label: getFallbackStepLabel(id),
+				logs: [msg],
+				status: "in_progress",
+				startedAt: now,
+			});
 			stepIndex = deploySteps.length - 1;
 		} else {
 			deploySteps[stepIndex].logs.push(msg);
-			if (msg.startsWith('✅')) {
-				deploySteps[stepIndex].status = 'success';
+			if (isSuccessLog(msg)) {
+				deploySteps[stepIndex].status = "success";
 				deploySteps[stepIndex].endedAt = now;
-			} else if (msg.startsWith('❌')) {
-				deploySteps[stepIndex].status = 'error';
+			} else if (isErrorLog(msg)) {
+				deploySteps[stepIndex].status = "error";
 				deploySteps[stepIndex].endedAt = now;
 			}
 		}

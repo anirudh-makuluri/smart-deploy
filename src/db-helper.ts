@@ -1,6 +1,7 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord, StaticServiceType } from "./app/types";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
+import { isDraftDeploymentStatus, normalizeDeploymentStatus, resolveDeploymentStatus } from "./lib/deploymentStatus";
 import { v4 as uuidv4 } from "uuid";
 
 function hasOwnKey<T extends object>(obj: T, key: string): boolean {
@@ -170,7 +171,11 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		envVars: env_vars ?? undefined,
 		liveUrl: live_url ?? null,
 		screenshotUrl: screenshot_url ?? null,
-		status: (status as DeployConfig["status"]) ?? "didnt_deploy",
+		status: resolveDeploymentStatus({
+			status: status as string | null | undefined,
+			liveUrl: (live_url as string | null | undefined) ?? null,
+			screenshotUrl: (screenshot_url as string | null | undefined) ?? null,
+		}),
 		firstDeployment: first_deployment ?? null,
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
@@ -199,7 +204,7 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 		cloud_provider: config.cloudProvider,
 		deployment_target: config.deploymentTarget,
 		aws_region: config.awsRegion,
-		status: config.status,
+		status: normalizeDeploymentStatus(config.status),
 		ec2: config.ec2,
 		cloud_run: config.cloudRun,
 	};
@@ -279,6 +284,7 @@ export const dbHelper = {
 		try {
 			const { repoName, serviceName } = deployConfig;
 			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
+			const nextStatus = normalizeDeploymentStatus(deployConfig.status);
 
 			const supabase = getSupabaseServer();
 			const configRecord = deployConfig as unknown as Record<string, unknown>;
@@ -287,7 +293,7 @@ export const dbHelper = {
 			const rawScanResults = hasScanResultsInput ? normalizeScanResults(configRecord.scanResults) : null;
 			const explicitResponseId = toOptionalTrimmedString(configRecord.responseId);
 
-			if (deployConfig.status === "stopped") {
+			if (nextStatus === "stopped") {
 				await supabase.from("deployments").delete()
 					.eq("repo_name", repoName)
 					.eq("service_name", serviceName);
@@ -305,6 +311,7 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (fetchError) return { error: fetchError.message };
+			const currentStatus = normalizeDeploymentStatus(existing?.status as string | null | undefined);
 
 			let nextResponseId: string | null = explicitResponseId ?? toOptionalTrimmedString(existing?.response_id);
 			if (hasScanResultsInput) {
@@ -332,15 +339,17 @@ export const dbHelper = {
 			}
 
 			if (!existing) {
+				const now = new Date().toISOString();
+				const isDraft = isDraftDeploymentStatus(nextStatus);
 				// Create new deployment with provided data
 				const insertPayload: Record<string, unknown> = {
 					id: uuidv4(),
 					repo_name: repoName,
 					service_name: serviceName,
 					owner_id: userID,
-					first_deployment: new Date().toISOString(),
-					last_deployment: new Date().toISOString(),
-					revision: 1,
+					first_deployment: nextStatus === "running" ? now : null,
+					last_deployment: isDraft ? null : now,
+					revision: isDraft ? 0 : 1,
 					...deployConfigToRow(deployConfig),
 					response_id: nextResponseId,
 				};
@@ -351,21 +360,25 @@ export const dbHelper = {
 			}
 
 			// Build update payload
+			const inProgressStatuses = new Set<DeployConfig["status"]>(["deploying", "retrying", "verifying", "rolling_back"]);
+			const isAttemptStart =
+				(nextStatus === "deploying" || nextStatus === "retrying") &&
+				!inProgressStatuses.has(currentStatus);
 			const updatePayload: Record<string, unknown> = {
-				revision: (existing.revision ?? 0) + 1,
+				revision: isAttemptStart ? (existing.revision ?? 0) + 1 : (existing.revision ?? 0),
 				...deployConfigToRow(deployConfig),
 			};
 			if (hasScanResultsInput || explicitResponseId !== null) {
 				updatePayload.response_id = nextResponseId;
 			}
 
-			// Update last_deployment only if commitSha changes
-			if (deployConfig.commitSha !== existing.commit_sha) {
+			// Update last_deployment when a fresh attempt starts or a new commit is targeted.
+			if (isAttemptStart || deployConfig.commitSha !== existing.commit_sha) {
 				updatePayload.last_deployment = new Date().toISOString();
 			}
 
-			// Update first_deployment only if status changes from didnt_deploy to running
-			if (existing.status === "didnt_deploy" && deployConfig.status === "running") {
+			// Set first_deployment only on the first successful release.
+			if (isDraftDeploymentStatus(currentStatus) && nextStatus === "running") {
 				updatePayload.first_deployment = new Date().toISOString();
 			}
 
