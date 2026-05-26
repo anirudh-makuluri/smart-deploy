@@ -73,6 +73,14 @@ function getFallbackStepLabel(stepId: string): string {
 	}
 }
 
+function isSuccessStepMessage(msg: string): boolean {
+	return msg.startsWith("SUCCESS:") || msg.startsWith("OK:") || msg.startsWith("✅");
+}
+
+function isErrorStepMessage(msg: string): boolean {
+	return msg.startsWith("ERROR:") || msg.startsWith("❌") || msg.toLowerCase().startsWith("failed:");
+}
+
 function normalizeDeploySteps(steps: { id: string; label: string }[]): { id: string; label: string }[] {
 	const next = [...steps];
 	const hasVerify = next.some((step) => step.id === "verify");
@@ -251,9 +259,9 @@ export function useWorkerWebSocketSession({
 				step.id === id
 					? {
 						...step,
-						status: msg.startsWith("SUCCESS:") || msg.toLowerCase().includes("success")
+						status: isSuccessStepMessage(msg) || msg.toLowerCase().includes("success")
 							? "success"
-							: msg.startsWith("ERROR:") || msg.toLowerCase().includes("error")
+							: isErrorStepMessage(msg) || msg.toLowerCase().includes("error")
 								? "error"
 								: step.status === "pending"
 									? "in_progress"

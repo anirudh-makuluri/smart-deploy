@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeployConfig, RepoServicesRecord } from "@/app/types";
-import { countDeployedServicesForRepo } from "@/lib/utils";
+import { countDeployedServicesForRepo, getDeploymentForService } from "@/lib/utils";
 
 function makeRepoRecord(overrides: Partial<RepoServicesRecord> = {}): RepoServicesRecord {
 	return {
@@ -58,5 +58,32 @@ describe("countDeployedServicesForRepo", () => {
 		const deployments = [makeDeployment({ serviceName: ".", status: "running" })];
 
 		expect(countDeployedServicesForRepo(record, deployments)).toBe(2);
+	});
+});
+
+describe("getDeploymentForService", () => {
+	it("prefers a failed service deployment over a repo-level draft row", () => {
+		const deployment = getDeploymentForService(
+			[
+				makeDeployment({
+					id: "repo-draft",
+					serviceName: ".",
+					status: "didnt_deploy",
+					lastDeployment: "2026-05-26T20:00:00.000Z",
+				}),
+				makeDeployment({
+					id: "service-failed",
+					serviceName: "web",
+					status: "failed",
+					lastDeployment: "2026-05-26T19:00:00.000Z",
+				}),
+			],
+			"https://github.com/acme/shop",
+			"web",
+			"shop"
+		);
+
+		expect(deployment?.id).toBe("service-failed");
+		expect(deployment?.status).toBe("failed");
 	});
 });

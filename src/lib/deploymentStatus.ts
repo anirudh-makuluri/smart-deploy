@@ -157,6 +157,7 @@ export function getDeploymentStatusRank(status: string | null | undefined): numb
 	if (normalized === "running") return 5;
 	if (isInProgressDeploymentStatus(normalized)) return 4;
 	if (normalized === "paused" || normalized === "stopped") return 3;
+	if (normalized === "failed") return 2;
 	if (normalized === "didnt_deploy") return 1;
 	return 0;
 }

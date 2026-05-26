@@ -22,7 +22,12 @@ import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
-import { isDraftDeploymentStatus, resolveDeploymentStatus, transitionDeploymentStatus } from "@/lib/deploymentStatus";
+import {
+	isDraftDeploymentStatus,
+	isInProgressDeploymentStatus,
+	resolveDeploymentStatus,
+	transitionDeploymentStatus,
+} from "@/lib/deploymentStatus";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Rocket, Search, ShieldCheck, AlertCircle, Layers } from "lucide-react";
@@ -278,26 +283,31 @@ export default function DeployWorkspace({
 		() => isDraftDeploymentStatus(effectiveDeploymentStatus),
 		[effectiveDeploymentStatus]
 	);
-	const canPauseResumeDeployment = deployment.status === "running" || deployment.status === "paused";
-	const pauseResumeAction = deployment.status === "paused" ? "resume" : "pause";
+	const canPauseResumeDeployment =
+		effectiveDeploymentStatus === "running" || effectiveDeploymentStatus === "paused";
+	const pauseResumeAction = effectiveDeploymentStatus === "paused" ? "resume" : "pause";
 	const pauseResumeNextStatus: DeployConfig["status"] =
 		!canPauseResumeDeployment
-			? deployment.status
-			: deployment.status === "paused"
-				? transitionDeploymentStatus(deployment.status, "resume_requested")
-				: transitionDeploymentStatus(deployment.status, "pause_requested");
-	const pauseResumeDialogTitle = deployment.status === "paused" ? "Resume Deployment?" : "Pause Deployment?";
+			? effectiveDeploymentStatus
+			: effectiveDeploymentStatus === "paused"
+				? transitionDeploymentStatus(effectiveDeploymentStatus, "resume_requested")
+				: transitionDeploymentStatus(effectiveDeploymentStatus, "pause_requested");
+	const pauseResumeDialogTitle = effectiveDeploymentStatus === "paused" ? "Resume Deployment?" : "Pause Deployment?";
 	const pauseResumeDialogDescription =
-		deployment.status === "paused"
+		effectiveDeploymentStatus === "paused"
 			? "This will bring the deployment back online using its current configuration."
 			: "This will temporarily stop the live deployment while keeping its configuration intact.";
 	const pauseResumeConfirmText = isChangingDeploymentState
-		? deployment.status === "paused"
+		? effectiveDeploymentStatus === "paused"
 			? "Resuming..."
 			: "Pausing..."
-		: deployment.status === "paused"
+		: effectiveDeploymentStatus === "paused"
 			? "Resume Deployment"
 			: "Pause Deployment";
+	const deploymentInProgress = React.useMemo(
+		() => isInProgressDeploymentStatus(effectiveDeploymentStatus),
+		[effectiveDeploymentStatus]
+	);
 
 	React.useEffect(() => {
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
@@ -372,6 +382,11 @@ export default function DeployWorkspace({
 		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
+		if (deploymentInProgress) {
+			toast.info("Deployment already in progress. Opening logs.");
+			setActiveSection("logs");
+			return;
+		}
 		if (deployDisabled) {
 			toast.error(deployDisabledMessage || "Deployment configuration is incomplete.");
 			return;
@@ -395,6 +410,7 @@ export default function DeployWorkspace({
 		const payload: DeployConfig = {
 			...deployment,
 			branch: effectiveBranch,
+			status: effectiveDeploymentStatus,
 			scanResults: effectiveScanResults || deployment.scanResults,
 			...(commitSha && { commitSha }),
 		};
@@ -436,7 +452,7 @@ export default function DeployWorkspace({
 			url: payload.url || repoUrl || "",
 			branch: payload.branch,
 			commitSha: payload.commitSha,
-			status: transitionDeploymentStatus(payload.status, "deploy_requested"),
+			status: transitionDeploymentStatus(effectiveDeploymentStatus, "deploy_requested"),
 		});
 		sendDeployConfig(payload, githubToken, session?.user?.id);
 		setActiveSection("logs");
@@ -890,19 +906,29 @@ export default function DeployWorkspace({
 	const deployAction = (
 		<div className="relative group">
 			<Button
-				disabled={!hasScanResults || isDeploying || deployDisabled}
+				disabled={!hasScanResults || isDeploying || deployDisabled || deploymentInProgress}
 				onClick={() => handleDeploy()}
 				className={`h-10 w-full font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden ${isSidebarCollapsed ? "px-0" : "px-6"}`}
-				title={!hasScanResults ? deployDisabledMessage : (deployDisabled ? deployDisabledMessage : "")}
+				title={
+					deploymentInProgress
+						? "Deployment already in progress. Open logs to follow along."
+						: !hasScanResults
+							? deployDisabledMessage
+							: (deployDisabled ? deployDisabledMessage : "")
+				}
 				aria-label="Deploy"
 			>
 				<Rocket className="size-4 relative z-10" />
 				{!isSidebarCollapsed ? <span className="relative z-10">Deploy</span> : null}
 			</Button>
-			{(!hasScanResults || deployDisabled) && (
+			{(!hasScanResults || deployDisabled || deploymentInProgress) && (
 				<div className={`absolute top-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isSidebarCollapsed ? "left-0" : "left-0 right-0"}`}>
 					<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20 text-center">
-						{!hasScanResults ? deployDisabledMessage : deployDisabledMessage}
+						{deploymentInProgress
+							? "Deployment already in progress. Open logs to follow along."
+							: !hasScanResults
+								? deployDisabledMessage
+								: deployDisabledMessage}
 					</div>
 				</div>
 			)}

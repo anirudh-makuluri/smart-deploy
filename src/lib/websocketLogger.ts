@@ -50,11 +50,11 @@ function getFallbackStepLabel(stepId: string): string {
 }
 
 function isSuccessLog(msg: string): boolean {
-	return msg.startsWith("SUCCESS:") || msg.startsWith("OK:");
+	return msg.startsWith("SUCCESS:") || msg.startsWith("OK:") || msg.startsWith("✅");
 }
 
 function isErrorLog(msg: string): boolean {
-	return msg.startsWith("ERROR:");
+	return msg.startsWith("ERROR:") || msg.startsWith("❌") || msg.toLowerCase().startsWith("failed:");
 }
 
 /**

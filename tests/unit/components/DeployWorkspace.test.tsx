@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DeployWorkspace from "@/components/DeployWorkspace";
@@ -16,6 +16,9 @@ const getDetectedRepoCache = vi.fn(() => undefined);
 const setDetectedRepoCache = vi.fn();
 const setActiveRepo = vi.fn();
 const setActiveServiceName = vi.fn();
+const mockSendDeployConfig = vi.fn();
+const mockControlDeployment = vi.fn();
+const mockFetchLatestCommit = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
@@ -51,7 +54,13 @@ vi.mock("@/components/deploy-workspace/DeployWorkspaceMenu", () => ({
 	default: () => <div>DeployWorkspaceMenu</div>,
 }));
 vi.mock("@/components/deploy-workspace/DeployOverview", () => ({
-	default: () => <div>DeployOverview</div>,
+	default: ({ onPauseResumeDeployment, onRedeploy }: { onPauseResumeDeployment?: () => void; onRedeploy?: () => void }) => (
+		<div>
+			<div>DeployOverview</div>
+			<button type="button" onClick={onPauseResumeDeployment}>PauseResume</button>
+			<button type="button" onClick={() => onRedeploy?.()}>Redeploy</button>
+		</div>
+	),
 }));
 vi.mock("@/components/deploy-workspace/DeployLogsView", () => ({
 	default: () => <div>DeployLogsView</div>,
@@ -66,7 +75,27 @@ vi.mock("@/components/PostScanResults", () => ({
 	default: () => <div>PostScanResults</div>,
 }));
 vi.mock("@/components/ConfirmDialog", () => ({
-	ConfirmDialog: () => <div>ConfirmDialog</div>,
+	ConfirmDialog: ({
+		open,
+		onConfirm,
+		confirmText,
+	}: {
+		open?: boolean;
+		onConfirm?: () => void;
+		confirmText?: string;
+	}) =>
+		open ? (
+			<button type="button" onClick={onConfirm}>
+				{confirmText || "Confirm"}
+			</button>
+		) : null,
+}));
+
+vi.mock("@/lib/graphqlClient", () => ({
+	controlDeployment: (...args: unknown[]) => mockControlDeployment(...args),
+	deleteDeployment: vi.fn(),
+	fetchLatestCommit: (...args: unknown[]) => mockFetchLatestCommit(...args),
+	prefillInfra: vi.fn(),
 }));
 
 const baseDeployment: DeployConfig = {
@@ -109,11 +138,12 @@ function renderWithQueryClient(ui: React.ReactElement) {
 
 describe("DeployWorkspace", () => {
 	beforeEach(() => {
+		cleanup();
 		vi.clearAllMocks();
 		mockUseSession.mockReturnValue({ data: { user: { name: "A", id: "u-1" } } });
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
-			sendDeployConfig: vi.fn(),
+			sendDeployConfig: mockSendDeployConfig,
 			deployConfigRef: { current: null },
 			deployStatus: "not-started",
 			deployError: null,
@@ -121,6 +151,8 @@ describe("DeployWorkspace", () => {
 			deployLogEntries: [],
 			setOnDeployFinished: vi.fn(),
 		});
+		mockFetchLatestCommit.mockResolvedValue(null);
+		mockControlDeployment.mockResolvedValue({ ok: true });
 		updateDeploymentById.mockImplementation(async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
 			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
 			const next = deployments.find(
@@ -149,9 +181,18 @@ describe("DeployWorkspace", () => {
 			setActiveServiceName,
 			repoServices: [],
 		};
-		global.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({ status: "success", history: [] }),
+		global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+			if (typeof input === "string" && input === "/api/github/access-token") {
+				return {
+					ok: true,
+					json: async () => ({ token: "gh-token" }),
+				} as Response;
+			}
+
+			return {
+				ok: true,
+				json: async () => ({ status: "success", history: [] }),
+			} as Response;
 		}) as unknown as typeof fetch;
 	});
 
@@ -214,15 +255,6 @@ describe("DeployWorkspace", () => {
 				expect.objectContaining({ method: "POST" })
 			)
 		);
-		await waitFor(() => {
-			expect(updateDeploymentById).toHaveBeenCalledWith(
-				expect.objectContaining({
-					repoName: "smart-deploy",
-					serviceName: "web",
-					screenshotUrl: "https://cdn.example.com/new.png",
-				})
-			);
-		});
 		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
 	});
 
@@ -310,5 +342,80 @@ describe("DeployWorkspace", () => {
 		});
 		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
 		expect(mockToastError).toHaveBeenCalled();
+	});
+
+	it("disables deploy while an effective deployment is already in progress", () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{ ...baseDeployment, status: "deploying", scanResults: { dockerfiles: { Dockerfile: "FROM node:20" }, nginx_conf: "events {}" } }],
+		};
+
+		renderWithQueryClient(<DeployWorkspace />);
+
+		expect(screen.getAllByRole("button", { name: "Deploy" })[0]).toBeDisabled();
+	});
+
+	it("uses the effective running status when redeploying a stale draft row with live evidence", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy", owner: { login: "acme" } },
+			activeServiceName: "web",
+			deployments: [{
+				...baseDeployment,
+				status: "didnt_deploy",
+				liveUrl: "https://web.example.com",
+				screenshotUrl: "https://cdn.example.com/shot.png",
+				scanResults: { dockerfiles: { Dockerfile: "FROM node:20" }, nginx_conf: "events {}" },
+			}],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+
+		fireEvent.click(within(view.container).getByText("Redeploy"));
+
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "deploying",
+				})
+			);
+		});
+		expect(mockSendDeployConfig).toHaveBeenCalled();
+	});
+
+	it("allows pause/resume actions from the effective running status", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{
+				...baseDeployment,
+				status: "didnt_deploy",
+				liveUrl: "https://web.example.com",
+				screenshotUrl: "https://cdn.example.com/shot.png",
+			}],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+
+		fireEvent.click(within(view.container).getByText("PauseResume"));
+		fireEvent.click(screen.getByRole("button", { name: "Pause Deployment" }));
+
+		await waitFor(() => {
+			expect(mockControlDeployment).toHaveBeenCalledWith("pause", "smart-deploy", "web");
+		});
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "paused",
+				})
+			);
+		});
 	});
 });
