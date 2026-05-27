@@ -3,6 +3,7 @@
 import { FolderGit2, LayoutGrid, History, User } from "lucide-react";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 import { useAppData } from "@/store/useAppData";
+import { isLiveDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
 
@@ -28,10 +29,10 @@ export default function DashboardSideBar({
 	const { repoList, deployments } = useAppData();
 	const activeDeployments = deployments.filter((d) => {
 		const hasStoredLiveUrl = Boolean((d.liveUrl ?? "").trim());
-		return d.status === "running" && hasStoredLiveUrl;
+		return isLiveDeploymentStatus(d.status) && hasStoredLiveUrl;
 	}).length;
 	const unhealthyDeployments = deployments.filter(
-		(d) => d.status === "failed" || d.status === "stopped" || d.status === "paused",
+		(d) => isProblemDeploymentStatus(d.status),
 	).length;
 
 	const userLabel = session?.user?.name ?? session?.user?.email ?? "Account";

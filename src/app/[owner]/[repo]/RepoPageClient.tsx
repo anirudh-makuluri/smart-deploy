@@ -328,10 +328,21 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		const normalizedServiceName =
 			svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
 
+		let deploymentsForRepo = repoDeployments;
+		if (repo && repoDeployments.length === 0) {
+			try {
+				const fetchedDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
+				syncRepoDeployments(repo.full_name, fetchedDeployments);
+				deploymentsForRepo = fetchedDeployments;
+			} catch {
+				// Non-blocking: we can still open the workspace using local state.
+			}
+		}
+
 		// Ensure a deployment row exists before entering DeployWorkspace.
 		// (useActiveDeployment can synthesize a draft locally, but we want an immediate persisted record.)
 		const existingDeployment = repo
-			? getDeploymentForService(repoDeployments, repo.html_url, normalizedServiceName, repo.name)
+			? getDeploymentForService(deploymentsForRepo, repo.html_url, normalizedServiceName, repo.name)
 			: null;
 
 		if (repo && (!existingDeployment || Object.keys(existingDeployment.scanResults ?? {}).length === 0)) {
@@ -351,16 +362,17 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 				}
 
 				await updateDeploymentById({
+					...(existingDeployment ?? {}),
 					repoName: repo.name,
 					serviceName: normalizedServiceName,
 					url: repo.html_url,
 					branch: nextBranch,
 					kind: svc.deployMode,
-					status: "didnt_deploy",
-					cloudProvider: "aws",
-					deploymentTarget: "ec2",
-					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
-					scanResults: nextScanResults as never,
+					status: existingDeployment?.status ?? "didnt_deploy",
+					cloudProvider: existingDeployment?.cloudProvider ?? "aws",
+					deploymentTarget: existingDeployment?.deploymentTarget ?? "ec2",
+					awsRegion: existingDeployment?.awsRegion ?? (process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2"),
+					scanResults: (Object.keys(nextScanResults).length > 0 ? nextScanResults : existingDeployment?.scanResults ?? {}) as never,
 				});
 			} catch (e) {
 				// Non-blocking: still allow the workspace to open using the local draft deployment.

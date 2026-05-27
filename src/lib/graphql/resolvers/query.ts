@@ -9,6 +9,7 @@ import { dbHelper } from "@/db-helper";
 import { ensureUserAndRepos } from "@/lib/sessionHelpers";
 import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
+import { resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
 import { EC2Details } from "@/app/types";
@@ -321,20 +322,6 @@ export async function serviceLogs(
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Map database status to GraphQL enum value
- */
-function mapStatusToEnum(status: string | null | undefined): string {
-	if (!status) return "didnt_deploy";
-
-	const statusSet = new Set(["running", "paused", "stopped", "didnt_deploy", "failed"]);
-	if (statusSet.has(status.toLowerCase())) {
-		return status.toLowerCase();
-	}
-	
-	return "didnt_deploy";
-}
-
-/**
  * Map database cloudProvider to GraphQL enum value
  */
 function mapCloudProviderToEnum(provider: string | null | undefined): string | null {
@@ -419,7 +406,11 @@ function transformDeployment(deployment: any) {
 		repoName: deployment.repoName,
 		serviceName: deployment.serviceName,
 		ownerID: deployment.ownerID,
-		status: mapStatusToEnum(deployment.status),
+		status: resolveDeploymentStatus({
+			status: deployment.status,
+			liveUrl: deployment.liveUrl,
+			screenshotUrl: deployment.screenshotUrl,
+		}),
 		firstDeployment: deployment.firstDeployment,
 		lastDeployment: deployment.lastDeployment,
 		revision: deployment.revision,

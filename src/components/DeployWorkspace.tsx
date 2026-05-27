@@ -19,8 +19,15 @@ import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
 import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
+import {
+	isDraftDeploymentStatus,
+	isInProgressDeploymentStatus,
+	resolveDeploymentStatus,
+	transitionDeploymentStatus,
+} from "@/lib/deploymentStatus";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { useAppData } from "@/store/useAppData";
 import { Rocket, Search, ShieldCheck, AlertCircle, Layers } from "lucide-react";
@@ -92,37 +99,29 @@ export default function DeployWorkspace({
 	);
 
 	const effectiveDeploymentStatus = React.useMemo(
-		() => deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy"),
-		[deployment.status, hasStoredLiveUrl]
+		() =>
+			resolveDeploymentStatus({
+				status: deployment.status,
+				liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+				screenshotUrl: deployment.screenshotUrl,
+			}),
+		[deployment.liveUrl, deployment.screenshotUrl, deployment.status, hasStoredLiveUrl]
 	);
 
 	// ============== CALLBACKS ==============
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			setIsDeploying(false);
-			const ec2 = p.ec2 as { instanceId?: string } | null;
+			const finalStatus =
+				typeof p.finalStatus === "string" && p.finalStatus
+					? p.finalStatus
+					: (p.success ? "running" : "failed");
+			const url = p.customUrl || p.deployUrl;
 			if (p.success) {
-				const url = p.customUrl || p.deployUrl;
 				toast.success("Deployment successful", {
 					description: url ? `Live at ${url}` : "Your application is now running.",
 					duration: 8000,
 				});
-
-				if (repoName && serviceName) {
-					void updateDeploymentById({
-						repoName,
-						serviceName,
-						url: deployment.url || repoUrl || "",
-						status: "running",
-						lastDeployment: new Date().toISOString(),
-						liveUrl: url || deployment.liveUrl || null,
-						...(p.ec2 != null ? { ec2: p.ec2 } : {}),
-						...(p.deploymentTarget && {
-							deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
-						}),
-					});
-					void fetchRepoDeployments(repoIdentifier);
-				}
 			} else {
 				toast.error("Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
@@ -130,15 +129,18 @@ export default function DeployWorkspace({
 				});
 			}
 
-			if (!p.success && repoName && serviceName) {
+			if (repoName && serviceName) {
 				void updateDeploymentById({
 					repoName,
-					serviceName: serviceName,
+					serviceName,
+					url: deployment.url || repoUrl || "",
+					status: finalStatus,
+					lastDeployment: new Date().toISOString(),
+					liveUrl: finalStatus === "running" ? (url || deployment.liveUrl || null) : (deployment.liveUrl || null),
 					...(p.ec2 != null ? { ec2: p.ec2 } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 					}),
-					status: "failed",
 				});
 				void fetchRepoDeployments(repoIdentifier);
 			}
@@ -265,26 +267,37 @@ export default function DeployWorkspace({
 		if (!hasScanResults) return "Run smart scan first.";
 		if (deploymentConfigInvalid) return "At least one Dockerfile and nginx.conf are required.";
 		return "";
-	}, [deploymentConfigInvalid, directStaticDeploySupported, hasScanResults, isDirectStatic]);
+	}, [deploymentConfigInvalid, hasScanResults, isDirectStatic]);
 
 	const isDraft = React.useMemo(
-		() => effectiveDeploymentStatus === "didnt_deploy",
+		() => isDraftDeploymentStatus(effectiveDeploymentStatus),
 		[effectiveDeploymentStatus]
 	);
-	const pauseResumeAction = deployment.status === "paused" ? "resume" : "pause";
-	const pauseResumeNextStatus: DeployConfig["status"] = deployment.status === "paused" ? "running" : "paused";
-	const pauseResumeDialogTitle = deployment.status === "paused" ? "Resume Deployment?" : "Pause Deployment?";
+	const canPauseResumeDeployment =
+		effectiveDeploymentStatus === "running" || effectiveDeploymentStatus === "paused";
+	const pauseResumeAction = effectiveDeploymentStatus === "paused" ? "resume" : "pause";
+	const pauseResumeNextStatus: DeployConfig["status"] =
+		!canPauseResumeDeployment
+			? effectiveDeploymentStatus
+			: effectiveDeploymentStatus === "paused"
+				? transitionDeploymentStatus(effectiveDeploymentStatus, "resume_requested")
+				: transitionDeploymentStatus(effectiveDeploymentStatus, "pause_requested");
+	const pauseResumeDialogTitle = effectiveDeploymentStatus === "paused" ? "Resume Deployment?" : "Pause Deployment?";
 	const pauseResumeDialogDescription =
-		deployment.status === "paused"
+		effectiveDeploymentStatus === "paused"
 			? "This will bring the deployment back online using its current configuration."
 			: "This will temporarily stop the live deployment while keeping its configuration intact.";
 	const pauseResumeConfirmText = isChangingDeploymentState
-		? deployment.status === "paused"
+		? effectiveDeploymentStatus === "paused"
 			? "Resuming..."
 			: "Pausing..."
-		: deployment.status === "paused"
+		: effectiveDeploymentStatus === "paused"
 			? "Resume Deployment"
 			: "Pause Deployment";
+	const deploymentInProgress = React.useMemo(
+		() => isInProgressDeploymentStatus(effectiveDeploymentStatus),
+		[effectiveDeploymentStatus]
+	);
 
 	React.useEffect(() => {
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
@@ -359,6 +372,11 @@ export default function DeployWorkspace({
 		if (!session?.user?.id || !activeRepo || !deployment.repoName || !deployment.serviceName) {
 			return console.log("Unauthenticated or missing deploy context");
 		}
+		if (deploymentInProgress) {
+			toast.info("Deployment already in progress. Opening logs.");
+			setActiveSection("logs");
+			return;
+		}
 		if (deployDisabled) {
 			toast.error(deployDisabledMessage || "Deployment configuration is incomplete.");
 			return;
@@ -382,6 +400,7 @@ export default function DeployWorkspace({
 		const payload: DeployConfig = {
 			...deployment,
 			branch: effectiveBranch,
+			status: effectiveDeploymentStatus,
 			scanResults: effectiveScanResults || deployment.scanResults,
 			...(commitSha && { commitSha }),
 		};
@@ -417,6 +436,14 @@ export default function DeployWorkspace({
 		});
 
 		setIsDeploying(true);
+		await updateDeploymentById({
+			repoName: payload.repoName,
+			serviceName: payload.serviceName,
+			url: payload.url || repoUrl || "",
+			branch: payload.branch,
+			commitSha: payload.commitSha,
+			status: transitionDeploymentStatus(effectiveDeploymentStatus, "deploy_requested"),
+		});
 		sendDeployConfig(payload, githubToken, session?.user?.id);
 		setActiveSection("logs");
 	}
@@ -509,7 +536,7 @@ export default function DeployWorkspace({
 	}
 
 	async function handlePauseResumeDeployment() {
-		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState) return;
+		if (!deployment.repoName || !deployment.serviceName || isChangingDeploymentState || !canPauseResumeDeployment) return;
 
 		setIsChangingDeploymentState(true);
 		try {
@@ -540,17 +567,39 @@ export default function DeployWorkspace({
 		setIsChangingDeploymentState(true);
 		try {
 			const deletedScanResults = effectiveScanResults;
-			const deletedKind = deployment.kind;
+			const draftDeployment = withDeployInfraDefaults({
+				id: `draft-${deployment.repoName}-${deployment.serviceName}`,
+				repoName: deployment.repoName,
+				serviceName: deployment.serviceName,
+				url: deployment.url,
+				branch: deployment.branch,
+				kind: deployment.kind ?? getDeploymentKind(deployment),
+				responseId: deployment.responseId ?? null,
+				commitSha: null,
+				envVars: deployment.envVars ?? null,
+				liveUrl: null,
+				screenshotUrl: null,
+				status: "didnt_deploy",
+				firstDeployment: null,
+				lastDeployment: null,
+				revision: 0,
+				cloudProvider: deployment.cloudProvider,
+				deploymentTarget: deployment.deploymentTarget,
+				awsRegion: deployment.awsRegion,
+				ec2: null,
+				cloudRun: null,
+				scanResults: deletedScanResults ?? deployment.scanResults ?? {},
+			} as DeployConfig);
 			await deleteDeployment(deployment.repoName, deployment.serviceName);
 			useAppData.getState().removeDeployment(deployment.repoName, deployment.serviceName);
-			if (deletedKind === "direct-static" && isDirectStaticScanResults(deletedScanResults)) {
+			await updateDeploymentById(draftDeployment);
+			if (deletedScanResults && Object.keys(deletedScanResults).length > 0) {
 				setScanResults(deletedScanResults as SDArtifactsResponse);
 			} else {
 				setScanResults(null);
 			}
-			toast.success("Deployment deleted.");
+			toast.success("Deployment deleted. Draft restored.");
 			setShowDeleteConfirm(false);
-			setActiveSection("setup");
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Failed to delete deployment";
 			toast.error(message);
@@ -847,19 +896,29 @@ export default function DeployWorkspace({
 	const deployAction = (
 		<div className="relative group">
 			<Button
-				disabled={!hasScanResults || isDeploying || deployDisabled}
+				disabled={!hasScanResults || isDeploying || deployDisabled || deploymentInProgress}
 				onClick={() => handleDeploy()}
 				className={`h-10 w-full font-bold gap-2 shadow-lg shadow-primary/20 relative overflow-hidden ${isSidebarCollapsed ? "px-0" : "px-6"}`}
-				title={!hasScanResults ? deployDisabledMessage : (deployDisabled ? deployDisabledMessage : "")}
+				title={
+					deploymentInProgress
+						? "Deployment already in progress. Open logs to follow along."
+						: !hasScanResults
+							? deployDisabledMessage
+							: (deployDisabled ? deployDisabledMessage : "")
+				}
 				aria-label="Deploy"
 			>
 				<Rocket className="size-4 relative z-10" />
 				{!isSidebarCollapsed ? <span className="relative z-10">Deploy</span> : null}
 			</Button>
-			{(!hasScanResults || deployDisabled) && (
+			{(!hasScanResults || deployDisabled || deploymentInProgress) && (
 				<div className={`absolute top-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isSidebarCollapsed ? "left-0" : "left-0 right-0"}`}>
 					<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20 text-center">
-						{!hasScanResults ? deployDisabledMessage : deployDisabledMessage}
+						{deploymentInProgress
+							? "Deployment already in progress. Open logs to follow along."
+							: !hasScanResults
+								? deployDisabledMessage
+								: deployDisabledMessage}
 					</div>
 				</div>
 			)}

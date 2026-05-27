@@ -59,7 +59,11 @@ export const typeDefs = `
   # ──────────────────────────────────────────────────────────────
 
   enum DeploymentStatus {
+    deploying
+    verifying
     running
+    retrying
+    rolling_back
 	paused
 	stopped
 	didnt_deploy

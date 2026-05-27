@@ -8,6 +8,8 @@ export type DeployCompleteWsPayload = {
 	success: boolean;
 	deployUrl?: string | null;
 	deploymentTarget?: string | null;
+	finalStatus?: DeployConfig["status"] | null;
+	rolledBack?: boolean;
 	ec2?: DeployConfig["ec2"];
 	error?: string;
 	vercelDnsAdded?: boolean;
@@ -41,8 +43,60 @@ const defaultSteps: DeployStep[] = [
 	{ id: "setup", label: "Setup", logs: [], status: "pending" },
 	{ id: "docker", label: "Build", logs: [], status: "pending" },
 	{ id: "deploy", label: "Deploy", logs: [], status: "pending" },
+	{ id: "verify", label: "Verify", logs: [], status: "pending" },
 	{ id: "done", label: "Done", logs: [], status: "pending" },
 ];
+
+function getFallbackStepLabel(stepId: string): string {
+	switch (stepId) {
+		case "auth":
+			return "Authentication";
+		case "clone":
+			return "Cloning repository";
+		case "database":
+			return "Database";
+		case "setup":
+			return "Setup";
+		case "build":
+		case "docker":
+			return "Build";
+		case "deploy":
+			return "Deploy";
+		case "verify":
+			return "Verify";
+		case "rollback":
+			return "Rollback";
+		case "done":
+			return "Done";
+		default:
+			return stepId
+				.replace(/[_-]+/g, " ")
+				.replace(/\b\w/g, (char) => char.toUpperCase());
+	}
+}
+
+function isSuccessStepMessage(msg: string): boolean {
+	return msg.startsWith("SUCCESS:") || msg.startsWith("OK:") || msg.startsWith("✅");
+}
+
+function isErrorStepMessage(msg: string): boolean {
+	return msg.startsWith("ERROR:") || msg.startsWith("❌") || msg.toLowerCase().startsWith("failed:");
+}
+
+function normalizeDeploySteps(steps: { id: string; label: string }[]): { id: string; label: string }[] {
+	const next = [...steps];
+	const hasVerify = next.some((step) => step.id === "verify");
+	const doneIndex = next.findIndex((step) => step.id === "done");
+	if (!hasVerify) {
+		const verifyStep = { id: "verify", label: "Verify deployment" };
+		if (doneIndex >= 0) {
+			next.splice(doneIndex, 0, verifyStep);
+		} else {
+			next.push(verifyStep);
+		}
+	}
+	return next;
+}
 
 const ACTIVE_DEPLOYMENT_KEY = "smart-deploy-active-deployment";
 
@@ -201,15 +255,15 @@ export function useWorkerWebSocketSession({
 		setSteps((prev) => {
 			const existing = prev.find((step) => step.id === id);
 			if (!existing) {
-				return [...prev, { id, label: id, logs: [msg], status: "in_progress" }];
+				return [...prev, { id, label: getFallbackStepLabel(id), logs: [msg], status: "in_progress" }];
 			}
 			return prev.map((step) =>
 				step.id === id
 					? {
 						...step,
-						status: msg.includes("success")
+						status: isSuccessStepMessage(msg) || msg.toLowerCase().includes("success")
 							? "success"
-							: msg.includes("error")
+							: isErrorStepMessage(msg) || msg.toLowerCase().includes("error")
 								? "error"
 								: step.status === "pending"
 									? "in_progress"
@@ -309,7 +363,9 @@ export function useWorkerWebSocketSession({
 							}
 							break;
 						case "deploy_steps": {
-							const nextSteps = (payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? [];
+							const nextSteps = normalizeDeploySteps(
+								(payload as { steps?: { id: string; label: string }[] } | undefined)?.steps ?? []
+							);
 							setSteps((prev) => {
 								const byId = new Map(prev.map((step) => [step.id, step]));
 								return nextSteps.map((step) => ({
@@ -353,6 +409,10 @@ export function useWorkerWebSocketSession({
 						}
 						case "deploy_complete": {
 							const completePayload = (payload as DeployCompleteWsPayload | undefined) ?? { success: false, error: "Deployment failed" };
+							const finalStatus =
+								typeof completePayload.finalStatus === "string" && completePayload.finalStatus
+									? completePayload.finalStatus
+									: (completePayload.success ? "running" : "failed");
 							wasDeployingRef.current = false;
 							clearActiveDeployment();
 							setDeployStatus(completePayload.success ? "success" : "error");
@@ -361,16 +421,21 @@ export function useWorkerWebSocketSession({
 								setDeployError(completePayload.error ?? "Deployment failed");
 								setVercelDnsStatus("idle");
 								setVercelDnsError(null);
-								if (deployConfigRef.current && completePayload.ec2 != null) {
+								if (deployConfigRef.current) {
 									const currentConfig = deployConfigRef.current;
 									const deploymentTarget = completePayload.deploymentTarget;
+									const deployUrlFromPayload =
+										typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
+											? completePayload.deployUrl.trim()
+											: undefined;
 									deployConfigRef.current = {
 										...currentConfig,
 										...(typeof deploymentTarget === "string" && deploymentTarget
 											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
 											: {}),
-										ec2: completePayload.ec2,
-										status: "failed",
+										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
+										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
+										status: finalStatus,
 									};
 								}
 							} else {

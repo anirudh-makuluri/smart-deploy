@@ -57,6 +57,29 @@ export function broadcastLog(
 	}
 }
 
+export function broadcastCompletion(
+	userID: string | undefined,
+	repoName: string,
+	serviceName: string,
+	payload: unknown
+): void {
+	const entry = store.get(key(userID, repoName, serviceName));
+	if (!entry) return;
+	const message = JSON.stringify({
+		type: "deploy_complete",
+		payload,
+	});
+	for (const client of entry.subscribedClients) {
+		if (client.readyState === OPEN) {
+			try {
+				client.send(message);
+			} catch (_) {
+				// ignore
+			}
+		}
+	}
+}
+
 export function setStatus(
 	userID: string | undefined,
 	repoName: string,

@@ -2,6 +2,7 @@ import Image from "next/image";
 import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DeployConfig, EC2Details, repoType } from "@/app/types";
+import { canManageRuntimeDeploymentStatus, isLiveDeploymentStatus, resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import {
 	formatTimestamp,
 	formatDeploymentTargetName,
@@ -124,10 +125,13 @@ export default function DeployOverview({
 	repo,
 }: DeployOverviewProps) {
 	const hasStoredLiveUrl = Boolean(deployment.liveUrl);
-	// If a DB row says "running" but we don't have a stored live URL, treat it as not deployed.
 	const effectiveStatus =
-		deployment.status === "running" && !hasStoredLiveUrl ? "didnt_deploy" : (deployment.status ?? "didnt_deploy");
-	const displayUrl = effectiveStatus === "running" ? getDeploymentDisplayUrl(deployment) : undefined;
+		resolveDeploymentStatus({
+			status: deployment.status,
+			liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+			screenshotUrl: deployment.screenshotUrl,
+		});
+	const displayUrl = isLiveDeploymentStatus(effectiveStatus) ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshotUrl;
 	const customUrlRaw = deployment.liveUrl?.trim();
 	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
@@ -143,8 +147,7 @@ export default function DeployOverview({
 		: null;
 
 	const regionDisplay = (deployment.awsRegion || region).trim() || region;
-	const canManageDeployment =
-		effectiveStatus === "running" || effectiveStatus === "paused";
+	const canManageDeployment = canManageRuntimeDeploymentStatus(effectiveStatus);
 	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
 	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
 

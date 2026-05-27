@@ -7,6 +7,7 @@ import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
 import { getSupabaseServer } from "./lib/supabaseServer";
+import { isDraftDeploymentStatus } from "./lib/deploymentStatus";
 import { verifyWebSocketAuthToken } from "./lib/wsAuth";
 import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
 
@@ -25,7 +26,7 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 	if (!resolvedUserId) return null;
 
 	// If the current deployment is in "didnt_deploy" status (fresh/draft), don't show old history
-	if (currentDeployment?.status === "didnt_deploy") {
+	if (isDraftDeploymentStatus(currentDeployment?.status)) {
 		return null;
 	}
 

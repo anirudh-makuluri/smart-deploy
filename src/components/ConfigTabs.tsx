@@ -49,6 +49,14 @@ type ConfigTabsProps = {
 
 const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "smart-deploy.xyz";
 
+function mapCustomDomainError(error: unknown): string {
+	const message = error instanceof Error ? error.message : "Failed to update custom domain";
+	if (message === "Deployment not found") {
+		return "This deployment no longer exists. Reopen the service or deploy again before setting a custom domain.";
+	}
+	return message;
+}
+
 export default function ConfigTabs({
 	onConfigChange,
 	deployment,
@@ -124,7 +132,7 @@ export default function ConfigTabs({
 				toast.success("Custom domain cleared");
 			}
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Failed to update custom domain";
+			const message = mapCustomDomainError(error);
 			setCustomUrlStatus({ type: "error", message });
 			toast.error(message);
 		} finally {

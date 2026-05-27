@@ -1,5 +1,6 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
+import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -258,16 +259,9 @@ export function getDeploymentForService(
 
 	if (matches.length === 0) return undefined;
 
-	const statusRank = (status?: string) => {
-		if (status === "running") return 3;
-		if (status === "paused" || status === "stopped") return 2;
-		if (status === "didnt_deploy") return 1;
-		return 0;
-	};
-
 	return matches.sort((a, b) => {
-		const statusRankA = statusRank(a.status);
-		const statusRankB = statusRank(b.status);
+		const statusRankA = getDeploymentStatusRank(a.status);
+		const statusRankB = getDeploymentStatusRank(b.status);
 		const statusDelta = statusRankB - statusRankA;
 		if (statusDelta !== 0) return statusDelta;
 		const aTime = new Date(a.lastDeployment ?? 0).getTime();
@@ -290,7 +284,7 @@ export function countDeployedServicesForRepo(
 			svc.name,
 			repoRecord.repo_name
 		);
-		return deployment && deployment.status !== "didnt_deploy" ? count + 1 : count;
+		return deployment && !isDraftDeploymentStatus(deployment.status) ? count + 1 : count;
 	}, 0);
 }
 

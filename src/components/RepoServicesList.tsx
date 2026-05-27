@@ -13,6 +13,12 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { DetectedServiceInfo, DeployConfig, repoType } from "@/app/types";
+import {
+	isDraftDeploymentStatus,
+	isInProgressDeploymentStatus,
+	isLiveDeploymentStatus,
+	resolveDeploymentStatus,
+} from "@/lib/deploymentStatus";
 import { getDeploymentForService } from "@/lib/utils";
 import ServiceTypeIcon, { ServiceTypeBadge } from "@/components/ServiceTypeIcon";
 
@@ -132,11 +138,20 @@ export default function RepoServicesList({
 							svc.name,
 							resolvedRepo.name
 						);
-						const status = deployment?.status;
-						const isOnline = status === "running";
-						const isDraft = deployment && status !== "running" && status !== "failed";
+						const status = deployment
+							? resolveDeploymentStatus({
+								status: deployment.status,
+								liveUrl: deployment.liveUrl,
+								screenshotUrl: deployment.screenshotUrl,
+							})
+							: undefined;
+						const isOnline = isLiveDeploymentStatus(status);
+						const isDraft = deployment && isDraftDeploymentStatus(status);
 						const hasNoDeployment = !deployment;
 						const isFailed = status === "failed";
+						const isPaused = status === "paused";
+						const isStopped = status === "stopped";
+						const isInProgress = isInProgressDeploymentStatus(status);
 						const liveUrl = deployment?.liveUrl;
 
 						const handleCardClick = () => {
@@ -207,6 +222,27 @@ export default function RepoServicesList({
 											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
 												<span className="size-2 rounded-full bg-green-500" />
 												Online
+											</span>
+										)}
+										{isPaused && (
+											<span className="text-sm text-amber-600 dark:text-amber-400">
+												Paused
+											</span>
+										)}
+										{isStopped && (
+											<span className="text-sm text-muted-foreground">
+												Stopped
+											</span>
+										)}
+										{isInProgress && (
+											<span className="text-sm text-blue-600 dark:text-blue-400">
+												{status === "rolling_back"
+													? "Rolling back"
+													: status === "retrying"
+														? "Retrying"
+														: status === "verifying"
+															? "Verifying"
+															: "Deploying"}
 											</span>
 										)}
 									</div>
