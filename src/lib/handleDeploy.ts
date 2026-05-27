@@ -56,6 +56,8 @@ function hasDirectStaticConfig(deployConfig: DeployConfig): boolean {
 type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
 	postPersistConfig?: DeployConfig | null;
+	finalStatus?: DeployConfig["status"] | null;
+	rolledBack?: boolean;
 };
 
 type VerificationResult =
@@ -153,8 +155,16 @@ function buildVerificationCandidates(baseUrl: string): string[] {
 	return Array.from(urls);
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number) {
+async function fetchWithTimeout(url: string, timeoutMs: number, externalSignal?: AbortSignal) {
 	const controller = new AbortController();
+	const handleExternalAbort = () => controller.abort();
+	if (externalSignal) {
+		if (externalSignal.aborted) {
+			controller.abort();
+		} else {
+			externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
+		}
+	}
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
 		return await fetch(url, {
@@ -165,6 +175,7 @@ async function fetchWithTimeout(url: string, timeoutMs: number) {
 		});
 	} finally {
 		clearTimeout(timer);
+		externalSignal?.removeEventListener("abort", handleExternalAbort);
 	}
 }
 
@@ -239,30 +250,64 @@ async function verifyDeploymentReadiness(params: {
 		};
 	}
 
-	const maxRounds = 8;
+	const maxRounds = 6;
+	const requestTimeoutMs = 8_000;
+	const roundDelayMs = 2_000;
+	const verificationDeadlineMs = 90_000;
+	const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
 	for (let round = 1; round <= maxRounds; round += 1) {
-		for (const candidate of candidates) {
+		const remainingBudgetMs = verificationDeadlineAt - Date.now();
+		if (remainingBudgetMs <= 0) {
+			send("Verification deadline reached before a healthy response was observed.", "verify");
+			break;
+		}
+
+		send(`Verification round ${round}/${maxRounds}: probing ${candidates.length} URL(s).`, "verify");
+		const roundController = new AbortController();
+		let roundResolved = false;
+		const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
+		const probes = candidates.map(async (candidate) => {
 			send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
 			try {
-				const response = await fetchWithTimeout(candidate, 10_000);
+				const response = await fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal);
 				if (response.status < 500) {
-					send(`SUCCESS: Verification passed with HTTP ${response.status} at ${candidate}`, "verify");
-					setStepState(deploySteps, "verify", "success");
 					return {
-						success: true,
-						verifiedUrl: candidate,
+						candidate,
 						statusCode: response.status,
 					};
 				}
 				send(`Verification received HTTP ${response.status} at ${candidate}`, "verify");
+				throw new Error(`HTTP ${response.status}`);
 			} catch (error) {
+				if (roundResolved && roundController.signal.aborted) {
+					throw error;
+				}
 				const message = error instanceof Error ? error.message : String(error);
 				send(`Verification request failed at ${candidate}: ${message}`, "verify");
+				throw error;
 			}
+		});
+
+		try {
+			const verified = await Promise.any(probes);
+			roundResolved = true;
+			roundController.abort();
+			send(`SUCCESS: Verification passed with HTTP ${verified.statusCode} at ${verified.candidate}`, "verify");
+			setStepState(deploySteps, "verify", "success");
+			return {
+				success: true,
+				verifiedUrl: verified.candidate,
+				statusCode: verified.statusCode,
+			};
+		} catch {
+			roundController.abort();
 		}
 
 		if (round < maxRounds) {
-			await new Promise((resolve) => setTimeout(resolve, 5_000));
+			const delayMs = Math.min(roundDelayMs, Math.max(0, verificationDeadlineAt - Date.now()));
+			if (delayMs > 0) {
+				await new Promise((resolve) => setTimeout(resolve, delayMs));
+			}
 		}
 	}
 
@@ -801,13 +846,15 @@ async function sendDeployComplete(
 		deployUrl: string | null;
 		success: boolean;
 		deploymentTarget: string | null;
+		finalStatus?: DeployConfig["status"] | null;
+		rolledBack?: boolean;
 		vercelDnsAdded?: boolean;
 		vercelDnsError?: string | null;
 		customUrl?: string | null;
 		error?: string | null;
 		ec2?: EC2Details;
 	} = {
-		deployUrl: deployUrl ?? null,
+		deployUrl: lifecycle?.postPersistConfig?.liveUrl ?? deployUrl ?? null,
 		success,
 		deploymentTarget: deploymentTarget ?? null,
 	};
@@ -822,6 +869,12 @@ async function sendDeployComplete(
 	}
 	if (!success && lifecycle?.errorMessage) {
 		payload.error = lifecycle.errorMessage;
+	}
+	if (lifecycle?.finalStatus) {
+		payload.finalStatus = lifecycle.finalStatus;
+	}
+	if (lifecycle?.rolledBack) {
+		payload.rolledBack = true;
 	}
 
 	if (userID && deployConfig.repoName && deployConfig.serviceName) {
@@ -1121,6 +1174,8 @@ async function handleAWSCodeBuildDeploy(
 				lifecycle = {
 					errorMessage: verification.errorMessage,
 					postPersistConfig: verification.postPersistConfig,
+					finalStatus: verification.postPersistConfig?.status ?? "failed",
+					rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
 				};
 				result = "error";
 			}
@@ -1343,6 +1398,8 @@ async function handleAWSCodeBuildDeploy(
 			lifecycle = {
 				errorMessage: verification.errorMessage,
 				postPersistConfig: verification.postPersistConfig,
+				finalStatus: verification.postPersistConfig?.status ?? "failed",
+				rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
 			};
 			result = "error";
 		}

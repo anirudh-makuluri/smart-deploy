@@ -112,29 +112,16 @@ export default function DeployWorkspace({
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			setIsDeploying(false);
-			const ec2 = p.ec2 as { instanceId?: string } | null;
+			const finalStatus =
+				typeof p.finalStatus === "string" && p.finalStatus
+					? p.finalStatus
+					: (p.success ? "running" : "failed");
+			const url = p.customUrl || p.deployUrl;
 			if (p.success) {
-				const url = p.customUrl || p.deployUrl;
 				toast.success("Deployment successful", {
 					description: url ? `Live at ${url}` : "Your application is now running.",
 					duration: 8000,
 				});
-
-				if (repoName && serviceName) {
-					void updateDeploymentById({
-						repoName,
-						serviceName,
-						url: deployment.url || repoUrl || "",
-						status: "running",
-						lastDeployment: new Date().toISOString(),
-						liveUrl: url || deployment.liveUrl || null,
-						...(p.ec2 != null ? { ec2: p.ec2 } : {}),
-						...(p.deploymentTarget && {
-							deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
-						}),
-					});
-					void fetchRepoDeployments(repoIdentifier);
-				}
 			} else {
 				toast.error("Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
@@ -142,15 +129,18 @@ export default function DeployWorkspace({
 				});
 			}
 
-			if (!p.success && repoName && serviceName) {
+			if (repoName && serviceName) {
 				void updateDeploymentById({
 					repoName,
-					serviceName: serviceName,
+					serviceName,
+					url: deployment.url || repoUrl || "",
+					status: finalStatus,
+					lastDeployment: new Date().toISOString(),
+					liveUrl: finalStatus === "running" ? (url || deployment.liveUrl || null) : (deployment.liveUrl || null),
 					...(p.ec2 != null ? { ec2: p.ec2 } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 					}),
-					status: "failed",
 				});
 				void fetchRepoDeployments(repoIdentifier);
 			}

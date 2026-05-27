@@ -8,6 +8,8 @@ export type DeployCompleteWsPayload = {
 	success: boolean;
 	deployUrl?: string | null;
 	deploymentTarget?: string | null;
+	finalStatus?: DeployConfig["status"] | null;
+	rolledBack?: boolean;
 	ec2?: DeployConfig["ec2"];
 	error?: string;
 	vercelDnsAdded?: boolean;
@@ -407,6 +409,10 @@ export function useWorkerWebSocketSession({
 						}
 						case "deploy_complete": {
 							const completePayload = (payload as DeployCompleteWsPayload | undefined) ?? { success: false, error: "Deployment failed" };
+							const finalStatus =
+								typeof completePayload.finalStatus === "string" && completePayload.finalStatus
+									? completePayload.finalStatus
+									: (completePayload.success ? "running" : "failed");
 							wasDeployingRef.current = false;
 							clearActiveDeployment();
 							setDeployStatus(completePayload.success ? "success" : "error");
@@ -415,16 +421,21 @@ export function useWorkerWebSocketSession({
 								setDeployError(completePayload.error ?? "Deployment failed");
 								setVercelDnsStatus("idle");
 								setVercelDnsError(null);
-								if (deployConfigRef.current && completePayload.ec2 != null) {
+								if (deployConfigRef.current) {
 									const currentConfig = deployConfigRef.current;
 									const deploymentTarget = completePayload.deploymentTarget;
+									const deployUrlFromPayload =
+										typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
+											? completePayload.deployUrl.trim()
+											: undefined;
 									deployConfigRef.current = {
 										...currentConfig,
 										...(typeof deploymentTarget === "string" && deploymentTarget
 											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
 											: {}),
-										ec2: completePayload.ec2,
-										status: "failed",
+										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
+										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
+										status: finalStatus,
 									};
 								}
 							} else {

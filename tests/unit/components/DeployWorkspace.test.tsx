@@ -344,6 +344,51 @@ describe("DeployWorkspace", () => {
 		expect(mockToastError).toHaveBeenCalled();
 	});
 
+	it("restores the deployment to running when a failed attempt reports a rolled-back final status", async () => {
+		mockUseWorkerWebSocket.mockReturnValue({
+			steps: [],
+			sendDeployConfig: mockSendDeployConfig,
+			deployConfigRef: { current: null },
+			deployStatus: "error",
+			deployError: "Verification failed",
+			serviceLogs: [],
+			deployLogEntries: [],
+			setOnDeployFinished: vi.fn((handler) => {
+				if (handler) {
+					queueMicrotask(() => {
+						handler({
+							success: false,
+							error: "Deployment verification failed. Rolled back automatically to abc1234.",
+							finalStatus: "running",
+							deployUrl: "https://restored.example.com",
+						});
+					});
+				}
+			}),
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{ ...baseDeployment, liveUrl: "https://previous.example.com" }],
+		};
+
+		renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "running",
+					liveUrl: "https://restored.example.com",
+				})
+			);
+		});
+		expect(mockToastError).toHaveBeenCalled();
+	});
+
 	it("disables deploy while an effective deployment is already in progress", () => {
 		appState = {
 			...appState,
