@@ -228,6 +228,8 @@ function rowToDeploymentHistoryEntry(row: Record<string, unknown>): DeploymentHi
 		commitMessage: row.commit_message as string | undefined,
 		branch: row.branch as string | undefined,
 		durationMs: row.duration_ms as number | undefined,
+		failureCode: (row.failure_code as DeploymentHistoryEntry["failureCode"]) ?? null,
+		failureClassification: (row.failure_classification as DeploymentHistoryEntry["failureClassification"]) ?? null,
 	};
 }
 
@@ -640,6 +642,8 @@ export const dbHelper = {
 					commit_message: entry.commitMessage ?? null,
 					branch: entry.branch ?? null,
 					duration_ms: entry.durationMs ?? null,
+					failure_code: entry.failureCode ?? null,
+					failure_classification: entry.failureClassification ?? null,
 				})
 				.select("id")
 				.single();

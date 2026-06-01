@@ -326,6 +326,8 @@ const DEPLOYMENT_HISTORY_QUERY = `
 				commitMessage
 				branch
 				durationMs
+				failureCode
+				failureClassification
 				steps {
 					label
 					logs
@@ -356,6 +358,8 @@ const DEPLOYMENT_HISTORY_ALL_QUERY = `
 				commitMessage
 				branch
 				durationMs
+				failureCode
+				failureClassification
 				steps {
 					label
 					logs

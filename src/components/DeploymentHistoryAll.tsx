@@ -28,6 +28,7 @@ type DeploymentHistoryAllEntry = {
 	commitMessage?: string;
 	branch?: string;
 	durationMs?: number;
+	failureCode?: string | null;
 };
 
 export default function DeploymentHistoryAll() {
@@ -95,6 +96,14 @@ export default function DeploymentHistoryAll() {
 									>
 										{entry.success ? "Success" : "Failed"}
 									</Badge>
+									{!entry.success && entry.failureCode && (
+										<Badge
+											variant="outline"
+											className="border-amber-300/40 bg-amber-300/5 font-mono text-[11px] text-amber-200"
+										>
+											{entry.failureCode}
+										</Badge>
+									)}
 									{entry.durationMs && (
 										<span className="text-xs text-muted-foreground flex items-center gap-1">
 											<Clock className="size-3" />
