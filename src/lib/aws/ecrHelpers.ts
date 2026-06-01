@@ -81,6 +81,28 @@ export async function ecrImageTagExists(
 	}
 }
 
+export async function describeEcrImageByTag(
+	region: string,
+	repoName: string,
+	tag: string,
+): Promise<{ imageDigest?: string | null; imageTags: string[] }> {
+	const client = new ECRClient(getAwsClientConfig(region));
+	const resp = await client.send(
+		new DescribeImagesCommand({
+			repositoryName: repoName,
+			imageIds: [{ imageTag: tag }],
+		}),
+	);
+	const image = resp.imageDetails?.[0];
+	if (!image) {
+		return { imageDigest: null, imageTags: [] };
+	}
+	return {
+		imageDigest: image.imageDigest ?? null,
+		imageTags: image.imageTags ?? [],
+	};
+}
+
 export async function getEcrAuthToken(region: string): Promise<{ username: string; password: string }> {
 	const client = new ECRClient(getAwsClientConfig(region));
 	const resp = await client.send(new GetAuthorizationTokenCommand({}));

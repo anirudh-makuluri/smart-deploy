@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildFirstDeployScript,
+	buildEcrComposeDeployScript,
 	buildRedeployScript,
 	generateEcrUserDataScript,
 } from "@/lib/aws/ec2SsmHelpers";
@@ -57,5 +58,39 @@ describe("ec2SsmHelpers", () => {
 
 		expect(script).toContain("location /ws");
 		expect(script).toContain("proxy_pass http://127.0.0.1:4001;");
+	});
+
+	it("uses explicit stored image refs for ECR compose deployments", () => {
+		const script = buildEcrComposeDeployScript({
+			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
+			ecrRepoName: "smartdeploy/shop",
+			imageTag: "abcdef",
+			region: "us-west-2",
+			envFileContentBase64: "",
+			composeContent: [
+				"services:",
+				"  api:",
+				"    build:",
+				"      context: ./api",
+				"  web:",
+				"    build:",
+				"      context: ./web",
+			].join("\n"),
+			services: [
+				{ name: "api", port: 4000 },
+				{ name: "web", port: 3000 },
+			],
+			serviceImageRefs: [
+				{ serviceName: "api", imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-api@sha256:aaa" },
+				{ serviceName: "web", imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-web@sha256:bbb" },
+			],
+			ecrPasswordB64: "cGFzcw==",
+		});
+
+		const composeB64 = script.match(/echo '([^']+)' \| base64 -d > docker-compose.yml/)?.[1] ?? "";
+		const compose = Buffer.from(composeB64, "base64").toString("utf8");
+
+		expect(compose).toContain("image: 123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-api@sha256:aaa");
+		expect(compose).toContain("image: 123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-web@sha256:bbb");
 	});
 });

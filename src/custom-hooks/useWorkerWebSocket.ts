@@ -651,11 +651,53 @@ export function useWorkerWebSocketSession({
 		});
 	};
 
+	const sendRollbackRequest = (
+		deployConfig: DeployConfig,
+		historyEntryId: string,
+		token: string,
+		userID?: string
+	) => {
+		deployConfigRef.current = deployConfig;
+		wasDeployingRef.current = true;
+		setDeployError(null);
+		setDeployStatus("running");
+		setSteps([...defaultSteps]);
+		setDeployLogEntries([]);
+
+		if (typeof window !== "undefined") {
+			try {
+				sessionStorage.setItem(
+					ACTIVE_DEPLOYMENT_KEY,
+					JSON.stringify({ repoName: deployConfig.repoName, serviceName: deployConfig.serviceName, userID })
+				);
+			} catch {
+				// ignore
+			}
+		}
+
+		openSocket(() => {
+			const socket = wsRef.current;
+			if (socket?.readyState === WebSocket.OPEN) {
+				socket.send(JSON.stringify({
+					type: "rollback",
+					payload: {
+						repoName: deployConfig.repoName,
+						serviceName: deployConfig.serviceName,
+						historyEntryId,
+						token,
+						userID,
+					},
+				}));
+			}
+		});
+	};
+
 	return {
 		steps,
 		deployLogEntries,
 		socketStatus,
 		sendDeployConfig,
+		sendRollbackRequest,
 		openSocket,
 		deployConfigRef,
 		deployStatus,

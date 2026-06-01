@@ -1,4 +1,5 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
+import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
 import { clsx, type ClassValue } from "clsx"
@@ -228,8 +229,7 @@ export function sanitizeAndParseAIResponse(raw: any): SDArtifactsResponse | null
 
 /** Build a serializable config snapshot for deployment history (no File/binary). */
 export function configSnapshotFromDeployConfig(config: DeployConfig | null): Record<string, unknown> {
-	if (!config) return {};
-	return { ...config } as Record<string, unknown>;
+	return sanitizeDeployConfigForHistory(config);
 }
 
 

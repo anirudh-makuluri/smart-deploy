@@ -4,7 +4,16 @@ import path from "path";
 import crypto from "crypto";
 import config from "../config";
 import { runCommandLiveWithWebSocket } from "../server-helper";
-import { DeploymentTarget, DeployConfig, CloudProvider, EC2Details, DeployStep, SDArtifactsResponse } from "../app/types";
+import {
+	DeploymentTarget,
+	DeployConfig,
+	EC2Details,
+	DeployStep,
+	SDArtifactsResponse,
+	DeploymentHistoryEntry,
+	DeploymentReleaseArtifact,
+	EcrServiceImageRef,
+} from "../app/types";
 import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
 import { detectDatabase, DatabaseConfig } from "./databaseDetector";
 import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
@@ -27,6 +36,7 @@ import {
 	ensureEc2EcrPullPolicy,
 	getEcrAuthToken,
 	ecrImageTagExists,
+	describeEcrImageByTag,
 } from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
@@ -42,6 +52,17 @@ import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
 import { canManageRuntimeDeploymentStatus, normalizeDeploymentStatus, transitionDeploymentStatus } from "./deploymentStatus";
 import * as deployLogsStore from "./deployLogsStore";
+import {
+	attachDeployConfigToReleaseArtifact,
+	buildEc2ConfigReleaseArtifact,
+	buildEcrImageReleaseArtifact,
+	deployConfigFromReleaseArtifact,
+	ecrImageRefFromArtifact,
+	hasUsableReleaseArtifact,
+	isEc2ConfigReleaseArtifact,
+	isEcrImageReleaseArtifact,
+	serviceImageRefsFromArtifact,
+} from "./deploymentReleaseArtifacts";
 
 function hasDirectStaticConfig(deployConfig: DeployConfig): boolean {
 	const scanResults = deployConfig.scanResults;
@@ -58,6 +79,12 @@ type DeploymentLifecycleOptions = {
 	postPersistConfig?: DeployConfig | null;
 	finalStatus?: DeployConfig["status"] | null;
 	rolledBack?: boolean;
+	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null;
+};
+
+type DeployLoggerOptions = {
+	onStepsChange?: (steps: DeployStep[]) => void;
+	broadcast?: (id: string, msg: string) => void;
 };
 
 type VerificationResult =
@@ -82,6 +109,68 @@ function cloneDeployConfigSnapshot(config: DeployConfig): DeployConfig {
 				? JSON.parse(JSON.stringify(config.scanResults))
 				: config.scanResults,
 	};
+}
+
+function imageRefFromUriAndDigest(imageUri: string, imageDigest?: string | null): string {
+	if (!imageDigest) return imageUri;
+	const base = imageUri.includes("@")
+		? imageUri.split("@")[0]
+		: imageUri.replace(/:[^/:@]+$/, "");
+	return `${base}@${imageDigest}`;
+}
+
+async function describeImageRefWithFallback(params: {
+	region: string;
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	serviceName?: string;
+	send: (msg: string, stepId: string) => void;
+}): Promise<{ imageUri: string; imageDigest?: string | null }> {
+	const imageUri = `${params.ecrRegistry}/${params.ecrRepoName}:${params.imageTag}`;
+	try {
+		const image = await describeEcrImageByTag(params.region, params.ecrRepoName, params.imageTag);
+		return {
+			imageUri: imageRefFromUriAndDigest(imageUri, image.imageDigest),
+			imageDigest: image.imageDigest ?? null,
+		};
+	} catch (error) {
+		const label = params.serviceName ? `${params.serviceName} image` : "image";
+		const message = error instanceof Error ? error.message : String(error);
+		params.send(`Warning: could not read ECR digest for ${label}; rollback will use tag ref. ${message}`, "build");
+		return { imageUri, imageDigest: null };
+	}
+}
+
+async function buildEcrServiceImageRefs(params: {
+	region: string;
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	services: Array<{ name: string }>;
+	send: (msg: string, stepId: string) => void;
+}): Promise<EcrServiceImageRef[]> {
+	const refs: EcrServiceImageRef[] = [];
+	for (const service of params.services) {
+		const serviceName = service.name?.trim();
+		if (!serviceName) continue;
+		const repoName = `${params.ecrRepoName}-${serviceName}`;
+		const image = await describeImageRefWithFallback({
+			region: params.region,
+			ecrRegistry: params.ecrRegistry,
+			ecrRepoName: repoName,
+			imageTag: params.imageTag,
+			serviceName,
+			send: params.send,
+		});
+		refs.push({
+			serviceName,
+			ecrRepoName: repoName,
+			imageUri: image.imageUri,
+			imageDigest: image.imageDigest ?? null,
+		});
+	}
+	return refs;
 }
 
 function buildMultiServiceConfigFromDeployConfig(deployConfig: DeployConfig): MultiServiceConfig {
@@ -199,12 +288,13 @@ async function verifyDeploymentReadiness(params: {
 	deployConfig: DeployConfig;
 	deployUrl: string;
 	userID?: string;
+	token?: string;
 	send: (msg: string, stepId: string) => void;
 	deploySteps: DeployStep[];
-	rollbackCandidate?: DeployConfig | null;
+	rollbackHistoryEntry?: DeploymentHistoryEntry | null;
 	serviceDetails?: ServiceDeployDetails | null;
 }): Promise<VerificationResult> {
-	const { deployConfig, deployUrl, userID, send, deploySteps, rollbackCandidate, serviceDetails } = params;
+	const { deployConfig, deployUrl, userID, token, send, deploySteps, rollbackHistoryEntry, serviceDetails } = params;
 	const verifyingStatus = transitionDeploymentStatus(deployConfig.status, "verification_requested");
 	deployConfig.status = verifyingStatus;
 	setStepState(deploySteps, "verify", "in_progress");
@@ -229,9 +319,10 @@ async function verifyDeploymentReadiness(params: {
 		send("ERROR: Deployment verification failed after all retry attempts.", "verify");
 		const rollbackResult = await attemptAutomaticRollback({
 			deployConfig,
-			rollbackCandidate: rollbackCandidate ?? null,
+			rollbackHistoryEntry: rollbackHistoryEntry ?? null,
 			serviceDetails: serviceDetails ?? null,
 			userID,
+			token,
 			send,
 			deploySteps,
 		});
@@ -315,9 +406,10 @@ async function verifyDeploymentReadiness(params: {
 	send("ERROR: Deployment verification failed after all retry attempts.", "verify");
 	const rollbackResult = await attemptAutomaticRollback({
 		deployConfig,
-		rollbackCandidate: rollbackCandidate ?? null,
+		rollbackHistoryEntry: rollbackHistoryEntry ?? null,
 		serviceDetails: serviceDetails ?? null,
 		userID,
+		token,
 		send,
 		deploySteps,
 	});
@@ -338,71 +430,158 @@ async function verifyDeploymentReadiness(params: {
 
 async function attemptAutomaticRollback(params: {
 	deployConfig: DeployConfig;
-	rollbackCandidate: DeployConfig | null;
+	rollbackHistoryEntry: DeploymentHistoryEntry | null;
 	serviceDetails: ServiceDeployDetails | null;
 	userID?: string;
+	token?: string;
 	send: (msg: string, stepId: string) => void;
 	deploySteps: DeployStep[];
 }): Promise<{ success: boolean; message: string; restoredConfig?: DeployConfig | null }> {
-	const { deployConfig, rollbackCandidate, serviceDetails, userID, send, deploySteps } = params;
+	return restoreDeploymentFromHistory({
+		...params,
+		mode: "automatic",
+	});
+}
 
+async function restoreDeploymentFromHistory(params: {
+	deployConfig: DeployConfig;
+	rollbackHistoryEntry: DeploymentHistoryEntry | null;
+	serviceDetails: ServiceDeployDetails | null;
+	userID?: string;
+	token?: string;
+	send: (msg: string, stepId: string) => void;
+	deploySteps: DeployStep[];
+	mode: "automatic" | "manual";
+}): Promise<{ success: boolean; message: string; restoredConfig?: DeployConfig | null; targetLabel?: string }> {
+	const { deployConfig, rollbackHistoryEntry, serviceDetails, userID, token, send, deploySteps } = params;
+	const isAutomatic = params.mode === "automatic";
+	const rollbackNoun = isAutomatic ? "automatic rollback" : "rollback";
+
+	if (!rollbackHistoryEntry) {
+		send(
+			isAutomatic
+				? "ERROR: Verification failed and no successful deployment history entry is available for rollback."
+				: "ERROR: No successful deployment history entry is available for rollback.",
+			"rollback"
+		);
+		setStepState(deploySteps, "rollback", "error");
+		return {
+			success: false,
+			message: isAutomatic
+				? "Deployment verification failed and no previous successful deployment history entry was available for rollback."
+				: "No previous successful deployment history entry was available for rollback.",
+		};
+	}
+
+	const releaseArtifact = rollbackHistoryEntry.releaseArtifact;
+	if (!hasUsableReleaseArtifact(releaseArtifact)) {
+		send(
+			isAutomatic
+				? "ERROR: Verification failed and the last successful deployment has no rollback artifact."
+				: "ERROR: The selected deployment history entry has no rollback artifact.",
+			"rollback"
+		);
+		setStepState(deploySteps, "rollback", "error");
+		return {
+			success: false,
+			message: isAutomatic
+				? "Deployment verification failed and automatic rollback could not run because the last successful deployment is missing release artifact metadata."
+				: "Rollback could not run because the selected deployment is missing release artifact metadata.",
+		};
+	}
+
+	const rollbackCandidate = deployConfigFromReleaseArtifact(releaseArtifact, deployConfig);
 	if (!rollbackCandidate) {
-		send("ERROR: Verification failed and no previous healthy deployment snapshot is available for rollback.", "rollback");
+		send(
+			isAutomatic
+				? "ERROR: Verification failed and the rollback artifact could not be converted into a deployment config."
+				: "ERROR: The rollback artifact could not be converted into a deployment config.",
+			"rollback"
+		);
 		setStepState(deploySteps, "rollback", "error");
 		return {
 			success: false,
-			message: "Deployment verification failed and no previous healthy deployment was available for rollback.",
+			message: isAutomatic
+				? "Deployment verification failed and automatic rollback could not reconstruct the previous deployment config."
+				: "Rollback could not reconstruct the selected deployment config.",
 		};
 	}
 
-	const previousCommitSha = rollbackCandidate.commitSha?.trim();
-	if (!previousCommitSha) {
-		send("ERROR: Verification failed and rollback is unavailable because the previous deployment has no commit SHA.", "rollback");
-		setStepState(deploySteps, "rollback", "error");
-		return {
-			success: false,
-			message: "Deployment verification failed and automatic rollback could not run because the previous deployment is missing its commit SHA.",
-		};
-	}
-
+	const previousCommitSha =
+		releaseArtifact.commitSha?.trim() ||
+		rollbackHistoryEntry.commitSha?.trim() ||
+		rollbackCandidate.commitSha?.trim() ||
+		"previous release";
+	const previousLabel = previousCommitSha === "previous release"
+		? previousCommitSha
+		: previousCommitSha.slice(0, 7);
 	const rollbackStatus = transitionDeploymentStatus(deployConfig.status, "rollback_requested");
 	deployConfig.status = rollbackStatus;
 	setStepState(deploySteps, "rollback", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, rollbackStatus, {
 		...(serviceDetails?.ec2 ? { ec2: serviceDetails.ec2 } : {}),
 	});
-	send(`Starting automatic rollback to ${previousCommitSha.slice(0, 7)}...`, "rollback");
+	send(`Starting ${rollbackNoun} to ${previousLabel}...`, "rollback");
 
 	try {
 		const region = rollbackCandidate.awsRegion || config.AWS_REGION;
 		const repoName = rollbackCandidate.url.split("/").pop()?.replace(".git", "") || rollbackCandidate.repoName || "app";
-		const imageTag = previousCommitSha.slice(0, 6);
-		const accountId = await getAwsAccountId(region);
-		const ecrRegistry = getEcrRegistry(accountId, region);
-		const ecrRepoName = `smartdeploy/${repoName}`;
-		const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-		const ecrAuth = await getEcrAuthToken(region);
-		const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 		const rollbackMultiServiceConfig = buildMultiServiceConfigFromDeployConfig(rollbackCandidate);
+		let rollbackResult;
 
-		const rollbackResult = await handleEC2FromEcr({
-			deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
-			imageUri,
-			imageTag,
-			ecrRegistry,
-			ecrRepoName,
-			ecrPasswordB64,
-			multiServiceConfig: rollbackMultiServiceConfig,
-			ws: null,
-			send,
-		});
+		if (isEcrImageReleaseArtifact(releaseArtifact)) {
+			const ecrAuth = await getEcrAuthToken(releaseArtifact.region || region);
+			const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
+			rollbackResult = await handleEC2FromEcr({
+				deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
+				imageUri: ecrImageRefFromArtifact(releaseArtifact),
+				imageTag: releaseArtifact.imageTag,
+				ecrRegistry: releaseArtifact.ecrRegistry,
+				ecrRepoName: releaseArtifact.ecrRepoName,
+				ecrPasswordB64,
+				serviceImageRefs: serviceImageRefsFromArtifact(releaseArtifact),
+				multiServiceConfig: rollbackMultiServiceConfig,
+				ws: null,
+				send,
+			});
+		} else if (isEc2ConfigReleaseArtifact(releaseArtifact)) {
+			if (!token) {
+				setStepState(deploySteps, "rollback", "error");
+				send("ERROR: Config rollback requires a GitHub token but none is available.", "rollback");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic config rollback could not run because a GitHub token was unavailable."
+						: "Rollback could not run because a GitHub token was unavailable for config-based redeploy.",
+				};
+			}
+			rollbackResult = await handleEC2(
+				cloneDeployConfigSnapshot(rollbackCandidate),
+				".",
+				rollbackMultiServiceConfig,
+				token,
+				undefined,
+				null,
+				send
+			);
+		} else {
+			setStepState(deploySteps, "rollback", "error");
+			return {
+				success: false,
+				message: isAutomatic
+					? "Deployment verification failed and automatic rollback could not identify the release artifact type."
+					: "Rollback could not identify the release artifact type.",
+			};
+		}
 
 		if (!rollbackResult.success) {
 			setStepState(deploySteps, "rollback", "error");
-			send(`ERROR: Automatic rollback could not restore ${previousCommitSha.slice(0, 7)}.`, "rollback");
+			send(`ERROR: ${isAutomatic ? "Automatic rollback" : "Rollback"} could not restore ${previousLabel}.`, "rollback");
 			return {
 				success: false,
-				message: `Deployment verification failed, and automatic rollback to ${previousCommitSha.slice(0, 7)} could not restore a healthy instance.`,
+				message: isAutomatic
+					? `Deployment verification failed, and automatic rollback to ${previousLabel} could not restore a healthy instance.`
+					: `Rollback to ${previousLabel} could not restore a healthy instance.`,
 			};
 		}
 
@@ -455,19 +634,24 @@ async function attemptAutomaticRollback(params: {
 			instanceType: rollbackCandidate.ec2?.instanceType || serviceDetails?.ec2?.instanceType || "t3.micro",
 		};
 
-		send(`SUCCESS: Automatic rollback restored ${previousCommitSha.slice(0, 7)}.`, "rollback");
+		send(`SUCCESS: ${isAutomatic ? "Automatic rollback" : "Rollback"} restored ${previousLabel}.`, "rollback");
 		return {
 			success: true,
-			message: `Deployment verification failed. Rolled back automatically to ${previousCommitSha.slice(0, 7)}.`,
+			message: isAutomatic
+				? `Deployment verification failed. Rolled back automatically to ${previousLabel}.`
+				: `Successfully rolled back to ${previousLabel}.`,
 			restoredConfig,
+			targetLabel: previousLabel,
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		send(`ERROR: Automatic rollback failed: ${message}`, "rollback");
+		send(`ERROR: ${isAutomatic ? "Automatic rollback" : "Rollback"} failed: ${message}`, "rollback");
 		setStepState(deploySteps, "rollback", "error");
 		return {
 			success: false,
-			message: `Deployment verification failed, and automatic rollback also failed: ${message}`,
+			message: isAutomatic
+				? `Deployment verification failed, and automatic rollback also failed: ${message}`
+				: `Rollback failed: ${message}`,
 		};
 	}
 }
@@ -480,15 +664,10 @@ export async function handleDeploy(
 	token: string,
 	ws: any,
 	userID?: string,
-	options?: {
-		onStepsChange?: (steps: DeployStep[]) => void;
-		broadcast?: (id: string, msg: string) => void;
-	}
+	options?: DeployLoggerOptions
 ): Promise<string> {
 	const deployStartTime = Date.now();
-	const rollbackCandidate = canManageRuntimeDeploymentStatus(deployConfig.status)
-		? cloneDeployConfigSnapshot(deployConfig)
-		: null;
+	const shouldLoadRollbackHistory = canManageRuntimeDeploymentStatus(deployConfig.status);
 	const isDirectStatic = hasDirectStaticConfig(deployConfig);
 	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
 		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
@@ -512,6 +691,20 @@ export async function handleDeploy(
 	}
 
 	try {
+		let rollbackHistoryEntry: DeploymentHistoryEntry | null = null;
+		if (userID && shouldLoadRollbackHistory) {
+			const rollbackHistory = await dbHelper.getLastSuccessfulDeploymentHistory(
+				deployConfig.repoName,
+				deployConfig.serviceName,
+				userID
+			);
+			if (rollbackHistory.error) {
+				send(`Warning: could not load rollback history: ${String(rollbackHistory.error)}`, "rollback");
+			} else {
+				rollbackHistoryEntry = rollbackHistory.history ?? null;
+			}
+		}
+
 		if (userID) {
 			const startingStatus = transitionDeploymentStatus(deployConfig.status, "deploy_requested");
 			deployConfig.status = startingStatus;
@@ -523,7 +716,7 @@ export async function handleDeploy(
 				userID
 			);
 		}
-		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps, rollbackCandidate);
+		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps, rollbackHistoryEntry);
 	} catch (error: any) {
 		send(`ERROR: Deployment failed: ${error.message}`, 'error');
 		const doneStep = deploySteps.find((step) => step.id === "done");
@@ -536,11 +729,222 @@ export async function handleDeploy(
 	}
 }
 
+export async function handleManualRollback(args: {
+	repoName: string;
+	serviceName: string;
+	historyEntryId: string;
+	token: string;
+	ws: any;
+	userID?: string;
+	options?: DeployLoggerOptions;
+}): Promise<string> {
+	const deployStartTime = Date.now();
+	const repoName = args.repoName.trim();
+	const serviceName = args.serviceName.trim();
+	const historyEntryId = args.historyEntryId.trim();
+	const token = args.token;
+	const ws = args.ws;
+	const userID = args.userID;
+	const deploySteps: DeployStep[] = [];
+	const send = createDeployStepsLogger(ws, deploySteps, args.options);
+	if (ws) {
+		(ws as any).__deploySend = send;
+	}
+
+	try {
+		if (!userID) {
+			throw new Error("User not found");
+		}
+		if (!repoName || !serviceName || !historyEntryId) {
+			throw new Error("repoName, serviceName, and historyEntryId are required");
+		}
+
+		sendDeploySteps(ws, MANUAL_ROLLBACK_STEPS);
+
+		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
+		const deployConfig = deploymentResponse.deployment;
+		if (deploymentResponse.error || !deployConfig) {
+			throw new Error("Deployment not found");
+		}
+		if (deployConfig.ownerID !== userID) {
+			throw new Error("Forbidden: deployment does not belong to user");
+		}
+
+		const targetHistoryResponse = await dbHelper.getDeploymentHistoryEntryById(historyEntryId, userID);
+		if (targetHistoryResponse.error) {
+			throw new Error(String(targetHistoryResponse.error));
+		}
+		const targetHistoryEntry = targetHistoryResponse.history;
+		if (!targetHistoryEntry) {
+			throw new Error("Selected deployment history entry was not found");
+		}
+		if (targetHistoryEntry.repo_name !== repoName || targetHistoryEntry.service_name !== serviceName) {
+			throw new Error("Selected deployment history entry does not belong to this service");
+		}
+		if (!targetHistoryEntry.success) {
+			throw new Error("Rollback is only available for successful deployment history entries");
+		}
+
+		const latestSuccessfulResponse = await dbHelper.getLastSuccessfulDeploymentHistory(repoName, serviceName, userID);
+		if (latestSuccessfulResponse.error) {
+			send(`Warning: could not load current successful deployment history: ${String(latestSuccessfulResponse.error)}`, "rollback");
+		}
+		const fallbackHistoryEntry =
+			latestSuccessfulResponse.history && latestSuccessfulResponse.history.id !== targetHistoryEntry.id
+				? latestSuccessfulResponse.history
+				: null;
+
+		const serviceDetails: ServiceDeployDetails | null = deployConfig.ec2
+			? { ec2: deployConfig.ec2 }
+			: null;
+		const rollbackAttempt = await restoreDeploymentFromHistory({
+			deployConfig,
+			rollbackHistoryEntry: targetHistoryEntry,
+			serviceDetails,
+			userID,
+			token,
+			send,
+			deploySteps,
+			mode: "manual",
+		});
+
+		if (!rollbackAttempt.success || !rollbackAttempt.restoredConfig) {
+			const durationMs = Date.now() - deployStartTime;
+			const failedRollbackConfig: DeployConfig = {
+				...deployConfig,
+				commitSha: targetHistoryEntry.commitSha ?? deployConfig.commitSha,
+				branch: targetHistoryEntry.branch ?? deployConfig.branch,
+			};
+			await sendDeployComplete(
+				ws,
+				undefined,
+				false,
+				failedRollbackConfig,
+				deploySteps,
+				userID,
+				deployConfig.deploymentTarget,
+				null,
+				serviceDetails,
+				durationMs,
+				{
+					errorMessage: rollbackAttempt.message,
+					releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
+				}
+			);
+			return "error";
+		}
+
+		const verificationConfig: DeployConfig = {
+			...rollbackAttempt.restoredConfig,
+			status: deployConfig.status,
+		};
+		const verification = await verifyDeploymentReadiness({
+			deployConfig: verificationConfig,
+			deployUrl: rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl || "",
+			userID,
+			token,
+			send,
+			deploySteps,
+			rollbackHistoryEntry: fallbackHistoryEntry,
+			serviceDetails,
+		});
+
+		if (!verification.success || !rollbackAttempt.restoredConfig) {
+			const durationMs = Date.now() - deployStartTime;
+			const failedVerificationConfig: DeployConfig = {
+				...verificationConfig,
+				status: verification.success ? verificationConfig.status : (verification.postPersistConfig?.status ?? verificationConfig.status),
+			};
+			await sendDeployComplete(
+				ws,
+				verification.success
+					? (rollbackAttempt.restoredConfig.liveUrl ?? undefined)
+					: (verification.postPersistConfig?.liveUrl ?? rollbackAttempt.restoredConfig.liveUrl ?? undefined),
+				false,
+				failedVerificationConfig,
+				deploySteps,
+				userID,
+				deployConfig.deploymentTarget,
+				null,
+				verification.success
+					? serviceDetails
+					: (verification.postPersistConfig?.ec2 ? { ec2: verification.postPersistConfig.ec2 } : serviceDetails),
+				durationMs,
+				{
+					errorMessage: verification.success ? "Rollback verification failed." : verification.errorMessage,
+					postPersistConfig: verification.success ? null : verification.postPersistConfig,
+					finalStatus: verification.success ? "failed" : (verification.postPersistConfig?.status ?? "failed"),
+					rolledBack: verification.success ? false : normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
+					releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
+				}
+			);
+			return "error";
+		}
+
+		const completionConfig: DeployConfig = verificationConfig;
+		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.ec2
+			? { ec2: rollbackAttempt.restoredConfig.ec2 }
+			: null;
+		const durationMs = Date.now() - deployStartTime;
+		await sendDeployComplete(
+			ws,
+			rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl,
+			true,
+			completionConfig,
+			deploySteps,
+			userID,
+			deployConfig.deploymentTarget,
+			null,
+			restoredDetails,
+			durationMs,
+			{
+				finalStatus: rollbackAttempt.restoredConfig.status,
+				rolledBack: true,
+				releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
+			}
+		);
+		return "done";
+	} catch (error) {
+		send(`ERROR: Rollback failed: ${error instanceof Error ? error.message : String(error)}`, "rollback");
+		const durationMs = Date.now() - deployStartTime;
+		const doneStep = deploySteps.find((step) => step.id === "done");
+		if (doneStep) doneStep.status = "error";
+		if (repoName && serviceName) {
+			const fallbackConfig = {
+				id: `rollback-${repoName}-${serviceName}`,
+				repoName,
+				serviceName,
+				url: "",
+				branch: "",
+				commitSha: null,
+				envVars: null,
+				liveUrl: null,
+				screenshotUrl: null,
+				status: "failed",
+				firstDeployment: null,
+				lastDeployment: null,
+				revision: null,
+				cloudProvider: "aws",
+				deploymentTarget: "ec2",
+				awsRegion: config.AWS_REGION,
+				ec2: null,
+				cloudRun: null,
+				scanResults: {},
+			} as DeployConfig;
+			await sendDeployComplete(ws, undefined, false, fallbackConfig, deploySteps, userID, "ec2", null, null, durationMs, {
+				errorMessage: error instanceof Error ? error.message : String(error),
+			});
+		}
+		throw error;
+	}
+}
+
 export const __testing = {
 	buildVerificationCandidates,
 	shouldForceVerificationFailure,
 	verifyDeploymentReadiness,
 	attemptAutomaticRollback,
+	restoreDeploymentFromHistory,
 	sendDeployComplete,
 };
 
@@ -572,6 +976,14 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 	],
 };
 
+const MANUAL_ROLLBACK_STEPS = [
+	{ id: "rollback", label: "Restore release" },
+	{ id: "setup", label: "Setup" },
+	{ id: "deploy", label: "Deploy" },
+	{ id: "verify", label: "Verify" },
+	{ id: "done", label: "Done" },
+];
+
 function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
 	if (ws?.readyState === ws?.OPEN) {
 		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps } }));
@@ -590,7 +1002,8 @@ async function saveDeploymentToDB(
 	userID: string | undefined,
 	serviceDetails: ServiceDeployDetails | null | undefined,
 	customUrl?: string | null,
-	durationMs?: number
+	durationMs?: number,
+	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
@@ -672,7 +1085,8 @@ async function saveDeploymentToDB(
 			timestamp: new Date().toISOString(),
 			success,
 			steps,
-			configSnapshot: configSnapshotFromDeployConfig(deployConfig),
+			configSnapshot: configSnapshotFromDeployConfig(minimalDeployment),
+			releaseArtifact: attachDeployConfigToReleaseArtifact(releaseArtifact, minimalDeployment) ?? releaseArtifact ?? {},
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
@@ -777,7 +1191,8 @@ async function sendDeployComplete(
 			userID,
 			serviceDetails,
 			vercelDns?.success ? vercelDns.customUrl : null,
-			durationMs
+			durationMs,
+			lifecycle?.releaseArtifact ?? null
 		);
 		if (lifecycle?.postPersistConfig && userID) {
 			const restoreResult = await dbHelper.updateDeployments(lifecycle.postPersistConfig, userID);
@@ -1041,7 +1456,7 @@ async function handleAWSCodeBuildDeploy(
 	deployStartTime: number,
 	send: (msg: string, stepId: string) => void,
 	deploySteps: DeployStep[],
-	rollbackCandidate: DeployConfig | null,
+	rollbackHistoryEntry: DeploymentHistoryEntry | null,
 ): Promise<string> {
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoUrl = deployConfig.url;
@@ -1121,6 +1536,10 @@ async function handleAWSCodeBuildDeploy(
 			sharedAlbDns: ec2Result.sharedAlbDns || "",
 			instanceType: ec2Typed2?.instanceType || "t3.micro",
 		};
+		const releaseArtifact = buildEc2ConfigReleaseArtifact({
+			...deployConfig,
+			...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+		});
 
 		let deployUrl: string | undefined;
 		let result: string;
@@ -1164,9 +1583,10 @@ async function handleAWSCodeBuildDeploy(
 				deployConfig,
 				deployUrl,
 				userID,
+				token,
 				send,
 				deploySteps,
-				rollbackCandidate,
+				rollbackHistoryEntry,
 				serviceDetails,
 			});
 			finalSuccess = verification.success;
@@ -1176,6 +1596,7 @@ async function handleAWSCodeBuildDeploy(
 					postPersistConfig: verification.postPersistConfig,
 					finalStatus: verification.postPersistConfig?.status ?? "failed",
 					rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
+					releaseArtifact,
 				};
 				result = "error";
 			}
@@ -1196,7 +1617,19 @@ async function handleAWSCodeBuildDeploy(
 		if (doneStep) doneStep.status = finalSuccess ? "success" : "error";
 
 		const durationMs = Date.now() - deployStartTime;
-		await sendDeployComplete(ws, deployUrl, finalSuccess, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs, lifecycle);
+		await sendDeployComplete(
+			ws,
+			deployUrl,
+			finalSuccess,
+			deployConfig,
+			deploySteps,
+			userID,
+			target,
+			vercelResult,
+			serviceDetails,
+			durationMs,
+			lifecycle ?? { releaseArtifact }
+		);
 		return finalSuccess ? result : "error";
 	}
 
@@ -1308,7 +1741,24 @@ async function handleAWSCodeBuildDeploy(
 	}
 
 	const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-	send(`Image ready: ${imageUri}`, "build");
+	const primaryImage = await describeImageRefWithFallback({
+		region,
+		ecrRegistry,
+		ecrRepoName,
+		imageTag,
+		send,
+	});
+	const serviceImages = hasCompose
+		? await buildEcrServiceImageRefs({
+			region,
+			ecrRegistry,
+			ecrRepoName,
+			imageTag,
+			services,
+			send,
+		})
+		: [];
+	send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
 
 	// ── Setup + Deploy: EC2 from ECR ──
 	send("Setting up networking...", "setup");
@@ -1316,11 +1766,15 @@ async function handleAWSCodeBuildDeploy(
 
 	const ec2Result = await handleEC2FromEcr({
 		deployConfig,
-		imageUri,
+		imageUri: primaryImage.imageUri || imageUri,
 		imageTag,
 		ecrRegistry,
 		ecrRepoName,
 		ecrPasswordB64,
+		serviceImageRefs: serviceImages.map((serviceImage) => ({
+			serviceName: serviceImage.serviceName,
+			imageUri: serviceImage.imageUri,
+		})),
 		multiServiceConfig,
 		ws,
 		send,
@@ -1343,6 +1797,19 @@ async function handleAWSCodeBuildDeploy(
 		sharedAlbDns: ec2Result.sharedAlbDns || "",
 		instanceType: ec2Typed2?.instanceType || "t3.micro",
 	};
+	const releaseArtifact = buildEcrImageReleaseArtifact({
+		deployConfig: {
+			...deployConfig,
+			...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+		},
+		region,
+		ecrRegistry,
+		ecrRepoName,
+		imageTag,
+		imageUri: primaryImage.imageUri || imageUri,
+		imageDigest: primaryImage.imageDigest ?? null,
+		serviceImages,
+	});
 
 	let deployUrl: string | undefined;
 	let result: string;
@@ -1388,9 +1855,10 @@ async function handleAWSCodeBuildDeploy(
 			deployConfig,
 			deployUrl,
 			userID,
+			token,
 			send,
 			deploySteps,
-			rollbackCandidate,
+			rollbackHistoryEntry,
 			serviceDetails,
 		});
 		finalSuccess = verification.success;
@@ -1400,6 +1868,7 @@ async function handleAWSCodeBuildDeploy(
 				postPersistConfig: verification.postPersistConfig,
 				finalStatus: verification.postPersistConfig?.status ?? "failed",
 				rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
+				releaseArtifact,
 			};
 			result = "error";
 		}
@@ -1420,7 +1889,19 @@ async function handleAWSCodeBuildDeploy(
 	if (doneStep) doneStep.status = finalSuccess ? "success" : "error";
 
 	const durationMs = Date.now() - deployStartTime;
-	await sendDeployComplete(ws, deployUrl, finalSuccess, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs, lifecycle);
+	await sendDeployComplete(
+		ws,
+		deployUrl,
+		finalSuccess,
+		deployConfig,
+		deploySteps,
+		userID,
+		target,
+		vercelResult,
+		serviceDetails,
+		durationMs,
+		lifecycle ?? { releaseArtifact }
+	);
 
 	return finalSuccess ? result : "error";
 }

@@ -110,6 +110,42 @@ export type DeployConfig = {
 	scanResults: SDArtifactsResponse | Record<string, never>;
 }
 
+export type EcrServiceImageRef = {
+	serviceName: string;
+	ecrRepoName: string;
+	imageUri: string;
+	imageDigest?: string | null;
+};
+
+export type EcrImageReleaseArtifact = {
+	kind: "ecr_image";
+	cloudProvider: "aws";
+	deploymentTarget: "ec2";
+	region: string;
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	imageUri: string;
+	imageDigest?: string | null;
+	serviceImages?: EcrServiceImageRef[];
+	branch?: string | null;
+	commitSha?: string | null;
+	deployConfig: Record<string, unknown>;
+};
+
+export type Ec2ConfigReleaseArtifact = {
+	kind: "ec2_config";
+	cloudProvider: "aws";
+	deploymentTarget: "ec2";
+	branch?: string | null;
+	commitSha?: string | null;
+	deployConfig: Record<string, unknown>;
+};
+
+export type DeploymentReleaseArtifact =
+	| EcrImageReleaseArtifact
+	| Ec2ConfigReleaseArtifact;
+
 export type DeployStep = {
 	id: string,
 	label: string,
@@ -174,6 +210,8 @@ export type DeploymentHistoryEntry = {
 	steps: DeployStep[];
 	/** Snapshot of config used (no File/binary). */
 	configSnapshot: Record<string, unknown>;
+	/** Immutable release artifact/config used by rollback. */
+	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown>;
 	/** Commit SHA that was deployed */
 	commitSha?: string;
 	/** Commit message */

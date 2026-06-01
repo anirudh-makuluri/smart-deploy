@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { formatTimestamp } from "@/lib/utils";
-import type { DeploymentHistoryEntry } from "@/app/types";
+import type { DeployConfig, DeploymentHistoryEntry, DeploymentReleaseArtifact } from "@/app/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock } from "lucide-react";
+import { HelpCircle, History, Loader2, GitBranch, GitCommit, Clock, RotateCcw } from "lucide-react";
 import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
+import { hasUsableReleaseArtifact } from "@/lib/deploymentReleaseArtifacts";
 
 type DeploymentHistoryPageData = {
 	history: DeploymentHistoryEntry[];
@@ -27,9 +28,69 @@ type DeploymentHistoryProps = {
 	serviceName: string;
 	prefetchedData?: DeploymentHistoryPageData | DeploymentHistoryEntry[] | null;
 	isPrefetching?: boolean;
+	onRollback?: (entry: DeploymentHistoryEntry) => void;
+	rollbackingEntryId?: string | null;
+	activeDeployment?: DeployConfig | null;
+	activeDeploymentStatus?: DeployConfig["status"] | null;
 };
 
-export default function DeploymentHistory({ repoName, serviceName, prefetchedData, isPrefetching }: DeploymentHistoryProps) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function deploymentSnapshotFromArtifact(
+	artifact: DeploymentReleaseArtifact | Record<string, unknown> | undefined
+): Record<string, unknown> | null {
+	if (!hasUsableReleaseArtifact(artifact)) return null;
+	return isRecord(artifact.deployConfig) ? artifact.deployConfig : null;
+}
+
+function doesEntryMatchActiveDeployment(
+	entry: DeploymentHistoryEntry,
+	activeDeployment: DeployConfig | null | undefined,
+	activeDeploymentStatus: DeployConfig["status"] | null | undefined
+): boolean {
+	if (!entry.success || !activeDeployment) return false;
+	if (activeDeploymentStatus !== "running" && activeDeploymentStatus !== "paused") return false;
+
+	const snapshot = deploymentSnapshotFromArtifact(entry.releaseArtifact);
+	if (!snapshot) return false;
+
+	const repoName = typeof snapshot.repoName === "string" ? snapshot.repoName : entry.repo_name;
+	const serviceName = typeof snapshot.serviceName === "string" ? snapshot.serviceName : entry.service_name;
+	if (repoName !== activeDeployment.repoName || serviceName !== activeDeployment.serviceName) return false;
+
+	const commitSha = typeof snapshot.commitSha === "string" ? snapshot.commitSha : entry.commitSha;
+	if (commitSha && activeDeployment.commitSha && commitSha !== activeDeployment.commitSha) return false;
+
+	const branch = typeof snapshot.branch === "string" ? snapshot.branch : entry.branch;
+	if (branch && activeDeployment.branch && branch !== activeDeployment.branch) return false;
+
+	const kind = typeof snapshot.kind === "string" ? snapshot.kind : activeDeployment.kind;
+	if (kind && activeDeployment.kind && kind !== activeDeployment.kind) return false;
+
+	const cloudProvider = typeof snapshot.cloudProvider === "string" ? snapshot.cloudProvider : activeDeployment.cloudProvider;
+	if (cloudProvider && activeDeployment.cloudProvider && cloudProvider !== activeDeployment.cloudProvider) return false;
+
+	const deploymentTarget = typeof snapshot.deploymentTarget === "string" ? snapshot.deploymentTarget : activeDeployment.deploymentTarget;
+	if (deploymentTarget && activeDeployment.deploymentTarget && deploymentTarget !== activeDeployment.deploymentTarget) return false;
+
+	const awsRegion = typeof snapshot.awsRegion === "string" ? snapshot.awsRegion : activeDeployment.awsRegion;
+	if (awsRegion && activeDeployment.awsRegion && awsRegion !== activeDeployment.awsRegion) return false;
+
+	return true;
+}
+
+export default function DeploymentHistory({
+	repoName,
+	serviceName,
+	prefetchedData,
+	isPrefetching,
+	onRollback,
+	rollbackingEntryId,
+	activeDeployment,
+	activeDeploymentStatus,
+}: DeploymentHistoryProps) {
 	const [analyzingId, setAnalyzingId] = React.useState<string | null>(null);
 	const [analysisByEntryId, setAnalysisByEntryId] = React.useState<Record<string, string>>({});
 	const [page, setPage] = React.useState(1);
@@ -59,10 +120,20 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 		initialData: page === 1 ? initialPageData : undefined,
 	});
 
-	const history = historyQuery.data?.history ?? [];
+	const history = React.useMemo(
+		() => historyQuery.data?.history ?? [],
+		[historyQuery.data?.history]
+	);
 	const total = historyQuery.data?.total ?? 0;
 	const loading = historyQuery.isLoading || (isPrefetching === true && page === 1 && !historyQuery.data);
 	const error = historyQuery.error instanceof Error ? historyQuery.error.message : null;
+	const activeEntryId = React.useMemo(
+		() =>
+			history.find((entry) =>
+				doesEntryMatchActiveDeployment(entry, activeDeployment, activeDeploymentStatus)
+			)?.id ?? null,
+		[activeDeployment, activeDeploymentStatus, history]
+	);
 
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);
@@ -125,8 +196,10 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 	return (
 		<div className="rounded-lg border border-border bg-card overflow-hidden">
 			<Accordion type="multiple" className="w-full">
-				{history.map((entry) => (
-					<AccordionItem
+				{history.map((entry) => {
+					const isActiveRelease = activeEntryId === entry.id;
+					return (
+						<AccordionItem
 						key={entry.id}
 						value={entry.id}
 						className="border-border px-4"
@@ -145,6 +218,14 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 									>
 										{entry.success ? "Success" : "Failed"}
 									</Badge>
+									{isActiveRelease && (
+										<Badge
+											variant="outline"
+											className="border-emerald-500/60 bg-emerald-500/10 text-emerald-400"
+										>
+											Active Release
+										</Badge>
+									)}
 									{entry.durationMs && (
 										<span className="text-xs text-muted-foreground flex items-center gap-1">
 											<Clock className="size-3" />
@@ -238,10 +319,39 @@ export default function DeploymentHistory({ repoName, serviceName, prefetchedDat
 										)}
 									</div>
 								)}
+								{entry.success && hasUsableReleaseArtifact(entry.releaseArtifact) && onRollback && (
+									<div className="flex justify-end">
+										<Button
+											variant="outline"
+											size="sm"
+											className="border-border bg-transparent text-foreground hover:bg-secondary"
+											onClick={() => onRollback(entry)}
+											disabled={rollbackingEntryId === entry.id || isActiveRelease}
+										>
+											{rollbackingEntryId === entry.id ? (
+												<>
+													<Loader2 className="size-4 animate-spin mr-2" />
+													Rolling back...
+												</>
+											) : isActiveRelease ? (
+												<>
+													<RotateCcw className="size-4 mr-2" />
+													Active Release
+												</>
+											) : (
+												<>
+													<RotateCcw className="size-4 mr-2" />
+													Rollback to this release
+												</>
+											)}
+										</Button>
+									</div>
+								)}
 							</div>
 						</AccordionContent>
 					</AccordionItem>
-				))}
+					);
+				})}
 			</Accordion>
 			<div className="flex items-center justify-between border-t border-border px-4 py-3">
 				<p className="text-xs text-muted-foreground">

@@ -3,7 +3,7 @@ dotenv.config();
 
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
-import { deploy, serviceLogs } from "./websocket-types";
+import { deploy, rollback, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
 import { getSupabaseServer } from "./lib/supabaseServer";
@@ -174,6 +174,17 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 					} catch (err: any) {
 						console.error("Deploy error:", err);
 						sendDeployComplete(ws, false, err?.message ?? "Deployment failed");
+					}
+					break;
+				case "rollback":
+					try {
+						await rollback({
+							...response.payload,
+							userID: ws.authUserID,
+						}, ws);
+					} catch (err: any) {
+						console.error("Rollback error:", err);
+						sendDeployComplete(ws, false, err?.message ?? "Rollback failed");
 					}
 					break;
 				case "service_logs":
