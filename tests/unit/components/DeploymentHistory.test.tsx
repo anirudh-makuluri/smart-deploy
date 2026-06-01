@@ -138,4 +138,37 @@ describe("DeploymentHistory", () => {
 		fireEvent.click(screen.getByRole("button", { name: /1234567/ }));
 		expect(screen.getByRole("button", { name: "Rollback to this release" })).not.toBeDisabled();
 	});
+
+	it("shows the stored failure code next to failed entries", () => {
+		const history: DeploymentHistoryEntry[] = [
+			{
+				id: "hist-failed",
+				repo_name: "smart-deploy",
+				service_name: "web",
+				timestamp: "2026-06-01T00:00:00.000Z",
+				success: false,
+				steps: [
+					{
+						id: "verify",
+						label: "Verify",
+						logs: ["ERROR: Deployment verification failed after all retry attempts."],
+						status: "error",
+					},
+				],
+				configSnapshot: {},
+				failureCode: "DEPLOYMENT_VERIFICATION_FAILED",
+			},
+		];
+
+		renderWithQueryClient(
+			<DeploymentHistory
+				repoName="smart-deploy"
+				serviceName="web"
+				prefetchedData={{ history, total: history.length }}
+			/>
+		);
+
+		expect(screen.getByText("Failed")).toBeInTheDocument();
+		expect(screen.getByText("DEPLOYMENT_VERIFICATION_FAILED")).toBeInTheDocument();
+	});
 });

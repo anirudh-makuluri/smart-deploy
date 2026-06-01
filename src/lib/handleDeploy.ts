@@ -63,6 +63,7 @@ import {
 	isEcrImageReleaseArtifact,
 	serviceImageRefsFromArtifact,
 } from "./deploymentReleaseArtifacts";
+import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
 
 function hasDirectStaticConfig(deployConfig: DeployConfig): boolean {
 	const scanResults = deployConfig.scanResults;
@@ -80,6 +81,7 @@ type DeploymentLifecycleOptions = {
 	finalStatus?: DeployConfig["status"] | null;
 	rolledBack?: boolean;
 	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null;
+	failure?: DeploymentFailureRecord | null;
 };
 
 type DeployLoggerOptions = {
@@ -1003,7 +1005,8 @@ async function saveDeploymentToDB(
 	serviceDetails: ServiceDeployDetails | null | undefined,
 	customUrl?: string | null,
 	durationMs?: number,
-	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null
+	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null,
+	failure?: DeploymentFailureRecord | null
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
@@ -1090,6 +1093,8 @@ async function saveDeploymentToDB(
 			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
 			...(deployConfig.branch && { branch: deployConfig.branch }),
 			...(durationMs && { durationMs }),
+			...(failure?.code ? { failureCode: failure.code } : {}),
+			...(failure?.classification ? { failureClassification: failure.classification } : {}),
 		};
 
 		const historyResponse = await dbHelper.addDeploymentHistory(
@@ -1175,6 +1180,17 @@ async function sendDeployComplete(
 
 	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
 	console.log("Saving deployment result to database...");
+	const failure =
+		!success
+			? (lifecycle?.failure ??
+				classifyDeploymentFailure({
+					deployConfig,
+					steps: deploySteps,
+					errorMessage: lifecycle?.errorMessage,
+					rolledBack: lifecycle?.rolledBack,
+					finalStatus: lifecycle?.finalStatus ?? null,
+				}))
+			: null;
 	if (!userID) {
 		emitPersistenceWarningToDeployLogs(
 			ws,
@@ -1192,7 +1208,8 @@ async function sendDeployComplete(
 			serviceDetails,
 			vercelDns?.success ? vercelDns.customUrl : null,
 			durationMs,
-			lifecycle?.releaseArtifact ?? null
+			lifecycle?.releaseArtifact ?? null,
+			failure
 		);
 		if (lifecycle?.postPersistConfig && userID) {
 			const restoreResult = await dbHelper.updateDeployments(lifecycle.postPersistConfig, userID);

@@ -146,6 +146,52 @@ export type DeploymentReleaseArtifact =
 	| EcrImageReleaseArtifact
 	| Ec2ConfigReleaseArtifact;
 
+export type DeploymentFailureStage =
+	| "clone"
+	| "detect"
+	| "auth"
+	| "database"
+	| "build"
+	| "setup"
+	| "deploy"
+	| "verify"
+	| "rollback"
+	| "done"
+	| "unknown";
+
+export type DeploymentFailureCategory =
+	| "auth_failure"
+	| "build_failure"
+	| "startup_failure"
+	| "health_check_failure"
+	| "rollback_failure"
+	| "infrastructure_failure"
+	| "unknown_failure";
+
+export type DeploymentFailureCode =
+	| "AUTHENTICATION_FAILED"
+	| "CODEBUILD_DOCKER_IMAGE_BUILD_FAILED"
+	| "EC2_CLOUD_INIT_FAILURE"
+	| "EC2_CLOUD_INIT_NO_COMPLETION_SIGNAL"
+	| "EC2_SERVER_NOT_RESPONDING"
+	| "DEPLOYMENT_VERIFICATION_FAILED"
+	| "AUTOMATIC_ROLLBACK_FAILED"
+	| "AUTOMATIC_ROLLBACK_NO_CANDIDATE"
+	| "MANUAL_ROLLBACK_FAILED"
+	| "INFRASTRUCTURE_NETWORK_FAILURE"
+	| "DEPLOYMENT_FAILED_GENERIC";
+
+export type DeploymentFailureClassification = {
+	stage: DeploymentFailureStage;
+	category: DeploymentFailureCategory;
+	retryable: boolean;
+	summary: string;
+	likelyCause: string;
+	evidence: string[];
+	failedStep?: string | null;
+	autoRollbackTriggered?: boolean;
+};
+
 export type DeployStep = {
 	id: string,
 	label: string,
@@ -220,6 +266,10 @@ export type DeploymentHistoryEntry = {
 	branch?: string;
 	/** Deployment duration in milliseconds */
 	durationMs?: number;
+	/** Stable failure code for failed deployments */
+	failureCode?: DeploymentFailureCode | null;
+	/** Structured failure metadata derived from logs and lifecycle state */
+	failureClassification?: DeploymentFailureClassification | null;
 };
 
 export type SDArtifactsResponse = {

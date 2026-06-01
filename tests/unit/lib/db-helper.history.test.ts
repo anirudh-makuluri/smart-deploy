@@ -19,6 +19,15 @@ describe("deployment history row mapping", () => {
 			commit_message: null,
 			branch: "main",
 			duration_ms: 1234,
+			failure_code: "DEPLOYMENT_VERIFICATION_FAILED",
+			failure_classification: {
+				stage: "verify",
+				category: "health_check_failure",
+				retryable: false,
+				summary: "Deployment verification failed after the app was released.",
+				likelyCause: "The app did not become healthy at the expected URL or health endpoint within the verification window.",
+				evidence: ["Verification failed after all retry attempts."],
+			},
 		});
 
 		expect(entry.releaseArtifact).toEqual({
@@ -27,5 +36,10 @@ describe("deployment history row mapping", () => {
 		});
 		expect(entry.configSnapshot).toEqual({ repoName: "shop" });
 		expect(entry.commitSha).toBe("abcdef123456");
+		expect(entry.failureCode).toBe("DEPLOYMENT_VERIFICATION_FAILED");
+		expect(entry.failureClassification).toMatchObject({
+			stage: "verify",
+			category: "health_check_failure",
+		});
 	});
 });

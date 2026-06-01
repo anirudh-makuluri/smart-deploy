@@ -214,6 +214,8 @@ export const typeDefs = `
     commitMessage: String
     branch: String
     durationMs: Int
+    failureCode: String
+    failureClassification: JSON
   }
 
   type DeploymentHistoryPage {

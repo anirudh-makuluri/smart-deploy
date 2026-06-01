@@ -218,6 +218,14 @@ export default function DeploymentHistory({
 									>
 										{entry.success ? "Success" : "Failed"}
 									</Badge>
+									{!entry.success && entry.failureCode && (
+										<Badge
+											variant="outline"
+											className="border-amber-300/40 bg-amber-300/5 font-mono text-[11px] text-amber-200"
+										>
+											{entry.failureCode}
+										</Badge>
+									)}
 									{isActiveRelease && (
 										<Badge
 											variant="outline"

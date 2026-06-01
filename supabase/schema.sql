@@ -141,11 +141,17 @@ create table if not exists public.deployment_history (
   commit_sha text,
   commit_message text,
   branch text,
-  duration_ms int
+  duration_ms int,
+  failure_code text,
+  failure_classification jsonb
 );
 
 alter table public.deployment_history
   add column if not exists release_artifact jsonb not null default '{}';
+alter table public.deployment_history
+  add column if not exists failure_code text;
+alter table public.deployment_history
+  add column if not exists failure_classification jsonb;
 
 create index if not exists idx_deployment_history_user_repo_service
   on public.deployment_history(user_id, repo_name, service_name);
