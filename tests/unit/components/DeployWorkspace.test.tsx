@@ -17,6 +17,7 @@ const setDetectedRepoCache = vi.fn();
 const setActiveRepo = vi.fn();
 const setActiveServiceName = vi.fn();
 const mockSendDeployConfig = vi.fn();
+const mockSendRollbackRequest = vi.fn();
 const mockControlDeployment = vi.fn();
 const mockFetchLatestCommit = vi.fn();
 
@@ -48,10 +49,29 @@ vi.mock("@/components/ConfigTabs", () => ({
 	default: () => <div>ConfigTabs</div>,
 }));
 vi.mock("@/components/DeploymentHistory", () => ({
-	default: () => <div>DeploymentHistory</div>,
+	default: ({
+		onRollback,
+	}: {
+		onRollback?: (entry: { id: string; commitSha?: string }) => void;
+	}) => (
+		<div>
+			<div>DeploymentHistory</div>
+			<button
+				type="button"
+				onClick={() => onRollback?.({ id: "hist-1", commitSha: "abcdef123456" })}
+			>
+				RollbackEntry
+			</button>
+		</div>
+	),
 }));
 vi.mock("@/components/deploy-workspace/DeployWorkspaceMenu", () => ({
-	default: () => <div>DeployWorkspaceMenu</div>,
+	default: ({ onChange }: { onChange?: (section: string) => void }) => (
+		<div>
+			<div>DeployWorkspaceMenu</div>
+			<button type="button" onClick={() => onChange?.("history")}>OpenHistory</button>
+		</div>
+	),
 }));
 vi.mock("@/components/deploy-workspace/DeployOverview", () => ({
 	default: ({ onPauseResumeDeployment, onRedeploy }: { onPauseResumeDeployment?: () => void; onRedeploy?: () => void }) => (
@@ -144,6 +164,7 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: mockSendDeployConfig,
+			sendRollbackRequest: mockSendRollbackRequest,
 			deployConfigRef: { current: null },
 			deployStatus: "not-started",
 			deployError: null,
@@ -262,6 +283,7 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),
+			sendRollbackRequest: vi.fn(),
 			deployConfigRef: { current: null },
 			deployStatus: "success",
 			deployError: null,
@@ -305,6 +327,7 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),
+			sendRollbackRequest: vi.fn(),
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Build failed",
@@ -348,6 +371,7 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: mockSendDeployConfig,
+			sendRollbackRequest: mockSendRollbackRequest,
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Verification failed",
@@ -462,5 +486,43 @@ describe("DeployWorkspace", () => {
 				})
 			);
 		});
+	});
+
+	it("starts a rollback from deployment history and opens logs", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{
+				...baseDeployment,
+				status: "running",
+				liveUrl: "https://web.example.com",
+				screenshotUrl: "https://cdn.example.com/shot.png",
+			}],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+		fireEvent.click(within(view.container).getByText("OpenHistory"));
+		fireEvent.click(screen.getByText("RollbackEntry"));
+		fireEvent.click(screen.getByRole("button", { name: "Rollback Release" }));
+
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "rolling_back",
+				})
+			);
+		});
+		expect(mockSendRollbackRequest).toHaveBeenCalledWith(
+			expect.objectContaining({
+				repoName: "smart-deploy",
+				serviceName: "web",
+			}),
+			"hist-1",
+			"gh-token",
+			"u-1"
+		);
 	});
 });

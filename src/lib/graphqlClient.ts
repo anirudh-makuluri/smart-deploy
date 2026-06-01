@@ -334,6 +334,7 @@ const DEPLOYMENT_HISTORY_QUERY = `
 					endedAt
 				}
 				configSnapshot
+				releaseArtifact
 			}
 			page
 			limit
@@ -363,6 +364,7 @@ const DEPLOYMENT_HISTORY_ALL_QUERY = `
 					endedAt
 				}
 				configSnapshot
+				releaseArtifact
 			}
 			page
 			limit

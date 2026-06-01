@@ -988,13 +988,15 @@ export function buildEcrComposeDeployScript(params: {
 	envFileContentBase64: string;
 	composeContent: string;
 	services: { name: string; port: number }[];
+	serviceImageRefs?: { serviceName: string; imageUri: string }[];
 	ecrPasswordB64: string;
 }): string {
-	const { ecrRegistry, ecrRepoName, imageTag, envFileContentBase64, composeContent, services, ecrPasswordB64 } = params;
+	const { ecrRegistry, ecrRepoName, imageTag, envFileContentBase64, composeContent, services, serviceImageRefs, ecrPasswordB64 } = params;
+	const imageRefByService = new Map((serviceImageRefs ?? []).map((ref) => [ref.serviceName, ref.imageUri]));
 
 	let modifiedCompose = composeContent;
 	for (const svc of services) {
-		const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
+		const svcUri = imageRefByService.get(svc.name) ?? `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
 		modifiedCompose = replaceBuildSectionWithImage(modifiedCompose, svc.name, svcUri);
 	}
 	const composeB64 = Buffer.from(modifiedCompose, "utf8").toString("base64");

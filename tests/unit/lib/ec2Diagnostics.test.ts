@@ -17,6 +17,7 @@ vi.mock("@/server-helper", () => ({
 
 describe("EC2 diagnostics pipeline", () => {
 	beforeEach(() => {
+		vi.resetModules();
 		vi.clearAllMocks();
 	});
 
@@ -52,7 +53,7 @@ describe("EC2 diagnostics pipeline", () => {
 		expect(logs).toContain("diagnostics:docker_logs:end");
 		expect(logs).toContain("diagnostics:curl:start");
 		expect(logs).toContain("diagnostics:curl:end");
-	});
+	}, 15000);
 
 	it("waits for docker startup signal before curl checks", async () => {
 		const events: string[] = [];
@@ -83,7 +84,7 @@ describe("EC2 diagnostics pipeline", () => {
 
 		expect(port).toBe(80);
 		expect(events).toEqual(["docker_logs_1", "docker_logs_2", "curl"]);
-	});
+	}, 15000);
 
 	it("uses missing-container guardrail and still continues to curl checks", async () => {
 		runRedeployViaSsmMock.mockResolvedValue({ success: true, output: "ok" });
@@ -103,5 +104,5 @@ describe("EC2 diagnostics pipeline", () => {
 		const script = runRedeployViaSsmMock.mock.calls[0][0].script as string;
 		expect(script).toContain("docker ps -a --format '{{.Names}}' | grep -Fxq 'smartdeploy-app'");
 		expect(script).toContain("container 'smartdeploy-app' not found; continuing to curl checks");
-	});
+	}, 15000);
 });

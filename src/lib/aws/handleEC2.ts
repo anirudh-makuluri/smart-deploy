@@ -1172,12 +1172,13 @@ export async function handleEC2FromEcr(params: {
 	ecrRegistry: string;
 	ecrRepoName: string;
 	ecrPasswordB64: string;
+	serviceImageRefs?: { serviceName: string; imageUri: string }[];
 	multiServiceConfig: MultiServiceConfig;
 	dbConnectionString?: string;
 	ws: any;
 	send: SendFn;
 }): Promise<EC2Result> {
-	const { deployConfig, imageUri, imageTag, ecrRegistry, ecrRepoName, ecrPasswordB64, multiServiceConfig, dbConnectionString, ws, send } = params;
+	const { deployConfig, imageUri, imageTag, ecrRegistry, ecrRepoName, ecrPasswordB64, serviceImageRefs, multiServiceConfig, dbConnectionString, ws, send } = params;
 	const region = deployConfig.awsRegion || config.AWS_REGION;
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
@@ -1217,6 +1218,7 @@ export async function handleEC2FromEcr(params: {
 				envFileContentBase64: envBase64,
 				composeContent: dockerCompose,
 				services: services.map((s) => ({ name: s.name, port: s.port })),
+				serviceImageRefs,
 				ecrPasswordB64,
 			});
 		}

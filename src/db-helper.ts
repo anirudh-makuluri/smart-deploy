@@ -214,6 +214,23 @@ function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 	return row;
 }
 
+function rowToDeploymentHistoryEntry(row: Record<string, unknown>): DeploymentHistoryEntry {
+	return {
+		id: row.id as string,
+		repo_name: row.repo_name as string,
+		service_name: row.service_name as string,
+		timestamp: row.timestamp as string,
+		success: row.success as boolean,
+		steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
+		configSnapshot: (row.config_snapshot as Record<string, unknown>) ?? {},
+		releaseArtifact: (row.release_artifact as DeploymentHistoryEntry["releaseArtifact"]) ?? {},
+		commitSha: row.commit_sha as string | undefined,
+		commitMessage: row.commit_message as string | undefined,
+		branch: row.branch as string | undefined,
+		durationMs: row.duration_ms as number | undefined,
+	};
+}
+
 function normalizeRepoIdentifier(value: string): string {
 	return value
 		.trim()
@@ -618,6 +635,7 @@ export const dbHelper = {
 					success: entry.success,
 					steps: entry.steps ?? [],
 					config_snapshot: entry.configSnapshot ?? {},
+					release_artifact: entry.releaseArtifact ?? {},
 					commit_sha: entry.commitSha ?? null,
 					commit_message: entry.commitMessage ?? null,
 					branch: entry.branch ?? null,
@@ -733,19 +751,9 @@ export const dbHelper = {
 
 			if (error) return { error };
 
-			const history: DeploymentHistoryEntry[] = (rows || []).map((row: Record<string, unknown>) => ({
-				id: row.id as string,
-				repo_name: row.repo_name as string,
-				service_name: row.service_name as string,
-				timestamp: row.timestamp as string,
-				success: row.success as boolean,
-				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
-				configSnapshot: (row.config_snapshot as Record<string, unknown>) ?? {},
-				commitSha: row.commit_sha as string | undefined,
-				commitMessage: row.commit_message as string | undefined,
-				branch: row.branch as string | undefined,
-				durationMs: row.duration_ms as number | undefined,
-			}));
+			const history: DeploymentHistoryEntry[] = (rows || []).map((row: Record<string, unknown>) =>
+				rowToDeploymentHistoryEntry(row)
+			);
 
 			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
@@ -773,23 +781,66 @@ export const dbHelper = {
 
 			if (error) return { error };
 
-			const history = (rows || []).map((row: Record<string, unknown>) => ({
-				id: row.id as string,
-				repo_name: row.repo_name as string,
-				service_name: row.service_name as string,
-				timestamp: row.timestamp as string,
-				success: row.success as boolean,
-				steps: (row.steps as DeploymentHistoryEntry["steps"]) ?? [],
-				configSnapshot: (row.config_snapshot as Record<string, unknown>) ?? {},
-				commitSha: row.commit_sha as string | undefined,
-				commitMessage: row.commit_message as string | undefined,
-				branch: row.branch as string | undefined,
-				durationMs: row.duration_ms as number | undefined,
-			}));
+			const history = (rows || []).map((row: Record<string, unknown>) =>
+				rowToDeploymentHistoryEntry(row)
+			);
 
 			return { history, total: count ?? history.length, page: safePage, limit: safeLimit };
 		} catch (error) {
 			console.error("getAllDeploymentHistory error:", error);
+			return { error };
+		}
+	},
+
+	getLastSuccessfulDeploymentHistory: async function (
+		repoName: string,
+		serviceName: string,
+		userID: string
+	): Promise<{ error?: unknown; history?: DeploymentHistoryEntry | null }> {
+		try {
+			const supabase = getSupabaseServer();
+			if (!(userID || "").trim()) return { error: "User doesn't exist" };
+
+			const { data: row, error } = await supabase
+				.from("deployment_history")
+				.select("*")
+				.eq("user_id", userID)
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.eq("success", true)
+				.order("timestamp", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+
+			if (error) return { error };
+			return { history: row ? rowToDeploymentHistoryEntry(row as Record<string, unknown>) : null };
+		} catch (error) {
+			console.error("getLastSuccessfulDeploymentHistory error:", error);
+			return { error };
+		}
+	},
+
+	getDeploymentHistoryEntryById: async function (
+		historyEntryId: string,
+		userID: string
+	): Promise<{ error?: unknown; history?: DeploymentHistoryEntry | null }> {
+		try {
+			const supabase = getSupabaseServer();
+			if (!(userID || "").trim()) return { error: "User doesn't exist" };
+			const entryId = String(historyEntryId ?? "").trim();
+			if (!entryId) return { error: "History entry ID is required" };
+
+			const { data: row, error } = await supabase
+				.from("deployment_history")
+				.select("*")
+				.eq("user_id", userID)
+				.eq("id", entryId)
+				.maybeSingle();
+
+			if (error) return { error };
+			return { history: row ? rowToDeploymentHistoryEntry(row as Record<string, unknown>) : null };
+		} catch (error) {
+			console.error("getDeploymentHistoryEntryById error:", error);
 			return { error };
 		}
 	},
@@ -927,4 +978,8 @@ export const dbHelper = {
 			return { approved: false, error: error instanceof Error ? error.message : String(error) };
 		}
 	},
+};
+
+export const __testing = {
+	rowToDeploymentHistoryEntry,
 };

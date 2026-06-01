@@ -18,7 +18,7 @@ import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
-import { DeployConfig, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import { DeployConfig, DeploymentHistoryEntry, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
@@ -84,6 +84,8 @@ export default function DeployWorkspace({
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [showPauseResumeConfirm, setShowPauseResumeConfirm] = React.useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+	const [showRollbackConfirm, setShowRollbackConfirm] = React.useState(false);
+	const [rollbackEntry, setRollbackEntry] = React.useState<DeploymentHistoryEntry | null>(null);
 	const [improveScanPayload, setImproveScanPayload] = React.useState<FeedbackProgressPayload | null>(null);
 	const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
 	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
@@ -118,12 +120,19 @@ export default function DeployWorkspace({
 					: (p.success ? "running" : "failed");
 			const url = p.customUrl || p.deployUrl;
 			if (p.success) {
-				toast.success("Deployment successful", {
-					description: url ? `Live at ${url}` : "Your application is now running.",
-					duration: 8000,
-				});
+				if (p.rolledBack) {
+					toast.success("Rollback successful", {
+						description: url ? `Restored release at ${url}` : "The previous release is now running.",
+						duration: 8000,
+					});
+				} else {
+					toast.success("Deployment successful", {
+						description: url ? `Live at ${url}` : "Your application is now running.",
+						duration: 8000,
+					});
+				}
 			} else {
-				toast.error("Deployment failed", {
+				toast.error(p.rolledBack ? "Rollback failed" : "Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
 					duration: 10000,
 				});
@@ -153,7 +162,7 @@ export default function DeployWorkspace({
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+	const { steps, sendDeployConfig, sendRollbackRequest, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
 		useWorkerWebSocket();
 
 	React.useEffect(() => {
@@ -608,6 +617,50 @@ export default function DeployWorkspace({
 		}
 	}
 
+	function handleRollbackEntrySelect(entry: DeploymentHistoryEntry) {
+		setRollbackEntry(entry);
+		setShowRollbackConfirm(true);
+	}
+
+	async function handleRollbackDeployment() {
+		if (!deployment.repoName || !deployment.serviceName || !rollbackEntry || isChangingDeploymentState || deploymentInProgress) return;
+
+		setIsChangingDeploymentState(true);
+		try {
+			let githubToken: string | null = null;
+			try {
+				const res = await fetch("/api/github/access-token", { method: "GET" });
+				if (res.ok) {
+					const payload = (await res.json()) as { token?: string };
+					githubToken = typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : null;
+				}
+			} catch {
+				// ignore; handled below
+			}
+
+			if (!githubToken) {
+				toast.error("GitHub is not connected. Sign in with GitHub to rollback.");
+				return;
+			}
+
+			await updateDeploymentById({
+				repoName: deployment.repoName,
+				serviceName: deployment.serviceName,
+				url: deployment.url || repoUrl || "",
+				status: transitionDeploymentStatus(effectiveDeploymentStatus, "rollback_requested"),
+			});
+			sendRollbackRequest(deployment, rollbackEntry.id, githubToken, session?.user?.id);
+			setActiveSection("logs");
+			setShowRollbackConfirm(false);
+			setRollbackEntry(null);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "Failed to start rollback";
+			toast.error(message);
+		} finally {
+			setIsChangingDeploymentState(false);
+		}
+	}
+
 	function renderActiveSection() {
 		switch (activeSection) {
 			case "scan":
@@ -754,10 +807,14 @@ export default function DeployWorkspace({
 						{deployment && (
 							<DeploymentHistory
 								key={`${deployment.repoName}:${deployment.serviceName}`}
-							repoName={deployment.repoName}
-							serviceName={deployment.serviceName}
+								repoName={deployment.repoName}
+								serviceName={deployment.serviceName}
 								prefetchedData={deploymentHistory ? { history: deploymentHistory, total: historyTotal } : null}
 								isPrefetching={isLoadingHistory}
+								onRollback={handleRollbackEntrySelect}
+								rollbackingEntryId={isChangingDeploymentState ? rollbackEntry?.id ?? null : null}
+								activeDeployment={deployment}
+								activeDeploymentStatus={effectiveDeploymentStatus}
 							/>
 						)}
 					</div>
@@ -1010,6 +1067,22 @@ export default function DeployWorkspace({
 				title={pauseResumeDialogTitle}
 				description={pauseResumeDialogDescription}
 				confirmText={pauseResumeConfirmText}
+				variant="default"
+			/>
+			<ConfirmDialog
+				open={showRollbackConfirm}
+				onOpenChange={(open) => {
+					setShowRollbackConfirm(open);
+					if (!open) setRollbackEntry(null);
+				}}
+				onConfirm={handleRollbackDeployment}
+				title="Rollback Deployment?"
+				description={
+					rollbackEntry?.commitSha
+						? `This will redeploy the release from commit ${rollbackEntry.commitSha.slice(0, 7)} while keeping current environment variables.`
+						: "This will redeploy the selected release while keeping current environment variables."
+				}
+				confirmText={isChangingDeploymentState ? "Rolling back..." : "Rollback Release"}
 				variant="default"
 			/>
 		</div>

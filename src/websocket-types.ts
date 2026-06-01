@@ -2,7 +2,7 @@ import { DeployConfig, DeployStep, EC2Details } from "./app/types";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
-import { handleDeploy } from "@/lib/handleDeploy";
+import { handleDeploy, handleManualRollback } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
 import * as deployLogsStore from "./lib/deployLogsStore";
@@ -36,6 +36,51 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 		}
 	} catch (err: any) {
 		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Deployment failed");
+		throw err;
+	}
+}
+
+export async function rollback(
+	payload: { repoName: string; serviceName: string; historyEntryId: string; token: string; userID?: string },
+	ws: any
+) {
+	const repoName = payload.repoName?.trim();
+	const serviceName = payload.serviceName?.trim();
+	const historyEntryId = payload.historyEntryId?.trim();
+	const userID = payload.userID;
+
+	if (!repoName || !serviceName || !historyEntryId) {
+		throw new Error("repoName, serviceName, and historyEntryId are required");
+	}
+
+	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
+
+	const options = {
+		onStepsChange: (steps: DeployStep[]) => {
+			deployLogsStore.updateSteps(userID, repoName, serviceName, steps);
+		},
+		broadcast: (id: string, msg: string) => {
+			deployLogsStore.broadcastLog(userID, repoName, serviceName, id, msg);
+		},
+	};
+
+	try {
+		const result = await handleManualRollback({
+			repoName,
+			serviceName,
+			historyEntryId,
+			token: payload.token,
+			ws,
+			userID,
+			options,
+		});
+		if (result === "error") {
+			deployLogsStore.setStatus(userID, repoName, serviceName, "error", "Rollback failed");
+		} else {
+			deployLogsStore.setStatus(userID, repoName, serviceName, "success");
+		}
+	} catch (err: any) {
+		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Rollback failed");
 		throw err;
 	}
 }

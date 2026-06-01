@@ -209,6 +209,7 @@ export const typeDefs = `
     success: Boolean!
     steps: [DeployStep!]!
     configSnapshot: JSON!
+    releaseArtifact: JSON
     commitSha: String
     commitMessage: String
     branch: String

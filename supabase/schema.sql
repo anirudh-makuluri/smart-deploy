@@ -137,16 +137,22 @@ create table if not exists public.deployment_history (
   success boolean not null,
   steps jsonb not null default '[]',
   config_snapshot jsonb not null default '{}',
+  release_artifact jsonb not null default '{}',
   commit_sha text,
   commit_message text,
   branch text,
   duration_ms int
 );
 
+alter table public.deployment_history
+  add column if not exists release_artifact jsonb not null default '{}';
+
 create index if not exists idx_deployment_history_user_repo_service
   on public.deployment_history(user_id, repo_name, service_name);
 create index if not exists idx_deployment_history_user_time
   on public.deployment_history(user_id, timestamp desc);
+create index if not exists idx_deployment_history_latest_success
+  on public.deployment_history(user_id, repo_name, service_name, success, timestamp desc);
 
 -- Help-agent chats: one row per completed Q/A exchange.
 create table if not exists public.help_agent_chats (
