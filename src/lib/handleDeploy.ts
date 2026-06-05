@@ -3,7 +3,6 @@ import os from "os";
 import path from "path";
 import crypto from "crypto";
 import config from "../config";
-import { runCommandLiveWithWebSocket } from "../server-helper";
 import {
 	DeploymentTarget,
 	DeployConfig,
@@ -14,9 +13,7 @@ import {
 	DeploymentReleaseArtifact,
 	EcrServiceImageRef,
 } from "../app/types";
-import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
-import { detectDatabase, DatabaseConfig } from "./databaseDetector";
-import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
+import { MultiServiceConfig } from "./multiServiceDetector";
 import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
@@ -24,9 +21,7 @@ import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
 import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
 
 // AWS imports
-import { setupAWSCredentials } from "./aws";
 import { configureAlb, handleEC2, handleEC2FromEcr, resolveServices } from "./aws/handleEC2";
-import { createRDSInstance } from "./aws/handleRDS";
 
 // CodeBuild + ECR imports
 import {
@@ -46,8 +41,6 @@ import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { getAwsClientConfig } from "./aws/sdkClients";
 import { captureServerEvent } from "./analytics/posthogServer";
 
-// GCP imports (for Cloud SQL)
-import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
 import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
@@ -660,7 +653,7 @@ async function restoreDeploymentFromHistory(params: {
 }
 
 /**
- * Main deployment handler - routes to AWS (default) or GCP
+ * Main deployment handler — CodeBuild + ECR, then runtime placement (EC2 or ECS).
  */
 export async function handleDeploy(
 	deployConfig: DeployConfig,
@@ -1331,139 +1324,6 @@ async function sendDeployComplete(
 }
 
 /**
- * Handles AWS deployment with automatic service selection
- */
-async function handleAWSDeploy(
-	deployConfig: DeployConfig,
-	appDir: string,
-	tmpDir: string,
-	multiServiceConfig: MultiServiceConfig,
-	dbConfig: DatabaseConfig | null,
-	token: string,
-	ws: any,
-	userID: string | undefined,
-	deployStartTime: number,
-	send: (msg: string, stepId: string) => void,
-	deploySteps: DeployStep[]
-): Promise<string> {
-
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-
-	// Setup AWS credentials
-	send("Authenticating with AWS...", 'auth');
-	await setupAWSCredentials(ws);
-	send("✅ AWS credentials authenticated", 'auth');
-
-	// EC2-only AWS deploy path
-	const target: DeploymentTarget = 'ec2';
-	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS.ec2);
-
-	// Handle database provisioning if needed
-	let dbConnectionString: string | undefined;
-	if (dbConfig) {
-		send("Provisioning AWS RDS database...", 'database');
-		try {
-			const { connectionString } = await createRDSInstance(
-				dbConfig,
-				repoName,
-				region,
-				ws
-			);
-			dbConnectionString = connectionString;
-			send(`Database provisioned successfully`, 'database');
-		} catch (error: any) {
-			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
-		}
-	} else {
-		send("✅ No database provisioning required", 'database');
-	}
-
-	let result: string;
-	let deployUrl: string | undefined;
-	const serviceDetails: ServiceDeployDetails = {};
-	let success = false;
-
-	const ec2Result = await handleEC2(
-		deployConfig,
-		appDir,
-		multiServiceConfig,
-		token,
-		dbConnectionString,
-		ws,
-		send
-	);
-	success = ec2Result.success;
-
-	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
-	const ec2Details = deployConfig.ec2 || {};
-	const ec2Typed = (ec2Details && typeof ec2Details === "object" && "instanceType" in ec2Details) 
-		? (ec2Details as EC2Details)
-		: null;
-	serviceDetails.ec2 = {
-		success: ec2Result.success,
-		baseUrl: ec2Result.baseUrl,
-		instanceId: ec2Result.instanceId,
-		publicIp: ec2Result.publicIp,
-		vpcId: ec2Result.vpcId,
-		subnetId: ec2Result.subnetId,
-		securityGroupId: ec2Result.securityGroupId,
-		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns || "",
-		instanceType: ec2Typed?.instanceType || "t3.micro",
-	};
-
-	if (ec2Result.baseUrl == "") {
-		send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
-		result = "error";
-	} else {
-		// Build summary
-		let ec2Summary = `\nDeployment completed!\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += `\nService URLs:\n`;
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
-		}
-		send(ec2Summary, 'done');
-		deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
-		result = "done";
-	}
-
-
-	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.liveUrl != deployUrl && deployConfig.serviceName?.trim() && success) {
-		send("Adding Vercel DNS record...", 'done');
-		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
-			deploymentTarget: target,
-			previousCustomUrl: deployConfig.liveUrl ?? null,
-		});
-	}
-
-	if (vercelResult && vercelResult.success) {
-		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
-	} else if (deployUrl && vercelResult && success) {
-		send(`⚠️ Warning: Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}. Proceeding with instance IP.`, 'done');
-	}
-
-	// Mark final step by outcome
-	const doneStep = deploySteps.find(s => s.id === 'done');
-	if (doneStep) doneStep.status = success ? 'success' : 'error';
-
-	// Calculate deployment duration
-	const durationMs = Date.now() - deployStartTime;
-
-
-	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	await sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
-
-	// Cleanup
-	fs.rmSync(tmpDir, { recursive: true, force: true });
-	return result;
-}
-
-/**
  * Handles AWS deployment using CodeBuild + ECR pipeline.
  * No local clone required: CodeBuild pulls source directly from GitHub.
  */
@@ -1923,184 +1783,4 @@ async function handleAWSCodeBuildDeploy(
 	);
 
 	return finalSuccess ? result : "error";
-}
-
-/**
- * Handles GCP deployment (existing Cloud Run logic)
- */
-async function handleGCPDeploy(
-	deployConfig: DeployConfig,
-	appDir: string,
-	cloneDir: string,
-	tmpDir: string,
-	multiServiceConfig: MultiServiceConfig,
-	dbConfig: DatabaseConfig | null,
-	token: string,
-	ws: any,
-	userID: string | undefined,
-	deployStartTime: number,
-	send: (msg: string, stepId: string) => void,
-	deploySteps: DeployStep[]
-): Promise<string> {
-
-	const projectId = config.GCP_PROJECT_ID;
-	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);
-	const keyPath = "/tmp/smartdeploy-key.json";
-	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
-
-	const gcpSteps = [
-		{ id: "auth", label: "🔐 Authentication" },
-		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Analyzing app" },
-		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
-		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
-		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
-		{ id: "done", label: "✅ Done" },
-	];
-	sendDeploySteps(ws, gcpSteps);
-
-	send("Authenticating with Google Cloud...", 'auth');
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth', { send });
-	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth', { send });
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth', { send });
-
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
-	const serviceName = `${repoName}`;
-
-	// Handle multi-service deployment
-	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
-		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
-		send("Starting multi-service deployment...", 'detect');
-
-		const { serviceUrls } = await handleMultiServiceDeploy(
-			deployConfig,
-			token,
-			ws,
-			cloneDir
-		);
-
-		let summary = `\nMulti-service deployment completed!\n\nDeployed services:\n`;
-		for (const [name, url] of serviceUrls.entries()) {
-			summary += `  - ${name}: ${url}\n`;
-		}
-		send(summary, 'done');
-		const firstGcpUrl = serviceUrls.entries().next().value;
-		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
-		let vercelResult: AddVercelDnsResult | null = null;
-		if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
-			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
-				deploymentTarget: "cloud_run",
-				previousCustomUrl: deployConfig.liveUrl ?? null,
-			});
-		}
-		const doneStep = deploySteps.find(s => s.id === 'done');
-		if (doneStep) doneStep.status = 'success';
-		const durationMs = Date.now() - deployStartTime;
-		const success = gcpDeployUrl ? true : false;
-		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
-		fs.rmSync(tmpDir, { recursive: true, force: true });
-		return "done";
-	}
-
-	// Handle database provisioning for GCP
-	let dbConnectionString: string | undefined;
-	if (dbConfig) {
-		send("Provisioning Cloud SQL database...", 'database');
-		try {
-			const instanceName = `${repoName}-db-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-			const { connectionName, ipAddress } = await createCloudSQLInstance(
-				dbConfig,
-				projectId,
-				instanceName,
-				ws
-			);
-			dbConnectionString = generateCloudSQLConnectionString(dbConfig, connectionName, ipAddress, dbConfig.database);
-			send(`Database provisioned successfully`, 'database');
-		} catch (error: any) {
-			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
-		}
-	}
-
-	// Single-service GCP deployment
-	const dockerfilePath = path.join(appDir, "Dockerfile");
-
-	if (!fs.existsSync(dockerfilePath)) {
-		const scanResults = deployConfig.scanResults;
-		const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
-			? (scanResults as SDArtifactsResponse)
-			: null;
-		const dockerfileContent = scanResultsTyped?.dockerfiles?.["Dockerfile"] || (scanResultsTyped?.services?.[0]?.dockerfile_path ? scanResultsTyped?.dockerfiles?.[scanResultsTyped.services[0].dockerfile_path] : null);
-
-		if (dockerfileContent) {
-			send(`Using AI-generated Dockerfile`, 'clone');
-			fs.writeFileSync(dockerfilePath, dockerfileContent);
-		} else {
-			throw new Error("No Dockerfile found in deployment config and no AI-generated Dockerfile available.");
-		}
-	}
-
-	const imageName = `${repoName}-image`;
-	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
-
-	send("Building Docker image with Cloud Build...", 'docker');
-	await runCommandLiveWithWebSocket("gcloud", [
-		"builds", "submit",
-		"--tag", gcpImage,
-		appDir
-	], ws, 'docker', { send });
-
-	send("Deploying to Cloud Run...", 'deploy');
-
-	// Build environment variables
-	const envVarsList: string[] = [];
-	if (deployConfig.envVars) {
-		envVarsList.push(deployConfig.envVars.replace(/\r?\n/g, ","));
-	}
-	if (dbConnectionString) {
-		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
-		envVarsList.push(`ConnectionStrings__DefaultConnection=${dbConnectionString}`);
-	}
-
-	const envArgs = envVarsList.length > 0 ? ["--set-env-vars", envVarsList.join(",")] : [];
-
-	await runCommandLiveWithWebSocket("gcloud", [
-		"run", "deploy", serviceName,
-		"--image", gcpImage,
-		"--platform", "managed",
-		"--region", "us-central1",
-		"--allow-unauthenticated",
-		...envArgs
-	], ws, 'deploy', { send });
-
-	await runCommandLiveWithWebSocket("gcloud", [
-		"beta", "run", "services", "add-iam-policy-binding",
-		serviceName,
-		"--region=us-central1",
-		"--platform=managed",
-		"--member=allUsers",
-		"--role=roles/run.invoker",
-	], ws, 'deploy', { send });
-
-	send(`Deployment success`, 'done');
-
-	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
-	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
-	let vercelResult: AddVercelDnsResult | null = null;
-	if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
-		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
-			deploymentTarget: "cloud_run",
-			previousCustomUrl: deployConfig.liveUrl ?? null,
-		});
-	}
-	const doneStep = deploySteps.find(s => s.id === 'done');
-	if (doneStep) doneStep.status = 'success';
-	const durationMs = Date.now() - deployStartTime;
-	const success = gcpDeployUrl ? true : false;
-
-	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
-
-	// Cleanup temp folder
-	fs.rmSync(tmpDir, { recursive: true, force: true });
-
-	return "done";
 }
