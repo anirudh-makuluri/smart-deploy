@@ -343,6 +343,8 @@ function mapDeploymentTargetToEnum(target: string | null | undefined): string | 
 	
 	const targetMap: Record<string, string> = {
 		"ec2": "ec2",
+		"ecs": "ecs",
+		"static_s3": "static_s3",
 		"cloud_run": "cloud_run",
 		"cloudrun": "cloud_run",
 	};

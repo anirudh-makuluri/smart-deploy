@@ -65,9 +65,17 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 	const deployConfig = deployment as DeployConfig;
 	const cloudProvider = deployConfig.cloudProvider || "aws";
 	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
+	const instanceIdRaw = (ec2Casted?.instanceId || "").trim();
+	const inferredTarget: DeployConfig["deploymentTarget"] | undefined = instanceIdRaw.startsWith("ecs:")
+		? "ecs"
+		: instanceIdRaw.startsWith("s3:")
+			? "static_s3"
+			: /^i-/.test(instanceIdRaw)
+				? "ec2"
+				: undefined;
 	const deploymentTarget =
 		deployConfig.deploymentTarget ||
-		(ec2Casted?.instanceId ? "ec2" : undefined);
+		inferredTarget;
 
 	try {
 		if (cloudProvider === "aws" && deploymentTarget) {

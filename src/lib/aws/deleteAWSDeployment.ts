@@ -192,7 +192,10 @@ export async function deleteAWSDeployment(
 ): Promise<void> {
 	if (deploymentTarget === "ec2") {
 		await deleteEC2Instance(deployConfig);
-	} else {
-		throw new Error(`Unsupported AWS deployment target: ${deploymentTarget}`);
+		return;
+	}
+	if (deploymentTarget === "ecs" || deploymentTarget === "static_s3") {
+		// No single-instance teardown; ECS services and S3 buckets are managed outside this path.
+		return;
 	}
 }
