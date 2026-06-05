@@ -140,7 +140,8 @@ export default function DeployOverview({
 	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
 	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
 	const showEc2InstanceType =
-		deployment.deploymentTarget === "ec2" || !!ec2Casted.instanceId;
+		deployment.deploymentTarget === "ec2" ||
+		(!!ec2Casted.instanceId && !String(ec2Casted.instanceId).startsWith("ecs:"));
 	const ec2TypeDisplay =
 		ec2Casted.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
 	const ec2PriceEstimate = showEc2InstanceType
