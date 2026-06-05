@@ -65,6 +65,13 @@ const config = {
 
 	// Supabase Storage bucket for deployed app screenshots
 	DEPLOYMENT_SCREENSHOT_BUCKET: process.env.DEPLOYMENT_SCREENSHOT_BUCKET || "deployment-screenshots",
+
+	// static_build → S3 (+ optional CloudFront invalidation) via CodeBuild; see `staticSiteCodebuild.ts`.
+	STATIC_SITE_BUCKET: process.env.STATIC_SITE_BUCKET || "",
+	STATIC_SITE_PUBLIC_BASE_URL: process.env.STATIC_SITE_PUBLIC_BASE_URL || "",
+	/** Optional; prefix before per-service segment (no leading slash). */
+	STATIC_SITE_KEY_PREFIX: process.env.STATIC_SITE_KEY_PREFIX || "",
+	STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID: process.env.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID || "",
 }
 
 

@@ -78,6 +78,11 @@ function normalizeSdAnalyzePayload(p: Record<string, unknown>): SDArtifactsRespo
 	if (!Array.isArray(p.deploy_units)) return null;
 
 	const base = defaultArtifacts();
+
+	const parseCmdStringArray = (raw: unknown): string[] => {
+		if (!Array.isArray(raw)) return [];
+		return raw.filter((x): x is string => typeof x === "string").map((s) => s.trim()).filter(Boolean);
+	};
 	const deploy_units = (p.deploy_units as unknown[])
 		.filter((u): u is Record<string, unknown> => Boolean(u && typeof u === "object"))
 		.map((u) => parseDeployUnit(u))
@@ -169,6 +174,10 @@ function normalizeSdAnalyzePayload(p: Record<string, unknown>): SDArtifactsRespo
 				: base.llm_outputs,
 		risks: errors.length > 0 ? errors : base.risks,
 		confidence: build_status === "passed" ? 1 : build_status === "partial" ? 0.75 : 0.4,
+		install: parseCmdStringArray(p.install),
+		build: parseCmdStringArray(p.build),
+		output_dir: typeof p.output_dir === "string" ? p.output_dir.trim() : "",
+		spa_fallback: p.spa_fallback === true,
 	};
 }
 

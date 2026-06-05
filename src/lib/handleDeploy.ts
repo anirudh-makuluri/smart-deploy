@@ -37,6 +37,12 @@ import {
 } from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
 import { deployRailpackServerToEcs, ecsRailpackFromEcrConfigured } from "./aws/ecsRailpackDeploy";
+import {
+	buildStaticSiteS3Prefix,
+	runStaticSiteCodeBuildPipeline,
+	shouldDeployStaticSiteToS3,
+	staticSiteDeployConfigured,
+} from "./aws/staticSiteCodebuild";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
@@ -52,11 +58,13 @@ import {
 	attachDeployConfigToReleaseArtifact,
 	buildEc2ConfigReleaseArtifact,
 	buildEcrImageReleaseArtifact,
+	buildStaticSiteReleaseArtifact,
 	deployConfigFromReleaseArtifact,
 	ecrImageRefFromArtifact,
 	hasUsableReleaseArtifact,
 	isEc2ConfigReleaseArtifact,
 	isEcrImageReleaseArtifact,
+	isStaticSiteReleaseArtifact,
 	serviceImageRefsFromArtifact,
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
@@ -532,7 +540,63 @@ async function restoreDeploymentFromHistory(params: {
 		const rollbackMultiServiceConfig = buildMultiServiceConfigFromDeployConfig(rollbackCandidate);
 		let rollbackResult;
 
-		if (isEcrImageReleaseArtifact(releaseArtifact)) {
+		if (isStaticSiteReleaseArtifact(releaseArtifact)) {
+			if (!token) {
+				setStepState(deploySteps, "rollback", "error");
+				send("ERROR: Static-site rollback requires a GitHub token for CodeBuild clone.", "rollback");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic static-site rollback could not run because a GitHub token was unavailable."
+						: "Rollback could not run because a GitHub token was unavailable for static-site rebuild.",
+				};
+			}
+			const rbConfig = deployConfigFromReleaseArtifact(releaseArtifact, cloneDeployConfigSnapshot(rollbackCandidate));
+			if (!rbConfig) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic rollback could not read the static-site release config."
+						: "Rollback could not read the static-site release config.",
+				};
+			}
+			const parsedRb = parseGithubOwnerRepo(rbConfig.url);
+			const repoFullNameRb = parsedRb ? `${parsedRb.owner}/${parsedRb.repo}` : repoName;
+			const branchRb = rbConfig.branch?.trim() || rollbackCandidate.branch?.trim() || "";
+			if (!branchRb.trim()) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic static-site rollback could not determine a git branch."
+						: "Rollback could not determine a git branch for static-site rebuild.",
+				};
+			}
+			const commitRb = releaseArtifact.commitSha?.trim() || rbConfig.commitSha?.trim();
+			const envB64 = rbConfig.envVars ? Buffer.from(rbConfig.envVars, "utf8").toString("base64") : undefined;
+			const buildRes = await runStaticSiteCodeBuildPipeline({
+				region: releaseArtifact.region || region,
+				deployConfig: rbConfig,
+				repoFullName: repoFullNameRb,
+				branch: branchRb,
+				commitSha: commitRb,
+				token,
+				envVarsBase64: envB64,
+				send,
+			});
+			rollbackResult = {
+				success: buildRes.success,
+				baseUrl: releaseArtifact.publicBaseUrl,
+				serviceUrls: new Map(),
+				instanceId: `s3:${releaseArtifact.bucket}/${releaseArtifact.keyPrefix}`,
+				publicIp: "",
+				vpcId: "",
+				subnetId: "",
+				securityGroupId: "",
+				amiId: "s3-static",
+			};
+		} else if (isEcrImageReleaseArtifact(releaseArtifact)) {
 			const ecrAuth = await getEcrAuthToken(releaseArtifact.region || region);
 			const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 			const rb = rollbackCandidate.scanResults;
@@ -718,17 +782,18 @@ export async function handleDeploy(
 	const shouldLoadRollbackHistory = canManageRuntimeDeploymentStatus(deployConfig.status);
 	const isDirectStatic = hasDirectStaticConfig(deployConfig);
 	const isRailpackAnalyze = isSdArtifactsAnalyzeScan(deployConfig.scanResults);
+	const isStaticAnalyzeSite = shouldDeployStaticSiteToS3(deployConfig.scanResults, deployConfig.serviceName);
 	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
 		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
 		: {};
 	const dockerfileCount = Object.keys(scanResultsCasted || {}).length;
-	if (!isDirectStatic && !isRailpackAnalyze && dockerfileCount < 1) {
+	if (!isDirectStatic && !isRailpackAnalyze && !isStaticAnalyzeSite && dockerfileCount < 1) {
 		throw new Error("Deployment requires at least one Dockerfile in scan results.");
 	}
 	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
 		? ((deployConfig.scanResults as Record<string, unknown>).nginx_conf as string)
 		: "";
-	if (!isDirectStatic && !isRailpackAnalyze && !nginxConf?.trim()) {
+	if (!isDirectStatic && !isRailpackAnalyze && !isStaticAnalyzeSite && !nginxConf?.trim()) {
 		throw new Error("Deployment requires nginx.conf in scan results.");
 	}
 
@@ -1012,6 +1077,12 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "build", label: "🐳 Build image (CodeBuild)" },
 		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"static-s3-codebuild": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "build", label: "📦 Build static site (CodeBuild)" },
+		{ id: "deploy", label: "🌐 Publish to S3 / CDN" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"cloud_run": [
@@ -1409,6 +1480,8 @@ async function handleAWSCodeBuildDeploy(
 			: null;
 	const railpackPlan = railpackUnit?.artifacts?.railpack_plan;
 	const useRailpackBuild = !!(railpackUnit && hasUsableRailpackPlan(railpackPlan));
+	const shouldStaticS3Build = shouldDeployStaticSiteToS3(scanResultsForCodebuild, deployConfig.serviceName);
+	const useStaticS3 = Boolean(shouldStaticS3Build && staticSiteDeployConfigured());
 	const directStaticConfig = hasDirectStaticConfig(deployConfig)
 		? (scanResults as Record<string, unknown>)
 		: null;
@@ -1428,7 +1501,10 @@ async function handleAWSCodeBuildDeploy(
 
 	let target: DeploymentTarget = "ec2";
 	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, (rootCommands.length > 0 || directStaticConfig) ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
+
+	const deployStepsKey =
+		rootCommands.length > 0 || directStaticConfig ? "ec2" : useStaticS3 ? "static-s3-codebuild" : "ec2-codebuild";
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[deployStepsKey]);
 
 	// ── Auth: verify AWS credentials via SDK ──
 	send("Authenticating with AWS...", "auth");
@@ -1595,45 +1671,11 @@ async function handleAWSCodeBuildDeploy(
 	const commitSha = deployConfig.commitSha?.trim();
 	const imageTag = commitSha ? commitSha.substring(0, 6) : `deploy-${Date.now().toString(36)}`;
 
-	// ── Build: CodeBuild + ECR ──
+	// ── Build: CodeBuild (static → S3, or Docker → ECR) then ECS / EC2 ──
 	const accountId = await getAwsAccountId(region);
-	const ecrRegistry = getEcrRegistry(accountId, region);
-	const ecrRepoName = `smartdeploy/${repoName}`;
-	const ecrAuth = await getEcrAuthToken(region);
-	const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
-
 	const envBase64 = deployConfig.envVars
 		? Buffer.from(deployConfig.envVars, "utf8").toString("base64")
 		: undefined;
-
-	const services = scanResultsTyped?.services || [];
-	const hasCompose = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults && services.length > 1;
-	const repoNames = new Set<string>();
-	repoNames.add(ecrRepoName);
-	if (hasCompose) {
-		for (const svc of services) {
-			const name = (svc.name || "").trim();
-			if (name) repoNames.add(`${ecrRepoName}-${name}`);
-		}
-	}
-	send("Preparing ECR repositories...", "build");
-	for (const repo of repoNames) {
-		await ensureEcrRepository(repo, region, send);
-	}
-	// Grant EC2 instances ECR pull access
-	await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
-
-	const hasCommit = Boolean(commitSha);
-	let allTagsExist = hasCommit;
-	if (hasCommit) {
-		for (const repo of repoNames) {
-			const exists = await ecrImageTagExists(region, repo, imageTag);
-			if (!exists) {
-				allTagsExist = false;
-				break;
-			}
-		}
-	}
 
 	const dockerHubUser = config.DOCKERHUB_USERNAME?.trim();
 	const dockerHubToken = config.DOCKERHUB_TOKEN?.trim();
@@ -1643,123 +1685,220 @@ async function handleAWSCodeBuildDeploy(
 		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing. Docker Hub login will be skipped.", "build");
 	}
 
-	if (!hasCommit || !allTagsExist) {
-		const roleArn = await ensureCodeBuildRole(region, send);
-		const projectName = await ensureCodeBuildProject(region, roleArn, send);
+	let ec2Result: Awaited<ReturnType<typeof handleEC2FromEcr>>;
+	let releaseArtifact: DeploymentReleaseArtifact;
 
-		const imageUriForBuild = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-		if (useRailpackBuild) {
-			send("CodeBuild will use Railpack (docker buildx + pinned railpack-frontend).", "build");
+	if (useStaticS3) {
+		if (shouldStaticS3Build && !staticSiteDeployConfigured()) {
+			throw new Error(
+				"static_build (no start command) requires STATIC_SITE_BUCKET and STATIC_SITE_PUBLIC_BASE_URL on the Smart Deploy server."
+			);
 		}
-
-		const buildspec = generateBuildspec({
-			ecrRegistry,
-			ecrRepoName,
-			imageTag,
+		target = "static_s3";
+		deployConfig.deploymentTarget = "static_s3";
+		send("Publishing static site via CodeBuild → S3...", "build");
+		const staticBuild = await runStaticSiteCodeBuildPipeline({
 			region,
-			scanResults: scanResultsForCodebuild,
-			railpack:
-				useRailpackBuild && railpackUnit && hasUsableRailpackPlan(railpackPlan)
-					? {
-						plan: railpackPlan,
-						contextRelative: railpackUnit.root || ".",
-						railpackVersion: scanResultsForCodebuild?.railpack_version ?? null,
-						imageUri: imageUriForBuild,
-					}
-					: undefined,
-		});
-
-		const buildId = await startBuild({
-			region,
-			projectName,
+			deployConfig,
 			repoFullName,
 			branch,
 			commitSha,
-			githubToken: token,
-			buildspec,
+			token,
 			envVarsBase64: envBase64,
 			dockerHub,
 			send,
 		});
-
-		const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
-		if (!buildResult.success) {
-			send("❌ Docker image build failed. Check build logs above.", "build");
-			throw new Error("CodeBuild failed: Docker image build did not succeed");
+		if (!staticBuild.success) {
+			send("❌ Static site build or S3 sync failed. Check CodeBuild logs above.", "build");
+			throw new Error("CodeBuild failed: static site pipeline did not succeed");
 		}
+		const bucket = config.STATIC_SITE_BUCKET!.trim();
+		const prefix = buildStaticSiteS3Prefix(repoName, deployConfig.serviceName).replace(/^\/+/, "");
+		const publicBase = config.STATIC_SITE_PUBLIC_BASE_URL!.trim().replace(/\/+$/, "");
+		const unitForUrl = pickDeployUnitForBuild(scanResultsForCodebuild!, deployConfig.serviceName);
+		const serviceUrls = new Map<string, string>();
+		if (unitForUrl?.name) serviceUrls.set(unitForUrl.name, publicBase);
+		else serviceUrls.set("site", publicBase);
+		ec2Result = {
+			success: true,
+			baseUrl: publicBase,
+			serviceUrls,
+			instanceId: `s3:${bucket}/${prefix}`,
+			publicIp: "",
+			vpcId: "",
+			subnetId: "",
+			securityGroupId: "",
+			amiId: "s3-static",
+			sharedAlbDns: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || "",
+		};
+		releaseArtifact = buildStaticSiteReleaseArtifact({
+			deployConfig,
+			region,
+			bucket,
+			keyPrefix: prefix,
+			publicBaseUrl: publicBase,
+			cloudFrontDistributionId: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || null,
+		});
 	} else {
-		send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
-	}
+		const ecrRegistry = getEcrRegistry(accountId, region);
+		const ecrRepoName = `smartdeploy/${repoName}`;
+		const ecrAuth = await getEcrAuthToken(region);
+		const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 
-	const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-	const primaryImage = await describeImageRefWithFallback({
-		region,
-		ecrRegistry,
-		ecrRepoName,
-		imageTag,
-		send,
-	});
-	const serviceImages = hasCompose
-		? await buildEcrServiceImageRefs({
+		const services = scanResultsTyped?.services || [];
+		const hasCompose = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults && services.length > 1;
+		const repoNames = new Set<string>();
+		repoNames.add(ecrRepoName);
+		if (hasCompose) {
+			for (const svc of services) {
+				const name = (svc.name || "").trim();
+				if (name) repoNames.add(`${ecrRepoName}-${name}`);
+			}
+		}
+		send("Preparing ECR repositories...", "build");
+		for (const repo of repoNames) {
+			await ensureEcrRepository(repo, region, send);
+		}
+		await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
+
+		const hasCommit = Boolean(commitSha);
+		let allTagsExist = hasCommit;
+		if (hasCommit) {
+			for (const repo of repoNames) {
+				const exists = await ecrImageTagExists(region, repo, imageTag);
+				if (!exists) {
+					allTagsExist = false;
+					break;
+				}
+			}
+		}
+
+		if (!hasCommit || !allTagsExist) {
+			const roleArn = await ensureCodeBuildRole(region, send);
+			const projectName = await ensureCodeBuildProject(region, roleArn, send);
+
+			const imageUriForBuild = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+			if (useRailpackBuild) {
+				send("CodeBuild will use Railpack (docker buildx + pinned railpack-frontend).", "build");
+			}
+
+			const buildspec = generateBuildspec({
+				ecrRegistry,
+				ecrRepoName,
+				imageTag,
+				region,
+				scanResults: scanResultsForCodebuild,
+				railpack:
+					useRailpackBuild && railpackUnit && hasUsableRailpackPlan(railpackPlan)
+						? {
+							plan: railpackPlan,
+							contextRelative: railpackUnit.root || ".",
+							railpackVersion: scanResultsForCodebuild?.railpack_version ?? null,
+							imageUri: imageUriForBuild,
+						}
+						: undefined,
+			});
+
+			const buildId = await startBuild({
+				region,
+				projectName,
+				repoFullName,
+				branch,
+				commitSha,
+				githubToken: token,
+				buildspec,
+				envVarsBase64: envBase64,
+				dockerHub,
+				send,
+			});
+
+			const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
+			if (!buildResult.success) {
+				send("❌ Docker image build failed. Check build logs above.", "build");
+				throw new Error("CodeBuild failed: Docker image build did not succeed");
+			}
+		} else {
+			send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
+		}
+
+		const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+		const primaryImage = await describeImageRefWithFallback({
 			region,
 			ecrRegistry,
 			ecrRepoName,
 			imageTag,
-			services,
-			send,
-		})
-		: [];
-	send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
-
-	// ── Setup + Deploy: ECS (Railpack) or EC2 from ECR ──
-	const multiServiceConfig = buildMultiServiceConfigFromDeployConfig(deployConfig);
-	const serverishRailpack =
-		useRailpackBuild &&
-		railpackUnit &&
-		(railpackUnit.type === "server" ||
-			railpackUnit.type === "existing_docker" ||
-			railpackUnit.type === "multi");
-	const railpackAnalyzeServer =
-		Boolean(serverishRailpack) && isSdArtifactsAnalyzeScan(deployConfig.scanResults);
-
-	let ec2Result: Awaited<ReturnType<typeof handleEC2FromEcr>>;
-
-	if (railpackAnalyzeServer && ecsRailpackFromEcrConfigured()) {
-		target = "ecs";
-		deployConfig.deploymentTarget = "ecs";
-		send("Deploying to ECS Fargate (Railpack)...", "deploy");
-		ec2Result = await deployRailpackServerToEcs({
-			deployConfig,
-			region,
-			repoName,
-			imageUri: primaryImage.imageUri || imageUri,
-			containerPort: railpackUnit!.port || 3000,
-			unitName: railpackUnit!.name || "app",
-			ws,
 			send,
 		});
-	} else if (railpackAnalyzeServer && !ecsRailpackFromEcrConfigured()) {
-		throw new Error(
-			"Railpack server deployment requires ECS configuration. Set ECS_CLUSTER_NAME, ECS_SUBNET_IDS (comma-separated), ECS_SECURITY_GROUP_IDS (comma-separated), and ECS_EXECUTION_ROLE_ARN on the Smart Deploy server."
-		);
-	} else {
-		target = "ec2";
-		deployConfig.deploymentTarget = "ec2";
-		send("Setting up networking...", "setup");
-		ec2Result = await handleEC2FromEcr({
+		const serviceImages = hasCompose
+			? await buildEcrServiceImageRefs({
+				region,
+				ecrRegistry,
+				ecrRepoName,
+				imageTag,
+				services,
+				send,
+			})
+			: [];
+		send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
+
+		const multiServiceConfig = buildMultiServiceConfigFromDeployConfig(deployConfig);
+		const serverishRailpack =
+			useRailpackBuild &&
+			railpackUnit &&
+			(railpackUnit.type === "server" ||
+				railpackUnit.type === "existing_docker" ||
+				railpackUnit.type === "multi");
+		const railpackAnalyzeServer =
+			Boolean(serverishRailpack) && isSdArtifactsAnalyzeScan(deployConfig.scanResults);
+
+		if (railpackAnalyzeServer && ecsRailpackFromEcrConfigured()) {
+			target = "ecs";
+			deployConfig.deploymentTarget = "ecs";
+			send("Deploying to ECS Fargate (Railpack)...", "deploy");
+			ec2Result = await deployRailpackServerToEcs({
+				deployConfig,
+				region,
+				repoName,
+				imageUri: primaryImage.imageUri || imageUri,
+				containerPort: railpackUnit!.port || 3000,
+				unitName: railpackUnit!.name || "app",
+				ws,
+				send,
+			});
+		} else if (railpackAnalyzeServer && !ecsRailpackFromEcrConfigured()) {
+			throw new Error(
+				"Railpack server deployment requires ECS configuration. Set ECS_CLUSTER_NAME, ECS_SUBNET_IDS (comma-separated), ECS_SECURITY_GROUP_IDS (comma-separated), and ECS_EXECUTION_ROLE_ARN on the Smart Deploy server."
+			);
+		} else {
+			target = "ec2";
+			deployConfig.deploymentTarget = "ec2";
+			send("Setting up networking...", "setup");
+			ec2Result = await handleEC2FromEcr({
+				deployConfig,
+				imageUri: primaryImage.imageUri || imageUri,
+				imageTag,
+				ecrRegistry,
+				ecrRepoName,
+				ecrPasswordB64,
+				serviceImageRefs: serviceImages.map((serviceImage) => ({
+					serviceName: serviceImage.serviceName,
+					imageUri: serviceImage.imageUri,
+				})),
+				multiServiceConfig,
+				ws,
+				send,
+			});
+		}
+
+		releaseArtifact = buildEcrImageReleaseArtifact({
 			deployConfig,
-			imageUri: primaryImage.imageUri || imageUri,
-			imageTag,
+			region,
 			ecrRegistry,
 			ecrRepoName,
-			ecrPasswordB64,
-			serviceImageRefs: serviceImages.map((serviceImage) => ({
-				serviceName: serviceImage.serviceName,
-				imageUri: serviceImage.imageUri,
-			})),
-			multiServiceConfig,
-			ws,
-			send,
+			imageTag,
+			imageUri: primaryImage.imageUri || imageUri,
+			imageDigest: primaryImage.imageDigest ?? null,
+			serviceImages,
 		});
 	}
 
@@ -1769,7 +1908,11 @@ async function handleAWSCodeBuildDeploy(
 		? (ec2Details2 as EC2Details)
 		: null;
 	const instanceTypeSaved =
-		ec2Result.instanceId.startsWith("ecs:") ? "Fargate" : (ec2Typed2?.instanceType || "t3.micro");
+		ec2Result.instanceId.startsWith("ecs:")
+			? "Fargate"
+			: ec2Result.instanceId.startsWith("s3:")
+				? "S3 / CDN"
+				: (ec2Typed2?.instanceType || "t3.micro");
 	serviceDetails.ec2 = {
 		success: ec2Result.success,
 		baseUrl: ec2Result.baseUrl,
@@ -1782,19 +1925,13 @@ async function handleAWSCodeBuildDeploy(
 		sharedAlbDns: ec2Result.sharedAlbDns || "",
 		instanceType: instanceTypeSaved,
 	};
-	const releaseArtifact = buildEcrImageReleaseArtifact({
-		deployConfig: {
-			...deployConfig,
-			...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
-		},
-		region,
-		ecrRegistry,
-		ecrRepoName,
-		imageTag,
-		imageUri: primaryImage.imageUri || imageUri,
-		imageDigest: primaryImage.imageDigest ?? null,
-		serviceImages,
-	});
+	const mergedRelease = attachDeployConfigToReleaseArtifact(releaseArtifact, {
+		...deployConfig,
+		...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+	} as DeployConfig);
+	if (mergedRelease) {
+		releaseArtifact = mergedRelease as DeploymentReleaseArtifact;
+	}
 
 	let deployUrl: string | undefined;
 	let result: string;
