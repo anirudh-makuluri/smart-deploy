@@ -17,7 +17,8 @@ import {
 } from "@aws-sdk/client-iam";
 import { getAwsClientConfig } from "./sdkClients";
 import { getAwsAccountId } from "./ecrHelpers";
-import type { SDArtifactsResponse } from "../../app/types";
+import type { SDArtifactsResponse, SDRailpackPlan } from "../../app/types";
+import { railpackFrontendBuildkitSyntax } from "../sdArtifactsBuildContext";
 
 type SendFn = (msg: string, stepId: string) => void;
 
@@ -147,14 +148,94 @@ function yamlListEntry(line: string, spaces: number): string {
 	return " ".repeat(spaces) + "- " + quoted;
 }
 
+function buildRailpackEcrBuildspec(params: {
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	region: string;
+	railpack: {
+		plan: SDRailpackPlan;
+		contextRelative: string;
+		railpackVersion?: string | null;
+		imageUri: string;
+	};
+}): string {
+	const { ecrRegistry, region, railpack } = params;
+	const fullUri = railpack.imageUri;
+	const syntax = railpackFrontendBuildkitSyntax(railpack.railpackVersion);
+	const ctx = (railpack.contextRelative || ".").replace(/\\/g, "/").trim() || ".";
+	if (ctx !== "." && !/^[a-zA-Z0-9._\-/]+$/.test(ctx)) {
+		throw new Error(`Unsafe Railpack build context path: ${ctx}`);
+	}
+	const planJson = JSON.stringify(railpack.plan);
+	const planB64 = Buffer.from(planJson, "utf8").toString("base64");
+	const chunkSize = 3000;
+	const preBuildCmds: string[] = [
+		"echo Logging in to Amazon ECR...",
+		'REGION="${AWS_DEFAULT_REGION:-${AWS_REGION}}"',
+		`if [ -z "$REGION" ]; then REGION="${region}"; fi`,
+		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${ecrRegistry}`,
+		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
+		"echo Cloning source repository...",
+		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
+		"cd src",
+		'if [ -n "$COMMIT_SHA" ]; then git checkout $COMMIT_SHA; fi',
+		'if [ -n "$APP_ENV_VARS_B64" ]; then echo "$APP_ENV_VARS_B64" | base64 -d > .env; fi',
+		"rm -f /tmp/railpack-plan.b64",
+	];
+	for (let i = 0; i < planB64.length; i += chunkSize) {
+		const part = planB64.slice(i, i + chunkSize);
+		preBuildCmds.push(`printf '%s' ${JSON.stringify(part)} >> /tmp/railpack-plan.b64`);
+	}
+	preBuildCmds.push(
+		"base64 -d /tmp/railpack-plan.b64 > /tmp/railpack-plan.json",
+		"rm -f /tmp/railpack-plan.b64",
+	);
+	if (ctx !== ".") {
+		preBuildCmds.push(`cd ${JSON.stringify(ctx)}`);
+	}
+	const buildkitArg = JSON.stringify(syntax);
+	const imageArg = JSON.stringify(fullUri);
+	const buildCmds = [
+		"echo Building image with Railpack (buildx)...",
+		"docker buildx create --use 2>/dev/null || docker buildx inspect --bootstrap 2>/dev/null || true",
+		`docker buildx build --provenance=false --sbom=false --build-arg BUILDKIT_SYNTAX=${buildkitArg} -f /tmp/railpack-plan.json -t ${imageArg} --push .`,
+	];
+	const postBuildCmds = ['echo "Railpack image push complete."'];
+	const SP = 6;
+	const lines = [
+		"version: 0.2",
+		"phases:",
+		"  pre_build:",
+		"    commands:",
+		...preBuildCmds.map((c) => yamlListEntry(c, SP)),
+		"  build:",
+		"    commands:",
+		...buildCmds.map((c) => yamlListEntry(c, SP)),
+		"  post_build:",
+		"    commands:",
+		...postBuildCmds.map((c) => yamlListEntry(c, SP)),
+	];
+	return lines.join("\n") + "\n";
+}
+
 export function generateBuildspec(params: {
 	ecrRegistry: string;
 	ecrRepoName: string;
 	imageTag: string;
 	region: string;
 	scanResults?: SDArtifactsResponse;
+	railpack?: {
+		plan: SDRailpackPlan;
+		contextRelative: string;
+		railpackVersion?: string | null;
+		imageUri: string;
+	};
 }): string {
-	const { ecrRegistry, ecrRepoName, imageTag, region, scanResults } = params;
+	const { ecrRegistry, ecrRepoName, imageTag, region, scanResults, railpack } = params;
+	if (railpack?.plan && typeof railpack.plan === "object" && Object.keys(railpack.plan).length > 0) {
+		return buildRailpackEcrBuildspec({ ecrRegistry, ecrRepoName, imageTag, region, railpack });
+	}
 	const fullUri = `${ecrRegistry}/${ecrRepoName}:${imageTag}`;
 	const services = scanResults?.services || [];
 	const dockerfiles = scanResults?.dockerfiles || {};
