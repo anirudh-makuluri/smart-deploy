@@ -19,6 +19,7 @@ import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
 import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
+import { hasUsableRailpackPlan, pickDeployUnitForBuild } from "./sdArtifactsBuildContext";
 
 // AWS imports
 import { configureAlb, handleEC2, handleEC2FromEcr, resolveServices } from "./aws/handleEC2";
@@ -35,6 +36,7 @@ import {
 	describeEcrImageByTag,
 } from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
+import { deployRailpackServerToEcs, ecsRailpackFromEcrConfigured } from "./aws/ecsRailpackDeploy";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
@@ -188,6 +190,11 @@ function buildMultiServiceConfigFromDeployConfig(deployConfig: DeployConfig): Mu
 		hasDockerCompose: Boolean(scanResultsTyped?.docker_compose),
 		isMonorepo: (scanResultsTyped?.services?.length || 0) > 1,
 	};
+}
+
+function isAwsEc2InstanceId(id: string | undefined | null): boolean {
+	const t = id?.trim() ?? "";
+	return /^i-[a-f0-9]{8,17}$/i.test(t);
 }
 
 function setStepState(steps: DeployStep[], stepId: string, status: DeployStep["status"]) {
@@ -528,18 +535,50 @@ async function restoreDeploymentFromHistory(params: {
 		if (isEcrImageReleaseArtifact(releaseArtifact)) {
 			const ecrAuth = await getEcrAuthToken(releaseArtifact.region || region);
 			const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
-			rollbackResult = await handleEC2FromEcr({
-				deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
-				imageUri: ecrImageRefFromArtifact(releaseArtifact),
-				imageTag: releaseArtifact.imageTag,
-				ecrRegistry: releaseArtifact.ecrRegistry,
-				ecrRepoName: releaseArtifact.ecrRepoName,
-				ecrPasswordB64,
-				serviceImageRefs: serviceImageRefsFromArtifact(releaseArtifact),
-				multiServiceConfig: rollbackMultiServiceConfig,
-				ws: null,
-				send,
-			});
+			const rb = rollbackCandidate.scanResults;
+			const scanForRb =
+				rb && typeof rb === "object" && (("stack_summary" in rb) || isSdArtifactsAnalyzeScan(rb))
+					? (rb as SDArtifactsResponse)
+					: undefined;
+			const unitRb =
+				scanForRb?.deploy_units?.length
+					? pickDeployUnitForBuild(scanForRb, rollbackCandidate.serviceName)
+					: null;
+			const planRb = unitRb?.artifacts?.railpack_plan;
+			const useEcsRollback =
+				Boolean(unitRb) &&
+				hasUsableRailpackPlan(planRb) &&
+				(unitRb!.type === "server" ||
+					unitRb!.type === "existing_docker" ||
+					unitRb!.type === "multi") &&
+				isSdArtifactsAnalyzeScan(rb) &&
+				ecsRailpackFromEcrConfigured();
+
+			if (useEcsRollback && unitRb && hasUsableRailpackPlan(planRb)) {
+				rollbackResult = await deployRailpackServerToEcs({
+					deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
+					region,
+					repoName,
+					imageUri: ecrImageRefFromArtifact(releaseArtifact),
+					containerPort: unitRb.port || 3000,
+					unitName: unitRb.name || "app",
+					ws: null,
+					send,
+				});
+			} else {
+				rollbackResult = await handleEC2FromEcr({
+					deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
+					imageUri: ecrImageRefFromArtifact(releaseArtifact),
+					imageTag: releaseArtifact.imageTag,
+					ecrRegistry: releaseArtifact.ecrRegistry,
+					ecrRepoName: releaseArtifact.ecrRepoName,
+					ecrPasswordB64,
+					serviceImageRefs: serviceImageRefsFromArtifact(releaseArtifact),
+					multiServiceConfig: rollbackMultiServiceConfig,
+					ws: null,
+					send,
+				});
+			}
 		} else if (isEc2ConfigReleaseArtifact(releaseArtifact)) {
 			if (!token) {
 				setStepState(deploySteps, "rollback", "error");
@@ -582,7 +621,11 @@ async function restoreDeploymentFromHistory(params: {
 		}
 
 		const failedInstanceId = serviceDetails?.ec2?.instanceId?.trim();
-		if (failedInstanceId && failedInstanceId !== rollbackResult.instanceId) {
+		if (
+			isAwsEc2InstanceId(failedInstanceId) &&
+			isAwsEc2InstanceId(rollbackResult.instanceId) &&
+			failedInstanceId !== rollbackResult.instanceId
+		) {
 			const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 			const services = resolveServices(repoName, rollbackCandidate, rollbackMultiServiceConfig);
 			await configureAlb({
@@ -604,11 +647,20 @@ async function restoreDeploymentFromHistory(params: {
 
 			const ec2 = new EC2Client(getAwsClientConfig(region));
 			try {
-				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId] }));
+				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId!] }));
 				send(`Terminated failed rollback candidate instance ${failedInstanceId}.`, "rollback");
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				send(`Rollback restored traffic, but failed to terminate candidate instance ${failedInstanceId}: ${message}`, "rollback");
+			}
+		} else if (isAwsEc2InstanceId(failedInstanceId) && rollbackResult.instanceId.startsWith("ecs:")) {
+			const ec2 = new EC2Client(getAwsClientConfig(region));
+			try {
+				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId!] }));
+				send(`Terminated failed instance ${failedInstanceId} after ECS rollback.`, "rollback");
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				send(`ECS rollback succeeded, but terminating instance ${failedInstanceId} failed: ${message}`, "rollback");
 			}
 		}
 
@@ -1346,6 +1398,17 @@ async function handleAWSCodeBuildDeploy(
 	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
 		? (scanResults as SDArtifactsResponse)
 		: null;
+	const scanResultsForCodebuild: SDArtifactsResponse | undefined =
+		scanResults && typeof scanResults === "object" &&
+		(("stack_summary" in scanResults) || isSdArtifactsAnalyzeScan(scanResults))
+			? (scanResults as SDArtifactsResponse)
+			: undefined;
+	const railpackUnit =
+		scanResultsForCodebuild?.deploy_units?.length
+			? pickDeployUnitForBuild(scanResultsForCodebuild, deployConfig.serviceName)
+			: null;
+	const railpackPlan = railpackUnit?.artifacts?.railpack_plan;
+	const useRailpackBuild = !!(railpackUnit && hasUsableRailpackPlan(railpackPlan));
 	const directStaticConfig = hasDirectStaticConfig(deployConfig)
 		? (scanResults as Record<string, unknown>)
 		: null;
@@ -1363,7 +1426,7 @@ async function handleAWSCodeBuildDeploy(
 		return [] as string[];
 	})();
 
-	const target: DeploymentTarget = "ec2";
+	let target: DeploymentTarget = "ec2";
 	deployConfig.deploymentTarget = target;
 	sendDeploySteps(ws, (rootCommands.length > 0 || directStaticConfig) ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
 
@@ -1584,17 +1647,26 @@ async function handleAWSCodeBuildDeploy(
 		const roleArn = await ensureCodeBuildRole(region, send);
 		const projectName = await ensureCodeBuildProject(region, roleArn, send);
 
-		// Only pass scanResults if it has the proper structure
-		const scanResultsForBuild = (scanResults && "stack_summary" in scanResults) 
-			? (scanResults as SDArtifactsResponse)
-			: undefined;
+		const imageUriForBuild = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+		if (useRailpackBuild) {
+			send("CodeBuild will use Railpack (docker buildx + pinned railpack-frontend).", "build");
+		}
 
 		const buildspec = generateBuildspec({
 			ecrRegistry,
 			ecrRepoName,
 			imageTag,
 			region,
-			scanResults: scanResultsForBuild,
+			scanResults: scanResultsForCodebuild,
+			railpack:
+				useRailpackBuild && railpackUnit && hasUsableRailpackPlan(railpackPlan)
+					? {
+						plan: railpackPlan,
+						contextRelative: railpackUnit.root || ".",
+						railpackVersion: scanResultsForCodebuild?.railpack_version ?? null,
+						imageUri: imageUriForBuild,
+					}
+					: undefined,
 		});
 
 		const buildId = await startBuild({
@@ -1639,31 +1711,65 @@ async function handleAWSCodeBuildDeploy(
 		: [];
 	send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
 
-	// ── Setup + Deploy: EC2 from ECR ──
-	send("Setting up networking...", "setup");
+	// ── Setup + Deploy: ECS (Railpack) or EC2 from ECR ──
 	const multiServiceConfig = buildMultiServiceConfigFromDeployConfig(deployConfig);
+	const serverishRailpack =
+		useRailpackBuild &&
+		railpackUnit &&
+		(railpackUnit.type === "server" ||
+			railpackUnit.type === "existing_docker" ||
+			railpackUnit.type === "multi");
+	const railpackAnalyzeServer =
+		Boolean(serverishRailpack) && isSdArtifactsAnalyzeScan(deployConfig.scanResults);
 
-	const ec2Result = await handleEC2FromEcr({
-		deployConfig,
-		imageUri: primaryImage.imageUri || imageUri,
-		imageTag,
-		ecrRegistry,
-		ecrRepoName,
-		ecrPasswordB64,
-		serviceImageRefs: serviceImages.map((serviceImage) => ({
-			serviceName: serviceImage.serviceName,
-			imageUri: serviceImage.imageUri,
-		})),
-		multiServiceConfig,
-		ws,
-		send,
-	});
+	let ec2Result: Awaited<ReturnType<typeof handleEC2FromEcr>>;
+
+	if (railpackAnalyzeServer && ecsRailpackFromEcrConfigured()) {
+		target = "ecs";
+		deployConfig.deploymentTarget = "ecs";
+		send("Deploying to ECS Fargate (Railpack)...", "deploy");
+		ec2Result = await deployRailpackServerToEcs({
+			deployConfig,
+			region,
+			repoName,
+			imageUri: primaryImage.imageUri || imageUri,
+			containerPort: railpackUnit!.port || 3000,
+			unitName: railpackUnit!.name || "app",
+			ws,
+			send,
+		});
+	} else if (railpackAnalyzeServer && !ecsRailpackFromEcrConfigured()) {
+		throw new Error(
+			"Railpack server deployment requires ECS configuration. Set ECS_CLUSTER_NAME, ECS_SUBNET_IDS (comma-separated), ECS_SECURITY_GROUP_IDS (comma-separated), and ECS_EXECUTION_ROLE_ARN on the Smart Deploy server."
+		);
+	} else {
+		target = "ec2";
+		deployConfig.deploymentTarget = "ec2";
+		send("Setting up networking...", "setup");
+		ec2Result = await handleEC2FromEcr({
+			deployConfig,
+			imageUri: primaryImage.imageUri || imageUri,
+			imageTag,
+			ecrRegistry,
+			ecrRepoName,
+			ecrPasswordB64,
+			serviceImageRefs: serviceImages.map((serviceImage) => ({
+				serviceName: serviceImage.serviceName,
+				imageUri: serviceImage.imageUri,
+			})),
+			multiServiceConfig,
+			ws,
+			send,
+		});
+	}
 
 	const serviceDetails: ServiceDeployDetails = {};
 	const ec2Details2 = deployConfig.ec2 || {};
 	const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2) 
 		? (ec2Details2 as EC2Details)
 		: null;
+	const instanceTypeSaved =
+		ec2Result.instanceId.startsWith("ecs:") ? "Fargate" : (ec2Typed2?.instanceType || "t3.micro");
 	serviceDetails.ec2 = {
 		success: ec2Result.success,
 		baseUrl: ec2Result.baseUrl,
@@ -1674,7 +1780,7 @@ async function handleAWSCodeBuildDeploy(
 		securityGroupId: ec2Result.securityGroupId,
 		amiId: ec2Result.amiId,
 		sharedAlbDns: ec2Result.sharedAlbDns || "",
-		instanceType: ec2Typed2?.instanceType || "t3.micro",
+		instanceType: instanceTypeSaved,
 	};
 	const releaseArtifact = buildEcrImageReleaseArtifact({
 		deployConfig: {

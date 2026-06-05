@@ -55,8 +55,9 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	if (!target) return "Unknown";
 
 	const targetNames: Record<DeploymentTarget, string> = {
-		'ec2': 'AWS EC2',
-		'cloud_run': 'Google Cloud Run',
+		ec2: "AWS EC2",
+		ecs: "AWS ECS (Fargate)",
+		cloud_run: "Google Cloud Run",
 	};
 
 	return targetNames[target] || target;

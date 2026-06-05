@@ -35,7 +35,7 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type DeploymentTarget = 'ec2' | 'cloud_run';
+export type DeploymentTarget = "ec2" | "ecs" | "cloud_run";
 export type DeploymentKind = 'container' | 'direct-static';
 export type StaticServiceType =
 	| 'vite'
