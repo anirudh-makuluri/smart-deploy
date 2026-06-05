@@ -136,12 +136,31 @@ export default function DeployOverview({
 	const screenshotUrl = deployment.screenshotUrl;
 	const customUrlRaw = deployment.liveUrl?.trim();
 	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
-	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
-	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
 	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
+	const instanceIdStr = ec2Casted.instanceId != null ? String(ec2Casted.instanceId) : "";
+	const hasAnyEndpoint = Boolean(
+		customUrlRaw ||
+			instanceIpRaw ||
+			instanceIdStr.startsWith("s3:") ||
+			instanceIdStr.startsWith("ecs:")
+	);
+	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
 	const showEc2InstanceType =
 		deployment.deploymentTarget === "ec2" ||
-		(!!ec2Casted.instanceId && !String(ec2Casted.instanceId).startsWith("ecs:"));
+		(!!instanceIdStr &&
+			!instanceIdStr.startsWith("ecs:") &&
+			!instanceIdStr.startsWith("s3:"));
+	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || instanceIdStr.startsWith("s3:");
+	const secondaryAccessLabel = isStaticS3Target
+		? "S3 location"
+		: instanceIdStr.startsWith("ecs:")
+			? "ECS service"
+			: "Instance IP";
+	const secondaryAccessValue = isStaticS3Target
+		? instanceIdStr.replace(/^s3:/, "s3://")
+		: instanceIdStr.startsWith("ecs:")
+			? instanceIdStr
+			: instanceIpRaw;
 	const ec2TypeDisplay =
 		ec2Casted.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
 	const ec2PriceEstimate = showEc2InstanceType
@@ -264,7 +283,7 @@ export default function DeployOverview({
 								{hasAnyEndpoint ? (
 									<div className="space-y-3 border-t border-border/60 pt-3">
 										<EndpointRow label="Custom URL" value={customUrlRaw} />
-										<EndpointRow label="Instance IP" value={instanceIpRaw} />
+										<EndpointRow label={secondaryAccessLabel} value={secondaryAccessValue} />
 									</div>
 								) : (
 									<p className="border-t border-border/60 pt-3 text-sm text-muted-foreground/70">Not available</p>

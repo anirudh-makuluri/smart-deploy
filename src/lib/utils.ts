@@ -57,6 +57,7 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	const targetNames: Record<DeploymentTarget, string> = {
 		ec2: "AWS EC2",
 		ecs: "AWS ECS (Fargate)",
+		static_s3: "Static site (S3 / CDN)",
 		cloud_run: "Google Cloud Run",
 	};
 
