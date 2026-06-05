@@ -24,17 +24,16 @@ type FeedbackProgressProps = {
 	onCancel: () => void;
 };
 
+/** Matches `POST /feedback/stream` progress nodes. See `sd-artifacts-integration.md` §3.3. */
 const NODES = [
-	{ id: "feedback_coordinator", label: "Feedback Coordinator", desc: "Orchestrating improvements" },
-	{ id: "dockerfile_improver", label: "Dockerfile Improver", desc: "Optimizing Dockerfiles" },
-	{ id: "compose_improver", label: "Compose Improver", desc: "Updating compose configuration" },
-	{ id: "nginx_improver", label: "Nginx Improver", desc: "Improving routing and proxy" },
-	{ id: "feedback_verifier", label: "Feedback Verifier", desc: "Validating improved artifacts" },
+	{ id: "clone_repo", label: "Clone repo", desc: "Refresh workspace at pinned commit" },
+	{ id: "railpack_build_repair", label: "Build & repair", desc: "Apply feedback; Railpack build loop" },
+	{ id: "finalize", label: "Finalize", desc: "Update cached analysis" },
 ];
 
 export default function FeedbackProgress({ payload, repoName, serviceName, onComplete, onCancel }: FeedbackProgressProps) {
 	const { repoUrl, commitSha, packagePath, feedback, failureSummary, failureLogs, failedArtifactScope } = payload;
-	const [activeNode, setActiveNode] = useState<string>("feedback_coordinator");
+	const [activeNode, setActiveNode] = useState<string>("clone_repo");
 	const [completedNodes, setCompletedNodes] = useState<string[]>([]);
 	const [failedNode, setFailedNode] = useState<string | null>(null);
 	const [logs, setLogs] = useState<string[]>([]);
@@ -117,7 +116,7 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 					});
 				};
 
-				appendLog("info: feedback workflow started");
+				appendLog("info: connected to sd-artifacts feedback stream");
 
 				const processMessage = (message: string) => {
 					const lines = message.split(/\r?\n/);
@@ -147,6 +146,8 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 									const nodeIndex = NODES.findIndex(n => n.id === node);
 									if (nodeIndex >= 0) {
 										setProgress(Math.round(((nodeIndex + 1) / NODES.length) * 100));
+									} else if (typeof node === "string" && node) {
+										setProgress((prev) => Math.min(prev + 5, 95));
 									}
 								} else if (status === "error") {
 									setFailedNode(node);
@@ -163,7 +164,12 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 								}
 								// Record artifact generation metrics (best-effort; does not block UI).
 								try {
-									const dockerfilesCount = normalized?.dockerfiles ? Object.keys(normalized.dockerfiles).length : 0;
+									const hasDeployUnits = Array.isArray(normalized.deploy_units) && normalized.deploy_units.length > 0;
+									const dockerfilesCount = hasDeployUnits
+										? normalized.deploy_units!.length
+										: normalized?.dockerfiles
+											? Object.keys(normalized.dockerfiles).length
+											: 0;
 									void fetch("/api/artifacts/generation", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
@@ -176,6 +182,9 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 											hasExistingCompose: Boolean(normalized?.has_existing_compose),
 											hasCompose: Boolean(normalized?.docker_compose?.trim()),
 											hasNginx: Boolean(normalized?.nginx_conf?.trim()),
+											...(hasDeployUnits && normalized.build_status
+												? { analyzeBuildStatus: normalized.build_status }
+												: {}),
 										}),
 									});
 								} catch {
@@ -235,7 +244,9 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 				</div>
 				<div>
 					<h2 className="text-xl font-semibold text-foreground tracking-tight">Improving Scan Results</h2>
-					<p className="text-sm text-muted-foreground">SmartDeploy is applying your feedback to improve Dockerfiles, compose, and nginx</p>
+					<p className="text-sm text-muted-foreground">
+						sd-artifacts re-runs clone → Railpack build/repair → finalize on your cached analysis (no full rescan)
+					</p>
 				</div>
 			</div>
 

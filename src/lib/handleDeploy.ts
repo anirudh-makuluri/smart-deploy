@@ -21,6 +21,7 @@ import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
+import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
 
 // AWS imports
 import { setupAWSCredentials } from "./aws";
@@ -671,17 +672,18 @@ export async function handleDeploy(
 	const deployStartTime = Date.now();
 	const shouldLoadRollbackHistory = canManageRuntimeDeploymentStatus(deployConfig.status);
 	const isDirectStatic = hasDirectStaticConfig(deployConfig);
+	const isRailpackAnalyze = isSdArtifactsAnalyzeScan(deployConfig.scanResults);
 	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
 		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
 		: {};
 	const dockerfileCount = Object.keys(scanResultsCasted || {}).length;
-	if (!isDirectStatic && dockerfileCount < 1) {
+	if (!isDirectStatic && !isRailpackAnalyze && dockerfileCount < 1) {
 		throw new Error("Deployment requires at least one Dockerfile in scan results.");
 	}
 	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
 		? ((deployConfig.scanResults as Record<string, unknown>).nginx_conf as string)
 		: "";
-	if (!nginxConf?.trim()) {
+	if (!isDirectStatic && !isRailpackAnalyze && !nginxConf?.trim()) {
 		throw new Error("Deployment requires nginx.conf in scan results.");
 	}
 

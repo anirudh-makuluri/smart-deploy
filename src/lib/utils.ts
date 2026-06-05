@@ -2,6 +2,7 @@ import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse
 import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
 import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -297,6 +298,12 @@ export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 		const hasOutputDir = Boolean(scanResults.output_dir?.trim());
 		const hasNginxConf = Boolean(scanResults.nginx_conf?.trim());
 		return !(hasOutputDir && hasNginxConf);
+	}
+
+	if (isSdArtifactsAnalyzeScan(scanResults)) {
+		const st = (scanResults as SDArtifactsResponse).build_status;
+		if (st === "failed" || st === "error" || st === "not_run" || st === undefined) return true;
+		return false;
 	}
 
 	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
