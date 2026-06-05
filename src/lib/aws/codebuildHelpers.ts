@@ -17,6 +17,7 @@ import {
 } from "@aws-sdk/client-iam";
 import { getAwsClientConfig } from "./sdkClients";
 import { getAwsAccountId } from "./ecrHelpers";
+import config from "../../config";
 import type { SDArtifactsResponse, SDRailpackPlan } from "../../app/types";
 import { railpackFrontendBuildkitSyntax } from "../sdArtifactsBuildContext";
 
@@ -59,6 +60,36 @@ export async function ensureCodeBuildRole(
 	}));
 	const roleArn = createResp.Role!.Arn!;
 
+	const staticBucket = config.STATIC_SITE_BUCKET?.trim();
+	const staticStatements: object[] = [];
+	if (staticBucket) {
+		staticStatements.push({
+			Effect: "Allow",
+			Action: [
+				"s3:ListBucket",
+				"s3:GetBucketLocation",
+			],
+			Resource: `arn:aws:s3:::${staticBucket}`,
+		});
+		staticStatements.push({
+			Effect: "Allow",
+			Action: [
+				"s3:PutObject",
+				"s3:GetObject",
+				"s3:DeleteObject",
+				"s3:AbortMultipartUpload",
+			],
+			Resource: `arn:aws:s3:::${staticBucket}/*`,
+		});
+		if (config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim()) {
+			staticStatements.push({
+				Effect: "Allow",
+				Action: ["cloudfront:CreateInvalidation"],
+				Resource: "*",
+			});
+		}
+	}
+
 	const permissionsPolicy = JSON.stringify({
 		Version: "2012-10-17",
 		Statement: [
@@ -83,6 +114,7 @@ export async function ensureCodeBuildRole(
 				],
 				Resource: "*",
 			},
+			...staticStatements,
 		],
 	});
 

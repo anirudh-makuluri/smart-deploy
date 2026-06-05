@@ -4,6 +4,7 @@ import type {
 	EcrImageReleaseArtifact,
 	EcrServiceImageRef,
 	Ec2ConfigReleaseArtifact,
+	StaticSiteReleaseArtifact,
 } from "@/app/types";
 
 function cloneJsonObject<T>(value: T): T {
@@ -78,8 +79,36 @@ export function isEc2ConfigReleaseArtifact(value: unknown): value is Ec2ConfigRe
 	return isRecord(value) && value.kind === "ec2_config";
 }
 
+export function buildStaticSiteReleaseArtifact(args: {
+	deployConfig: DeployConfig;
+	region: string;
+	bucket: string;
+	keyPrefix: string;
+	publicBaseUrl: string;
+	cloudFrontDistributionId?: string | null;
+}): StaticSiteReleaseArtifact {
+	const baseUrl = args.publicBaseUrl.trim().replace(/\/+$/, "");
+	return {
+		kind: "static_site",
+		cloudProvider: "aws",
+		deploymentTarget: "static_s3",
+		region: args.region,
+		bucket: args.bucket,
+		keyPrefix: args.keyPrefix,
+		publicBaseUrl: baseUrl,
+		cloudFrontDistributionId: args.cloudFrontDistributionId ?? null,
+		branch: args.deployConfig.branch ?? null,
+		commitSha: args.deployConfig.commitSha ?? null,
+		deployConfig: sanitizeDeployConfigForHistory(args.deployConfig),
+	};
+}
+
+export function isStaticSiteReleaseArtifact(value: unknown): value is StaticSiteReleaseArtifact {
+	return isRecord(value) && value.kind === "static_site";
+}
+
 export function hasUsableReleaseArtifact(value: unknown): value is DeploymentReleaseArtifact {
-	return isEcrImageReleaseArtifact(value) || isEc2ConfigReleaseArtifact(value);
+	return isEcrImageReleaseArtifact(value) || isEc2ConfigReleaseArtifact(value) || isStaticSiteReleaseArtifact(value);
 }
 
 export function ecrImageRefFromArtifact(artifact: EcrImageReleaseArtifact): string {
@@ -111,6 +140,10 @@ export function deployConfigFromReleaseArtifact(
 	if (!isRecord(artifact.deployConfig)) return null;
 	const storedConfig = cloneJsonObject(artifact.deployConfig) as Partial<DeployConfig> & Record<string, unknown>;
 	delete storedConfig.envVars;
+	const artifactTarget = (artifact as { deploymentTarget?: DeployConfig["deploymentTarget"] }).deploymentTarget;
+	const storedTarget = storedConfig.deploymentTarget as DeployConfig["deploymentTarget"] | undefined;
+	const resolvedTarget: DeployConfig["deploymentTarget"] =
+		isStaticSiteReleaseArtifact(artifact) ? "static_s3" : artifactTarget || storedTarget || "ec2";
 	return {
 		...currentDeployConfig,
 		...storedConfig,
@@ -120,7 +153,7 @@ export function deployConfigFromReleaseArtifact(
 		url: (storedConfig.url as string | undefined) || currentDeployConfig.url,
 		branch: (storedConfig.branch as string | undefined) || currentDeployConfig.branch,
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
+		deploymentTarget: resolvedTarget,
 	} as DeployConfig;
 }
 

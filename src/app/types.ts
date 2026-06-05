@@ -35,7 +35,7 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type DeploymentTarget = "ec2" | "ecs" | "cloud_run";
+export type DeploymentTarget = "ec2" | "ecs" | "cloud_run" | "static_s3";
 export type DeploymentKind = 'container' | 'direct-static';
 export type StaticServiceType =
 	| 'vite'
@@ -142,9 +142,24 @@ export type Ec2ConfigReleaseArtifact = {
 	deployConfig: Record<string, unknown>;
 };
 
+export type StaticSiteReleaseArtifact = {
+	kind: "static_site";
+	cloudProvider: "aws";
+	deploymentTarget: "static_s3";
+	region: string;
+	bucket: string;
+	keyPrefix: string;
+	publicBaseUrl: string;
+	cloudFrontDistributionId?: string | null;
+	branch?: string | null;
+	commitSha?: string | null;
+	deployConfig: Record<string, unknown>;
+};
+
 export type DeploymentReleaseArtifact =
 	| EcrImageReleaseArtifact
-	| Ec2ConfigReleaseArtifact;
+	| Ec2ConfigReleaseArtifact
+	| StaticSiteReleaseArtifact;
 
 export type DeploymentFailureStage =
 	| "clone"
