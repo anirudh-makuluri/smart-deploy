@@ -145,8 +145,12 @@ In `.env` (see also [`.env.example`](../.env.example)):
 | `USE_CODEBUILD` | `true` (default) to build images in CodeBuild and push to ECR |
 | `EC2_ACM_CERTIFICATE_ARN` | Optional. ACM certificate ARN in the **same region** as `AWS_REGION` for ALB HTTPS |
 | `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | Optional. Reduces Docker Hub anonymous rate limits during CodeBuild pulls |
+| `STATIC_SITE_BUCKET` | Optional. S3 bucket for **static_build** (no container start command) deploys: CodeBuild syncs build output here. |
+| `STATIC_SITE_PUBLIC_BASE_URL` | Required when using static S3 deploys. Public site URL (e.g. `https://d123.cloudfront.net` or your domain). |
+| `STATIC_SITE_KEY_PREFIX` | Optional. Key prefix inside the bucket (defaults derived from repo/service). |
+| `STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID` | Optional. When set, CodeBuild runs a CloudFront invalidation after sync. |
 
-### 3.2 IAM instance role (SmartDeploy running on EC2)
+When `STATIC_SITE_BUCKET` and `STATIC_SITE_PUBLIC_BASE_URL` are set, sd-artifacts scans with `deploy_shape: static_build` and no Railpack start command use this path instead of ECR/ECS.
 
 If the Next.js app and worker run on EC2, attach an IAM role with the **same policy** instead of embedding keys. Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` unset; the AWS SDK uses the instance metadata role automatically.
 
