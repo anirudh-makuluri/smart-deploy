@@ -77,6 +77,8 @@ export const typeDefs = `
 
   enum DeploymentTarget {
     ec2
+    ecs
+    static_s3
     cloud_run
   }
 

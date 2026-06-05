@@ -108,30 +108,33 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 
 	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object") {
 		const ec2Details = deployConfig.ec2 as EC2Details;
-		const region = deployConfig.awsRegion || config.AWS_REGION;
-		const logs = await getInitialEc2ServiceLogs({
-			instanceId: ec2Details.instanceId,
-			region,
-			serviceName,
-			limit: 200,
-		});
+		const instanceId = (ec2Details.instanceId || "").trim();
+		if (/^i-/.test(instanceId)) {
+			const region = deployConfig.awsRegion || config.AWS_REGION;
+			const logs = await getInitialEc2ServiceLogs({
+				instanceId: ec2Details.instanceId,
+				region,
+				serviceName,
+				limit: 200,
+			});
 
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(
-				JSON.stringify({
-					type: "initial_logs",
-					payload: { logs },
-				})
-			);
+			if (ws?.readyState === ws?.OPEN) {
+				ws.send(
+					JSON.stringify({
+						type: "initial_logs",
+						payload: { logs },
+					})
+				);
+			}
+
+			streamEc2ServiceLogs({
+				instanceId: deployConfig.ec2.instanceId,
+				region,
+				serviceName,
+				ws,
+			});
+			return;
 		}
-
-		streamEc2ServiceLogs({
-			instanceId: deployConfig.ec2.instanceId,
-			region,
-			serviceName,
-			ws,
-		});
-		return;
 	}
 
 	// Only stream gcloud logs for Cloud Run deployments

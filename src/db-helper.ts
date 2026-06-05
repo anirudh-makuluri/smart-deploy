@@ -180,7 +180,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
 		cloudProvider: (cloud_provider as "aws" | "gcp") || "aws",
-		deploymentTarget: (deployment_target as "ec2" | "cloud_run") || "ec2",
+		deploymentTarget: (deployment_target as DeployConfig["deploymentTarget"]) || "ec2",
 		awsRegion: aws_region || "",
 		ec2: (ec2 as Record<string, unknown>) || {},
 		cloudRun: (cloud_run as Record<string, unknown>) || {},
