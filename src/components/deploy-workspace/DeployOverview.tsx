@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, EC2Details, repoType } from "@/app/types";
+import { DeployConfig, EC2Details, repoType, type SDArtifactsResponse } from "@/app/types";
 import { canManageRuntimeDeploymentStatus, isLiveDeploymentStatus, resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import {
 	formatTimestamp,
@@ -12,6 +12,7 @@ import {
 import { resolveWorkspaceBranch } from "@/lib/repoBranch";
 import DeployOptions from "@/components/DeployOptions";
 import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
+import WorkloadInsightCard from "@/components/deploy-workspace/WorkloadInsightCard";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -197,6 +198,8 @@ export default function DeployOverview({
 
 			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 				<div className="space-y-6">
+					<WorkloadInsightCard scanResults={deployment.scanResults as SDArtifactsResponse | Record<string, never>} />
+
 					<div className="rounded-xl border border-border bg-card">
 						<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
 							<span>Front page preview</span>

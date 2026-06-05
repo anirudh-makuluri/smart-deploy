@@ -272,9 +272,58 @@ export type DeploymentHistoryEntry = {
 	failureClassification?: DeploymentFailureClassification | null;
 };
 
+/** sd-artifacts `AnalyzeResponse` fields. See `sd-artifacts-integration.md` §4. */
+export type SDAnalyzeBuildStatus =
+	| "passed"
+	| "failed"
+	| "partial"
+	| "skipped"
+	| "error"
+	| "not_run";
+
+export type SDDeployShape =
+	| "static"
+	| "static_build"
+	| "server"
+	| "multi"
+	| "existing_docker";
+
+export type SDRailpackPlan = {
+	steps?: Array<{ name: string; commands?: Array<{ cmd: string }> }>;
+	deploy?: {
+		startCommand?: string;
+		variables?: Record<string, string>;
+	};
+};
+
+export type SDDeployUnit = {
+	name: string;
+	root: string;
+	type: string;
+	provider: string;
+	framework: string | null;
+	port: number;
+	artifacts: {
+		railpack_plan: SDRailpackPlan | null;
+		railpack_json: Record<string, unknown> | null;
+	};
+};
+
 export type SDArtifactsResponse = {
 	response_id?: string | null;
 	commit_sha: string;
+	/** Normalized package scope from analyze */
+	package_path?: string;
+	deploy_shape?: SDDeployShape;
+	build_status?: SDAnalyzeBuildStatus;
+	railpack_version?: string | null;
+	workflow_version?: string | null;
+	deploy_briefing?: string;
+	deploy_units?: SDDeployUnit[];
+	repair_history?: Array<Record<string, unknown>>;
+	errors?: string[];
+	pipeline_trace?: Array<Record<string, unknown>>;
+	inputs_snapshot?: Record<string, unknown>;
 	stack_tokens: string[];
 	files: {
 		name: string;

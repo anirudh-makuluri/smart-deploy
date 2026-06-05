@@ -1,5 +1,6 @@
 import type { BlueprintValidationIssue } from "@/components/blueprint/blueprint-types";
 import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 function serviceNodeId(name: string) {
 	return `service-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
@@ -10,6 +11,10 @@ export function validateBlueprint(
 	scanResults: SDArtifactsResponse | null
 ): BlueprintValidationIssue[] {
 	if (!scanResults) return [];
+
+	if (isSdArtifactsAnalyzeScan(scanResults)) {
+		return [];
+	}
 
 	const issues: BlueprintValidationIssue[] = [];
 	const services = scanResults.services ?? [];

@@ -26,14 +26,15 @@ type ScanProgressProps = {
 	onCancel: () => void;
 };
 
+/** Matches `POST /analyze/stream` progress `node` ids. See `sd-artifacts-integration.md` §3.2. */
 const NODES = [
-	{ id: "scanner", label: "Scanner", desc: "Repository mapping" },
-	{ id: "planner", label: "Planner", desc: "Execution strategy" },
-	{ id: "commands_gen", label: "Commands Generator", desc: "Generating deployment commands" },
-	{ id: "docker_gen", label: "Dockerfile Generator", desc: "Optimizing build layers" },
-	{ id: "compose_gen", label: "Compose Generator", desc: "Infrastructure orchestration" },
-	{ id: "nginx_gen", label: "Nginx Generator", desc: "Routing and proxy setup" },
-	{ id: "verifier", label: "Verifier", desc: "Final health check validation" },
+	{ id: "scanner", label: "Scanner", desc: "Resolve commit and repo scope" },
+	{ id: "clone_repo", label: "Clone repo", desc: "Check out repository at commit" },
+	{ id: "classifier", label: "Classifier", desc: "Detect deploy shape and deploy units" },
+	{ id: "railpack_prepare", label: "Railpack prepare", desc: "Generate Railpack build plan" },
+	{ id: "deploy_briefing", label: "Deploy briefing", desc: "Operator summary (markdown)" },
+	{ id: "railpack_build_repair", label: "Build & repair", desc: "Verify build; AI repair loop" },
+	{ id: "finalize", label: "Finalize", desc: "Schema version and final build status" },
 ];
 
 export default function ScanProgress({ repoUrl, packagePath, branch, repoName, serviceName, onComplete, onCancel }: ScanProgressProps) {
@@ -88,7 +89,22 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 							detail?: unknown;
 							message?: string;
 							error?: string;
+							code?: string;
+							reason?: string;
+							suggested_package_paths?: unknown;
 						};
+						if (parsed.code === "scope_required") {
+							const paths = Array.isArray(parsed.suggested_package_paths)
+								? parsed.suggested_package_paths.filter((x): x is string => typeof x === "string")
+								: [];
+							const reason =
+								typeof parsed.reason === "string" && parsed.reason.trim()
+									? parsed.reason.trim()
+									: "Repository scope is too broad for root analysis. Specify package_path.";
+							throw new Error(
+								paths.length ? `${reason} Suggested: ${paths.slice(0, 20).join(", ")}` : reason
+							);
+						}
 						const detailObj = Array.isArray(parsed.detail)
 							? (parsed.detail[0] as { reason?: string; code?: string } | undefined)
 							: (parsed.detail as { reason?: string; code?: string } | undefined);
@@ -121,7 +137,7 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 					});
 				};
 
-				appendLog("info: initialized langgraph workflow engine");
+				appendLog("info: connected to sd-artifacts analyze stream");
 
 				const processMessage = (message: string) => {
 					const lines = message.split(/\r?\n/);
@@ -158,6 +174,8 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 									const nodeIndex = NODES.findIndex(n => n.id === node);
 									if (nodeIndex >= 0) {
 										setProgress(Math.round(((nodeIndex + 1) / NODES.length) * 100));
+									} else if (typeof node === "string" && node) {
+										setProgress((prev) => Math.min(prev + 2, 95));
 									}
 								} else if (status === "error") {
 									setFailedNode(node);
@@ -174,7 +192,12 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 								}
 								// Record artifact generation metrics (best-effort; does not block UI).
 								try {
-									const dockerfilesCount = normalized?.dockerfiles ? Object.keys(normalized.dockerfiles).length : 0;
+									const hasDeployUnits = Array.isArray(normalized.deploy_units) && normalized.deploy_units.length > 0;
+									const dockerfilesCount = hasDeployUnits
+										? normalized.deploy_units!.length
+										: normalized?.dockerfiles
+											? Object.keys(normalized.dockerfiles).length
+											: 0;
 									void fetch("/api/artifacts/generation", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
@@ -187,6 +210,9 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 											hasExistingCompose: Boolean(normalized?.has_existing_compose),
 											hasCompose: Boolean(normalized?.docker_compose?.trim()),
 											hasNginx: Boolean(normalized?.nginx_conf?.trim()),
+											...(hasDeployUnits && normalized.build_status
+												? { analyzeBuildStatus: normalized.build_status }
+												: {}),
 										}),
 									});
 								} catch {
@@ -260,7 +286,9 @@ export default function ScanProgress({ repoUrl, packagePath, branch, repoName, s
 				</div>
 				<div>
 					<h2 className="text-xl font-semibold text-foreground tracking-tight">Analysis in Progress</h2>
-					<p className="text-sm text-muted-foreground">SmartDeploy is orchestrating LangGraph nodes to blueprint your infrastructure</p>
+					<p className="text-sm text-muted-foreground">
+						Progress follows the sd-artifacts pipeline: scan, classify, Railpack prepare, briefing, verified build, finalize
+					</p>
 				</div>
 			</div>
 
