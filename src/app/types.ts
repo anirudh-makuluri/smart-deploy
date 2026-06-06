@@ -36,7 +36,7 @@ export type repoType = {
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
 export type DeploymentTarget = "ec2" | "ecs" | "cloud_run" | "static_s3";
-export type DeploymentKind = 'container' | 'direct-static';
+export type DeploymentKind = "container";
 export type StaticServiceType =
 	| 'vite'
 	| 'cra'
@@ -107,7 +107,7 @@ export type DeployConfig = {
 	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
 	cloudRun: CloudRunDetails | null;
 	/** Analysis/scan results from detectServices */
-	scanResults: SDArtifactsResponse | Record<string, never>;
+	scanResults: ScanResultsPayload;
 }
 
 export type EcrServiceImageRef = {
@@ -120,7 +120,7 @@ export type EcrServiceImageRef = {
 export type EcrImageReleaseArtifact = {
 	kind: "ecr_image";
 	cloudProvider: "aws";
-	deploymentTarget: "ec2";
+	deploymentTarget: "ecs";
 	region: string;
 	ecrRegistry: string;
 	ecrRepoName: string;
@@ -324,63 +324,49 @@ export type SDDeployUnit = {
 	};
 };
 
+export type SDBuildVerification = {
+	backend?: string;
+	status?: string;
+	message?: string;
+	attempts?: number;
+	duration_seconds?: number;
+	log_excerpt?: string;
+};
+
+export type SDRepairAttempt = {
+	attempt?: number;
+	unit_name?: string;
+	diagnosis?: string;
+	patch?: Record<string, unknown>;
+	railpack_json_after_merge?: Record<string, unknown> | null;
+	build_log_excerpt?: string;
+	build_exit_code?: number | null;
+	duration_seconds?: number;
+	result?: string;
+};
+
+/** sd-artifacts `AnalyzeResponse` (§4). */
 export type SDArtifactsResponse = {
-	response_id?: string | null;
+	response_id: string;
 	commit_sha: string;
-	/** Normalized package scope from analyze */
-	package_path?: string;
-	deploy_shape?: SDDeployShape;
-	build_status?: SDAnalyzeBuildStatus;
-	railpack_version?: string | null;
-	workflow_version?: string | null;
-	deploy_briefing?: string;
-	deploy_units?: SDDeployUnit[];
-	repair_history?: Array<Record<string, unknown>>;
-	errors?: string[];
-	pipeline_trace?: Array<Record<string, unknown>>;
-	inputs_snapshot?: Record<string, unknown>;
-	stack_tokens: string[];
-	files: {
-		name: string;
-		content: string;
-		location: string;
-	}[];
-	risks: string[];
-	confidence: number;
+	package_path: string;
+	deploy_shape: SDDeployShape;
+	build_status: SDAnalyzeBuildStatus;
+	railpack_version: string | null;
+	workflow_version: string | null;
+	deploy_briefing: string;
+	deploy_units: SDDeployUnit[];
+	build_verification: SDBuildVerification;
+	repair_history: SDRepairAttempt[];
+	pipeline_trace: Array<Record<string, unknown>>;
+	errors: string[];
+	llm_outputs: Record<string, unknown>;
+	inputs_snapshot: Record<string, unknown>;
 	token_usage: {
 		input_tokens: number;
 		output_tokens: number;
 		total_tokens: number;
 	};
-	// Legacy/derived fields still used by current UI components.
-	stack_summary?: string;
-	services?: {
-		name: string;
-		build_context: string;
-		port: number;
-		dockerfile_path: string;
-		execution_root?: string;
-		language?: string;
-		framework?: string;
-	}[];
-	dockerfiles?: Record<string, string>;
-	docker_compose?: string | null;
-	nginx_conf?: string | null;
-	has_existing_dockerfiles?: boolean;
-	has_existing_compose?: boolean;
-	hadolint_results?: Record<string, string | Record<string, unknown> | unknown[]>;
-	commands?: Record<string, unknown> | string[];
-	build_verification?: Record<string, unknown>;
-	llm_outputs?: Record<string, unknown>;
-
-	// Direct static deployment fields
-	serviceType?: StaticServiceType;
-	framework?: string;
-	language?: string;
-	workdir?: string;
-	package_manager?: PackageManager;
-	install?: string[];
-	build?: string[];
-	output_dir?: string;
-	spa_fallback?: boolean;
 };
+
+export type ScanResultsPayload = SDArtifactsResponse | Record<string, never>;

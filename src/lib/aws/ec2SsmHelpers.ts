@@ -368,7 +368,6 @@ docker system prune -af --volumes 2>/dev/null || true
  * Writes Dockerfiles + docker-compose.yml from scan_results if missing, then builds/runs.
  */
 type ScanServiceForDocker = { dockerfile_path?: string; build_context?: string };
-type DeployCommandsInput = Record<string, unknown> | string[] | undefined;
 type DirectStaticScriptInput = {
 	repoUrl: string;
 	branch: string;
@@ -384,24 +383,6 @@ type DirectStaticScriptInput = {
 
 function shellSingleQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
-}
-
-function extractDeployCommands(commands: DeployCommandsInput): string[] {
-	if (!commands) return [];
-	if (Array.isArray(commands)) {
-		return commands.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-	}
-	const root = commands["."];
-	if (Array.isArray(root)) {
-		return root.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-	}
-	return [];
-}
-
-function buildCommandExecutionScript(commands: string[]): string {
-	if (commands.length === 0) return "";
-	const lines = commands.map((cmd, idx) => `echo "Running deploy command ${idx + 1}/${commands.length}: ${cmd.replace(/"/g, '\\"')}"\n${cmd}`);
-	return `echo "Executing scan_results.commands for deployment..."\n${lines.join("\n\n")}\n`;
 }
 
 function buildStaticRuntimeBootstrapScript(packageManager?: string): string {
@@ -554,17 +535,13 @@ export function buildFirstDeployScript(params: {
 	dockerfiles: Record<string, string>;
 	mainPort: string;
 	scanServices?: ScanServiceForDocker[] | null;
-	commands?: DeployCommandsInput;
 }): string {
-	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort, scanServices, commands } = params;
+	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort, scanServices } = params;
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const deployCommands = extractDeployCommands(commands);
-	const runScript = deployCommands.length > 0
-		? buildCommandExecutionScript(deployCommands)
-		: buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== SSM first deploy: writing artifacts and building ==="
@@ -585,7 +562,7 @@ echo "====================================== Deployment script complete! =======
 
 /**
  * Builds the bash script run on the instance for redeploy (git pull + rebuild).
- * Uses scan_results to write Dockerfiles and docker-compose.yml if missing.
+ * Uses scan_results to write Dockerfiles and docker-compose.yml if missing, then runs containers.
  */
 export function buildRedeployScript(params: {
 	repoUrl: string;
@@ -597,7 +574,6 @@ export function buildRedeployScript(params: {
 	dockerfiles: Record<string, string>;
 	mainPort: string;
 	scanServices?: ScanServiceForDocker[] | null;
-	commands?: DeployCommandsInput;
 }): string {
 	const {
 		repoUrl,
@@ -609,17 +585,13 @@ export function buildRedeployScript(params: {
 		dockerfiles,
 		mainPort,
 		scanServices,
-		commands,
 	} = params;
 	const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const deployCommands = extractDeployCommands(commands);
-	const runScript = deployCommands.length > 0
-		? buildCommandExecutionScript(deployCommands)
-		: buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== Disk space before redeploy ==="

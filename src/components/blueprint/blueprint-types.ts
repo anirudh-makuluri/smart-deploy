@@ -1,4 +1,4 @@
-import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
+import type { DeployConfig, ScanResultsPayload } from "@/app/types";
 
 export type BlueprintNodeKind =
 	| "deployConfig"
@@ -56,5 +56,5 @@ export type BlueprintModel = {
 
 export type BlueprintInput = {
 	deployment: DeployConfig;
-	scanResults: SDArtifactsResponse | null;
+	scanResults: ScanResultsPayload | null;
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, FileCode2, Globe, Rocket } from "lucide-react";
+import { Box, FileCode2, Rocket } from "lucide-react";
 import type { DeploymentKind, StaticServiceType } from "@/app/types";
 
 type ServiceTypeIconProps = {
@@ -52,7 +52,9 @@ function formatServiceTypeLabel(serviceType?: StaticServiceType) {
 }
 
 export default function ServiceTypeIcon({ deployMode, serviceType, className = "" }: ServiceTypeIconProps) {
-	if (deployMode === "container") {
+	void deployMode;
+	const style = serviceType ? staticStyles[serviceType] : null;
+	if (!style) {
 		return (
 			<div
 				className={`flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-muted-foreground ${className}`.trim()}
@@ -60,19 +62,6 @@ export default function ServiceTypeIcon({ deployMode, serviceType, className = "
 				aria-label="Container deployment"
 			>
 				<Box className="size-4" aria-hidden="true" />
-			</div>
-		);
-	}
-
-	const style = serviceType ? staticStyles[serviceType] : null;
-	if (!style) {
-		return (
-			<div
-				className={`flex size-8 shrink-0 items-center justify-center rounded-lg border border-sky-500/20 bg-sky-500/10 text-sky-400 ${className}`.trim()}
-				title="Static deployment"
-				aria-label="Static deployment"
-			>
-				<Globe className="size-4" aria-hidden="true" />
 			</div>
 		);
 	}
@@ -89,11 +78,12 @@ export default function ServiceTypeIcon({ deployMode, serviceType, className = "
 }
 
 export function ServiceTypeBadge({ deployMode, serviceType }: Pick<ServiceTypeIconProps, "deployMode" | "serviceType">) {
-	if (deployMode === "container") {
+	void deployMode;
+	if (!serviceType) {
 		return (
 			<span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
 				<Rocket className="size-3" />
-				Container
+				Analyze
 			</span>
 		);
 	}

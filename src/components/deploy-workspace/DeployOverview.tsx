@@ -146,10 +146,9 @@ export default function DeployOverview({
 	);
 	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
 	const showEc2InstanceType =
-		deployment.deploymentTarget === "ec2" ||
-		(!!instanceIdStr &&
-			!instanceIdStr.startsWith("ecs:") &&
-			!instanceIdStr.startsWith("s3:"));
+		!!instanceIdStr &&
+		!instanceIdStr.startsWith("ecs:") &&
+		!instanceIdStr.startsWith("s3:");
 	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || instanceIdStr.startsWith("s3:");
 	const secondaryAccessLabel = isStaticS3Target
 		? "S3 location"

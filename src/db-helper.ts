@@ -47,7 +47,7 @@ function normalizeDetectedServiceInfo(value: unknown): DetectedServiceInfo | nul
 		language: typeof record.language === "string" && record.language.trim() ? record.language : "unknown",
 		framework: typeof record.framework === "string" && record.framework.trim() ? record.framework : undefined,
 		port: typeof record.port === "number" ? record.port : null,
-		deployMode: record.deployMode === "direct-static" ? "direct-static" : "container",
+		deployMode: "container",
 		serviceType: normalizeStaticServiceType(record.serviceType),
 	};
 }
@@ -180,7 +180,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		lastDeployment: last_deployment ?? null,
 		revision: revision ?? 0,
 		cloudProvider: (cloud_provider as "aws" | "gcp") || "aws",
-		deploymentTarget: (deployment_target as DeployConfig["deploymentTarget"]) || "ec2",
+		deploymentTarget: (deployment_target as DeployConfig["deploymentTarget"]) || "ecs",
 		awsRegion: aws_region || "",
 		ec2: (ec2 as Record<string, unknown>) || {},
 		cloudRun: (cloud_run as Record<string, unknown>) || {},

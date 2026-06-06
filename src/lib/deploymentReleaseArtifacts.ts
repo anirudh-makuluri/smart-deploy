@@ -47,7 +47,7 @@ export function buildEcrImageReleaseArtifact(args: {
 	return {
 		kind: "ecr_image",
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
+		deploymentTarget: "ecs",
 		region: args.region,
 		ecrRegistry: args.ecrRegistry,
 		ecrRepoName: args.ecrRepoName,

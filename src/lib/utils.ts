@@ -1,6 +1,5 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
 import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
-import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { clsx, type ClassValue } from "clsx"
@@ -295,24 +294,11 @@ export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 	if (!deployment) return true;
 
 	const scanResults = deployment.scanResults;
-	if (getDeploymentKind(deployment) === "direct-static") {
-		if (!isDirectStaticScanResults(scanResults)) return true;
-		const hasOutputDir = Boolean(scanResults.output_dir?.trim());
-		const hasNginxConf = Boolean(scanResults.nginx_conf?.trim());
-		return !(hasOutputDir && hasNginxConf);
-	}
-
 	if (isSdArtifactsAnalyzeScan(scanResults)) {
-		const st = (scanResults as SDArtifactsResponse).build_status;
-		if (st === "failed" || st === "error" || st === "not_run" || st === undefined) return true;
-		return false;
+		const st = scanResults.build_status;
+		if (st === "failed" || st === "error" || st === "not_run") return true;
+		return !scanResults.deploy_units?.length;
 	}
 
-	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
-		? (scanResults as SDArtifactsResponse)
-		: null;
-	const hasDockerfile = !!(scanResultsTyped?.dockerfiles && Object.keys(scanResultsTyped.dockerfiles).length > 0);
-	const hasNginxConf = !!scanResultsTyped?.nginx_conf?.trim();
-
-	return !(hasDockerfile && hasNginxConf);
+	return true;
 }
