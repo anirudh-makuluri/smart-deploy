@@ -62,7 +62,7 @@ type DeployWorkspaceActiveSectionProps = {
 	deployError: string | null;
 	deployingCommitInfo: { sha: string; message: string; author: string; date: string } | null;
 	steps: DeployStep[];
-	deployConfigRef: React.MutableRefObject<DeployConfig | null>;
+	liveDeployConfig: DeployConfig | null;
 	isDeploying: boolean;
 	isRefreshingPreview: boolean;
 	onRedeploy: (commitSha?: string) => void;
@@ -117,7 +117,7 @@ export default function DeployWorkspaceActiveSection({
 	deployError,
 	deployingCommitInfo,
 	steps,
-	deployConfigRef,
+	liveDeployConfig,
 	isDeploying,
 	isRefreshingPreview,
 	onRedeploy,
@@ -267,11 +267,7 @@ export default function DeployWorkspaceActiveSection({
 						steps={steps}
 						repoNameForLogs={repoName}
 						serviceNameForLogs={currentServiceName}
-						configSnapshot={
-							deployConfigRef.current
-								? configSnapshotFromDeployConfig(deployConfigRef.current)
-								: configSnapshotFromDeployConfig(deployment)
-						}
+						configSnapshot={configSnapshotFromDeployConfig(liveDeployConfig ?? deployment)}
 						repoUrl={deployment.url}
 						commitSha={
 							(deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ??

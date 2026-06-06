@@ -56,7 +56,7 @@ export default function DeployWorkspace({
 		effectiveDeployStatus,
 		deployError,
 		steps,
-		deployConfigRef,
+		liveDeployConfig,
 		isRefreshingPreview,
 		pauseResumeDialogTitle,
 		pauseResumeDialogDescription,
@@ -161,7 +161,7 @@ export default function DeployWorkspace({
 							deployError={deployError}
 							deployingCommitInfo={ui.deployingCommitInfo}
 							steps={steps}
-							deployConfigRef={deployConfigRef}
+							liveDeployConfig={liveDeployConfig}
 							isDeploying={ui.isDeploying}
 							isRefreshingPreview={isRefreshingPreview}
 							onRedeploy={handleDeploy}

@@ -207,6 +207,7 @@ export function useWorkerWebSocketSession({
 	const [customDnsError, setCustomDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<ServiceLogEntry[]>([]);
 	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+	const [liveDeployConfig, setLiveDeployConfig] = useState<DeployConfig | null>(null);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
@@ -220,6 +221,12 @@ export function useWorkerWebSocketSession({
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
 	const everOpenedRef = useRef(false);
+	const createWebSocketRef = useRef<() => WebSocket | null>(() => null);
+
+	const assignDeployConfig = useCallback((config: DeployConfig | null) => {
+		deployConfigRef.current = config;
+		setLiveDeployConfig(config);
+	}, []);
 
 	const clearRetryTimer = useCallback(() => {
 		if (retryTimerRef.current != null) {
@@ -438,7 +445,7 @@ export function useWorkerWebSocketSession({
 										typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
 											? completePayload.deployUrl.trim()
 											: undefined;
-									deployConfigRef.current = {
+									assignDeployConfig({
 										...currentConfig,
 										...(typeof deploymentTarget === "string" && deploymentTarget
 											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
@@ -446,7 +453,7 @@ export function useWorkerWebSocketSession({
 										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
 										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
 										status: finalStatus,
-									};
+									});
 								}
 							} else {
 								setDeployError(null);
@@ -469,7 +476,7 @@ export function useWorkerWebSocketSession({
 									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
 									const displayUrl = getDeploymentDisplayUrl(updated)?.trim() ?? "";
 									updated.liveUrl = customUrl || displayUrl || deployUrlFromPayload || currentConfig.liveUrl || null;
-									deployConfigRef.current = updated;
+									assignDeployConfig(updated);
 								}
 								setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));
 								if (completePayload.customDnsAdded === true) {
@@ -522,7 +529,7 @@ export function useWorkerWebSocketSession({
 						retryTimerRef.current = setTimeout(() => {
 							retryTimerRef.current = null;
 							if (connectionEnabledRef.current) {
-								createWebSocket();
+								createWebSocketRef.current();
 							}
 						}, 1500);
 					}
@@ -538,7 +545,7 @@ export function useWorkerWebSocketSession({
 					retryTimerRef.current = setTimeout(() => {
 						retryTimerRef.current = null;
 						if (connectionEnabledRef.current) {
-							createWebSocket();
+							createWebSocketRef.current();
 						}
 					}, 1000);
 				}
@@ -546,7 +553,7 @@ export function useWorkerWebSocketSession({
 		})();
 
 		return null;
-	}, [announceActiveDeployments, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
+	}, [announceActiveDeployments, assignDeployConfig, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
@@ -568,7 +575,13 @@ export function useWorkerWebSocketSession({
 		return createWebSocket();
 	}, [createWebSocket]);
 
-	connectionEnabledRef.current = connectionEnabled;
+	useEffect(() => {
+		createWebSocketRef.current = createWebSocket;
+	}, [createWebSocket]);
+
+	useEffect(() => {
+		connectionEnabledRef.current = connectionEnabled;
+	}, [connectionEnabled]);
 
 	useEffect(() => {
 		openSocketRef.current = openSocket;
@@ -626,7 +639,7 @@ export function useWorkerWebSocketSession({
 	const effectiveHasConnectedOnce = connectionEnabled ? hasConnectedOnce : false;
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
-		deployConfigRef.current = deployConfig;
+		assignDeployConfig(deployConfig);
 		wasDeployingRef.current = true;
 		setDeployError(null);
 		setDeployStatus("running");
@@ -665,7 +678,7 @@ export function useWorkerWebSocketSession({
 		token: string,
 		userID?: string
 	) => {
-		deployConfigRef.current = deployConfig;
+		assignDeployConfig(deployConfig);
 		wasDeployingRef.current = true;
 		setDeployError(null);
 		setDeployStatus("running");
@@ -708,6 +721,7 @@ export function useWorkerWebSocketSession({
 		sendRollbackRequest,
 		openSocket,
 		deployConfigRef,
+		liveDeployConfig,
 		deployStatus,
 		deployError: effectiveDeployError,
 		customDnsStatus,

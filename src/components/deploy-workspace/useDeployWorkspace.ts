@@ -133,7 +133,7 @@ export function useDeployWorkspace() {
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, sendRollbackRequest, deployConfigRef, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+	const { steps, sendDeployConfig, sendRollbackRequest, deployConfigRef, liveDeployConfig, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
 		useWorkerWebSocket();
 
 	React.useEffect(() => {
@@ -615,7 +615,7 @@ export function useDeployWorkspace() {
 		} finally {
 			dispatch({ type: "set_changing_deployment_state", value: false });
 		}
-	}, [deployment, deploymentInProgress, effectiveDeploymentStatus, repoUrl, sendRollbackRequest, session?.user?.id, setActiveSection, ui.isChangingDeploymentState, ui.rollbackEntry, updateDeploymentById]);
+	}, [deployment, deploymentInProgress, effectiveDeploymentStatus, repoUrl, sendRollbackRequest, session, setActiveSection, ui.isChangingDeploymentState, ui.rollbackEntry, updateDeploymentById]);
 
 	const handleScanProgressComplete = React.useCallback((data: SDArtifactsResponse) => {
 		dispatch({ type: "set_scan_duration", value: Date.now() - scanStartTimeRef.current });
@@ -684,6 +684,7 @@ export function useDeployWorkspace() {
 		deployError,
 		steps,
 		deployConfigRef,
+		liveDeployConfig,
 		isRefreshingPreview,
 		pauseResumeDialogTitle,
 		pauseResumeDialogDescription,

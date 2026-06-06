@@ -51,18 +51,24 @@ export default function EnvVarSheet({
 }: EnvVarSheetProps) {
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
-	const rowIdsRef = React.useRef<string[]>([]);
+	const [rowIds, setRowIds] = React.useState<string[]>(() => createRowIds(entries.length));
+	const [trackedEntryCount, setTrackedEntryCount] = React.useState(entries.length);
 
-	React.useEffect(() => {
-		rowIdsRef.current = syncRowIds(rowIdsRef.current, entries.length);
-	}, [entries.length]);
+	if (entries.length !== trackedEntryCount) {
+		setTrackedEntryCount(entries.length);
+		setRowIds((prev) => syncRowIds(prev, entries.length));
+	}
 
 	const handleAddVariable = () => {
 		onEntriesChange([...entries, { name: "", value: "" }]);
 	};
 
 	const handleRemoveVariable = (index: number) => {
-		rowIdsRef.current.splice(index, 1);
+		setRowIds((prev) => {
+			const next = [...prev];
+			next.splice(index, 1);
+			return next;
+		});
 		const newEntries = entries.filter((_, i) => i !== index);
 		onEntriesChange(newEntries);
 	};
@@ -112,7 +118,7 @@ export default function EnvVarSheet({
 				});
 
 				const finalEntries = Array.from(uniqueEntriesMap.entries()).map(([name, value]) => ({ name, value }));
-				rowIdsRef.current = createRowIds(finalEntries.length > 0 ? finalEntries.length : 1);
+				setRowIds(createRowIds(finalEntries.length > 0 ? finalEntries.length : 1));
 				onEntriesChange(finalEntries.length > 0 ? finalEntries : [{ name: "", value: "" }]);
 				toast.success(`Imported ${parsed.length} environment variables`);
 			}
@@ -134,7 +140,7 @@ export default function EnvVarSheet({
 				parsed.forEach(e => { if (e.name) entryMap.set(e.name, e.value) });
 
 				const merged = Array.from(entryMap.entries()).map(([name, value]) => ({ name, value }));
-				rowIdsRef.current = createRowIds(merged.length);
+				setRowIds(createRowIds(merged.length));
 				onEntriesChange(merged);
 				toast.success(`Imported ${parsed.length} variables from ${file.name}`);
 			} else {
@@ -209,7 +215,7 @@ export default function EnvVarSheet({
 									</div>
 									<div className="space-y-2">
 										{entries.map((entry, index) => (
-											<div key={rowIdsRef.current[index]} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
+											<div key={rowIds[index] ?? index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
 												<Input
 													value={entry.name}
 													onPaste={(e) => handlePaste(index, e)}
