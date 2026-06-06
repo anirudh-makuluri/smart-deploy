@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT license" /></a>
+   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache 2.0 license" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml"><img src="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/issues"><img src="https://img.shields.io/github/issues/anirudh-makuluri/smart-deploy" alt="Open issues" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/pulls"><img src="https://img.shields.io/github/issues-pr/anirudh-makuluri/smart-deploy" alt="Open pull requests" /></a>
@@ -302,4 +302,8 @@ See [`.env.example`](.env.example) for the full template.
 
 ## License
 
-MIT
+SmartDeploy is licensed under the Apache License 2.0. See [LICENSE](./LICENSE).
+
+SmartDeploy was created and is maintained by Anirudh Raghavendra Makuluri.
+
+Forks and derivative projects should preserve the required license and attribution notices, and should not imply that they are the official SmartDeploy project unless explicitly authorized.
