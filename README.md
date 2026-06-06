@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT license" /></a>
+   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="Apache 2.0 license" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml"><img src="https://github.com/anirudh-makuluri/smart-deploy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/issues"><img src="https://img.shields.io/github/issues/anirudh-makuluri/smart-deploy" alt="Open issues" /></a>
    <a href="https://github.com/anirudh-makuluri/smart-deploy/pulls"><img src="https://img.shields.io/github/issues-pr/anirudh-makuluri/smart-deploy" alt="Open pull requests" /></a>
