@@ -302,4 +302,8 @@ See [`.env.example`](.env.example) for the full template.
 
 ## License
 
-MIT
+SmartDeploy is licensed under the Apache License 2.0. See [LICENSE](./LICENSE).
+
+SmartDeploy was created and is maintained by Anirudh Raghavendra Makuluri.
+
+Forks and derivative projects should preserve the required license and attribution notices, and should not imply that they are the official SmartDeploy project unless explicitly authorized.
