@@ -557,7 +557,7 @@ Use this as the agent task list.
 
 ### Phase A — Remove legacy file-bundle assumptions
 
-- [ ] Delete code paths that read/write `dockerfile`, `compose`, `nginx`, `commands` from analyze response
+- [ ] Delete code paths that read/write `dockerfile`, `compose`, `nginx` from analyze response (top-level **`commands`** deploy path removed in smart-deploy; use `railpack_plan.steps` / CodeBuild instead)
 - [ ] Remove `service_name` from cache keys, DB models, and API calls
 - [ ] Normalize and gate on `deploy_units` / `build_status` (not file-bundle artifacts)
 - [ ] Update TypeScript types / OpenAPI client to match §4

@@ -73,14 +73,8 @@ type DirectStaticDeployDetails = {
 	packageManager?: string;
 };
 
-function hasDirectStaticScanResults(deployConfig: DeployConfig): boolean {
-	const scanResults = deployConfig.scanResults;
-	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return false;
-	const record = scanResults as Record<string, unknown>;
-	const outputDir = typeof record.output_dir === "string" ? record.output_dir.trim() : "";
-	if (!outputDir) return false;
-	if (deployConfig.kind === "direct-static") return true;
-	return typeof record.serviceType === "string" || Array.isArray(record.install) || Array.isArray(record.build);
+function hasDirectStaticScanResults(_deployConfig: DeployConfig): boolean {
+	return false;
 }
 
 // ─── Pure helpers (env / compose / user-data) ───────────────────────────────
@@ -396,7 +390,6 @@ async function redeployInstance(params: {
 			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 			mainPort,
 			scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
-			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 		});
 	let ssmResult: { success: boolean };
 	try {
@@ -548,7 +541,6 @@ async function launchNewInstance(params: {
 			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 			mainPort,
 			scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
-			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 		});
 
 	send(directStatic ? "Publishing static site via SSM..." : "Deploying containers via SSM...", "deploy");

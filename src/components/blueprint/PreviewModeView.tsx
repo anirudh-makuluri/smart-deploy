@@ -45,7 +45,7 @@ type PreviewModeViewProps = {
 type Editor =
 	| { kind: "branch" }
 	| { kind: "compose" }
-	| { kind: "dockerfile"; dockerfilePath?: string }
+	| { kind: "dockerfile"; unitName?: string }
 	| { kind: "infra" }
 	| { kind: "envVars" }
 	| { kind: "nginx" }
@@ -168,12 +168,21 @@ export default function PreviewModeView({
 		setCustomUrlStatus({ type: null });
 	};
 
-	const dockerfileEntries = React.useMemo(() => Object.entries(scanResults?.dockerfiles ?? {}), [scanResults?.dockerfiles]);
-	const primaryDockerfilePath = React.useMemo(() => {
-		const fromService = scanResults?.services?.[0]?.dockerfile_path;
-		if (fromService && (scanResults?.dockerfiles ?? {})[fromService] !== undefined) return fromService;
-		return dockerfileEntries[0]?.[0] ?? undefined;
-	}, [dockerfileEntries, scanResults?.dockerfiles, scanResults?.services]);
+	const deployUnits = React.useMemo(() => scanResults?.deploy_units ?? [], [scanResults?.deploy_units]);
+	const primaryUnitName = React.useMemo(() => deployUnits[0]?.name, [deployUnits]);
+	const selectedUnit = React.useMemo(() => {
+		const name = editor?.kind === "dockerfile" ? editor.unitName ?? primaryUnitName : primaryUnitName;
+		return deployUnits.find((u) => u.name === name) ?? deployUnits[0];
+	}, [deployUnits, editor, primaryUnitName]);
+	const railpackPlanJson = React.useMemo(() => {
+		const plan = selectedUnit?.artifacts?.railpack_plan;
+		if (!plan) return "";
+		try {
+			return JSON.stringify(plan, null, 2);
+		} catch {
+			return String(plan);
+		}
+	}, [selectedUnit]);
 
 	function openArtifact(artifact: PreviewArtifact) {
 		switch (artifact.action) {
@@ -184,7 +193,7 @@ export default function PreviewModeView({
 				setEditor({ kind: "compose" });
 				return;
 			case "openDockerfile":
-				setEditor({ kind: "dockerfile", dockerfilePath: primaryDockerfilePath });
+				setEditor({ kind: "dockerfile", unitName: primaryUnitName });
 				return;
 			case "openInfra":
 				setEditor({ kind: "infra" });
@@ -353,7 +362,7 @@ export default function PreviewModeView({
 						{model.steps.map((step, stepIndex) => {
 							const stepArtifacts = artifactsByStep[step.id];
 							const stepWarnings = warningsByStep[step.id];
-							const hasComposeDetails = step.id === "build" && model.composeBuildMode && !!scanResults?.services?.length;
+							const hasComposeDetails = step.id === "build" && model.composeBuildMode && deployUnits.length > 1;
 							const hasExtra = stepWarnings.length > 0 || hasComposeDetails;
 							const isLast = stepIndex === model.steps.length - 1;
 
@@ -398,23 +407,23 @@ export default function PreviewModeView({
 												</div>
 											))}
 
-											{hasComposeDetails && scanResults?.services ? (
+											{hasComposeDetails ? (
 												<div className="rounded-xl bg-white/5 px-2.5 py-2 ring-1 ring-white/8">
 													<details className="group">
 														<summary className="cursor-pointer select-none text-xs font-semibold text-white/90">
-															Compose details ({scanResults.services.length})
+															Deploy units ({deployUnits.length})
 														</summary>
 														<div className="mt-2 grid gap-1.5">
-															{scanResults.services.map((svc) => (
-																<div key={svc.name} className="rounded-lg bg-black/25 px-2 py-1.5 ring-1 ring-white/6">
+															{deployUnits.map((unit) => (
+																<div key={unit.name} className="rounded-lg bg-black/25 px-2 py-1.5 ring-1 ring-white/6">
 																	<div className="flex flex-wrap items-center justify-between gap-1">
-																		<div className="text-xs font-semibold text-white/90">{svc.name}</div>
-																		<div className="text-[10px] text-white/45">:{svc.port}</div>
+																		<div className="text-xs font-semibold text-white/90">{unit.name}</div>
+																		<div className="text-[10px] text-white/45">:{unit.port}</div>
 																	</div>
 																	<div className="mt-0.5 text-[10px] text-white/45">
-																		<span className="font-mono text-white/65">{svc.build_context}</span>
+																		<span className="font-mono text-white/65">{unit.root}</span>
 																		{" · "}
-																		<span className="font-mono text-white/65">{svc.dockerfile_path}</span>
+																		<span className="font-mono text-white/65">{unit.type}</span>
 																	</div>
 																</div>
 															))}
@@ -447,9 +456,9 @@ export default function PreviewModeView({
 							{editor?.kind === "branch"
 								? "Branch"
 								: editor?.kind === "dockerfile"
-									? "Dockerfile"
+									? "Railpack plan"
 									: editor?.kind === "compose"
-										? "Compose"
+										? "Deploy units"
 										: editor?.kind === "infra"
 											? "Infrastructure"
 											: editor?.kind === "envVars"
@@ -503,16 +512,10 @@ export default function PreviewModeView({
 
 						{editor?.kind === "compose" ? (
 							<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
-								<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">docker-compose.yml</div>
+								<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Deploy units</div>
 								<Textarea
-									value={scanResults?.docker_compose ?? ""}
-									onChange={(e) =>
-										void onUpdateScanResults((current) => ({
-											...current,
-											docker_compose: e.target.value,
-										}))
-									}
-									placeholder="services:\n  app:\n    build: ."
+									readOnly
+									value={JSON.stringify(deployUnits, null, 2)}
 									className="min-h-44 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
 								/>
 							</div>
@@ -520,40 +523,35 @@ export default function PreviewModeView({
 
 						{editor?.kind === "dockerfile" ? (
 							<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
-								<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Dockerfile</div>
+								<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Railpack plan</div>
 								<div className="mb-2 text-xs text-muted-foreground">
-									Path: <span className="font-mono">{editor.dockerfilePath ?? primaryDockerfilePath ?? "Dockerfile"}</span>
+									Unit: <span className="font-mono">{selectedUnit?.name ?? "—"}</span>
+									{selectedUnit?.root ? (
+										<>
+											{" · "}
+											<span className="font-mono">{selectedUnit.root}</span>
+										</>
+									) : null}
 								</div>
 								<Textarea
-									value={
-										(editor.dockerfilePath && scanResults?.dockerfiles?.[editor.dockerfilePath]) ??
-										(primaryDockerfilePath ? scanResults?.dockerfiles?.[primaryDockerfilePath] : "") ??
-										""
-									}
-									onChange={(e) => {
-										const path = editor.dockerfilePath ?? primaryDockerfilePath;
-										if (!path) return;
-										void onUpdateScanResults((current) => ({
-											...current,
-											dockerfiles: { ...(current.dockerfiles ?? {}), [path]: e.target.value },
-										}));
-									}}
-									placeholder="FROM node:20-alpine"
+									readOnly
+									value={railpackPlanJson}
+									placeholder="No Railpack plan for this unit."
 									className="min-h-64 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
 								/>
-								{dockerfileEntries.length > 1 ? (
+								{deployUnits.length > 1 ? (
 									<div className="mt-3">
-										<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Switch file</div>
+										<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Switch unit</div>
 										<div className="grid gap-2">
-											{dockerfileEntries.map(([path]) => (
+											{deployUnits.map((unit) => (
 												<Button
-													key={path}
+													key={unit.name}
 													type="button"
 													variant="outline"
 													className="h-9 justify-start border-white/10 bg-white/2 px-3 font-mono text-xs"
-													onClick={() => setEditor({ kind: "dockerfile", dockerfilePath: path })}
+													onClick={() => setEditor({ kind: "dockerfile", unitName: unit.name })}
 												>
-													{path}
+													{unit.name}
 												</Button>
 											))}
 										</div>
@@ -563,19 +561,8 @@ export default function PreviewModeView({
 						) : null}
 
 						{editor?.kind === "nginx" ? (
-							<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
-								<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">nginx.conf</div>
-								<Textarea
-									value={scanResults?.nginx_conf ?? ""}
-									onChange={(e) =>
-										void onUpdateScanResults((current) => ({
-											...current,
-											nginx_conf: e.target.value,
-										}))
-									}
-									placeholder="server { ... }"
-									className="min-h-56 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
-								/>
+							<div className="rounded-2xl border border-white/8 bg-white/3 p-4 text-sm text-muted-foreground">
+								Railpack analyze deploys use ALB/ingress routing at deploy time; nginx.conf is not part of the analyze response.
 							</div>
 						) : null}
 

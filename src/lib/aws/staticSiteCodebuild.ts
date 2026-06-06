@@ -1,5 +1,5 @@
 import type { DeployConfig, SDArtifactsResponse, SDDeployUnit, SDRailpackPlan } from "../../app/types";
-import config from "../../config";
+import { staticSiteDeployConfigured } from "../deployRouting";
 import { isSdArtifactsAnalyzeScan } from "../scanResultNormalization";
 import { pickDeployUnitForBuild } from "../sdArtifactsBuildContext";
 import { getRailpackStartCommand } from "../sdArtifactsWorkload";
@@ -9,8 +9,12 @@ import {
 	startBuild,
 	waitForBuildAndStreamLogs,
 } from "./codebuildHelpers";
+import config from "../../config";
 
 type SendFn = (msg: string, stepId: string) => void;
+
+export { staticSiteDeployConfigured } from "../deployRouting";
+export { shouldDeployStaticSiteToS3 } from "../deployRouting";
 
 export async function runStaticSiteCodeBuildPipeline(params: {
 	region: string;
@@ -37,11 +41,6 @@ export async function runStaticSiteCodeBuildPipeline(params: {
 	const bucket = config.STATIC_SITE_BUCKET!.trim();
 	const s3Uri = `s3://${bucket}/${prefix}`;
 	const cmds = collectStaticBuildShellCommands(scan, unit);
-	if (!cmds.length) {
-		throw new Error(
-			"static_build deploy has no shell commands. Re-run analyze or add install/build steps to the scan payload."
-		);
-	}
 	const outputRel = pickStaticSiteOutputDirRelative(unit, scan);
 	const ctx = unit.root || ".";
 
@@ -69,25 +68,10 @@ export async function runStaticSiteCodeBuildPipeline(params: {
 		send,
 	});
 	return waitForBuildAndStreamLogs({ buildId, region, send });
-}function yamlListEntry(line: string, spaces: number): string {
+}
+
+function yamlListEntry(line: string, spaces: number): string {
 	return " ".repeat(spaces) + "- " + JSON.stringify(line);
-}
-
-export function staticSiteDeployConfigured(): boolean {
-	return Boolean(config.STATIC_SITE_BUCKET?.trim() && config.STATIC_SITE_PUBLIC_BASE_URL?.trim());
-}
-
-/**
- * `deploy_shape: static_build` with no Railpack start command → build output only; host on S3 (+ optional CloudFront).
- */
-export function shouldDeployStaticSiteToS3(scan: unknown, serviceName?: string | null): boolean {
-	if (!isSdArtifactsAnalyzeScan(scan)) return false;
-	const s = scan as SDArtifactsResponse;
-	if (s.deploy_shape !== "static_build") return false;
-	const unit = pickDeployUnitForBuild(s, serviceName);
-	if (!unit) return false;
-	const start = getRailpackStartCommand(unit.artifacts?.railpack_plan);
-	return !start?.trim();
 }
 
 export function buildStaticSiteS3Prefix(repoName: string, serviceName: string | undefined | null): string {
@@ -95,11 +79,6 @@ export function buildStaticSiteS3Prefix(repoName: string, serviceName: string | 
 	const base = (config.STATIC_SITE_KEY_PREFIX || "").trim().replace(/^\/+|\/+$/g, "");
 	if (base) return `${base.replace(/\/$/, "")}/${svc}/`;
 	return `${repoName.replace(/[^a-zA-Z0-9._-]+/g, "-").toLowerCase()}/${svc}/`;
-}
-
-function parseStringArray(raw: unknown): string[] {
-	if (!Array.isArray(raw)) return [];
-	return raw.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean);
 }
 
 export function railpackPlanStepShellCommands(plan: SDRailpackPlan | null | undefined): string[] {
@@ -115,16 +94,12 @@ export function railpackPlanStepShellCommands(plan: SDRailpackPlan | null | unde
 }
 
 export function collectStaticBuildShellCommands(scan: SDArtifactsResponse, unit: SDDeployUnit): string[] {
-	const fromPlan = railpackPlanStepShellCommands(unit.artifacts?.railpack_plan ?? undefined);
-	if (fromPlan.length) return fromPlan;
-	const install = parseStringArray(scan.install);
-	const build = parseStringArray(scan.build);
-	return [...install, ...build];
+	if (scan.deploy_shape === "static") return [];
+	return railpackPlanStepShellCommands(unit.artifacts?.railpack_plan ?? undefined);
 }
 
 export function pickStaticSiteOutputDirRelative(unit: SDDeployUnit, scan: SDArtifactsResponse): string {
-	const top = typeof scan.output_dir === "string" ? scan.output_dir.trim() : "";
-	if (top) return top.replace(/^\/+/, "").replace(/\\/g, "/");
+	if (scan.deploy_shape === "static") return ".";
 	const fw = (unit.framework || "").toLowerCase();
 	if (fw.includes("next")) return "out";
 	if (fw.includes("nuxt")) return ".output/public";
@@ -146,8 +121,8 @@ export function generateStaticSiteBuildspec(params: {
 	if (ctx !== "." && !/^[a-zA-Z0-9._\-/]+$/.test(ctx)) {
 		throw new Error(`Unsafe static site context path: ${ctx}`);
 	}
-	const outRel = params.outputDirRelative.replace(/\\/g, "/").replace(/^\/+/, "");
-	if (!outRel || outRel.includes("..")) {
+	const outRel = params.outputDirRelative.replace(/\\/g, "/").replace(/^\/+/, "") || ".";
+	if (outRel.includes("..")) {
 		throw new Error(`Invalid static output directory: ${params.outputDirRelative}`);
 	}
 	const s3Uri = params.s3Uri.replace(/\s+/g, "").replace(/\/+$/, "") + "/";
@@ -166,14 +141,20 @@ export function generateStaticSiteBuildspec(params: {
 		preBuildCmds.push(`cd ${JSON.stringify(ctx)}`);
 	}
 
-	const buildCmds: string[] = ["echo Running install/build commands..."];
-	for (const cmd of params.shellCommands) {
-		buildCmds.push(cmd);
+	const buildCmds: string[] = [];
+	if (params.shellCommands.length > 0) {
+		buildCmds.push("echo Running install/build commands...");
+		for (const cmd of params.shellCommands) {
+			buildCmds.push(cmd);
+		}
+	} else {
+		buildCmds.push("echo No build commands — syncing static files as-is.");
 	}
 
+	const syncSource = outRel === "." ? "." : outRel;
 	const postBuildCmds: string[] = [
-		`echo Syncing ${JSON.stringify(outRel)} to S3...`,
-		`aws s3 sync ${JSON.stringify(outRel)} ${JSON.stringify(s3Uri)} --delete`,
+		`echo Syncing ${JSON.stringify(syncSource)} to S3...`,
+		`aws s3 sync ${JSON.stringify(syncSource)} ${JSON.stringify(s3Uri)} --delete`,
 	];
 	if (cfId) {
 		postBuildCmds.push(

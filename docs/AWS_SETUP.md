@@ -150,7 +150,32 @@ In `.env` (see also [`.env.example`](../.env.example)):
 | `STATIC_SITE_KEY_PREFIX` | Optional. Key prefix inside the bucket (defaults derived from repo/service). |
 | `STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID` | Optional. When set, CodeBuild runs a CloudFront invalidation after sync. |
 
-When `STATIC_SITE_BUCKET` and `STATIC_SITE_PUBLIC_BASE_URL` are set, sd-artifacts scans with `deploy_shape: static_build` and no Railpack start command use this path instead of ECR/ECS.
+When `STATIC_SITE_BUCKET` and `STATIC_SITE_PUBLIC_BASE_URL` are set, sd-artifacts scans with `deploy_shape: static` or `static_build` (no start command) use CodeBuild → S3 instead of ECR/ECS.
+
+| Variable | Description |
+|----------|-------------|
+| `ECS_CLUSTER_NAME` | ECS cluster for Fargate services (e.g. `smart-deploy-cluster`) |
+| `ECS_SUBNET_IDS` | Comma-separated subnet IDs (≥2 AZs recommended; used for Fargate and the shared ALB) |
+| `ECS_SECURITY_GROUP_IDS` | Comma-separated security group(s) for tasks; Smart Deploy opens ingress from the ALB SG at deploy time |
+| `ECS_EXECUTION_ROLE_ARN` | Task execution role (ECR pull + CloudWatch Logs) |
+| `ECS_ASSIGN_PUBLIC_IP` | `ENABLED` for public subnets (default from Terraform); `DISABLED` for private subnets with NAT |
+| `ECS_LOG_GROUP` | Optional. Defaults to `/ecs/smartdeploy-railpack` |
+| `ECS_TASK_CPU` / `ECS_TASK_MEMORY` | Optional Fargate sizing (defaults `512` / `1024`) |
+
+Container deploys (Railpack server, `existing_docker`) require the ECS variables above. Static deploys require the `STATIC_SITE_*` variables.
+
+### 3.2 Platform infrastructure (Terraform)
+
+Instead of creating the S3 bucket, CloudFront distribution, ECS cluster, and Fargate networking by hand, use the Terraform stack:
+
+```bash
+cd infra/smart-deploy-platform
+cp terraform.tfvars.example terraform.tfvars
+terraform init && terraform apply
+terraform output -raw smart_deploy_env_snippet
+```
+
+Paste the snippet into `.env`. If you already created the bucket or cluster manually, set `create_s3_bucket = false` and/or `create_ecs_cluster = false` in `terraform.tfvars` (see [infra/smart-deploy-platform/README.md](../infra/smart-deploy-platform/README.md)).
 
 If the Next.js app and worker run on EC2, attach an IAM role with the **same policy** instead of embedding keys. Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` unset; the AWS SDK uses the instance metadata role automatically.
 

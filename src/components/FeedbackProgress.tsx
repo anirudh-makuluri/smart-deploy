@@ -164,12 +164,7 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 								}
 								// Record artifact generation metrics (best-effort; does not block UI).
 								try {
-									const hasDeployUnits = Array.isArray(normalized.deploy_units) && normalized.deploy_units.length > 0;
-									const dockerfilesCount = hasDeployUnits
-										? normalized.deploy_units!.length
-										: normalized?.dockerfiles
-											? Object.keys(normalized.dockerfiles).length
-											: 0;
+									const unitCount = normalized.deploy_units.length;
 									void fetch("/api/artifacts/generation", {
 										method: "POST",
 										headers: { "Content-Type": "application/json" },
@@ -177,14 +172,12 @@ export default function FeedbackProgress({ payload, repoName, serviceName, onCom
 											source: "feedback",
 											repoName,
 											serviceName,
-											dockerfilesCount,
-											hasExistingDockerfiles: Boolean(normalized?.has_existing_dockerfiles),
-											hasExistingCompose: Boolean(normalized?.has_existing_compose),
-											hasCompose: Boolean(normalized?.docker_compose?.trim()),
-											hasNginx: Boolean(normalized?.nginx_conf?.trim()),
-											...(hasDeployUnits && normalized.build_status
-												? { analyzeBuildStatus: normalized.build_status }
-												: {}),
+											dockerfilesCount: unitCount,
+											hasExistingDockerfiles: normalized.deploy_units.some((u) => u.type === "existing_docker"),
+											hasExistingCompose: false,
+											hasCompose: normalized.deploy_shape === "multi",
+											hasNginx: false,
+											analyzeBuildStatus: normalized.build_status,
 										}),
 									});
 								} catch {

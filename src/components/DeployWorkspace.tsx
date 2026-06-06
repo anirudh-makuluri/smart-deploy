@@ -7,9 +7,6 @@ import DeployWorkspaceMenu, { MenuSection } from "@/components/deploy-workspace/
 import DeployOverview from "@/components/deploy-workspace/DeployOverview";
 import DeployLogsView, { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 import BlueprintView from "@/components/blueprint/BlueprintView";
-import DirectStaticConfigureView from "@/components/DirectStaticConfigureView";
-import DirectStaticPreviewView from "@/components/DirectStaticPreviewView";
-
 import type { DeployCompleteWsPayload } from "@/custom-hooks/useWorkerWebSocket";
 import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 
@@ -18,10 +15,16 @@ import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
 import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
-import { DeployConfig, DeploymentHistoryEntry, DetectedServiceInfo, repoType, SDArtifactsResponse } from "@/app/types";
+import {
+	DeployConfig,
+	DeploymentHistoryEntry,
+	DetectedServiceInfo,
+	repoType,
+	ScanResultsPayload,
+	SDArtifactsResponse,
+} from "@/app/types";
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { configSnapshotFromDeployConfig, isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
-import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import {
 	isDraftDeploymentStatus,
 	isInProgressDeploymentStatus,
@@ -34,11 +37,12 @@ import { Rocket, Search, ShieldCheck, AlertCircle, Layers } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import ScanProgress from "@/components/ScanProgress";
 import FeedbackProgress, { type FeedbackProgressPayload } from "@/components/FeedbackProgress";
-import PostScanResults from "@/components/PostScanResults";
+import SdArtifactsScanResults from "@/components/SdArtifactsScanResults";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { controlDeployment, deleteDeployment, fetchLatestCommit, prefillInfra } from "@/lib/graphqlClient";
+import { controlDeployment, deleteDeployment, fetchLatestCommit } from "@/lib/graphqlClient";
 import { authClient } from "@/lib/auth-client";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
@@ -77,10 +81,9 @@ export default function DeployWorkspace({
 	const [deployingCommitInfo, setDeployingCommitInfo] = React.useState<{ sha: string; message: string; author: string; date: string } | null>(null);
 	const [activeSection, setActiveSection] = React.useState<MenuSection>("setup");
 	const [scanMode, setScanMode] = React.useState<"idle" | "scanning" | "results">("idle");
-	const [scanResults, setScanResults] = React.useState<SDArtifactsResponse | null>(null);
+	const [scanResults, setScanResults] = React.useState<ScanResultsPayload | null>(null);
 	const [scanStartTime, setScanStartTime] = React.useState<number>(0);
 	const [scanDuration, setScanDuration] = React.useState<number>(0);
-	const [isPrefillingScan, setIsPrefillingScan] = React.useState(false);
 	const [showRejectConfirm, setShowRejectConfirm] = React.useState(false);
 	const [showPauseResumeConfirm, setShowPauseResumeConfirm] = React.useState(false);
 	const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
@@ -246,16 +249,6 @@ export default function DeployWorkspace({
 		() => (scanResults || deployment.scanResults || null),
 		[scanResults, deployment.scanResults]
 	);
-	const deploymentKind = React.useMemo(
-		() => getDeploymentKind(deployment),
-		[deployment]
-	);
-	const isDirectStatic = deploymentKind === "direct-static";
-	const directStaticResults = React.useMemo<SDArtifactsResponse | null>(
-		() => (isDirectStaticScanResults(effectiveScanResults) ? (effectiveScanResults as SDArtifactsResponse) : null),
-		[effectiveScanResults]
-	);
-
 	const hasScanResults = React.useMemo(
 		() => Object.keys(effectiveScanResults || {}).length > 0,
 		[effectiveScanResults]
@@ -265,18 +258,12 @@ export default function DeployWorkspace({
 		() => isDeploymentDisabled({ ...deployment, scanResults: effectiveScanResults } as DeployConfig),
 		[deployment, effectiveScanResults]
 	);
-	const directStaticDeploySupported = true;
-	const deployDisabled = deploymentConfigInvalid || (isDirectStatic && !directStaticDeploySupported);
+	const deployDisabled = deploymentConfigInvalid;
 	const deployDisabledMessage = React.useMemo(() => {
-		if (isDirectStatic) {
-			if (!hasScanResults) return "Static configuration is still being prepared.";
-			if (deploymentConfigInvalid) return "Output directory and nginx.conf are required.";
-			return "";
-		}
 		if (!hasScanResults) return "Run smart scan first.";
-		if (deploymentConfigInvalid) return "At least one Dockerfile and nginx.conf are required.";
+		if (deploymentConfigInvalid) return "Analyze must complete with at least one deploy unit.";
 		return "";
-	}, [deploymentConfigInvalid, hasScanResults, isDirectStatic]);
+	}, [deploymentConfigInvalid, hasScanResults]);
 
 	const isDraft = React.useMemo(
 		() => isDraftDeploymentStatus(effectiveDeploymentStatus),
@@ -312,8 +299,8 @@ export default function DeployWorkspace({
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
 		if (lastResolvedDeploymentKeyRef.current === deploymentKey) return;
 		lastResolvedDeploymentKeyRef.current = deploymentKey;
-		setActiveSection(isDraft ? (isDirectStatic ? "scan" : "setup") : "overview");
-	}, [deployment.id, deployment.repoName, deployment.serviceName, isDirectStatic, isDraft]);
+		setActiveSection(isDraft ? "setup" : "overview");
+	}, [deployment.id, deployment.repoName, deployment.serviceName, isDraft]);
 
 	if (!activeRepo || !serviceName) {
 		return (
@@ -326,7 +313,7 @@ export default function DeployWorkspace({
 	const repoRecord = activeRepo as repoType;
 	const currentServiceName = serviceName ?? "";
 
-	async function onScanComplete(results: SDArtifactsResponse, branchOverride?: string) {
+	async function onScanComplete(results: ScanResultsPayload, branchOverride?: string) {
 		if (!session?.user || !repoName || !serviceName) return;
 		const branchToSave = branchOverride || effectiveBranch || "main";
 
@@ -467,53 +454,6 @@ export default function DeployWorkspace({
 		setActiveSection("scan");
 	}
 
-	async function prefillScanFromRepo() {
-		if (!deployment.url && !activeRepo?.html_url) return;
-
-		setIsPrefillingScan(true);
-		try {
-			const data = await prefillInfra(
-				deployment.url || activeRepo?.html_url || "",
-				effectiveBranch,
-				analyzeServicePath
-			);
-
-			if (!data?.found || !data?.results) {
-				toast.info("No existing Dockerfiles or compose files were found in the repository.");
-				return;
-			}
-
-			if (data?.branch && data.branch !== effectiveBranch) {
-				await updateDeploymentById({
-				repoName: deployment.repoName || activeRepo?.name || "",
-				serviceName: deployment.serviceName || serviceName || "",
-				url: deployment.url || activeRepo?.html_url || "",
-					branch: data.branch,
-				});
-			}
-
-			setScanDuration(0);
-			setScanResults(data.results);
-			setScanMode("results");
-			await onScanComplete(data.results, data.branch || effectiveBranch);
-			// Ensure url and branch are stored for future fetches if this is a new deployment
-			if (!deployment.url) {
-				await updateDeploymentById({
-					repoName: activeRepo?.name || "",
-					serviceName: serviceName || "",
-					url: activeRepo?.html_url || "",
-					branch: effectiveBranch,
-				});
-			}
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to prefill infrastructure";
-			console.error("Prefill infrastructure error:", err);
-			toast.error(message);
-		} finally {
-			setIsPrefillingScan(false);
-		}
-	}
-
 	function onStartImproveScan(payload: FeedbackProgressPayload) {
 		const fallbackFailureLogs = (deployLogEntries || [])
 			.slice(-80)
@@ -582,7 +522,7 @@ export default function DeployWorkspace({
 				serviceName: deployment.serviceName,
 				url: deployment.url,
 				branch: deployment.branch,
-				kind: deployment.kind ?? getDeploymentKind(deployment),
+				kind: "container",
 				responseId: deployment.responseId ?? null,
 				commitSha: null,
 				envVars: deployment.envVars ?? null,
@@ -664,33 +604,6 @@ export default function DeployWorkspace({
 	function renderActiveSection() {
 		switch (activeSection) {
 			case "scan":
-				if (isDirectStatic) {
-					if (!directStaticResults) {
-						return (
-							<div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center gap-4 p-12 text-center">
-								<div className="rounded-3xl border border-white/10 bg-card p-10">
-									<h2 className="text-2xl font-bold text-foreground">Static configuration is missing</h2>
-									<p className="mt-3 max-w-md text-sm text-muted-foreground">
-										We expected a prefilled direct-static configuration here. Refresh service detection or reopen the workspace to rebuild it.
-									</p>
-								</div>
-							</div>
-						);
-					}
-
-					return (
-						<DirectStaticConfigureView
-							results={directStaticResults}
-							onUpdateResults={(updated) => {
-								setScanResults(updated);
-								void onScanComplete(updated);
-							}}
-							onDeploy={() => handleDeploy()}
-							deployDisabled={deployDisabled}
-							deployDisabledMessage={deployDisabledMessage}
-						/>
-					);
-				}
 				if (improveScanPayload) {
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
@@ -733,17 +646,13 @@ export default function DeployWorkspace({
 						</div>
 					);
 				}
-				if (scanMode === "results" || hasScanResults) {
+				if ((scanMode === "results" || hasScanResults) && isSdArtifactsAnalyzeScan(effectiveScanResults)) {
 					return (
 						<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
-							<PostScanResults
+							<SdArtifactsScanResults
 								key={`${deployment.repoName}:${deployment.serviceName}`}
 								results={effectiveScanResults as SDArtifactsResponse}
 								packagePath={analyzeServicePath}
-								onUpdateResults={(updated) => {
-									setScanResults(updated);
-									onScanComplete(updated);
-								}}
 								scanTime={scanDuration}
 								deployment={deployment!}
 								onStartDeployment={() => handleDeploy()}
@@ -771,16 +680,6 @@ export default function DeployWorkspace({
 									<Button type="button" size="lg" onClick={startScan} className="px-8 font-bold gap-2">
 										<Rocket className="size-5" />
 										Start Smart Analysis
-									</Button>
-									<Button
-										type="button"
-										size="lg"
-										variant="outline"
-										onClick={prefillScanFromRepo}
-										disabled={isPrefillingScan}
-										className="px-8 font-bold gap-2"
-									>
-										{isPrefillingScan ? "Checking Repository..." : "Use Existing Repo Files"}
 									</Button>
 								</div>
 							</div>
@@ -820,14 +719,6 @@ export default function DeployWorkspace({
 					</div>
 				);
 			case "blueprint":
-				if (isDirectStatic) {
-					return (
-						<DirectStaticPreviewView
-							deployment={deployment as DeployConfig}
-							scanResults={effectiveScanResults as SDArtifactsResponse | null}
-						/>
-					);
-				}
 				return (
 					<div className="flex h-full flex-1">
 						<BlueprintView
@@ -894,7 +785,7 @@ export default function DeployWorkspace({
 						});
 					}}
 					deployment={deployment as DeployConfig}
-					onStartScan={isDirectStatic ? undefined : startScan}
+					onStartScan={startScan}
 				/>
 					</div>
 				);
@@ -910,9 +801,7 @@ export default function DeployWorkspace({
 								<div className="space-y-2">
 									<h2 className="text-2xl font-bold">No deployments done yet</h2>
 									<p className="text-muted-foreground max-w-md mx-auto">
-										{isDirectStatic
-											? "This service is currently in draft mode. Review the generated build commands and nginx settings before the direct deploy pipeline is connected."
-											: "This service is currently in draft mode. Configure your environment and run a smart scan to prepare for your first deployment."}
+										This service is currently in draft mode. Configure your environment and run a smart scan to prepare for your first deployment.
 									</p>
 								</div>
 								<div className="pt-4 flex items-center justify-center gap-4">
@@ -920,7 +809,7 @@ export default function DeployWorkspace({
 										Configure Environment
 									</Button>
 									<Button onClick={() => setActiveSection("scan")} className="font-bold">
-										{isDirectStatic ? "Review Build Plan" : "Blueprint App"}
+										Run Smart Analysis
 									</Button>
 								</div>
 							</div>
@@ -1009,7 +898,7 @@ export default function DeployWorkspace({
 						footer={deployAction}
 						collapsed={isSidebarCollapsed}
 						onToggleCollapsed={() => setIsSidebarCollapsed((value) => !value)}
-						deploymentKind={deploymentKind}
+						deploymentKind="container"
 					/>
 				</aside>
 				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1035,7 +924,7 @@ export default function DeployWorkspace({
 								}}
 								footer={deployAction}
 								collapsed={false}
-								deploymentKind={deploymentKind}
+								deploymentKind="container"
 							/>
 						</div>
 					</SheetContent>

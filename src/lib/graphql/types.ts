@@ -159,30 +159,6 @@ export const typeDefs = `
   # Scan Results / Infrastructure Types
   # ──────────────────────────────────────────────────────────────
 
-  type ScanService {
-    name: String!
-    build_context: String!
-    port: Int!
-    dockerfile_path: String!
-    language: String
-    framework: String
-  }
-
-  type SDArtifacts {
-    commit_sha: String
-    stack_summary: String!
-    services: [ScanService!]!
-    dockerfiles: JSON!
-    docker_compose: String!
-    nginx_conf: String!
-    has_existing_dockerfiles: Boolean!
-    has_existing_compose: Boolean!
-    risks: [String!]!
-    confidence: Float!
-    hadolint_results: JSON!
-    token_usage: TokenUsage!
-  }
-
   # ──────────────────────────────────────────────────────────────
   # Deployment History Types
   # ──────────────────────────────────────────────────────────────
@@ -288,12 +264,7 @@ export const typeDefs = `
   type PrefillResult {
     found: Boolean!
     branch: String
-    results: SDArtifacts
-  }
-
-  type DirectStaticConfigResult {
-    branch: String
-    results: JSON!
+    results: JSON
   }
 
   type RefreshResult {
@@ -447,13 +418,6 @@ export const typeDefs = `
       branch: String
       packagePath: String
     ): PrefillResult!
-
-    buildDirectStaticConfig(
-      url: String!
-      branch: String
-      servicePath: String!
-      serviceType: String!
-    ): DirectStaticConfigResult!
 
     # Refresh repos from GitHub
     refreshRepos: RefreshResult!

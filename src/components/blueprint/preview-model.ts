@@ -1,6 +1,7 @@
 import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
 import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
 import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 export type PreviewStepId = "auth" | "build" | "setup" | "deploy" | "done";
 
@@ -46,7 +47,7 @@ export type PreviewArtifact = {
 		| "openEnvVars"
 		| "openNginx"
 		| "openCustomDomain";
-	/** Optional payload the UI can use (e.g. dockerfile path). */
+	/** Optional payload the UI can use (e.g. deploy unit name). */
 	meta?: Record<string, string | number | boolean | null | undefined>;
 };
 
@@ -60,7 +61,7 @@ export type PreviewModel = {
 	steps: PreviewStep[];
 	artifacts: PreviewArtifact[];
 	warnings: PreviewWarning[];
-	/** True when CodeBuild will build via docker-compose (multi-service). */
+	/** True when analyze returned multiple deploy units. */
 	composeBuildMode: boolean;
 };
 
@@ -83,7 +84,7 @@ export function buildPreviewModel(params: {
 		{
 			id: "build",
 			label: "Clone & build images (CodeBuild)",
-			description: "CodeBuild clones the repo, writes generated artifacts, then builds images and pushes to ECR.",
+			description: "CodeBuild clones the repo, runs Railpack, then builds images and pushes to ECR.",
 		},
 		{
 			id: "setup",
@@ -93,7 +94,7 @@ export function buildPreviewModel(params: {
 		{
 			id: "deploy",
 			label: "Deploy to EC2 (SSM) + reverse proxy",
-			description: "Launch/reuse EC2, deploy containers, and configure Nginx routing.",
+			description: "Launch/reuse EC2, deploy containers, and configure routing.",
 		},
 		{
 			id: "done",
@@ -102,9 +103,10 @@ export function buildPreviewModel(params: {
 		},
 	];
 
-	const services = scanResults?.services ?? [];
-	const composeBuildMode = Boolean(scanResults?.docker_compose?.trim()) && services.length > 1;
-	const dockerfileCount = Object.keys(scanResults?.dockerfiles ?? {}).length;
+	const isAnalyze = isSdArtifactsAnalyzeScan(scanResults);
+	const units = isAnalyze ? scanResults.deploy_units : [];
+	const composeBuildMode = isAnalyze && scanResults.deploy_shape === "multi" && units.length > 1;
+	const unitCount = units.length;
 
 	const artifacts: PreviewArtifact[] = [];
 	const warnings: PreviewWarning[] = [];
@@ -136,38 +138,18 @@ export function buildPreviewModel(params: {
 	}
 
 	// ── build ───────────────────────────────────────────────────────────────
-	if (composeBuildMode) {
+	if (isAnalyze) {
 		artifacts.push({
-			id: "build:compose",
-			stepId: "build",
-			kind: "compose",
-			title: "docker-compose.yml",
-			subtitle: "Used to build multi-service images",
-			action: "openCompose",
-		});
-	} else {
-		artifacts.push({
-			id: "build:dockerfiles",
+			id: "build:units",
 			stepId: "build",
 			kind: "dockerfiles",
-			title: `Dockerfile${dockerfileCount === 1 ? "" : "s"}`,
-			subtitle: dockerfileCount > 0 ? `${dockerfileCount} generated` : "Missing",
+			title: `Deploy unit${unitCount === 1 ? "" : "s"}`,
+			subtitle: unitCount > 0 ? `${unitCount} · ${scanResults.deploy_shape}` : "Missing",
 			action: "openDockerfile",
 		});
 	}
 
-	if (composeBuildMode && dockerfileCount > 0) {
-		artifacts.push({
-			id: "build:dockerfiles",
-			stepId: "build",
-			kind: "dockerfiles",
-			title: `Dockerfile${dockerfileCount === 1 ? "" : "s"}`,
-			subtitle: `${dockerfileCount} generated (used by compose builds)`,
-			action: "openDockerfile",
-		});
-	}
-
-	const contexts = Array.from(new Set(services.map((s) => safeTrim(s.build_context)).filter(Boolean)));
+	const contexts = Array.from(new Set(units.map((u) => safeTrim(u.root)).filter(Boolean)));
 	if (contexts.length > 0) {
 		artifacts.push({
 			id: "build:contexts",
@@ -226,14 +208,6 @@ export function buildPreviewModel(params: {
 		subtitle: safeTrim(deployment.envVars) ? "Injected into .env on EC2" : "None",
 		action: "openEnvVars",
 	});
-	artifacts.push({
-		id: "deploy:nginx",
-		stepId: "deploy",
-		kind: "nginx",
-		title: "Reverse proxy (Nginx)",
-		subtitle: safeTrim(scanResults?.nginx_conf) ? "Uses nginx.conf from scan results" : "Uses default proxy config",
-		action: "openNginx",
-	});
 
 	// ── done ────────────────────────────────────────────────────────────────
 	artifacts.push({
@@ -246,76 +220,62 @@ export function buildPreviewModel(params: {
 	});
 
 	// ── warnings/invariants ────────────────────────────────────────────────
-	if (!scanResults) {
+	if (!scanResults || !isAnalyze) {
 		warnings.push({
 			id: "no-scan-results",
 			severity: "warning",
-			title: "No scan results available",
-			description: "Preview requires scan artifacts (Dockerfiles, nginx.conf, etc.). Run a scan first.",
+			title: "No analyze results available",
+			description: "Preview requires sd-artifacts analyze output. Run a scan first.",
 			stepId: "build",
 		});
 	}
 
-	if (scanResults && dockerfileCount < 1) {
+	if (isAnalyze && unitCount < 1) {
 		warnings.push({
-			id: "missing-dockerfiles",
+			id: "missing-deploy-units",
 			severity: "warning",
-			title: "No Dockerfiles available",
-			description: "At least one Dockerfile is required to build an image.",
+			title: "No deploy units available",
+			description: "Analyze must return at least one deploy unit to build an image.",
 			stepId: "build",
-			artifactId: "build:dockerfiles",
+			artifactId: "build:units",
 		});
 	}
 
-	if (composeBuildMode && scanResults) {
-		for (const svc of services) {
-			const path = safeTrim(svc.dockerfile_path);
-			if (!path) {
+	if (isAnalyze) {
+		const st = scanResults.build_status;
+		if (st === "failed" || st === "error" || st === "not_run") {
+			warnings.push({
+				id: "analyze-build-status",
+				severity: "warning",
+				title: "Analyze build did not pass",
+				description: `Railpack build status is "${st}". Review deploy briefing before deploying.`,
+				stepId: "build",
+			});
+		}
+
+		for (const unit of units) {
+			if (!unit.artifacts?.railpack_plan && unit.type !== "existing_docker") {
 				warnings.push({
-					id: `compose-missing-dockerfile-path:${svc.name}`,
+					id: `unit-${unit.name}-no-plan`,
 					severity: "warning",
-					title: "Service missing Dockerfile path",
-					description: `${svc.name} is part of the compose build, but has no dockerfile_path set.`,
+					title: `Missing Railpack plan for ${unit.name}`,
+					description: "Re-run analyze or send feedback to generate a build plan for this unit.",
 					stepId: "build",
-					artifactId: "build:compose",
-				});
-				continue;
-			}
-			if (!(scanResults.dockerfiles ?? {})[path]) {
-				warnings.push({
-					id: `compose-missing-dockerfile:${svc.name}`,
-					severity: "warning",
-					title: "Compose references missing Dockerfile",
-					description: `${svc.name} expects ${path}, but that file isn't present in generated Dockerfiles.`,
-					stepId: "build",
-					artifactId: "build:compose",
+					artifactId: "build:units",
 				});
 			}
 		}
 	}
 
-	if (composeBuildMode && services.length <= 1) {
+	if (composeBuildMode && units.length <= 1) {
 		warnings.push({
-			id: "compose-without-multiservice",
+			id: "multi-shape-single-unit",
 			severity: "info",
-			title: "Compose present but not multi-service",
-			description: "Compose build mode only applies when multiple services are detected.",
+			title: "Multi shape with one unit",
+			description: "deploy_shape is multi but only one unit was returned.",
 			stepId: "build",
-			artifactId: "build:compose",
-		});
-	}
-
-	if (safeTrim(deployment.liveUrl) && !safeTrim(scanResults?.nginx_conf)) {
-		warnings.push({
-			id: "domain-without-nginx",
-			severity: "info",
-			title: "Domain set without explicit nginx routing",
-			description: "A public URL exists, but nginx.conf is missing. The deployment will fall back to a default reverse proxy.",
-			stepId: "deploy",
-			artifactId: "deploy:nginx",
 		});
 	}
 
 	return { steps, artifacts, warnings, composeBuildMode };
 }
-

@@ -28,7 +28,7 @@ function createDefaultDeployment(
 		lastDeployment: null,
 		revision: null,
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
+		deploymentTarget: "ecs",
 		awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "",
 		ec2: null,
 		cloudRun: null,
@@ -76,7 +76,7 @@ export function useActiveDeployment(): DeployConfig {
 					(record.branch || "") === (activeRepo.default_branch || "")
 			)?.services
 		);
-	const detectedKind = persistedDetection?.deployMode === "direct-static" ? "direct-static" : "container";
+	const detectedKind = "container" as const;
 
 	return createDefaultDeployment(
 		activeRepo.name,

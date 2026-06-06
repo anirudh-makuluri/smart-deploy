@@ -15,7 +15,6 @@ import {
 	fetchRepoServices,
 	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
 	addRepoServiceRoot,
-	buildDirectStaticConfig,
 	type DetectServicesResult,
 } from "@/lib/graphqlClient";
 import { getDeploymentForService, normalizeRepoUrl } from "@/lib/utils";
@@ -345,34 +344,19 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			? getDeploymentForService(deploymentsForRepo, repo.html_url, normalizedServiceName, repo.name)
 			: null;
 
-		if (repo && (!existingDeployment || Object.keys(existingDeployment.scanResults ?? {}).length === 0)) {
+		if (repo && !existingDeployment) {
 			try {
-				let nextBranch = repo.default_branch ?? "";
-				let nextScanResults: Record<string, unknown> = {};
-
-				if (svc.deployMode === "direct-static" && svc.serviceType) {
-					const staticConfig = await buildDirectStaticConfig(
-						repo.html_url,
-						repo.default_branch ?? "",
-						svc.path,
-						svc.serviceType
-					);
-					nextBranch = staticConfig.branch || nextBranch;
-					nextScanResults = staticConfig.results as Record<string, unknown>;
-				}
-
 				await updateDeploymentById({
-					...(existingDeployment ?? {}),
 					repoName: repo.name,
 					serviceName: normalizedServiceName,
 					url: repo.html_url,
-					branch: nextBranch,
-					kind: svc.deployMode,
-					status: existingDeployment?.status ?? "didnt_deploy",
-					cloudProvider: existingDeployment?.cloudProvider ?? "aws",
-					deploymentTarget: existingDeployment?.deploymentTarget ?? "ec2",
-					awsRegion: existingDeployment?.awsRegion ?? (process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2"),
-					scanResults: (Object.keys(nextScanResults).length > 0 ? nextScanResults : existingDeployment?.scanResults ?? {}) as never,
+					branch: repo.default_branch ?? "main",
+					kind: "container",
+					status: "didnt_deploy",
+					cloudProvider: "aws",
+					deploymentTarget: "ecs",
+					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
+					scanResults: {} as never,
 				});
 			} catch (e) {
 				// Non-blocking: still allow the workspace to open using the local draft deployment.

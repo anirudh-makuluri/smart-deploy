@@ -6,7 +6,6 @@
  */
 
 import { detectMultiService } from "@/lib/multiServiceDetector";
-import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
 import { getSubnetIds, deleteHostRule, ensureSharedAlb } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
 import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace } from "@/lib/githubRepoArchive";
@@ -149,19 +148,23 @@ export function normalizeCustomUrlInput(value?: string): string | null {
 }
 
 export function buildServicesForDeployment(deployment: any): any[] {
-	const services = (deployment.scanResults?.services || []).filter(Boolean);
 	const fallbackName = deployment.serviceName || deployment.repoName;
-	if (services.length === 0) {
-		return [{ name: fallbackName, dir: ".", port: 8080 }];
+	const scan = deployment.scanResults;
+	if (scan?.deploy_units && Array.isArray(scan.deploy_units)) {
+		const units = scan.deploy_units.filter(Boolean);
+		if (units.length === 0) {
+			return [{ name: fallbackName, dir: ".", port: 8080 }];
+		}
+		return units.map((unit: { name?: string; root?: string; port?: number; framework?: string | null; provider?: string }) => ({
+			name: unit.name || fallbackName,
+			dir: unit.root || ".",
+			port: unit.port || 8080,
+			relativePath: unit.root,
+			framework: unit.framework,
+			language: unit.provider,
+		}));
 	}
-	return services.map((svc: any) => ({
-		name: svc.name || fallbackName,
-		dir: svc.build_context || ".",
-		port: svc.port || 8080,
-		relativePath: svc.build_context,
-		framework: svc.framework,
-		language: svc.language,
-	}));
+	return [{ name: fallbackName, dir: ".", port: 8080 }];
 }
 
 export async function configureCustomDomainForDeployment(
