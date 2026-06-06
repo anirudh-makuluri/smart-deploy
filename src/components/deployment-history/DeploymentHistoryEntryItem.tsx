@@ -8,7 +8,8 @@ import {
 	AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
+import { AlertDescription } from "@/components/ui/alert-parts";
 import { HelpCircle, Loader2, GitBranch, GitCommit, Clock, RotateCcw } from "lucide-react";
 import { hasUsableReleaseArtifact } from "@/lib/deploymentReleaseArtifacts";
 

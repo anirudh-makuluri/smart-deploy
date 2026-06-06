@@ -39,10 +39,7 @@ export default async function Home() {
 
 	return (
 		<>
-			<script
-				type="application/ld+json"
-				dangerouslySetInnerHTML={{ __html: JSON.stringify(webApplicationJsonLd) }}
-			/>
+			<script type="application/ld+json">{JSON.stringify(webApplicationJsonLd)}</script>
 			<LandingExperience isSignedIn={Boolean(session)} publicMetrics={publicMetrics} />
 		</>
 	);

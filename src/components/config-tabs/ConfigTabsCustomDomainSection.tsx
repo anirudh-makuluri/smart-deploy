@@ -3,7 +3,8 @@ import type { UseFormReturn } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormControl, FormField, FormItem } from "@/components/ui/form";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
+import { AlertDescription } from "@/components/ui/alert-parts";
 import { ConfigTabsSectionLayout } from "@/components/config-tabs/ConfigTabsSectionLayout";
 import { DOMAIN_SUFFIX, type FormSchemaType } from "@/components/config-tabs/configTabsUtils";
 

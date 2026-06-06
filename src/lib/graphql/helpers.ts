@@ -205,11 +205,10 @@ async function resolveEcsTargetGroupArn(deployment: any, region: string): Promis
 		awsNameChunk(`sd-${repoName}-${unitName}-tg`, 32),
 		awsNameChunk(`sd-${repoName}-${serviceName}-tg`, 32),
 	];
-	for (const name of [...new Set(candidates)]) {
-		const arn = await findTargetGroupArnByName(name, region, null);
-		if (arn) return arn;
-	}
-	return null;
+	const arns = await Promise.all(
+		[...new Set(candidates)].map((name) => findTargetGroupArnByName(name, region, null))
+	);
+	return arns.find((arn) => arn) ?? null;
 }
 
 async function removeOldAlbHostRule(

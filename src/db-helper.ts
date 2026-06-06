@@ -2,7 +2,6 @@ import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord, StaticServiceType } from "./app/types";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
 import { isDraftDeploymentStatus, normalizeDeploymentStatus, resolveDeploymentStatus } from "./lib/deploymentStatus";
-import { v4 as uuidv4 } from "uuid";
 
 function hasOwnKey<T extends object>(obj: T, key: string): boolean {
 	return Object.prototype.hasOwnProperty.call(obj, key);
@@ -30,7 +29,7 @@ function resolveAnalysisResponseId(
 	for (const candidate of candidates) {
 		if (candidate && isValidUuid(candidate)) return candidate;
 	}
-	return uuidv4();
+	return crypto.randomUUID();
 }
 
 function normalizeScanResults(value: unknown): Record<string, unknown> | null {
@@ -392,7 +391,7 @@ export const dbHelper = {
 				const isDraft = isDraftDeploymentStatus(nextStatus);
 				// Create new deployment with provided data
 				const insertPayload: Record<string, unknown> = {
-					id: uuidv4(),
+					id: crypto.randomUUID(),
 					repo_name: repoName,
 					service_name: serviceName,
 					owner_id: userID,

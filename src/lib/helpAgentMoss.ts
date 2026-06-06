@@ -106,9 +106,13 @@ async function initializeMoss(): Promise<{ client: MossClientLike; indexName: st
 		await client.createIndex(mossIndexName, docs.slice(0, seedCount));
 
 		if (typeof client.addDocs === "function" && docs.length > seedCount) {
+			const batches: typeof docs[] = [];
 			for (let i = seedCount; i < docs.length; i += 40) {
-				await client.addDocs(mossIndexName, docs.slice(i, i + 40), { upsert: true });
+				batches.push(docs.slice(i, i + 40));
 			}
+			await Promise.all(
+				batches.map((batch) => client.addDocs!(mossIndexName, batch, { upsert: true }))
+			);
 		}
 
 		await client.loadIndex(mossIndexName);

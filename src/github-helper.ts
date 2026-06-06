@@ -116,17 +116,23 @@ export async function getRepoFilePaths(full_name: string, branch: string, token:
 		return { filePaths: [], fileContents: {} };
 	}
 
-	const filePaths =
-		treeData.tree?.flatMap((item: any) => (item.type === "blob" ? [item.path] : [])) ?? [];
+	const filePaths: string[] =
+		treeData.tree?.flatMap((item: { type?: string; path?: string }) =>
+			item.type === "blob" && item.path ? [item.path] : []
+		) ?? [];
 
 
 	const fileContents: Record<string, string> = {};
 
-	for (const file of filePaths) {
-		if (IMPORTANT_REPO_FILES.has(file)) {
+	const importantPaths = filePaths.filter((file) => IMPORTANT_REPO_FILES.has(file));
+	const fetched = await Promise.all(
+		importantPaths.map(async (file) => {
 			const content = await getFileContentFromRepo(full_name, file, token);
-			if (content) fileContents[file] = content;
-		}
+			return content ? ([file, content] as const) : null;
+		})
+	);
+	for (const entry of fetched) {
+		if (entry) fileContents[entry[0]] = entry[1];
 	}
 
 	return { filePaths, fileContents }

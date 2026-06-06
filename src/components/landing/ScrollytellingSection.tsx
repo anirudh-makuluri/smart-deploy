@@ -1248,6 +1248,23 @@ export function ScrollytellingSection() {
 	const [isSectionVisible, setIsSectionVisible] = React.useState(false);
 	const stepRefs = React.useRef<Array<HTMLDivElement | null>>([]);
 	const sectionRef = React.useRef<HTMLElement | null>(null);
+	const visibilityObserverRef = React.useRef<IntersectionObserver | null>(null);
+
+	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
+		sectionRef.current = node;
+		visibilityObserverRef.current?.disconnect();
+		visibilityObserverRef.current = null;
+		if (!node) return;
+
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
+			},
+			{ threshold: [0, 0.12, 0.3] }
+		);
+		visibilityObserverRef.current = observer;
+		observer.observe(node);
+	}, []);
 
 	const setStepRef = React.useCallback((index: number, node: HTMLDivElement | null) => {
 		stepRefs.current[index] = node;
@@ -1296,25 +1313,12 @@ export function ScrollytellingSection() {
 		return () => observer.disconnect();
 	}, [isDesktop]);
 
-	React.useEffect(() => {
-		const sectionNode = sectionRef.current;
-		if (!sectionNode) return;
-
-		const visibilityObserver = new IntersectionObserver(
-			([entry]) => {
-				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
-			},
-			{ threshold: [0, 0.12, 0.3] }
-		);
-
-		visibilityObserver.observe(sectionNode);
-		return () => visibilityObserver.disconnect();
-	}, []);
+	React.useEffect(() => () => visibilityObserverRef.current?.disconnect(), []);
 
 	return (
 		<LazyMotion features={domAnimation} strict>
 		<section
-			ref={sectionRef}
+			ref={setSectionNode}
 			id="flow"
 			className="w-full scroll-mt-20 border-t border-border/60 bg-muted/20 px-4 py-16 sm:scroll-mt-24 sm:px-6 sm:py-20 lg:px-10"
 		>

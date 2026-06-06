@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRef } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
+import { AlertDescription, AlertTitle } from "@/components/ui/alert-parts";
 import { Button } from "@/components/ui/button";
 import { Loader2, HelpCircle, CheckCircle2, XCircle, Clock, GitCommit, User, Calendar, RefreshCw } from "lucide-react";
 import { DeployStep } from "@/app/types";

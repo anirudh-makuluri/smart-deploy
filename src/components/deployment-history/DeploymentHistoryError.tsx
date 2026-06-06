@@ -1,4 +1,5 @@
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
+import { AlertDescription } from "@/components/ui/alert-parts";
 
 type DeploymentHistoryErrorProps = {
 	message: string;

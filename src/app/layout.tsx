@@ -52,10 +52,7 @@ export default function RootLayout({
 				className="landing-bg text-foreground antialiased"
 				suppressHydrationWarning
 			>
-				<script
-					type="application/ld+json"
-					dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-				/>
+				<script type="application/ld+json">{JSON.stringify(organizationJsonLd)}</script>
 				<Providers>
 					<AccentSync />
 					<blockquote className="sr-only">

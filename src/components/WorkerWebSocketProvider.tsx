@@ -18,18 +18,73 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 	const repoName = activeRepo?.name ?? "";
 	const serviceName = activeServiceName ?? "";
 
-	const value = useWorkerWebSocketSession({
+	const sessionValue = useWorkerWebSocketSession({
 		connectionEnabled,
 		repoName,
 		serviceName,
 		announceActiveDeployments: true,
 	});
 
+	const {
+		steps,
+		deployLogEntries,
+		socketStatus,
+		sendDeployConfig,
+		sendRollbackRequest,
+		openSocket,
+		deployConfigRef,
+		deployStatus,
+		deployError,
+		customDnsStatus,
+		customDnsError,
+		initiateServiceLogs,
+		serviceLogs,
+		hasConnectedOnce,
+		setOnDeployFinished,
+	} = sessionValue;
+
+	const value = React.useMemo(
+		() => ({
+			steps,
+			deployLogEntries,
+			socketStatus,
+			sendDeployConfig,
+			sendRollbackRequest,
+			openSocket,
+			deployConfigRef,
+			deployStatus,
+			deployError,
+			customDnsStatus,
+			customDnsError,
+			initiateServiceLogs,
+			serviceLogs,
+			hasConnectedOnce,
+			setOnDeployFinished,
+		}),
+		[
+			steps,
+			deployLogEntries,
+			socketStatus,
+			sendDeployConfig,
+			sendRollbackRequest,
+			openSocket,
+			deployConfigRef,
+			deployStatus,
+			deployError,
+			customDnsStatus,
+			customDnsError,
+			initiateServiceLogs,
+			serviceLogs,
+			hasConnectedOnce,
+			setOnDeployFinished,
+		]
+	);
+
 	return <WorkerWebSocketContext.Provider value={value}>{children}</WorkerWebSocketContext.Provider>;
 }
 
 export function useWorkerWebSocket(): WorkerWebSocketContextValue {
-	const ctx = React.useContext(WorkerWebSocketContext);
+	const ctx = React.use(WorkerWebSocketContext);
 	if (!ctx) {
 		throw new Error("useWorkerWebSocket must be used within WorkerWebSocketProvider");
 	}

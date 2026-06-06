@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 
 export type SystemHealthStatus = "checking" | "healthy" | "degraded" | "unavailable";
 
@@ -22,63 +22,48 @@ const DEFAULT_STATE: SystemHealthState = {
 	services: [],
 };
 
+async function fetchSystemHealth(): Promise<SystemHealthState> {
+	const response = await fetch("/api/system-health", {
+		method: "GET",
+		cache: "no-store",
+	});
+
+	if (response.status === 401) {
+		return {
+			status: "unavailable",
+			message: "Sign in to view system health",
+			services: [],
+		};
+	}
+
+	if (!response.ok) {
+		return {
+			status: "unavailable",
+			message: "System health check failed",
+			services: [],
+		};
+	}
+
+	const data = (await response.json()) as {
+		status?: SystemHealthStatus;
+		message?: string;
+		services?: SystemHealthService[];
+	};
+
+	return {
+		status: data.status ?? "degraded",
+		message: data.message ?? "System health updated",
+		services: Array.isArray(data.services) ? data.services : [],
+	};
+}
+
 export function useSystemHealth(pollMs: number = 30000): SystemHealthState {
-	const [state, setState] = React.useState<SystemHealthState>(DEFAULT_STATE);
+	const query = useQuery({
+		queryKey: ["system-health"],
+		queryFn: fetchSystemHealth,
+		refetchInterval: pollMs,
+		staleTime: Math.max(1000, pollMs - 1000),
+	});
 
-	React.useEffect(() => {
-		let cancelled = false;
-
-		const checkHealth = async () => {
-			setState((prev) => (prev.status === "healthy" ? prev : DEFAULT_STATE));
-
-			try {
-				const response = await fetch("/api/system-health", {
-					method: "GET",
-					cache: "no-store",
-				});
-
-				if (response.status === 401) {
-					throw new Error("Sign in to view service health");
-				}
-
-				if (!response.ok) {
-					throw new Error(`Health check returned ${response.status}`);
-				}
-
-				const payload = (await response.json()) as {
-					status?: "healthy" | "degraded";
-					services?: SystemHealthService[];
-				};
-				const nextStatus = payload.status === "healthy" ? "healthy" : "degraded";
-
-				if (!cancelled) {
-					setState({
-						status: nextStatus,
-						message: nextStatus === "healthy" ? "All systems online" : "One or more services need attention",
-						services: payload.services ?? [],
-					});
-				}
-			} catch (error) {
-				if (!cancelled) {
-					setState({
-						status: "unavailable",
-						message: error instanceof Error ? error.message : "System health unavailable",
-						services: [],
-					});
-				}
-			}
-		};
-
-		void checkHealth();
-		const interval = window.setInterval(() => {
-			void checkHealth();
-		}, pollMs);
-
-		return () => {
-			cancelled = true;
-			window.clearInterval(interval);
-		};
-	}, [pollMs]);
-
-	return state;
+	return query.data ?? DEFAULT_STATE;
 }

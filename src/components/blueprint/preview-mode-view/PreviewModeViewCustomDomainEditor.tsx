@@ -1,6 +1,7 @@
 import type { CustomUrlStatus } from "@/components/blueprint/preview-mode-view/types";
 import { DOMAIN_SUFFIX, getCustomUrlFromSubdomain } from "@/components/blueprint/preview-mode-view/utils";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert } from "@/components/ui/alert";
+import { AlertDescription } from "@/components/ui/alert-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";

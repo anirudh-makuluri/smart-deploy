@@ -946,19 +946,24 @@ export async function detectRespondingPort(
 		send(skipDockerDiagnostics ? "Waiting for nginx to be ready (this may take a minute)..." : "Waiting for application to be ready (this may take a minute)...", "deploy");
 		send("diagnostics:curl:start", "deploy");
 		for (let attempt = 1; attempt <= curlAttempts; attempt++) {
-			const hit = (
-				await Promise.all(
-					candidates.map(async (port) => {
-						try {
-							const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
-							if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
-								return { port, code };
-							}
-						} catch { /* try next */ }
-						return null;
-					})
-				)
-			).find((result): result is { port: number; code: string } => result !== null);
+			const results = await Promise.all(
+				candidates.map(async (port) => {
+					try {
+						const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
+						if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
+							return { port, code };
+						}
+					} catch { /* try next */ }
+					return null;
+				})
+			);
+			let hit: { port: number; code: string } | null = null;
+			for (const result of results) {
+				if (result) {
+					hit = result;
+					break;
+				}
+			}
 			if (hit) {
 				send(`Detected responding port ${hit.port} (HTTP ${hit.code})`, "deploy");
 				send("diagnostics:curl:end", "deploy");
