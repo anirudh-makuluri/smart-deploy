@@ -421,10 +421,13 @@ export async function runAWSCommand(
 			}
 			if (command === "describe-subnets") {
 				const filters = getOptAll(options, "filters");
+				const subnetIds = getOptAll(options, "subnet-ids");
 				const resp = await client.send(new DescribeSubnetsCommand({
 					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+					...(subnetIds.length ? { SubnetIds: subnetIds } : {}),
 				}));
 				const query = getOpt(options, "query") || "";
+				if (query.includes("Subnets[0].VpcId")) return asText(resp.Subnets?.[0]?.VpcId);
 				if (query.includes("Subnets[*].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}")) {
 					const out = (resp.Subnets || []).map((s) => ({ SubnetId: s.SubnetId, AvailabilityZone: s.AvailabilityZone }));
 					return JSON.stringify(out);
@@ -1232,7 +1235,7 @@ export async function waitForResource(
 
 function getDeploymentBaseDomain(): string {
 	const domain = (
-		process.env.VERCEL_DOMAIN ||
+		process.env.ROUTE53_DOMAIN ||
 		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
 		""
 	).trim();
@@ -1250,10 +1253,26 @@ function sanitizeSubdomain(value: string): string {
 	return out || "app";
 }
 
+function subdomainLabelFromPreferred(preferred: string | undefined, baseDomain: string): string | null {
+	const raw = preferred?.trim();
+	if (!raw) return null;
+	const base = baseDomain.toLowerCase();
+	const host = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+	if (host.endsWith(`.${base}`)) {
+		const prefix = host.slice(0, -(base.length + 1));
+		if (prefix && !prefix.includes(".")) {
+			return sanitizeSubdomain(prefix);
+		}
+	}
+	return sanitizeSubdomain(host);
+}
+
 export function buildServiceHostname(serviceName: string, preferredSubdomain?: string): string | null {
 	const baseDomain = getDeploymentBaseDomain();
 	if (!baseDomain) return null;
-	const label = sanitizeSubdomain(preferredSubdomain?.trim() || serviceName);
+	const label =
+		subdomainLabelFromPreferred(preferredSubdomain, baseDomain) ||
+		sanitizeSubdomain(serviceName);
 	return `${label}.${baseDomain}`;
 }
 
@@ -1413,14 +1432,11 @@ async function ensureAlb(
 	return { albArn, dnsName };
 }
 
-export async function ensureTargetGroup(
+export async function findTargetGroupArnByName(
 	tgName: string,
-	vpcId: string,
-	containerPort: number,
 	region: string,
-	ws: any,
-	opts?: { targetType?: "ip" | "instance"; healthCheckPath?: string }
-): Promise<string> {
+	ws: any
+): Promise<string | null> {
 	try {
 		const tgArn = (
 			await runAWSCommand(
@@ -1440,10 +1456,22 @@ export async function ensureTargetGroup(
 				"deploy"
 			)
 		).trim();
-		if (tgArn && tgArn !== "None") return tgArn;
+		return tgArn && tgArn !== "None" ? tgArn : null;
 	} catch {
-		// does not exist
+		return null;
 	}
+}
+
+export async function ensureTargetGroup(
+	tgName: string,
+	vpcId: string,
+	containerPort: number,
+	region: string,
+	ws: any,
+	opts?: { targetType?: "ip" | "instance"; healthCheckPath?: string }
+): Promise<string> {
+	const existing = await findTargetGroupArnByName(tgName, region, ws);
+	if (existing) return existing;
 
 	const targetType = opts?.targetType || "ip";
 	const healthCheckPath = opts?.healthCheckPath || "/";

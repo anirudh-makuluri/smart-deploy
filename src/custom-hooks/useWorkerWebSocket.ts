@@ -12,8 +12,8 @@ export type DeployCompleteWsPayload = {
 	rolledBack?: boolean;
 	ec2?: DeployConfig["ec2"];
 	error?: string;
-	vercelDnsAdded?: boolean;
-	vercelDnsError?: string | null;
+	customDnsAdded?: boolean;
+	customDnsError?: string | null;
 	customUrl?: string | null;
 };
 
@@ -203,8 +203,8 @@ export function useWorkerWebSocketSession({
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
 	const [deployError, setDeployError] = useState<string | null>(null);
-	const [vercelDnsStatus, setVercelDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
-	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
+	const [customDnsStatus, setCustomDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
+	const [customDnsError, setCustomDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<ServiceLogEntry[]>([]);
 	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
 
@@ -419,8 +419,8 @@ export function useWorkerWebSocketSession({
 
 							if (!completePayload.success) {
 								setDeployError(completePayload.error ?? "Deployment failed");
-								setVercelDnsStatus("idle");
-								setVercelDnsError(null);
+								setCustomDnsStatus("idle");
+								setCustomDnsError(null);
 								if (deployConfigRef.current) {
 									const currentConfig = deployConfigRef.current;
 									const deploymentTarget = completePayload.deploymentTarget;
@@ -462,15 +462,15 @@ export function useWorkerWebSocketSession({
 									deployConfigRef.current = updated;
 								}
 								setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));
-								if (completePayload.vercelDnsAdded === true) {
-									setVercelDnsStatus("success");
-									setVercelDnsError(null);
-								} else if (completePayload.vercelDnsError) {
-									setVercelDnsStatus("error");
-									setVercelDnsError(completePayload.vercelDnsError);
+								if (completePayload.customDnsAdded === true) {
+									setCustomDnsStatus("success");
+									setCustomDnsError(null);
+								} else if (completePayload.customDnsError) {
+									setCustomDnsStatus("error");
+									setCustomDnsError(completePayload.customDnsError);
 								} else {
-									setVercelDnsStatus("idle");
-									setVercelDnsError(null);
+									setCustomDnsStatus("idle");
+									setCustomDnsError(null);
 								}
 							}
 
@@ -702,8 +702,8 @@ export function useWorkerWebSocketSession({
 		deployConfigRef,
 		deployStatus,
 		deployError,
-		vercelDnsStatus,
-		vercelDnsError,
+		customDnsStatus,
+		customDnsError,
 		initiateServiceLogs,
 		serviceLogs,
 		hasConnectedOnce,

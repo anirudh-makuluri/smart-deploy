@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
-const addVercelDnsRecordMock = vi.fn();
+const addRoute53DnsRecordMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
 	auth: {
@@ -11,51 +11,51 @@ vi.mock("@/lib/auth", () => ({
 	},
 }));
 
-vi.mock("@/lib/vercelDns", () => ({
-	addVercelDnsRecord: (...args: unknown[]) => addVercelDnsRecordMock(...args),
+vi.mock("@/lib/route53Dns", () => ({
+	addRoute53DnsRecord: (...args: unknown[]) => addRoute53DnsRecordMock(...args),
 }));
 
-describe("POST /api/vercel/add-dns-record", () => {
+describe("POST /api/dns/add-record", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
 	it("returns 401 when user is unauthorized", async () => {
 		getSessionMock.mockResolvedValue(null);
-		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
+		const { POST } = await import("@/app/api/dns/add-record/route");
 		const res = await POST(new Request("http://localhost", { method: "POST", body: "{}" }) as any);
 		expect(res.status).toBe(401);
 	});
 
 	it("returns 400 when deployUrl is missing", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
-		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
+		const { POST } = await import("@/app/api/dns/add-record/route");
 		const res = await POST(new Request("http://localhost", { method: "POST", body: "{}" }) as any);
 		expect(res.status).toBe(400);
 	});
 
 	it("returns custom URL on success", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
-		addVercelDnsRecordMock.mockResolvedValue({ success: true, customUrl: "app.example.com" });
-		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
+		addRoute53DnsRecordMock.mockResolvedValue({ success: true, customUrl: "https://app.example.com" });
+		const { POST } = await import("@/app/api/dns/add-record/route");
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ liveUrl: "https://foo.vercel.app", serviceName: "web" }),
+				body: JSON.stringify({ liveUrl: "https://alb.example.com", serviceName: "web" }),
 			}) as any
 		);
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ success: true, customUrl: "app.example.com" });
+		expect(await res.json()).toEqual({ success: true, customUrl: "https://app.example.com" });
 	});
 
 	it("returns 400 when dns helper fails", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
-		addVercelDnsRecordMock.mockResolvedValue({ success: false, error: "invalid domain" });
-		const { POST } = await import("@/app/api/vercel/add-dns-record/route");
+		addRoute53DnsRecordMock.mockResolvedValue({ success: false, error: "invalid domain" });
+		const { POST } = await import("@/app/api/dns/add-record/route");
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ liveUrl: "https://foo.vercel.app" }),
+				body: JSON.stringify({ liveUrl: "https://alb.example.com" }),
 			}) as any
 		);
 		expect(res.status).toBe(400);

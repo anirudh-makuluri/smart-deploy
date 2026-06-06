@@ -292,9 +292,18 @@ export const useAppData = create<AppState>((set, get) => ({
 			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existing = deployments.find(matchKey);
+		const scanResultsPartial = partial.scanResults;
+		const responseIdFromScan =
+			scanResultsPartial &&
+			typeof scanResultsPartial === "object" &&
+			!Array.isArray(scanResultsPartial) &&
+			typeof (scanResultsPartial as { response_id?: unknown }).response_id === "string"
+				? String((scanResultsPartial as { response_id: string }).response_id).trim() || null
+				: null;
 		const merged: DeployConfig = withDeployInfraDefaults({
 			...(existing ?? ({} as DeployConfig)),
 			...partial,
+			...(partial.responseId === undefined && responseIdFromScan ? { responseId: responseIdFromScan } : {}),
 		} as DeployConfig);
 
 		let updatedList: DeployConfig[];

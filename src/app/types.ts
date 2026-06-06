@@ -61,6 +61,9 @@ export type EC2Details = {
 	amiId: string;
 	sharedAlbDns: string;
 	instanceType: string;
+	/** ECS Fargate — used when updating custom domain without redeploying */
+	albListenerArn?: string;
+	targetGroupArn?: string;
 };
 
 export type CloudRunDetails = {

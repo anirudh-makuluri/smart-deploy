@@ -63,7 +63,7 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	return targetNames[target] || target;
 }
 
-/** Sanitize a string for use as a DNS subdomain (lowercase, a-z0-9-, max 63 chars). Exported for Vercel DNS API. */
+/** Sanitize a string for use as a DNS subdomain (lowercase, a-z0-9-, max 63 chars). */
 export function sanitizeSubdomain(s: string): string {
 	const out = s
 		.toLowerCase()
@@ -89,7 +89,7 @@ export function getDeploymentDisplayUrl(d: { deployUrl?: string | null; custom_u
 	return d.deployUrl ?? undefined;
 }
 
-/** When using NEXT_PUBLIC_DEPLOYMENT_DOMAIN, this is the URL to point DNS to in Vercel (CNAME target). */
+/** When using NEXT_PUBLIC_DEPLOYMENT_DOMAIN, returns the deploy target host for Route 53 alias/CNAME. */
 export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string | undefined {
 	if (!deploymentDomain()) return undefined;
 	const url = d.deployUrl?.trim();

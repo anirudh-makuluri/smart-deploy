@@ -16,14 +16,14 @@ import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
 import { getSubnetIds } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
-import { addVercelDnsRecord } from "@/lib/vercelDns";
+import { lookupRoute53Subdomain } from "@/lib/route53Dns";
+import { getDeploymentBaseDomain, sanitizeSubdomain } from "@/lib/dnsUtils";
 import {
 	fetchAndBuildRepo,
 	toDetectedService,
 	redactTokenInText,
 	normalizeCustomUrlInput,
 	configureCustomDomainForDeployment,
-	sanitizeSubdomain,
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
 import config from "@/config";
@@ -84,7 +84,7 @@ export async function updateDeployment(
 
 /**
  * Mutation.deleteDeployment
- * Deletes a deployment and related resources (Vercel DNS records, etc.)
+ * Deletes a deployment and related resources (Route 53 DNS records, etc.)
  */
 export async function deleteDeployment(
 	_: unknown,
@@ -109,7 +109,7 @@ export async function deleteDeployment(
 		return {
 			status: "success",
 			message: result.message ?? null,
-			vercelDnsDeleted: result.vercelDnsDeleted ?? 0,
+			dnsRecordsDeleted: result.dnsRecordsDeleted ?? 0,
 		};
 	});
 }
@@ -513,14 +513,18 @@ export async function updateCustomDomain(
 		}
 
 		let configureMessage: string | null = null;
-		if (deployment.status === "running" && ((deployment.ec2 || {}) as Record<string, unknown>)?.instanceId && formattedCustomUrl) {
+		const instanceId = String(
+			((deployment.ec2 || {}) as Record<string, unknown>).instanceId ?? ""
+		).trim();
+		const isEcs = instanceId.startsWith("ecs:") || deployment.deploymentTarget === "ecs";
+		if (deployment.status === "running" && formattedCustomUrl && (instanceId || isEcs)) {
 			const previousCustomUrl = deployment.liveUrl || null;
 			const updatedDeployment = {
 				...deployment,
 				liveUrl: formattedCustomUrl ?? null,
 			};
 			await configureCustomDomainForDeployment(updatedDeployment, previousCustomUrl);
-			configureMessage = "ALB and Vercel DNS updated";
+			configureMessage = "ALB and Route 53 DNS updated";
 		}
 
 		const message = formattedCustomUrl
@@ -537,7 +541,7 @@ export async function updateCustomDomain(
 
 /**
  * Mutation.verifyDns
- * Verifies DNS subdomain availability via Vercel API
+ * Verifies DNS subdomain availability via Route 53 (exact records only; wildcard does not block).
  */
 export async function verifyDns(
 	_: unknown,
@@ -555,34 +559,14 @@ export async function verifyDns(
 
 		if (!subdomainTrimmed) throw new Error("Subdomain is required");
 
-		const token = (process.env.VERCEL_TOKEN || "").trim();
-		const domain = (process.env.VERCEL_DOMAIN || process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "").trim();
+		const baseDomain = getDeploymentBaseDomain();
+		const zoneId = (process.env.ROUTE53_HOSTED_ZONE_ID || "").trim();
+		if (!zoneId || !baseDomain) throw new Error("Route 53 DNS not configured");
 
-		if (!token || !domain) throw new Error("Vercel DNS not configured");
-
-		const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 		const sanitized = sanitizeSubdomain(subdomainTrimmed);
-		const listUrl = `https://api.vercel.com/v4/domains/${encodeURIComponent(baseDomain)}/records`;
-		const headers = {
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "application/json",
-		};
+		const lookup = await lookupRoute53Subdomain(sanitized, baseDomain);
 
-		const listRes = await fetch(listUrl, { headers });
-		if (!listRes.ok) throw new Error("Failed to fetch DNS records");
-
-		const listData = await listRes.json();
-		const records = Array.isArray(listData.records)
-			? listData.records
-			: Array.isArray(listData)
-				? listData
-				: [];
-
-		const existingRecord = records.find(
-			(r: any) => r.name === sanitized && (r.type === "A" || r.type === "CNAME")
-		);
-
-		if (!existingRecord) {
+		if (!lookup.exists) {
 			return {
 				available: true,
 				subdomain: sanitized,
@@ -593,7 +577,6 @@ export async function verifyDns(
 			};
 		}
 
-		// If subdomain exists, check if it belongs to the current deployment
 		if (repoNameTrimmed && serviceNameTrimmed) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
 			if (deploymentRes.deployment) {
@@ -613,12 +596,11 @@ export async function verifyDns(
 			}
 		}
 
-		// Subdomain is taken, suggest alternatives
 		const alternatives: string[] = [];
 		for (let i = 1; i <= 5; i += 1) {
 			const alt = `${sanitized}-${i}`;
-			const altExists = records.find((r: any) => r.name === alt && (r.type === "A" || r.type === "CNAME"));
-			if (!altExists) alternatives.push(alt);
+			const altLookup = await lookupRoute53Subdomain(alt, baseDomain);
+			if (!altLookup.exists) alternatives.push(alt);
 			if (alternatives.length >= 3) break;
 		}
 

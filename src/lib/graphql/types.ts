@@ -254,7 +254,7 @@ export const typeDefs = `
   type DeleteResult {
     status: String!
     message: String
-    vercelDnsDeleted: Int
+    dnsRecordsDeleted: Int
   }
 
   type CloneResult {

@@ -356,7 +356,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					cloudProvider: "aws",
 					deploymentTarget: "ecs",
 					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
-					scanResults: {} as never,
 				});
 			} catch (e) {
 				// Non-blocking: still allow the workspace to open using the local draft deployment.

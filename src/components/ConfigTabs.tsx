@@ -47,7 +47,7 @@ type ConfigTabsProps = {
 	onStartScan?: () => void;
 };
 
-const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "smart-deploy.xyz";
+const DOMAIN_SUFFIX = config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz";
 
 function mapCustomDomainError(error: unknown): string {
 	const message = error instanceof Error ? error.message : "Failed to update custom domain";
@@ -407,7 +407,7 @@ export default function ConfigTabs({
 								{customUrlSaving ? "Saving…" : "Save"}
 							</Button>
 							<p className="text-[10px] text-muted-foreground/70">
-								Saving reconfigures the ALB + Vercel DNS record without redeploying.
+								Saving reconfigures the ALB + Route 53 DNS without redeploying.
 							</p>
 						</div>
 					</div>

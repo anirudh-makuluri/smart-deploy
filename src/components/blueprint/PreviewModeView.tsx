@@ -15,8 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AWS_REGION_OPTIONS, EC2_INSTANCE_OPTIONS } from "@/components/blueprint/blueprint-fields";
-import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
+import { AWS_REGION_OPTIONS } from "@/components/blueprint/blueprint-fields";
 import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import config from "@/config.client";
@@ -24,7 +23,7 @@ import { updateCustomDomain } from "@/lib/graphqlClient";
 import { toast } from "sonner";
 import { AlertTriangle, CheckCircle2, Globe, RotateCw } from "lucide-react";
 
-const DOMAIN_SUFFIX = config.NEXT_PUBLIC_VERCEL_DOMAIN || "smart-deploy.xyz";
+const DOMAIN_SUFFIX = config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz";
 
 function mapCustomDomainError(error: unknown): string {
 	const message = error instanceof Error ? error.message : "Failed to update custom domain";
@@ -230,21 +229,13 @@ export default function PreviewModeView({
 		return [{ value: v, label: `Other (${v})` }, ...AWS_REGION_OPTIONS];
 	}, [deployment.awsRegion]);
 
-	const instanceTypeSelectOptions = React.useMemo(() => {
-		const raw = deployment.ec2 && typeof deployment.ec2 === "object" ? (deployment.ec2 as { instanceType?: string }).instanceType : "";
-		const v = (raw || "").trim();
-		if (EC2_INSTANCE_OPTIONS.some((o) => o.value === v)) return EC2_INSTANCE_OPTIONS;
-		if (!v) return EC2_INSTANCE_OPTIONS;
-		return [{ value: v, label: `Other (${v})` }, ...EC2_INSTANCE_OPTIONS];
-	}, [deployment.ec2]);
-
 	return (
 		<div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-1 flex-col gap-5 p-6">
 			<div className="rounded-3xl border border-white/6 bg-gradient-to-br from-white/6 via-white/2 to-transparent px-6 py-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-md">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<div>
 						<div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/35">
-							Preview · AWS CodeBuild → EC2
+							Preview · {model.pipelineLabel}
 						</div>
 						<div className="mt-1.5 text-base font-semibold tracking-tight text-white">
 							What runs in each stage of this deploy
@@ -267,11 +258,21 @@ export default function PreviewModeView({
 							const hasWarnings = stepWarnings.length > 0;
 
 							const nodeVerb =
-								step.id === "auth" ? "Resolve ref" :
-									step.id === "build" ? "Build images" :
-										step.id === "setup" ? "Provision infra" :
-											step.id === "deploy" ? "Deploy + route" :
-												"Publish domain";
+								step.id === "auth"
+									? "Resolve ref"
+									: step.id === "build"
+										? model.deployRoute === "static_s3"
+											? "Build & sync"
+											: "Build images"
+										: step.id === "setup"
+											? model.deployRoute === "static_s3"
+												? "CDN + bucket"
+												: "ECS prep"
+											: step.id === "deploy"
+												? model.deployRoute === "static_s3"
+													? "Invalidate"
+													: "Run service"
+												: "Publish URL";
 
 							const nodeFace = hasWarnings ? "rgba(251,191,36,0.14)" : "rgba(15,23,42,0.92)";
 							const nodePort = hasWarnings ? "rgba(180,83,9,0.55)" : "rgba(2,6,23,0.95)";
@@ -589,45 +590,21 @@ export default function PreviewModeView({
 										</SelectContent>
 									</Select>
 								</div>
-								<div>
-									<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Instance type</div>
-									<Select
-										value={
-											(deployment.ec2 && typeof deployment.ec2 === "object"
-												? String((deployment.ec2 as { instanceType?: string }).instanceType ?? "").trim()
-												: "") || DEFAULT_EC2_INSTANCE_TYPE
-										}
-										onValueChange={(next) =>
-											void onUpdateDeployment({
-												ec2: {
-													...(deployment.ec2 ?? ({} as DeployConfig["ec2"])),
-													instanceType: next,
-												} as DeployConfig["ec2"],
-											})
-										}
-									>
-										<SelectTrigger className="h-auto min-h-11 rounded-xl border-white/10 bg-white/2 py-2 text-sm text-foreground">
-											<SelectValue placeholder="Select instance type" />
-										</SelectTrigger>
-										<SelectContent className="max-h-80 border-white/10 bg-[#0A0A0F]">
-											{instanceTypeSelectOptions.map((opt) => {
-												const priceLine = formatApproxEc2PriceCompact(opt.value);
-												return (
-													<SelectItem key={opt.value} value={opt.value} className="py-2">
-														<div className="flex flex-col gap-0.5 text-left">
-															<span className="font-medium">{opt.value}</span>
-															{priceLine ? (
-																<span className="text-[10px] text-muted-foreground/80 font-normal">{priceLine}</span>
-															) : opt.label.startsWith("Other") ? (
-																<span className="text-[10px] text-muted-foreground/60 font-normal">{opt.label}</span>
-															) : null}
-														</div>
-													</SelectItem>
-												);
-											})}
-										</SelectContent>
-									</Select>
-								</div>
+								{model.deployRoute === "ecs" ? (
+									<div>
+										<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Instance type</div>
+										<p className="text-sm text-muted-foreground">
+											Container deploys use ECS Fargate (configured via server env: cluster, subnets, execution role).
+										</p>
+									</div>
+								) : (
+									<div>
+										<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Static hosting</div>
+										<p className="text-sm text-muted-foreground">
+											Static sites publish to S3 and are served through CloudFront (STATIC_SITE_* env vars on the server).
+										</p>
+									</div>
+								)}
 							</div>
 						) : null}
 
@@ -724,7 +701,7 @@ export default function PreviewModeView({
 										</Button>
 									</div>
 									<p className="w-full min-w-0 text-[11px] leading-relaxed text-muted-foreground/75">
-										Saving updates load balancer routing and your Vercel DNS record. You don’t need to redeploy.
+										Saving updates load balancer routing and Route 53 DNS. You don’t need to redeploy.
 									</p>
 								</div>
 							</div>

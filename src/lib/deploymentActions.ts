@@ -1,6 +1,6 @@
 import { EC2Client, StartInstancesCommand, StopInstancesCommand } from "@aws-sdk/client-ec2";
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
-import { deleteVercelDnsRecord } from "@/lib/vercelDns";
+import { deleteRoute53DnsRecord } from "@/lib/route53Dns";
 import { dbHelper } from "@/db-helper";
 import config from "@/config";
 import { DeployConfig, EC2Details } from "@/app/types";
@@ -17,7 +17,7 @@ export type DeleteDeploymentResult = {
 	status: "success" | "error";
 	message?: string;
 	details?: string;
-	vercelDnsDeleted?: number;
+	dnsRecordsDeleted?: number;
 };
 
 export type DeploymentControlArgs = {
@@ -112,14 +112,14 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 	}
 
 	try {
-		const dnsResult = await deleteVercelDnsRecord({
-		customUrl: deployConfig.liveUrl || null,
-		serviceName: deployConfig.serviceName || validServiceName || null,
+		const dnsResult = await deleteRoute53DnsRecord({
+			customUrl: deployConfig.liveUrl || null,
+			serviceName: deployConfig.serviceName || validServiceName || null,
 		});
 		if (!dnsResult.success) {
 			return {
 				status: "error",
-				message: "Failed to delete Vercel DNS record",
+				message: "Failed to delete Route 53 DNS record",
 				details: dnsResult.error,
 			};
 		}
@@ -138,7 +138,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 		return {
 			status: "success",
 			message: "Deployment deleted; no traces left.",
-			vercelDnsDeleted: dnsResult.deletedCount,
+			dnsRecordsDeleted: dnsResult.deletedCount,
 		};
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
