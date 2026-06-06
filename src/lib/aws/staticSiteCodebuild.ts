@@ -129,7 +129,7 @@ export function generateStaticSiteBuildspec(params: {
 	const cfId = params.cloudFrontDistributionId?.trim();
 
 	const preBuildCmds: string[] = [
-		"echo Preparing static site build (clone + install/build)...",
+		'echo "Preparing static site build (clone + install/build)..."',
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
 		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",

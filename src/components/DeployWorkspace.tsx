@@ -42,7 +42,7 @@ import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { controlDeployment, deleteDeployment, fetchLatestCommit } from "@/lib/graphqlClient";
+import { controlDeployment, deleteDeployment, fetchLatestCommit, saveDeploymentAnalysis } from "@/lib/graphqlClient";
 import { authClient } from "@/lib/auth-client";
 
 function repoRelativeServicePath(path: string | undefined): string | undefined {
@@ -290,17 +290,36 @@ export default function DeployWorkspace({
 		: effectiveDeploymentStatus === "paused"
 			? "Resume Deployment"
 			: "Pause Deployment";
+	// Only block deploy while this session has an active worker deploy — not stale DB "deploying" status.
 	const deploymentInProgress = React.useMemo(
-		() => isInProgressDeploymentStatus(effectiveDeploymentStatus),
-		[effectiveDeploymentStatus]
+		() => isDeploying || deployStatus === "running",
+		[isDeploying, deployStatus]
 	);
+
+	const statusForDeployTransition = React.useMemo(() => {
+		if (
+			isInProgressDeploymentStatus(effectiveDeploymentStatus) &&
+			!isDeploying &&
+			deployStatus !== "running"
+		) {
+			return "failed" as const;
+		}
+		return effectiveDeploymentStatus;
+	}, [deployStatus, effectiveDeploymentStatus, isDeploying]);
 
 	React.useEffect(() => {
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;
 		if (lastResolvedDeploymentKeyRef.current === deploymentKey) return;
 		lastResolvedDeploymentKeyRef.current = deploymentKey;
 		setActiveSection(isDraft ? "setup" : "overview");
-	}, [deployment.id, deployment.repoName, deployment.serviceName, isDraft]);
+		if (isSdArtifactsAnalyzeScan(deployment.scanResults)) {
+			setScanResults(deployment.scanResults);
+			setScanMode("results");
+		} else {
+			setScanResults(null);
+			setScanMode("idle");
+		}
+	}, [deployment.id, deployment.repoName, deployment.serviceName, deployment.scanResults, isDraft]);
 
 	if (!activeRepo || !serviceName) {
 		return (
@@ -313,21 +332,34 @@ export default function DeployWorkspace({
 	const repoRecord = activeRepo as repoType;
 	const currentServiceName = serviceName ?? "";
 
-	async function onScanComplete(results: ScanResultsPayload, branchOverride?: string) {
+	async function persistScanResults(results: ScanResultsPayload, branchOverride?: string) {
 		if (!session?.user || !repoName || !serviceName) return;
 		const branchToSave = branchOverride || effectiveBranch || "main";
+		const responseId = isSdArtifactsAnalyzeScan(results) ? results.response_id?.trim() || null : null;
 
-		await updateDeploymentById({
+		await saveDeploymentAnalysis({
 			repoName,
-			serviceName: serviceName,
+			serviceName,
 			url: deployment.url || repoUrl || "",
 			branch: branchToSave,
 			commitSha: results.commit_sha ?? deployment.commitSha ?? null,
+			responseId,
 			scanResults: results,
 		});
+
+		await fetchRepoDeployments(repoIdentifier);
 		setScanResults(results);
 		setScanMode("results");
-		toast.success("Scan saved to configuration");
+	}
+
+	async function onScanComplete(results: ScanResultsPayload, branchOverride?: string) {
+		try {
+			await persistScanResults(results, branchOverride);
+			toast.success("Scan saved to configuration");
+		} catch (err) {
+			console.error("Failed to persist scan results:", err);
+			toast.error(err instanceof Error ? err.message : "Failed to save scan results");
+		}
 	}
 
 	async function handleConfirmRejectScan() {
@@ -393,10 +425,12 @@ export default function DeployWorkspace({
 			return;
 		}
 
+		const nextDeployStatus = transitionDeploymentStatus(statusForDeployTransition, "deploy_requested");
+
 		const payload: DeployConfig = {
 			...deployment,
 			branch: effectiveBranch,
-			status: effectiveDeploymentStatus,
+			status: nextDeployStatus,
 			scanResults: effectiveScanResults || deployment.scanResults,
 			...(commitSha && { commitSha }),
 		};
@@ -432,13 +466,20 @@ export default function DeployWorkspace({
 		});
 
 		setIsDeploying(true);
+		if (statusForDeployTransition !== effectiveDeploymentStatus) {
+			await updateDeploymentById({
+				repoName: payload.repoName,
+				serviceName: payload.serviceName,
+				status: "failed",
+			});
+		}
 		await updateDeploymentById({
 			repoName: payload.repoName,
 			serviceName: payload.serviceName,
 			url: payload.url || repoUrl || "",
 			branch: payload.branch,
 			commitSha: payload.commitSha,
-			status: transitionDeploymentStatus(effectiveDeploymentStatus, "deploy_requested"),
+			status: nextDeployStatus,
 		});
 		sendDeployConfig(payload, githubToken, session?.user?.id);
 		setActiveSection("logs");
@@ -611,12 +652,15 @@ export default function DeployWorkspace({
 								payload={improveScanPayload}
 								repoName={repoName}
 								serviceName={serviceName ?? ""}
-								onComplete={(data) => {
-									setScanResults(data);
-									setScanMode("results");
-									onScanComplete(data);
-									setImproveScanPayload(null);
-									toast.success("Scan results updated");
+								onComplete={async (data) => {
+									try {
+										await persistScanResults(data);
+										setImproveScanPayload(null);
+										toast.success("Scan results updated");
+									} catch (err) {
+										console.error("Failed to persist improved scan:", err);
+										toast.error(err instanceof Error ? err.message : "Failed to save scan results");
+									}
 								}}
 								onCancel={() => {
 									setImproveScanPayload(null);
@@ -724,6 +768,7 @@ export default function DeployWorkspace({
 						<BlueprintView
 							deployment={deployment as DeployConfig}
 							scanResults={effectiveScanResults as SDArtifactsResponse | null}
+							onStartScan={startScan}
 							branchOptions={branchNamesFromRepo(repoRecord)}
 							onUpdateDeployment={(partial) =>
 								updateDeploymentById({
@@ -737,13 +782,12 @@ export default function DeployWorkspace({
 								const current = effectiveScanResults as SDArtifactsResponse | null;
 								if (!current) return;
 								const next = updater(current);
-								setScanResults(next);
-								await updateDeploymentById({
-									repoName: deployment.repoName || repoName,
-									serviceName: deployment.serviceName || currentServiceName,
-									url: deployment.url || repoUrl,
-									scanResults: next,
-								});
+								try {
+									await persistScanResults(next);
+								} catch (err) {
+									console.error("Failed to persist scan edits:", err);
+									toast.error(err instanceof Error ? err.message : "Failed to save scan results");
+								}
 							}}
 						/>
 					</div>

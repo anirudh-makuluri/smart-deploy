@@ -14,6 +14,25 @@ function toOptionalTrimmedString(value: unknown): string | null {
 	return trimmed ? trimmed : null;
 }
 
+const UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: string): boolean {
+	return UUID_RE.test(value);
+}
+
+function resolveAnalysisResponseId(
+	explicitResponseId: string | null,
+	payloadResponseId: string | null,
+	existingResponseId: string | null
+): string {
+	const candidates = [explicitResponseId, payloadResponseId, existingResponseId];
+	for (const candidate of candidates) {
+		if (candidate && isValidUuid(candidate)) return candidate;
+	}
+	return uuidv4();
+}
+
 function normalizeScanResults(value: unknown): Record<string, unknown> | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 	const record = value as Record<string, unknown>;
@@ -68,6 +87,7 @@ async function upsertAnalysisResponse(args: {
 	repoUrl: string;
 	commitSha: string | null;
 	serviceName: string;
+	packagePath?: string | null;
 }) {
 	const supabase = getSupabaseServer();
 	const { error } = await supabase
@@ -78,9 +98,10 @@ async function upsertAnalysisResponse(args: {
 				endpoint: "/analyze",
 				repo_url: args.repoUrl || "",
 				commit_sha: args.commitSha,
-				package_path: ".",
+				package_path: toOptionalTrimmedString(args.packagePath) ?? ".",
 				service_name: args.serviceName || null,
 				from_cache: false,
+				passed: args.payload.build_status === "passed" || args.payload.build_status === "partial",
 				payload: args.payload,
 			},
 			{ onConflict: "id" }
@@ -346,14 +367,23 @@ export const dbHelper = {
 					}
 				} else {
 					const payloadResponseId = toOptionalTrimmedString(rawScanResults.response_id);
-					nextResponseId = explicitResponseId ?? payloadResponseId ?? nextResponseId ?? uuidv4();
-					await upsertAnalysisResponse({
-						id: nextResponseId,
-						payload: { ...rawScanResults, response_id: nextResponseId },
-						repoUrl: String(deployConfig.url ?? existing?.url ?? ""),
-						commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? deployConfig.commitSha ?? null,
-						serviceName,
-					});
+					nextResponseId = resolveAnalysisResponseId(
+						explicitResponseId,
+						payloadResponseId,
+						toOptionalTrimmedString(existing?.response_id)
+					);
+					try {
+						await upsertAnalysisResponse({
+							id: nextResponseId,
+							payload: { ...rawScanResults, response_id: nextResponseId },
+							repoUrl: String(deployConfig.url ?? existing?.url ?? ""),
+							commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? deployConfig.commitSha ?? null,
+							serviceName,
+							packagePath: toOptionalTrimmedString(rawScanResults.package_path),
+						});
+					} catch (analysisError) {
+						console.error("updateDeployments: analysis_responses upsert failed (continuing):", analysisError);
+					}
 				}
 			}
 
@@ -375,7 +405,7 @@ export const dbHelper = {
 
 				const { error: insertError } = await supabase.from("deployments").insert(insertPayload);
 				if (insertError) return { error: insertError.message };
-				return { success: "New deployment created and added to user" };
+				return { success: "New deployment created and added to user", responseId: nextResponseId };
 			}
 
 			// Build update payload
@@ -387,7 +417,7 @@ export const dbHelper = {
 				revision: isAttemptStart ? (existing.revision ?? 0) + 1 : (existing.revision ?? 0),
 				...deployConfigToRow(deployConfig),
 			};
-			if (hasScanResultsInput || explicitResponseId !== null) {
+			if (hasScanResultsInput || explicitResponseId) {
 				updatePayload.response_id = nextResponseId;
 			}
 
@@ -408,7 +438,7 @@ export const dbHelper = {
 				.eq("service_name", serviceName);
 
 			if (updateError) return { error: updateError.message };
-			return { success: "Deployment data updated successfully" };
+			return { success: "Deployment data updated successfully", responseId: nextResponseId };
 		} catch (error) {
 			console.error("updateDeployments error:", error);
 			return { error };

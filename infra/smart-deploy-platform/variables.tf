@@ -85,3 +85,23 @@ variable "ecs_log_retention_days" {
   type        = number
   default     = 14
 }
+
+# ── Route 53 (deployment subdomains) ───────────────────────────────────────────
+
+variable "deployment_domain" {
+  description = "Base domain for deploy URLs (NEXT_PUBLIC_DEPLOYMENT_DOMAIN), e.g. smart-deploy.xyz"
+  type        = string
+  default     = ""
+}
+
+variable "route53_hosted_zone_id" {
+  description = "Route 53 hosted zone ID (ROUTE53_HOSTED_ZONE_ID). If empty, lookup by deployment_domain."
+  type        = string
+  default     = ""
+}
+
+variable "shared_alb_dns_name" {
+  description = "Shared ALB DNS name for wildcard record (*.deployment_domain). Set after first ECS deploy."
+  type        = string
+  default     = ""
+}

@@ -63,6 +63,9 @@ export type EC2Result = {
 	securityGroupId: string;
 	amiId: string;
 	sharedAlbDns?: string;
+	/** Set by ECS Fargate deploys so post-deploy DNS can sync ALB host-header rules. */
+	albListenerArn?: string;
+	targetGroupArn?: string;
 };
 
 type DirectStaticDeployDetails = {

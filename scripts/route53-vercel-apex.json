@@ -1,0 +1,13 @@
+{
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "smart-deploy.xyz",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{ "Value": "216.198.79.1" }]
+      }
+    }
+  ]
+}

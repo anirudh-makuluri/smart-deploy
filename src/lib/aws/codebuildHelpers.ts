@@ -229,7 +229,7 @@ function buildRailpackEcrBuildspec(params: {
 	const buildkitArg = JSON.stringify(syntax);
 	const imageArg = JSON.stringify(fullUri);
 	const buildCmds = [
-		"echo Building image with Railpack (buildx)...",
+		'echo "Building image with Railpack (buildx)..."',
 		"docker buildx create --use 2>/dev/null || docker buildx inspect --bootstrap 2>/dev/null || true",
 		`docker buildx build --provenance=false --sbom=false --build-arg BUILDKIT_SYNTAX=${buildkitArg} -f /tmp/railpack-plan.json -t ${imageArg} --push .`,
 	];

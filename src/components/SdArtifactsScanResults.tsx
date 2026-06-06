@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { AlertTriangle, CheckCircle2, Copy, RefreshCw, Rocket } from "lucide-react";
 import { toast } from "sonner";
+import { DocsMarkdown } from "@/components/public/DocsMarkdown";
 import { classifyScanWorkload, workloadProductLabel } from "@/lib/sdArtifactsWorkload";
 
 type SdArtifactsScanResultsProps = {
@@ -156,10 +157,9 @@ export default function SdArtifactsScanResults({
 
 			{results.deploy_briefing?.trim() && (
 				<div className="mb-6 rounded-xl border border-border bg-card p-5">
-					<p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Operator briefing</p>
-					<pre className="text-sm whitespace-pre-wrap text-foreground/90 font-sans leading-relaxed max-h-96 overflow-auto">
-						{results.deploy_briefing}
-					</pre>
+					<div className="max-h-[32rem] overflow-auto pr-1">
+						<DocsMarkdown source={results.deploy_briefing} />
+					</div>
 				</div>
 			)}
 

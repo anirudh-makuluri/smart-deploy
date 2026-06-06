@@ -21,7 +21,7 @@ vi.mock("@/components/EnvVarSheet", () => ({
 
 vi.mock("@/config.client", () => ({
 	default: {
-		NEXT_PUBLIC_VERCEL_DOMAIN: "smart-deploy.xyz",
+		NEXT_PUBLIC_DEPLOYMENT_DOMAIN: "smart-deploy.xyz",
 	},
 }));
 

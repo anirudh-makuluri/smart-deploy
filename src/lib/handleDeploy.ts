@@ -50,10 +50,16 @@ import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { getAwsClientConfig } from "./aws/sdkClients";
 import { captureServerEvent } from "./analytics/posthogServer";
 
-import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
+import { addRoute53DnsRecord, AddRoute53DnsResult, getDeployUrlHostname } from "./route53Dns";
+import { ensureHostRule } from "./aws/awsHelpers";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
-import { canManageRuntimeDeploymentStatus, normalizeDeploymentStatus, transitionDeploymentStatus } from "./deploymentStatus";
+import {
+	canManageRuntimeDeploymentStatus,
+	isInProgressDeploymentStatus,
+	normalizeDeploymentStatus,
+	transitionDeploymentStatus,
+} from "./deploymentStatus";
 import * as deployLogsStore from "./deployLogsStore";
 import {
 	attachDeployConfigToReleaseArtifact,
@@ -206,6 +212,11 @@ function setStepState(steps: DeployStep[], stepId: string, status: DeployStep["s
 	}
 }
 
+function deployConfigForStatusPersist(config: DeployConfig): DeployConfig {
+	const { scanResults: _scanResults, ...rest } = config;
+	return rest as DeployConfig;
+}
+
 async function updatePersistedDeploymentStatus(
 	deployConfig: DeployConfig,
 	userID: string | undefined,
@@ -214,11 +225,11 @@ async function updatePersistedDeploymentStatus(
 ) {
 	if (!userID) return;
 	await dbHelper.updateDeployments(
-		{
+		deployConfigForStatusPersist({
 			...deployConfig,
 			...overrides,
 			status,
-		},
+		}),
 		userID
 	);
 }
@@ -782,13 +793,16 @@ export async function handleDeploy(
 		}
 
 		if (userID) {
-			const startingStatus = transitionDeploymentStatus(deployConfig.status, "deploy_requested");
+			const normalizedStatus = normalizeDeploymentStatus(deployConfig.status);
+			const startingStatus = isInProgressDeploymentStatus(normalizedStatus)
+				? normalizedStatus
+				: transitionDeploymentStatus(normalizedStatus, "deploy_requested");
 			deployConfig.status = startingStatus;
 			await dbHelper.updateDeployments(
-				{
+				deployConfigForStatusPersist({
 					...deployConfig,
 					status: startingStatus,
-				},
+				}),
 				userID
 			);
 		}
@@ -1104,8 +1118,8 @@ async function saveDeploymentToDB(
 	}
 
 	try {
-		// Prepare minimal deployment config for DB
-		const minimalDeployment: DeployConfig = {
+		// Prepare minimal deployment config for DB (omit scanResults — lifecycle updates must not re-upsert analysis)
+		const minimalDeployment: DeployConfig = deployConfigForStatusPersist({
 			...deployConfig,
 			status: success
 				? transitionDeploymentStatus(deployConfig.status, "deployment_succeeded")
@@ -1113,7 +1127,7 @@ async function saveDeploymentToDB(
 			...(deployUrl && { liveUrl: deployUrl }),
 			...(customUrl && { liveUrl: customUrl }),
 			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
-		};
+		});
 
 		// Update deployment document (creates if doesn't exist)
 		const updateResponse = await dbHelper.updateDeployments(minimalDeployment, userID);
@@ -1247,7 +1261,7 @@ async function sendDeployComplete(
 	deploySteps: DeployStep[],
 	userID: string | undefined,
 	deploymentTarget?: string,
-	vercelDns?: AddVercelDnsResult | null,
+	customDns?: AddRoute53DnsResult | null,
 	serviceDetails?: ServiceDeployDetails | null,
 	durationMs?: number,
 	lifecycle?: DeploymentLifecycleOptions
@@ -1285,7 +1299,7 @@ async function sendDeployComplete(
 			deploySteps,
 			userID,
 			serviceDetails,
-			vercelDns?.success ? vercelDns.customUrl : null,
+			customDns?.success ? customDns.customUrl : null,
 			durationMs,
 			lifecycle?.releaseArtifact ?? null,
 			failure
@@ -1348,7 +1362,7 @@ async function sendDeployComplete(
 				commit_sha: deployConfig.commitSha ?? null,
 				failed_step: failedStep,
 				steps_count: deploySteps.length,
-				has_custom_domain: Boolean(vercelDns?.success && vercelDns.customUrl),
+				has_custom_domain: Boolean(customDns?.success && customDns.customUrl),
 			},
 		});
 	}
@@ -1359,8 +1373,8 @@ async function sendDeployComplete(
 		deploymentTarget: string | null;
 		finalStatus?: DeployConfig["status"] | null;
 		rolledBack?: boolean;
-		vercelDnsAdded?: boolean;
-		vercelDnsError?: string | null;
+		customDnsAdded?: boolean;
+		customDnsError?: string | null;
 		customUrl?: string | null;
 		error?: string | null;
 		ec2?: EC2Details;
@@ -1370,12 +1384,12 @@ async function sendDeployComplete(
 		deploymentTarget: deploymentTarget ?? null,
 	};
 	if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
-	if (vercelDns) {
-		payload.vercelDnsAdded = vercelDns.success;
-		if (vercelDns.success) {
-			payload.customUrl = vercelDns.customUrl ?? null;
+	if (customDns) {
+		payload.customDnsAdded = customDns.success;
+		if (customDns.success) {
+			payload.customUrl = customDns.customUrl ?? null;
 		} else {
-			payload.vercelDnsError = vercelDns.error ?? null;
+			payload.customDnsError = customDns.error ?? null;
 		}
 	}
 	if (!success && lifecycle?.errorMessage) {
@@ -1715,6 +1729,8 @@ async function handleAWSCodeBuildDeploy(
 		amiId: ec2Result.amiId,
 		sharedAlbDns: ec2Result.sharedAlbDns || "",
 		instanceType: instanceTypeSaved,
+		...(ec2Result.albListenerArn ? { albListenerArn: ec2Result.albListenerArn } : {}),
+		...(ec2Result.targetGroupArn ? { targetGroupArn: ec2Result.targetGroupArn } : {}),
 	};
 	const mergedRelease = attachDeployConfigToReleaseArtifact(releaseArtifact, {
 		...deployConfig,
@@ -1742,19 +1758,40 @@ async function handleAWSCodeBuildDeploy(
 		result = "done";
 	}
 
-	let vercelResult: AddVercelDnsResult | null = null;
-		if (deployUrl && deployConfig.liveUrl !== deployUrl && deployConfig.serviceName?.trim() && ec2Result.success) {
-			send("Adding Vercel DNS record...", "done");
-			vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
-				deploymentTarget: target,
-				previousCustomUrl: deployConfig.liveUrl ?? null,
+	let dnsResult: AddRoute53DnsResult | null = null;
+	const sharedAlbDns = ec2Result.sharedAlbDns?.trim() || "";
+	if (ec2Result.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
+		send("Configuring Route 53 DNS...", "done");
+		dnsResult = await addRoute53DnsRecord(deployUrl || `https://${sharedAlbDns}`, deployConfig.serviceName, {
+			deploymentTarget: target,
+			previousCustomUrl: deployConfig.liveUrl ?? null,
+			sharedAlbDns: sharedAlbDns || null,
+			awsRegion: region,
 		});
 	}
 
-	if (vercelResult?.success) {
-		send(`✅ Vercel DNS added: ${vercelResult.customUrl}`, "done");
-	} else if (deployUrl && vercelResult && ec2Result.success) {
-		send(`⚠️ Vercel DNS failed: ${vercelResult?.error ?? "Unknown error"}`, "done");
+	if (dnsResult?.success) {
+		send(`✅ Route 53 DNS ready: ${dnsResult.customUrl}`, "done");
+		const customHost = getDeployUrlHostname(dnsResult.customUrl);
+		if (
+			customHost &&
+			ec2Result.albListenerArn &&
+			ec2Result.targetGroupArn
+		) {
+			send(`Configuring ALB host rule for ${customHost}...`, "done");
+			await ensureHostRule(
+				ec2Result.albListenerArn,
+				customHost,
+				ec2Result.targetGroupArn,
+				region,
+				ws
+			);
+		}
+		if (dnsResult.customUrl) {
+			deployUrl = dnsResult.customUrl;
+		}
+	} else if (dnsResult && ec2Result.success) {
+		send(`⚠️ Route 53 DNS failed: ${dnsResult?.error ?? "Unknown error"}`, "done");
 	}
 
 	let finalSuccess = ec2Result.success;
@@ -1810,7 +1847,7 @@ async function handleAWSCodeBuildDeploy(
 		deploySteps,
 		userID,
 		target,
-		vercelResult,
+		dnsResult,
 		serviceDetails,
 		durationMs,
 		lifecycle ?? { releaseArtifact }

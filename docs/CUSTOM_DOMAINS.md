@@ -1,6 +1,6 @@
 # Custom Domains
 
-SmartDeploy generates "Visit" URLs for each deployment using subdomains of a base domain you configure. Optionally, it can manage DNS records automatically via the Vercel API.
+SmartDeploy generates "Visit" URLs for each deployment using subdomains of a base domain you configure. DNS is managed via **Route 53** (wildcard `*.yourdomain.com` → shared ALB, plus ALB host-based routing per service).
 
 ---
 
@@ -13,8 +13,8 @@ https://myapp.yourdomain.com
 ```
 
 The actual routing target depends on the cloud provider:
-- **AWS EC2 (ALB)**: The ALB uses **host-based routing**: each service gets a listener rule that matches `myapp.yourdomain.com` and forwards to the correct target group.
-- **GCP Cloud Run**: Each Cloud Run service gets its own URL; the CNAME points to that URL.
+- **AWS ECS / EC2 (ALB)**: A wildcard Route 53 record sends `*.yourdomain.com` to the shared ALB. Each service gets an ALB listener rule that matches `myapp.yourdomain.com` and forwards to the correct target group.
+- **Static sites (S3 + CloudFront)**: Per-subdomain Route 53 alias/CNAME records can point at CloudFront when wildcard mode is disabled.
 
 ---
 
@@ -26,52 +26,58 @@ Set in `.env`:
 NEXT_PUBLIC_DEPLOYMENT_DOMAIN=yourdomain.com
 ```
 
-This is the domain suffix used in all "Visit" links. For example, if set to `example.com`, deployments are shown as `https://servicename.example.com`.
+This is the domain suffix used in all "Visit" links.
 
 ---
 
-## 2. (Optional) Automatic DNS via Vercel
+## 2. Route 53 setup
 
-If your domain's DNS is managed by Vercel, SmartDeploy can create/update **CNAME records** automatically after each deploy.
+### Prerequisites
 
-### Setup
+1. Host `yourdomain.com` in a **Route 53 public hosted zone** (or delegate a subdomain to Route 53).
+2. Ensure your AWS credentials used by SmartDeploy can `route53:ChangeResourceRecordSets` and `route53:ListResourceRecordSets` on that zone.
+3. ACM certificate for `*.yourdomain.com` on the shared ALB (`EC2_ACM_CERTIFICATE_ARN`).
 
-1. Add your domain to Vercel (Vercel dashboard -> your project or account -> Domains).
-2. Create an API token at [vercel.com/account/tokens](https://vercel.com/account/tokens).
-3. Add to `.env`:
-
-```
-VERCEL_TOKEN=your_vercel_api_token
-VERCEL_DOMAIN=yourdomain.com
-```
-
-If you're on a Vercel team, also set:
+### Environment variables
 
 ```
-VERCEL_TEAM_ID=team_xxx
+ROUTE53_HOSTED_ZONE_ID=Z0123456789ABC
+NEXT_PUBLIC_DEPLOYMENT_DOMAIN=yourdomain.com
+ROUTE53_USE_WILDCARD=true
+ROUTE53_ENSURE_WILDCARD=true
 ```
 
-### What it does
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ROUTE53_HOSTED_ZONE_ID` | Yes | Route 53 hosted zone ID |
+| `NEXT_PUBLIC_DEPLOYMENT_DOMAIN` | Yes | Base domain for deploy URLs |
+| `ROUTE53_DOMAIN` | No | Override base domain (defaults to deployment domain) |
+| `ROUTE53_USE_WILDCARD` | No | Default `true` for shared-ALB deploys |
+| `ROUTE53_ENSURE_WILDCARD` | No | Upsert `*.domain` → ALB on each deploy (default `true`) |
 
-After a successful deploy, SmartDeploy calls the Vercel DNS API to:
-- **Create** a CNAME record (`servicename.yourdomain.com -> <deploy-target>`).
-- **Update** the record if it already exists and the target has changed.
+### Terraform (optional)
+
+In `infra/smart-deploy-platform`, set:
+
+```hcl
+deployment_domain      = "yourdomain.com"
+route53_hosted_zone_id = "Z0123456789ABC"
+shared_alb_dns_name    = "smartdeploy-xxx-alb-yyy.us-west-2.elb.amazonaws.com"
+```
+
+Run `terraform apply` to create the wildcard ALIAS record. SmartDeploy can also create/update it at deploy time when `ROUTE53_ENSURE_WILDCARD=true`.
 
 ---
 
-## 3. Manual DNS (no Vercel)
+## 3. Manual DNS (no automation)
 
-If you don't use Vercel DNS, create CNAME records manually at your DNS provider after each deploy:
-
-| Type | Name | Value |
-|------|------|-------|
-| CNAME | `myapp` | `smartdeploy-xxx-alb-yyy.us-west-2.elb.amazonaws.com` (ALB DNS name) |
-
-For wildcard setups, a single wildcard record works:
+If Route 53 env vars are not set, create DNS manually:
 
 | Type | Name | Value |
 |------|------|-------|
-| CNAME | `*` | `your-alb-dns-name.elb.amazonaws.com` |
+| ALIAS (A) | `*` | Shared ALB DNS name |
+
+ALB host rules must still be created per service (SmartDeploy does this on deploy).
 
 ---
 
@@ -79,24 +85,32 @@ For wildcard setups, a single wildcard record works:
 
 For the ALB to serve HTTPS, you need an ACM certificate:
 
-1. Request a certificate in **ACM** (same region as your deployments) for `*.yourdomain.com`.
-2. Complete DNS validation.
-3. Add to `.env`:
-
-```
-EC2_ACM_CERTIFICATE_ARN=arn:aws:acm:us-west-2:123456789012:certificate/abc-123...
-```
-
-SmartDeploy will create an HTTPS listener on the ALB and redirect HTTP to HTTPS. See [AWS setup](./AWS_SETUP.md) for ACM and IAM details.
+1. Request a certificate in ACM for `*.yourdomain.com` (and optionally the apex).
+2. Validate via DNS in Route 53.
+3. Set `EC2_ACM_CERTIFICATE_ARN` in `.env`.
 
 ---
 
-## Environment variable summary
+## Hybrid DNS: Vercel (app) + Route 53 (deploy URLs)
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_DEPLOYMENT_DOMAIN` | Yes | Base domain for deployment URLs (e.g. `yourdomain.com`) |
-| `VERCEL_TOKEN` | No | Vercel API token for automatic DNS |
-| `VERCEL_DOMAIN` | No | Domain registered in Vercel (usually same as deployment domain) |
-| `VERCEL_TEAM_ID` | No | Vercel team ID (only if using a team account) |
-| `EC2_ACM_CERTIFICATE_ARN` | No | ACM certificate ARN for ALB HTTPS |
+When nameservers point to Route 53, you need **both**:
+
+| Record | Type | Target | Purpose |
+|--------|------|--------|---------|
+| `smart-deploy.xyz` (apex) | A | Project-specific IP from Vercel Domains UI (e.g. `216.198.79.1`) | Smart Deploy app on Vercel |
+| `www` | CNAME | `cname.vercel-dns.com` | www → Vercel |
+| `*` | ALIAS | Shared ALB | User deploy subdomains (`myapp.smart-deploy.xyz`) |
+
+Wildcard `*` does **not** cover the apex — you must add the apex A record separately.
+
+In the [Vercel project](https://vercel.com) → **Settings → Domains**, add `smart-deploy.xyz` and `www.smart-deploy.xyz` (and `app.smart-deploy.xyz` if you use it). Vercel must list the domain before HTTPS works.
+
+Optional explicit records override the wildcard (e.g. `app` CNAME → `your-project.vercel.app`).
+
+## Migrating from Vercel DNS
+
+1. Add the Route 53 variables above and remove `VERCEL_TOKEN` / `VERCEL_DOMAIN`.
+2. Create the wildcard ALIAS (Terraform or first deploy with `ROUTE53_ENSURE_WILDCARD=true`).
+3. Add apex A + www CNAME for Vercel (table above).
+4. Remove old incorrect per-subdomain CNAMEs from the old Vercel DNS zone.
+5. Redeploy services so ALB host rules match the intended hostnames.

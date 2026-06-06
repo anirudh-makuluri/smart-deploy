@@ -1,6 +1,6 @@
 import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
-import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
 import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { shouldDeployStaticSiteToS3 } from "@/lib/deployRouting";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 export type PreviewStepId = "auth" | "build" | "setup" | "deploy" | "done";
@@ -57,12 +57,18 @@ export type PreviewStep = {
 	description: string;
 };
 
+export type PreviewDeployRoute = "static_s3" | "ecs";
+
 export type PreviewModel = {
 	steps: PreviewStep[];
 	artifacts: PreviewArtifact[];
 	warnings: PreviewWarning[];
 	/** True when analyze returned multiple deploy units. */
 	composeBuildMode: boolean;
+	/** Resolved from analyze + service name; null when analyze is missing. */
+	deployRoute: PreviewDeployRoute | null;
+	/** Short label for the preview header. */
+	pipelineLabel: string;
 };
 
 function safeTrim(value: string | null | undefined) {
@@ -75,38 +81,78 @@ export function buildPreviewModel(params: {
 }): PreviewModel {
 	const { deployment, scanResults } = params;
 
-	const steps: PreviewStep[] = [
-		{
-			id: "auth",
-			label: "Auth & resolve ref",
-			description: "Resolve branch/commit and authenticate to start a build.",
-		},
-		{
-			id: "build",
-			label: "Clone & build images (CodeBuild)",
-			description: "CodeBuild clones the repo, runs Railpack, then builds images and pushes to ECR.",
-		},
-		{
-			id: "setup",
-			label: "Infra setup (VPC, key, security)",
-			description: "Prepare networking, instance permissions, and prerequisites for EC2.",
-		},
-		{
-			id: "deploy",
-			label: "Deploy to EC2 (SSM) + reverse proxy",
-			description: "Launch/reuse EC2, deploy containers, and configure routing.",
-		},
-		{
-			id: "done",
-			label: "Domain & routing",
-			description: "Configure ALB host routing and optional DNS to make the deployment reachable.",
-		},
-	];
-
 	const isAnalyze = isSdArtifactsAnalyzeScan(scanResults);
 	const units = isAnalyze ? scanResults.deploy_units : [];
 	const composeBuildMode = isAnalyze && scanResults.deploy_shape === "multi" && units.length > 1;
 	const unitCount = units.length;
+	const deployRoute: PreviewDeployRoute | null = isAnalyze
+		? shouldDeployStaticSiteToS3(scanResults, deployment.serviceName)
+			? "static_s3"
+			: "ecs"
+		: null;
+	const isStatic = deployRoute === "static_s3";
+
+	const steps: PreviewStep[] = isStatic
+		? [
+				{
+					id: "auth",
+					label: "Auth & resolve ref",
+					description: "Resolve branch/commit and authenticate to start a build.",
+				},
+				{
+					id: "build",
+					label: "Build & publish (CodeBuild)",
+					description: "CodeBuild clones the repo, runs the static build (or syncs files), then uploads to S3.",
+				},
+				{
+					id: "setup",
+					label: "CDN & bucket",
+					description: "Artifacts land in your static site bucket; CloudFront serves them publicly.",
+				},
+				{
+					id: "deploy",
+					label: "Invalidate cache",
+					description: "Optional CloudFront invalidation so visitors see the latest build.",
+				},
+				{
+					id: "done",
+					label: "Public URL",
+					description: "Site is available at your configured CloudFront or custom domain.",
+				},
+			]
+		: [
+				{
+					id: "auth",
+					label: "Auth & resolve ref",
+					description: "Resolve branch/commit and authenticate to start a build.",
+				},
+				{
+					id: "build",
+					label: "Clone & build images (CodeBuild)",
+					description: "CodeBuild clones the repo, runs Railpack or Dockerfile, then pushes images to ECR.",
+				},
+				{
+					id: "setup",
+					label: "ECS prerequisites",
+					description: "Fargate task definition uses your cluster, subnets, security groups, and execution role.",
+				},
+				{
+					id: "deploy",
+					label: "ECS Fargate + ALB",
+					description: "Register the service, wire the shared ALB host rule, and run the container.",
+				},
+				{
+					id: "done",
+					label: "Domain & routing",
+					description: "Configure ALB host routing and Route 53 DNS for the custom domain.",
+				},
+			];
+
+	const pipelineLabel = !isAnalyze
+		? "Run Smart Analysis"
+		: isStatic
+			? "CodeBuild → S3 + CloudFront"
+			: "CodeBuild → ECR → ECS Fargate";
 
 	const artifacts: PreviewArtifact[] = [];
 	const warnings: PreviewWarning[] = [];
@@ -160,13 +206,23 @@ export function buildPreviewModel(params: {
 		});
 	}
 
-	artifacts.push({
-		id: "build:ecr",
-		stepId: "build",
-		kind: "ecrOutput",
-		title: "ECR output",
-		subtitle: "Images are tagged and pushed for deployment",
-	});
+	if (isStatic) {
+		artifacts.push({
+			id: "build:s3",
+			stepId: "build",
+			kind: "ecrOutput",
+			title: "S3 output",
+			subtitle: "Build artifacts synced to STATIC_SITE_BUCKET",
+		});
+	} else {
+		artifacts.push({
+			id: "build:ecr",
+			stepId: "build",
+			kind: "ecrOutput",
+			title: "ECR output",
+			subtitle: "Images are tagged and pushed for ECS deployment",
+		});
+	}
 
 	// ── setup ───────────────────────────────────────────────────────────────
 	artifacts.push({
@@ -177,37 +233,36 @@ export function buildPreviewModel(params: {
 		subtitle: safeTrim(deployment.awsRegion) || defaultAwsRegionForDeploy(),
 		action: "openInfra",
 	});
-	artifacts.push({
-		id: "setup:instance",
-		stepId: "setup",
-		kind: "instanceType",
-		title: "Instance type",
-		subtitle:
-			safeTrim(
-				deployment.ec2 && typeof deployment.ec2 === "object"
-					? String((deployment.ec2 as { instanceType?: string }).instanceType ?? "")
-					: ""
-			) || DEFAULT_EC2_INSTANCE_TYPE,
-		action: "openInfra",
-	});
-	artifacts.push({
-		id: "setup:networking",
-		stepId: "setup",
-		kind: "networking",
-		title: "Networking",
-		subtitle: "VPC / subnet / security group will be created or reused",
-		action: "openInfra",
-	});
+	if (isStatic) {
+		artifacts.push({
+			id: "setup:cdn",
+			stepId: "setup",
+			kind: "networking",
+			title: "CloudFront",
+			subtitle: "Served via STATIC_SITE_PUBLIC_BASE_URL",
+		});
+	} else {
+		artifacts.push({
+			id: "setup:fargate",
+			stepId: "setup",
+			kind: "networking",
+			title: "Fargate networking",
+			subtitle: "ECS cluster · subnets · security groups · execution role",
+			action: "openInfra",
+		});
+	}
 
 	// ── deploy ──────────────────────────────────────────────────────────────
-	artifacts.push({
-		id: "deploy:env",
-		stepId: "deploy",
-		kind: "envVars",
-		title: "Runtime env vars",
-		subtitle: safeTrim(deployment.envVars) ? "Injected into .env on EC2" : "None",
-		action: "openEnvVars",
-	});
+	if (!isStatic) {
+		artifacts.push({
+			id: "deploy:env",
+			stepId: "deploy",
+			kind: "envVars",
+			title: "Runtime env vars",
+			subtitle: safeTrim(deployment.envVars) ? "Injected into the container" : "None",
+			action: "openEnvVars",
+		});
+	}
 
 	// ── done ────────────────────────────────────────────────────────────────
 	artifacts.push({
@@ -220,16 +275,6 @@ export function buildPreviewModel(params: {
 	});
 
 	// ── warnings/invariants ────────────────────────────────────────────────
-	if (!scanResults || !isAnalyze) {
-		warnings.push({
-			id: "no-scan-results",
-			severity: "warning",
-			title: "No analyze results available",
-			description: "Preview requires sd-artifacts analyze output. Run a scan first.",
-			stepId: "build",
-		});
-	}
-
 	if (isAnalyze && unitCount < 1) {
 		warnings.push({
 			id: "missing-deploy-units",
@@ -277,5 +322,5 @@ export function buildPreviewModel(params: {
 		});
 	}
 
-	return { steps, artifacts, warnings, composeBuildMode };
+	return { steps, artifacts, warnings, composeBuildMode, deployRoute, pipelineLabel };
 }

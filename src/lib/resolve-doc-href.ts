@@ -1,4 +1,4 @@
-import { slugFromMarkdownFilename } from "@/lib/public-docs";
+import { slugFromMarkdownFilename } from "@/lib/markdownDocSlugs";
 
 /** Map repository-relative README links to site URLs when viewing docs on `/docs`. */
 export function resolveDocHref(href: string): string {

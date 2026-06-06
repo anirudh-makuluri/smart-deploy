@@ -5,6 +5,10 @@ import {
 	TerminateInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import {
+	ECSClient,
+	DeleteServiceCommand,
+} from "@aws-sdk/client-ecs";
+import {
 	ElasticLoadBalancingV2Client,
 	DescribeTargetGroupsCommand,
 	DescribeLoadBalancersCommand,
@@ -15,6 +19,7 @@ import {
 	DeleteLoadBalancerCommand,
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { findTargetGroupArnByName } from "./awsHelpers";
 
 function getClientConfig(region: string) {
 	const conf: { region: string; credentials?: { accessKeyId: string; secretAccessKey: string } } = { region };
@@ -36,129 +41,205 @@ function isNotFoundError(err: unknown): boolean {
 		msg.includes("No Application found") ||
 		msg.includes("InvalidParameterValue") ||
 		msg.includes("ClusterNotFoundException") ||
+		msg.includes("ServiceNotFoundException") ||
 		msg.includes("InvalidInstanceID")
 	);
 }
 
+function awsNameChunk(s: string, max: number): string {
+	const out = s
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, max);
+	return out || "app";
+}
 
+function sharedAlbEnabled(): boolean {
+	return !!config.EC2_ACM_CERTIFICATE_ARN && !!config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN;
+}
+
+function parseEcsInstanceId(instanceId: string): { cluster: string; serviceName: string } | null {
+	if (!instanceId.startsWith("ecs:")) return null;
+	const rest = instanceId.slice(4).trim();
+	const slash = rest.indexOf("/");
+	if (slash <= 0 || slash >= rest.length - 1) return null;
+	return {
+		cluster: rest.slice(0, slash).trim(),
+		serviceName: rest.slice(slash + 1).trim(),
+	};
+}
+
+async function resolveSharedAlbArn(region: string): Promise<string | undefined> {
+	const elbClient = new ElasticLoadBalancingV2Client(getClientConfig(region));
+	const stsClient = new STSClient(getClientConfig(region));
+	try {
+		const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+		const accountId = identity.Account || "";
+		const suffix = accountId ? accountId.slice(-6) : "shared";
+		const albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
+		const albResult = await elbClient.send(new DescribeLoadBalancersCommand({ Names: [albName] }));
+		return albResult.LoadBalancers?.[0]?.LoadBalancerArn;
+	} catch {
+		return undefined;
+	}
+}
+
+async function cleanupSharedAlbForTargetGroup(targetGroupArn: string, region: string): Promise<void> {
+	const elbClient = new ElasticLoadBalancingV2Client(getClientConfig(region));
+	const albArn = await resolveSharedAlbArn(region);
+
+	if (albArn) {
+		try {
+			const listenersResult = await elbClient.send(
+				new DescribeListenersCommand({ LoadBalancerArn: albArn })
+			);
+
+			for (const listener of listenersResult.Listeners || []) {
+				const listenerArn = listener.ListenerArn;
+				if (!listenerArn) continue;
+
+				const rulesResult = await elbClient.send(
+					new DescribeRulesCommand({ ListenerArn: listenerArn })
+				);
+
+				for (const rule of rulesResult.Rules || []) {
+					const forwardsTarget = (rule.Actions || []).some(
+						(action) =>
+							action.Type === "forward" && action.TargetGroupArn === targetGroupArn
+					);
+					if (forwardsTarget && rule.RuleArn) {
+						try {
+							await elbClient.send(new DeleteRuleCommand({ RuleArn: rule.RuleArn }));
+						} catch {
+							// Ignore rule delete errors
+						}
+					}
+				}
+			}
+		} catch {
+			// Ignore listener/rule cleanup errors
+		}
+	}
+
+	try {
+		await elbClient.send(new DeleteTargetGroupCommand({ TargetGroupArn: targetGroupArn }));
+
+		if (albArn) {
+			let hasOtherRoutes = false;
+			const remainingListeners = await elbClient.send(
+				new DescribeListenersCommand({ LoadBalancerArn: albArn })
+			);
+			for (const listener of remainingListeners.Listeners || []) {
+				if (!listener.ListenerArn) continue;
+				const rulesResult = await elbClient.send(
+					new DescribeRulesCommand({ ListenerArn: listener.ListenerArn })
+				);
+				hasOtherRoutes =
+					hasOtherRoutes ||
+					(rulesResult.Rules || []).some((rule) =>
+						(rule.Actions || []).some(
+							(action) =>
+								action.Type === "forward" &&
+								!!action.TargetGroupArn &&
+								action.TargetGroupArn !== targetGroupArn
+						)
+					);
+			}
+
+			if (!hasOtherRoutes) {
+				console.log("No other routes on shared ALB. Deleting ALB...");
+				await elbClient.send(new DeleteLoadBalancerCommand({ LoadBalancerArn: albArn }));
+			}
+		}
+	} catch (err) {
+		console.error("Error during target group/ALB cleanup", err);
+	}
+}
+
+async function resolveEcsTargetGroupArn(deployConfig: DeployConfig, region: string): Promise<string | null> {
+	const stored = ((deployConfig.ec2 || {}) as EC2Details).targetGroupArn?.trim();
+	if (stored) return stored;
+
+	const repoName = String(deployConfig.repoName || deployConfig.url.split("/").pop()?.replace(".git", "") || "app").trim();
+	const serviceName = String(deployConfig.serviceName || repoName || "app").trim();
+	const candidates = [
+		awsNameChunk(`sd-${repoName}-${serviceName}-tg`, 32),
+		awsNameChunk(`sd-${repoName}-app-tg`, 32),
+	];
+	for (const name of [...new Set(candidates)]) {
+		const arn = await findTargetGroupArnByName(name, region, null);
+		if (arn) return arn;
+	}
+	return null;
+}
+
+async function deleteEcsDeployment(deployConfig: DeployConfig): Promise<void> {
+	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
+	const ec2Details = (deployConfig.ec2 || {}) as EC2Details;
+	const parsed = parseEcsInstanceId(ec2Details.instanceId?.trim() || "");
+
+	const repoName = deployConfig.repoName?.trim() || deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const unitName = deployConfig.serviceName?.trim() || "app";
+	const cluster = parsed?.cluster || config.ECS_CLUSTER_NAME?.trim() || "";
+	const serviceName = parsed?.serviceName || awsNameChunk(`sd-${repoName}-${unitName}`, 255);
+
+	if (!cluster) {
+		console.warn("deleteEcsDeployment: no ECS cluster name found; skipping service delete");
+	} else if (!serviceName) {
+		console.warn("deleteEcsDeployment: no ECS service name found; skipping service delete");
+	} else {
+		const ecs = new ECSClient(getClientConfig(region));
+		try {
+			await ecs.send(
+				new DeleteServiceCommand({
+					cluster,
+					service: serviceName,
+					force: true,
+				})
+			);
+			console.log(`Deleted ECS service ${serviceName} in cluster ${cluster}`);
+		} catch (err) {
+			if (!isNotFoundError(err)) throw err;
+		}
+	}
+
+	if (sharedAlbEnabled()) {
+		const targetGroupArn = await resolveEcsTargetGroupArn(deployConfig, region);
+		if (targetGroupArn) {
+			await cleanupSharedAlbForTargetGroup(targetGroupArn, region);
+		}
+	}
+}
 
 /**
  * Deletes an AWS EC2 instance using stored instanceId.
  * When shared ALB is enabled, also removes target group and listener rules.
  */
-export async function deleteEC2Instance(
-	deployConfig: DeployConfig
-): Promise<void> {
+export async function deleteEC2Instance(deployConfig: DeployConfig): Promise<void> {
 	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
 	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-	const sharedAlbEnabled = !!config.EC2_ACM_CERTIFICATE_ARN && !!config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN;
 
 	const ec2Client = new EC2Client(getClientConfig(region));
 
-	if (sharedAlbEnabled) {
+	if (sharedAlbEnabled()) {
 		const elbClient = new ElasticLoadBalancingV2Client(getClientConfig(region));
-		const stsClient = new STSClient(getClientConfig(region));
-		const targetGroupName = `${repoName}-tg`
-			.toLowerCase()
-			.replace(/[^a-z0-9-]/g, "-")
-			.replace(/-+/g, "-")
-			.replace(/^-|-$/g, "")
-			.slice(0, 32) || "smartdeploy-tg";
+		const targetGroupName =
+			`${repoName}-tg`
+				.toLowerCase()
+				.replace(/[^a-z0-9-]/g, "-")
+				.replace(/-+/g, "-")
+				.replace(/^-|-$/g, "")
+				.slice(0, 32) || "smartdeploy-tg";
 
 		try {
 			const tgResult = await elbClient.send(
 				new DescribeTargetGroupsCommand({ Names: [targetGroupName] })
 			);
-			const targetGroups = tgResult.TargetGroups || [];
-			const targetGroupArn = targetGroups[0]?.TargetGroupArn;
-
+			const targetGroupArn = tgResult.TargetGroups?.[0]?.TargetGroupArn;
 			if (targetGroupArn) {
-				let albName = "";
-				let albArn: string | undefined = undefined;
-
-				try {
-					const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-					const accountId = identity.Account || "";
-					const suffix = accountId ? accountId.slice(-6) : "shared";
-					albName = `smartdeploy-${suffix}-alb`.slice(0, 32);
-
-					const albResult = await elbClient.send(
-						new DescribeLoadBalancersCommand({ Names: [albName] })
-					);
-					const loadBalancers = albResult.LoadBalancers || [];
-					albArn = loadBalancers[0]?.LoadBalancerArn;
-
-					if (albArn) {
-						const listenersResult = await elbClient.send(
-							new DescribeListenersCommand({ LoadBalancerArn: albArn })
-						);
-						const listeners = listenersResult.Listeners || [];
-
-						for (const listener of listeners) {
-							const listenerArn = listener.ListenerArn;
-							if (!listenerArn) continue;
-
-							const rulesResult = await elbClient.send(
-								new DescribeRulesCommand({ ListenerArn: listenerArn })
-							);
-							const rules = rulesResult.Rules || [];
-
-							for (const rule of rules) {
-								const forwardsTarget = (rule.Actions || []).some(
-									(action) =>
-										action.Type === "forward" &&
-										action.TargetGroupArn === targetGroupArn
-								);
-								if (forwardsTarget && rule.RuleArn) {
-									try {
-										await elbClient.send(
-											new DeleteRuleCommand({ RuleArn: rule.RuleArn })
-										);
-									} catch {
-										// Ignore rule delete errors
-									}
-								}
-							}
-						}
-					}
-				} catch {
-					// Ignore listener/rule cleanup errors
-				}
-
-				try {
-					await elbClient.send(
-						new DeleteTargetGroupCommand({ TargetGroupArn: targetGroupArn })
-					);
-
-					// Check if there are any other target groups connected to the ALB
-					if (albArn) {
-						const remainingListeners = await elbClient.send(
-							new DescribeListenersCommand({ LoadBalancerArn: albArn })
-						);
-						let hasOtherRoutes = false;
-						for (const listener of remainingListeners.Listeners || []) {
-							if (!listener.ListenerArn) continue;
-							const rulesResult = await elbClient.send(
-								new DescribeRulesCommand({ ListenerArn: listener.ListenerArn })
-							);
-							const rules: any[] = (rulesResult as any).Rules || [];
-							// If any rule forwards to a different target group, there are still active apps
-							hasOtherRoutes = hasOtherRoutes || rules.some((r: any) =>
-								(r.Actions || []).some((a: any) => a.Type === "forward" && a.TargetGroupArn !== targetGroupArn)
-							);
-						}
-
-						// Also ensure we check other target groups that might be attached to this ALB
-						if (!hasOtherRoutes) {
-							console.log(`No other routes on ALB ${albName}. Deleting ALB...`);
-							await elbClient.send(
-								new DeleteLoadBalancerCommand({ LoadBalancerArn: albArn })
-							);
-						}
-					}
-				} catch (err) {
-					console.error("Error during target group/ALB cleanup", err);
-				}
+				await cleanupSharedAlbForTargetGroup(targetGroupArn, region);
 			}
 		} catch {
 			// Ignore missing or in-use target groups
@@ -168,9 +249,7 @@ export async function deleteEC2Instance(
 	const instanceId = ((deployConfig.ec2 || {}) as EC2Details)?.instanceId;
 	if (instanceId) {
 		try {
-			await ec2Client.send(
-				new TerminateInstancesCommand({ InstanceIds: [instanceId] })
-			);
+			await ec2Client.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
 		} catch (err) {
 			if (!isNotFoundError(err)) throw err;
 		}
@@ -194,8 +273,12 @@ export async function deleteAWSDeployment(
 		await deleteEC2Instance(deployConfig);
 		return;
 	}
-	if (deploymentTarget === "ecs" || deploymentTarget === "static_s3") {
-		// No single-instance teardown; ECS services and S3 buckets are managed outside this path.
+	if (deploymentTarget === "ecs") {
+		await deleteEcsDeployment(deployConfig);
+		return;
+	}
+	if (deploymentTarget === "static_s3") {
+		// Static sites share one bucket; per-deploy objects are not removed here yet.
 		return;
 	}
 }

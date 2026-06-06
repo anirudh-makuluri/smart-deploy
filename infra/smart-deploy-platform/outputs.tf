@@ -53,6 +53,11 @@ output "vpc_id" {
   value       = local.vpc_id
 }
 
+output "route53_wildcard_fqdn" {
+  description = "Wildcard deploy hostname when shared_alb_dns_name is set"
+  value       = var.shared_alb_dns_name != "" && var.deployment_domain != "" ? "*.${var.deployment_domain}" : null
+}
+
 output "smart_deploy_env_snippet" {
   description = "Copy into Smart Deploy .env (append to AWS_REGION and credentials)"
   value       = <<-EOT
@@ -66,5 +71,9 @@ output "smart_deploy_env_snippet" {
     ECS_EXECUTION_ROLE_ARN=${aws_iam_role.ecs_execution.arn}
     ECS_LOG_GROUP=${aws_cloudwatch_log_group.ecs.name}
     ECS_ASSIGN_PUBLIC_IP=ENABLED
+
+    # Route 53 (set deployment_domain / shared_alb_dns_name in tfvars when ready)
+    # ROUTE53_HOSTED_ZONE_ID=${local.route53_zone_id}
+    # NEXT_PUBLIC_DEPLOYMENT_DOMAIN=${var.deployment_domain}
   EOT
 }

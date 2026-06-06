@@ -271,5 +271,7 @@ export async function deployRailpackServerToEcs(params: {
 		securityGroupId: securityGroups[0] || "",
 		amiId: "fargate",
 		sharedAlbDns: alb.dnsName,
+		albListenerArn: listenerArn,
+		targetGroupArn: tgArn,
 	};
 }

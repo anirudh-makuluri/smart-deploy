@@ -45,9 +45,13 @@ const config = {
 	// Deployment domain (for host-based routing with shared ALB)
 	NEXT_PUBLIC_DEPLOYMENT_DOMAIN: process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz",
 
-	// Vercel DNS (for custom domain management)
-	VERCEL_TOKEN: process.env.VERCEL_TOKEN || "",
-	VERCEL_DOMAIN: process.env.VERCEL_DOMAIN || "",
+	// Route 53 DNS (custom deployment subdomains)
+	ROUTE53_HOSTED_ZONE_ID: process.env.ROUTE53_HOSTED_ZONE_ID || "",
+	ROUTE53_DOMAIN: process.env.ROUTE53_DOMAIN || "",
+	/** When true (default), shared-ALB deploys use a wildcard record instead of per-service records. */
+	ROUTE53_USE_WILDCARD: process.env.ROUTE53_USE_WILDCARD || "true",
+	/** Upsert `*.domain` → ALB on deploy when wildcard mode is active. */
+	ROUTE53_ENSURE_WILDCARD: process.env.ROUTE53_ENSURE_WILDCARD || "true",
 
 	// AI
 	GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",

@@ -316,6 +316,28 @@ export async function updateDeployment(config: DeployConfig): Promise<void> {
 	await graphQLRequest(UPDATE_DEPLOYMENT_MUTATION, { config });
 }
 
+/** Persist sd-artifacts analyze output (analysis_responses + deployments.response_id). */
+export async function saveDeploymentAnalysis(args: {
+	repoName: string;
+	serviceName: string;
+	url?: string;
+	branch?: string;
+	commitSha?: string | null;
+	responseId?: string | null;
+	scanResults: ScanResultsPayload;
+}): Promise<{ responseId: string | null }> {
+	const res = await fetch("/api/deployments/analysis", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(args),
+	});
+	const payload = (await res.json().catch(() => ({}))) as { error?: string; responseId?: string | null };
+	if (!res.ok) {
+		throw new Error(payload.error || `Failed to save analysis (${res.status})`);
+	}
+	return { responseId: payload.responseId ?? null };
+}
+
 export async function refreshRepos(): Promise<repoType[]> {
 	const data = await graphQLRequest<{ refreshRepos: { repoList: repoType[] } }>(REFRESH_REPOS_MUTATION);
 	return data.refreshRepos.repoList;
