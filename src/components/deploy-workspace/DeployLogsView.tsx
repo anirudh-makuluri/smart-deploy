@@ -7,6 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Loader2, HelpCircle, CheckCircle2, XCircle, Clock, GitCommit, User, Calendar, RefreshCw } from "lucide-react";
 import { DeployStep } from "@/app/types";
+import { formatRecentDeployLogs } from "@/components/deploy-workspace/deployLogsUtils";
 
 export type DeployStatus = "not-started" | "running" | "success" | "error";
 
@@ -83,12 +84,7 @@ export default function DeployLogsView({
 
 	function handleImproveScanResults() {
 		if (!analysisResult || !repoUrl || !onStartImproveScan) return;
-		const recentLogs = (deployLogEntries || [])
-			.slice(-80)
-			.map((entry) => `${entry.timestamp || ""} ${entry.message || ""}`.trim())
-			.filter(Boolean)
-			.join("\n")
-			.slice(-12000);
+		const recentLogs = formatRecentDeployLogs(deployLogEntries);
 		onStartImproveScan({
 			repoUrl,
 			commitSha,

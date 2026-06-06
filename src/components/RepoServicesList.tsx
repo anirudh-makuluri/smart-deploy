@@ -158,28 +158,12 @@ export default function RepoServicesList({
 							void openWorkspaceForService(svc);
 						};
 
-						const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleCardClick();
-							}
-						};
-
-						const handleLiveUrlClick = (e: React.MouseEvent) => {
-							e.stopPropagation();
-							if (liveUrl) {
-								window.open(liveUrl, "_blank");
-							}
-						};
-
 						return (
-							<div
+							<button
+								type="button"
 								key={`${svc.path}::${svc.name}`}
-								role="button"
-								tabIndex={0}
 								onClick={handleCardClick}
-								onKeyDown={handleCardKeyDown}
-								className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
+								className={`w-full hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
 									}`}
 							>
 								<div className="flex items-center gap-3">
@@ -251,14 +235,14 @@ export default function RepoServicesList({
 											href={liveUrl}
 											target="_blank"
 											rel="noopener noreferrer"
-											onClick={handleLiveUrlClick}
+											onClick={(e) => e.stopPropagation()}
 											className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
 										>
 											{liveUrl}
 										</a>
 									)}
 								</div>
-							</div>
+							</button>
 						);
 					})}
 				</div>

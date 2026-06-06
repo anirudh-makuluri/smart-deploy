@@ -85,16 +85,17 @@ function hasDirectStaticScanResults(_deployConfig: DeployConfig): boolean {
 function parseEnvVarsAllowCommasInValues(envVarsString: string): { key: string; value: string }[] {
 	const trimmed = envVarsString.trim();
 	if (!trimmed) return [];
-	const segments = trimmed.split(/\r?\n|,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map(s => s.trim()).filter(Boolean);
-	return segments
-		.map(segment => {
-			const eqIdx = segment.indexOf("=");
-			if (eqIdx === -1) return null;
-			const key = segment.slice(0, eqIdx).trim();
-			const value = segment.slice(eqIdx + 1).trim();
-			return key ? { key, value } : null;
-		})
-		.filter((e): e is { key: string; value: string } => e != null);
+	return trimmed
+		.split(/\r?\n|,(?=[A-Za-z_][A-Za-z0-9_]*=)/)
+		.flatMap((segment) => {
+			const s = segment.trim();
+			if (!s) return [];
+			const eqIdx = s.indexOf("=");
+			if (eqIdx === -1) return [];
+			const key = s.slice(0, eqIdx).trim();
+			const value = s.slice(eqIdx + 1).trim();
+			return key ? [{ key, value }] : [];
+		});
 }
 
 function buildEnvFileContent(entries: { key: string; value: string }[]): string {
@@ -336,10 +337,16 @@ async function ensureNetworking(
 	}
 	// Only add ingress rules that don't already exist to avoid InvalidPermission.Duplicate and noisy "Failed" logs
 	const existingPorts = await getExistingIngressPorts(securityGroupId, region, ws);
-	for (const port of ports) {
-		if (existingPorts.has(port)) continue;
-		await runAWSCommand(["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region], ws, "setup");
-	}
+	const portsToAuthorize = [...ports].filter((port) => !existingPorts.has(port));
+	await Promise.all(
+		portsToAuthorize.map((port) =>
+			runAWSCommand(
+				["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region],
+				ws,
+				"setup"
+			)
+		)
+	);
 
 	return { vpcId, subnetIds, securityGroupId };
 }
@@ -606,13 +613,15 @@ export async function configureAlb(params: {
 	await registerInstanceToTargetGroup(tgArn, instanceId, 80, region, ws);
 
 	const serviceUrls = new Map<string, string>();
-	for (const svc of services) {
-		const sub = services.length === 1 && deployConfig.serviceName?.trim() ? deployConfig.serviceName.trim() : svc.name;
-		const hostname = customHost || buildServiceHostname(svc.name, sub);
-		if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
-		const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
-		serviceUrls.set(svc.name, url);
-	}
+	await Promise.all(
+		services.map(async (svc) => {
+			const sub = services.length === 1 && deployConfig.serviceName?.trim() ? deployConfig.serviceName.trim() : svc.name;
+			const hostname = customHost || buildServiceHostname(svc.name, sub);
+			if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
+			const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
+			serviceUrls.set(svc.name, url);
+		})
+	);
 
 	return { sharedAlbDns: alb.dnsName, serviceUrls };
 }
@@ -716,6 +725,11 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 	let consecutiveErrors = 0;
 	let encodingErrorShown = false;
 	let cloudInitFailureDetected = false;
+	const USER_DATA_SUCCESS_RE = /Deployment complete!|Instance setup complete!|Static instance setup complete!/;
+	const CLOUD_INIT_FINISHED_RE = /Cloud-init v\..*finished/s;
+	const FAST_FAIL_ERROR_RE = /Deployment failed during instance initialization \(Cloud-init error\)|Deployment did not complete successfully/;
+	const ENCODING_ERROR_RE = /charmap|codec|encode/;
+
 	for (let i = 1; i <= 72; i++) {
 		try {
 			const raw = await getConsoleOutput(instanceId, region);
@@ -761,11 +775,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				}
 
 				// Check for success signals from the different user-data flows.
-				if (
-					clean.includes("Deployment complete!") ||
-					clean.includes("Instance setup complete!") ||
-					clean.includes("Static instance setup complete!")
-				) {
+				if (USER_DATA_SUCCESS_RE.test(clean)) {
 					if (cloudInitFailureDetected) {
 						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
 					} else {
@@ -775,7 +785,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				}
 
 				// If cloud-init finished but we haven't seen "Deployment complete!", wait a bit more
-				if (clean.includes("Cloud-init v.") && clean.includes("finished") && i >= 12) {
+				if (CLOUD_INIT_FINISHED_RE.test(clean) && i >= 12) {
 					send("Cloud-init finished. Checking if deployment completed...", "deploy");
 					if (i >= 18) {
 						send("❌ Error: Cloud-init finished but no deployment completion signal found. The build likely failed.", "deploy");
@@ -789,15 +799,11 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 			const sanitized = sanitizeConsoleOutput(errorMsg.replace(/[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF]/g, ""));
 
 			// Fail fast on explicit user-data/cloud-init script failures instead of continuing the polling loop.
-			if (
-				cloudInitFailureDetected ||
-				errorMsg.includes("Deployment failed during instance initialization (Cloud-init error)") ||
-				errorMsg.includes("Deployment did not complete successfully")
-			) {
+			if (cloudInitFailureDetected || FAST_FAIL_ERROR_RE.test(errorMsg)) {
 				throw e instanceof Error ? e : new Error(sanitized);
 			}
 
-			if (errorMsg.includes("charmap") || errorMsg.includes("codec") || errorMsg.includes("encode")) {
+			if (ENCODING_ERROR_RE.test(errorMsg)) {
 				if (!encodingErrorShown) {
 					send(`Note: Console output encoding issue detected (Windows compatibility). Continuing...`, "deploy");
 					encodingErrorShown = true;
@@ -930,19 +936,33 @@ export async function detectRespondingPort(
 	try {
 		const { runCommandLiveWithWebSocket } = await import("@/server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
-		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
+		const candidates = Array.from(
+			new Set([
+				80,
+				8080,
+				...services.flatMap((s) => (typeof s.port === "number" && s.port ? [s.port] : [])),
+			])
+		);
 		send(skipDockerDiagnostics ? "Waiting for nginx to be ready (this may take a minute)..." : "Waiting for application to be ready (this may take a minute)...", "deploy");
 		send("diagnostics:curl:start", "deploy");
 		for (let attempt = 1; attempt <= curlAttempts; attempt++) {
-			for (const port of candidates) {
-				try {
-					const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
-					if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
-						send(`Detected responding port ${port} (HTTP ${code})`, "deploy");
-						send("diagnostics:curl:end", "deploy");
-						return port;
-					}
-				} catch { /* try next */ }
+			const hit = (
+				await Promise.all(
+					candidates.map(async (port) => {
+						try {
+							const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
+							if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
+								return { port, code };
+							}
+						} catch { /* try next */ }
+						return null;
+					})
+				)
+			).find((result): result is { port: number; code: string } => result !== null);
+			if (hit) {
+				send(`Detected responding port ${hit.port} (HTTP ${hit.code})`, "deploy");
+				send("diagnostics:curl:end", "deploy");
+				return hit.port;
 			}
 			if (attempt < curlAttempts) {
 				await new Promise(r => setTimeout(r, curlPollMs));

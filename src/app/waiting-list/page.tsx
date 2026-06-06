@@ -1,7 +1,16 @@
+import type { Metadata } from "next";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Mail } from "lucide-react";
+
+export const metadata: Metadata = {
+	title: "Waiting List",
+	robots: {
+		index: false,
+		follow: false,
+	},
+};
 
 export default function WaitingListPage() {
 	return (

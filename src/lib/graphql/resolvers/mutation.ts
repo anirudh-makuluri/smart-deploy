@@ -242,12 +242,13 @@ export async function detectServices(
 			);
 
 			const catalog = discoverServiceCatalog(repoRoot, parsed.repo);
-			const services = catalog.services.map((s: { name: string; workdir: string; language?: string; framework?: string; port?: number; relativePath?: string; build_context?: string }) =>
-				toDetectedService(s, repoRoot)
-			).map((d) => ({
-				...d,
-				language: d.language?.trim() ? d.language : "unknown",
-			}));
+			const services = catalog.services.map((s: { name: string; workdir: string; language?: string; framework?: string; port?: number; relativePath?: string; build_context?: string }) => {
+				const detected = toDetectedService(s, repoRoot);
+				return {
+					...detected,
+					language: detected.language?.trim() ? detected.language : "unknown",
+				};
+			});
 
 			return await persistRepoServiceCatalog(
 				userID,

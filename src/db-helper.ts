@@ -519,9 +519,9 @@ export const dbHelper = {
 				(rows || []) as DeploymentDbRow[],
 				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
 			);
-			const deployments = hydratedRows
-				.filter((row: Record<string, unknown>) => matchesRepoIdentifier(row, repoIdentifier))
-				.map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			const deployments = hydratedRows.flatMap((row: Record<string, unknown>) =>
+				matchesRepoIdentifier(row, repoIdentifier) ? [rowToDeployConfig(row)] : []
+			);
 			return { deployments };
 		} catch (error) {
 			console.error("getDeploymentsByRepo error:", error);

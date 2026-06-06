@@ -195,7 +195,14 @@ export function buildPreviewModel(params: {
 		});
 	}
 
-	const contexts = Array.from(new Set(units.map((u) => safeTrim(u.root)).filter(Boolean)));
+	const contexts = Array.from(
+		new Set(
+			units.flatMap((u) => {
+				const root = safeTrim(u.root);
+				return root ? [root] : [];
+			})
+		)
+	);
 	if (contexts.length > 0) {
 		artifacts.push({
 			id: "build:contexts",

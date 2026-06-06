@@ -38,10 +38,10 @@ function awsNameChunk(s: string, max: number): string {
 
 function parseCommaList(raw: string | undefined): string[] {
 	if (!raw?.trim()) return [];
-	return raw
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean);
+	return raw.split(",").flatMap((s) => {
+		const trimmed = s.trim();
+		return trimmed ? [trimmed] : [];
+	});
 }
 
 function containerEnvFromDeploy(envVars?: string | null): { name: string; value: string }[] {
@@ -145,9 +145,9 @@ export async function deployRailpackServerToEcs(params: {
 		certificateArn: certificateArn || undefined,
 	});
 
-	for (const sg of securityGroups) {
-		await allowAlbToReachService(sg, alb.albSgId, containerPort, ws);
-	}
+	await Promise.all(
+		securityGroups.map((sg) => allowAlbToReachService(sg, alb.albSgId, containerPort, ws))
+	);
 
 	const tgName = awsNameChunk(`sd-${repoName}-${unitName}-tg`, 32);
 	const tgArn = await ensureTargetGroup(tgName, vpcId, containerPort, region, ws, {

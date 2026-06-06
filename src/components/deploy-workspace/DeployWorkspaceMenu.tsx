@@ -61,6 +61,7 @@ export default function DeployWorkspaceMenu({
 						const Icon = MENU_ICONS[item.id];
 						return (
 						<button
+							type="button"
 							key={item.id}
 							onClick={() => onChange(item.id)}
 							title={collapsed ? item.label : undefined}

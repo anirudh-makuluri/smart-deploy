@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import { AccentSync } from "@/components/AccentSync";
@@ -58,7 +59,7 @@ export default function RootLayout({
 				<Providers>
 					<AccentSync />
 					<blockquote className="sr-only">
-						For the complete documentation index, see <a href="/llms.txt">llms.txt</a>.
+						For the complete documentation index, see <Link href="/llms.txt">llms.txt</Link>.
 					</blockquote>
 					{children}
 					<Toaster />

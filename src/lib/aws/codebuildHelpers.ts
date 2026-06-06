@@ -455,14 +455,15 @@ export async function waitForBuildAndStreamLogs(params: {
 			const build = buildResp.builds?.[0];
 			if (!build) continue;
 
+			const buildLogs = build.logs;
 			// Prefer log stream/group from the build response when available
-			if (!logStreamName && build.logs?.streamName) logStreamName = build.logs.streamName;
-			if (build.logs?.groupName) logGroupName = build.logs.groupName;
-			if (!sentLogLocation && (build.logs?.deepLink || build.logs?.groupName || build.logs?.streamName)) {
+			if (!logStreamName && buildLogs?.streamName) logStreamName = buildLogs.streamName;
+			if (buildLogs?.groupName) logGroupName = buildLogs.groupName;
+			if (!sentLogLocation && (buildLogs?.deepLink || buildLogs?.groupName || buildLogs?.streamName)) {
 				const parts: string[] = [];
-				if (build.logs?.groupName) parts.push(`group=${build.logs.groupName}`);
-				if (build.logs?.streamName) parts.push(`stream=${build.logs.streamName}`);
-				if (build.logs?.deepLink) parts.push(`link=${build.logs.deepLink}`);
+				if (buildLogs?.groupName) parts.push(`group=${buildLogs.groupName}`);
+				if (buildLogs?.streamName) parts.push(`stream=${buildLogs.streamName}`);
+				if (buildLogs?.deepLink) parts.push(`link=${buildLogs.deepLink}`);
 				send(`CodeBuild logs: ${parts.join(" | ")}`, "build");
 				sentLogLocation = true;
 			}

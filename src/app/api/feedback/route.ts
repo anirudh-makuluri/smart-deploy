@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
 	const session = await auth.api.getSession({ headers: await headers() });
 	const userId = session?.user?.id;
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
 				...(failure_summary && { failure_summary }),
 				...(failure_logs && { failure_logs }),
 			}),
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

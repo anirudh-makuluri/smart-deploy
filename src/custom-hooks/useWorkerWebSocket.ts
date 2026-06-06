@@ -228,6 +228,16 @@ export function useWorkerWebSocketSession({
 		}
 	}, []);
 
+	const disconnectSocket = useCallback(() => {
+		connectInFlightRef.current = false;
+		connectionAttemptedRef.current = false;
+		everOpenedRef.current = false;
+		onReadyQueueRef.current = [];
+		clearRetryTimer();
+		wsRef.current?.close();
+		wsRef.current = null;
+	}, [clearRetryTimer]);
+
 	const flushOnReadyQueue = useCallback(() => {
 		const queue = onReadyQueueRef.current;
 		onReadyQueueRef.current = [];
@@ -558,6 +568,8 @@ export function useWorkerWebSocketSession({
 		return createWebSocket();
 	}, [createWebSocket]);
 
+	connectionEnabledRef.current = connectionEnabled;
+
 	useEffect(() => {
 		openSocketRef.current = openSocket;
 		return () => {
@@ -566,56 +578,52 @@ export function useWorkerWebSocketSession({
 	}, [openSocket]);
 
 	useEffect(() => {
-		connectionEnabledRef.current = connectionEnabled;
-		if (typeof window === "undefined") return;
+		if (typeof window === "undefined") return () => {};
 
 		if (!connectionEnabled) {
-			connectInFlightRef.current = false;
-			connectionAttemptedRef.current = false;
-			everOpenedRef.current = false;
-			onReadyQueueRef.current = [];
-			clearRetryTimer();
-			wsRef.current?.close();
-			wsRef.current = null;
-				setHasConnectedOnce(false);
-			setSocketStatus("closed");
-			setDeployError(null);
-			return;
+			disconnectSocket();
+			return () => {};
 		}
 
 		openSocket();
-	}, [clearRetryTimer, connectionEnabled, openSocket]);
+		return () => {};
+	}, [connectionEnabled, disconnectSocket, openSocket]);
 
-	useEffect(() => {
-		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") return;
-
+	const requestInitialLogs = useCallback(() => {
 		const active = getActiveDeployment();
 		const payloadUserId =
 			active?.repoName === repoName && active?.serviceName === serviceName ? active.userID : undefined;
+		const socket = wsRef.current;
+		if (socket?.readyState === WebSocket.OPEN) {
+			socket.send(JSON.stringify({
+				type: "get_deploy_logs",
+				payload: { repoName, serviceName, userID: payloadUserId },
+			}));
+			socket.send(JSON.stringify({
+				type: "service_logs",
+				payload: { serviceName, repoName },
+			}));
+		}
+	}, [repoName, serviceName]);
 
-		openSocket(() => {
-			const socket = wsRef.current;
-			if (socket?.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({
-					type: "get_deploy_logs",
-					payload: { repoName, serviceName, userID: payloadUserId },
-				}));
-				socket.send(JSON.stringify({
-					type: "service_logs",
-					payload: { serviceName, repoName },
-				}));
-			}
-		});
-	}, [connectionEnabled, openSocket, repoName, serviceName]);
+	useEffect(() => {
+		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") {
+			return () => {};
+		}
+
+		openSocket(requestInitialLogs);
+		return () => {};
+	}, [connectionEnabled, openSocket, repoName, requestInitialLogs, serviceName]);
 
 	useEffect(() => {
 		return () => {
-			connectInFlightRef.current = false;
-			onReadyQueueRef.current = [];
-			clearRetryTimer();
-			wsRef.current?.close();
+			disconnectSocket();
 		};
-	}, [clearRetryTimer]);
+	}, [disconnectSocket]);
+
+	const effectiveSocketStatus: SocketStatus = connectionEnabled ? socketStatus : "closed";
+	const effectiveDeployError = connectionEnabled ? deployError : null;
+	const effectiveHasConnectedOnce = connectionEnabled ? hasConnectedOnce : false;
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
 		deployConfigRef.current = deployConfig;
@@ -695,18 +703,18 @@ export function useWorkerWebSocketSession({
 	return {
 		steps,
 		deployLogEntries,
-		socketStatus,
+		socketStatus: effectiveSocketStatus,
 		sendDeployConfig,
 		sendRollbackRequest,
 		openSocket,
 		deployConfigRef,
 		deployStatus,
-		deployError,
+		deployError: effectiveDeployError,
 		customDnsStatus,
 		customDnsError,
 		initiateServiceLogs,
 		serviceLogs,
-		hasConnectedOnce,
+		hasConnectedOnce: effectiveHasConnectedOnce,
 		setOnDeployFinished,
 	};
 }

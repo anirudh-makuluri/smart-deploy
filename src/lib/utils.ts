@@ -5,6 +5,23 @@ import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
+const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+	timeZoneName: "short",
+});
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+	year: "numeric",
+	month: "short",
+	day: "numeric",
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+	timeZoneName: "short",
+});
+
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
 }
@@ -25,28 +42,12 @@ export function formatTimestamp(isoString: string | undefined): string {
 	yesterday.setDate(now.getDate() - 1);
 	const isYesterday = date.toDateString() === yesterday.toDateString();
 
-	const timeFormatter = new Intl.DateTimeFormat(undefined, {
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-		timeZoneName: 'short',
-	});
-
 	if (isSameDay) {
-		return `Today at ${timeFormatter.format(date)}`;
+		return `Today at ${TIME_FORMATTER.format(date)}`;
 	} else if (isYesterday) {
-		return `Yesterday at ${timeFormatter.format(date)}`;
+		return `Yesterday at ${TIME_FORMATTER.format(date)}`;
 	} else {
-		const dateFormatter = new Intl.DateTimeFormat(undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit',
-			hour12: true,
-			timeZoneName: 'short',
-		});
-		return dateFormatter.format(date);
+		return DATE_TIME_FORMATTER.format(date);
 	}
 }
 
@@ -142,10 +143,14 @@ export function parseEnvLinesToEntries(text: string): { name: string; value: str
 
 /** Build env vars string from entries (newline-separated KEY=value) for form/deploy. */
 export function buildEnvVarsString(entries: { name: string; value: string }[]): string {
-	return entries
-		.filter((e) => e.name.trim().length > 0)
-		.map((e) => `${e.name.trim()}=${e.value}`)
-		.join("\n");
+	const lines: string[] = [];
+	for (const entry of entries) {
+		const name = entry.name.trim();
+		if (name.length > 0) {
+			lines.push(`${name}=${entry.value}`);
+		}
+	}
+	return lines.join("\n");
 }
 
 export function readDockerfile(file: File): Promise<string> {
@@ -261,7 +266,7 @@ export function getDeploymentForService(
 
 	if (matches.length === 0) return undefined;
 
-	return matches.sort((a, b) => {
+	return matches.toSorted((a, b) => {
 		const statusRankA = getDeploymentStatusRank(a.status);
 		const statusRankB = getDeploymentStatusRank(b.status);
 		const statusDelta = statusRankB - statusRankA;

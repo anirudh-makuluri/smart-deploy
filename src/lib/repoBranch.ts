@@ -4,12 +4,13 @@ import type { repoType } from "@/app/types";
 const WELL_KNOWN_DEFAULT_BRANCHES = ["master", "develop", "dev", "trunk"] as const;
 
 export function branchNamesFromRepo(repo: repoType | null | undefined): string[] {
-	return (repo?.branches ?? []).map((b) => b.name).filter(Boolean);
+	return (repo?.branches ?? []).flatMap((b) => (b.name ? [b.name] : []));
 }
 
 function pickFirstWellKnownBranch(names: string[]): string | undefined {
+	const nameSet = new Set(names);
 	for (const k of WELL_KNOWN_DEFAULT_BRANCHES) {
-		if (names.includes(k)) return k;
+		if (nameSet.has(k)) return k;
 	}
 	return undefined;
 }

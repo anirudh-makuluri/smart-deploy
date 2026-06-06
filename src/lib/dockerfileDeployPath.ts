@@ -78,9 +78,7 @@ export function inferSingleDockerfileBuild(
 	return { dockerfile: dockerfileRel, context };
 }
 
-function escapeRegex(s: string): string {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const DOCKERFILE_COMPOSE_LINE_REGEX = /^(\s*dockerfile:\s*)(.+?)(\s*(?:#.*)?)$/i;
 
 /**
  * When the user renames a Dockerfile key, keep docker-compose dockerfile: lines in sync when they reference the old path.
@@ -90,12 +88,15 @@ export function syncDockerfilePathInCompose(compose: string, oldKey: string, new
 	const variants = Array.from(
 		new Set([oldKey, canonicalDockerfileDeployPath(oldKey)].filter((v) => v && v !== newKey)),
 	);
-	let out = compose;
-	for (const old of variants) {
-		out = out.replace(
-			new RegExp(`^(\\s*dockerfile:\\s*)${escapeRegex(old)}(\\s*(?:#.*)?)$`, "gim"),
-			(_m, prefix: string, suffix: string) => `${prefix}${newKey}${suffix}`,
-		);
-	}
-	return out;
+	const variantSet = new Set(variants.map((variant) => variant.toLowerCase()));
+	return compose
+		.split("\n")
+		.map((line) => {
+			const match = DOCKERFILE_COMPOSE_LINE_REGEX.exec(line);
+			if (!match) return line;
+			const path = match[2].trim();
+			if (!variantSet.has(path.toLowerCase())) return line;
+			return `${match[1]}${newKey}${match[3]}`;
+		})
+		.join("\n");
 }

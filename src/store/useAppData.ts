@@ -17,14 +17,14 @@ export type DetectedRepoCacheEntry = {
 };
 
 const sortRepos = (list: repoType[]) =>
-	[...list].sort((a, b) => {
+	list.toSorted((a, b) => {
 		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 		return dateB - dateA;
 	});
 
 const sortDeployments = (list: DeployConfig[]) =>
-	[...list].sort((a, b) => {
+	list.toSorted((a, b) => {
 		const dateA = a.lastDeployment ? new Date(a.lastDeployment).getTime() : 0;
 		const dateB = b.lastDeployment ? new Date(b.lastDeployment).getTime() : 0;
 		return dateB - dateA;

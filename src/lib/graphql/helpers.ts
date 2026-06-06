@@ -407,8 +407,8 @@ export function sanitizeSubdomain(subdomain: string): string {
 
 export function sortAndLimitRepos(repoList: Awaited<ReturnType<typeof ensureUserAndRepos>>["repoList"]) {
 	const APP_OVERVIEW_REPO_LIMIT = 25;
-	return [...repoList]
-		.sort((a, b) => {
+	return repoList
+		.toSorted((a, b) => {
 			const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 			const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 			return dateB - dateA;
@@ -417,7 +417,7 @@ export function sortAndLimitRepos(repoList: Awaited<ReturnType<typeof ensureUser
 }
 
 export function sortReposByLatestCommit(repoList: Awaited<ReturnType<typeof ensureUserAndRepos>>["repoList"]) {
-	return [...repoList].sort((a, b) => {
+	return repoList.toSorted((a, b) => {
 		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 		return dateB - dateA;

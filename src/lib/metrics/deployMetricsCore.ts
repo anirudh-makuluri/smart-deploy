@@ -66,7 +66,7 @@ export function aggregateRowsToSummary(
 	const durations = rows
 		.map((r) => r.duration_ms)
 		.filter((ms): ms is number => ms !== null && ms !== undefined && Number.isFinite(ms));
-	const sorted = [...durations].sort((a, b) => a - b);
+	const sorted = durations.toSorted((a, b) => a - b);
 	return {
 		totalCount,
 		successCount,

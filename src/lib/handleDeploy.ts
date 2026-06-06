@@ -152,26 +152,31 @@ async function buildEcrServiceImageRefs(params: {
 	services: Array<{ name: string }>;
 	send: (msg: string, stepId: string) => void;
 }): Promise<EcrServiceImageRef[]> {
-	const refs: EcrServiceImageRef[] = [];
-	for (const service of params.services) {
-		const serviceName = service.name?.trim();
-		if (!serviceName) continue;
-		const repoName = `${params.ecrRepoName}-${serviceName}`;
-		const image = await describeImageRefWithFallback({
-			region: params.region,
-			ecrRegistry: params.ecrRegistry,
-			ecrRepoName: repoName,
-			imageTag: params.imageTag,
-			serviceName,
-			send: params.send,
-		});
-		refs.push({
-			serviceName,
-			ecrRepoName: repoName,
-			imageUri: image.imageUri,
-			imageDigest: image.imageDigest ?? null,
-		});
-	}
+	const refs: EcrServiceImageRef[] = await Promise.all(
+		params.services.flatMap((service) => {
+			const serviceName = service.name?.trim();
+			if (!serviceName) return [];
+			const repoName = `${params.ecrRepoName}-${serviceName}`;
+			return [
+				(async () => {
+					const image = await describeImageRefWithFallback({
+						region: params.region,
+						ecrRegistry: params.ecrRegistry,
+						ecrRepoName: repoName,
+						imageTag: params.imageTag,
+						serviceName,
+						send: params.send,
+					});
+					return {
+						serviceName,
+						ecrRepoName: repoName,
+						imageUri: image.imageUri,
+						imageDigest: image.imageDigest ?? null,
+					};
+				})(),
+			];
+		})
+	);
 	return refs;
 }
 
@@ -1591,21 +1596,16 @@ async function handleAWSCodeBuildDeploy(
 			}
 		}
 		send("Preparing ECR repositories...", "build");
-		for (const repo of repoNames) {
-			await ensureEcrRepository(repo, region, send);
-		}
+		await Promise.all([...repoNames].map((repo) => ensureEcrRepository(repo, region, send)));
 		await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
 
 		const hasCommit = Boolean(commitSha);
 		let allTagsExist = hasCommit;
 		if (hasCommit) {
-			for (const repo of repoNames) {
-				const exists = await ecrImageTagExists(region, repo, imageTag);
-				if (!exists) {
-					allTagsExist = false;
-					break;
-				}
-			}
+			const tagChecks = await Promise.all(
+				[...repoNames].map((repo) => ecrImageTagExists(region, repo, imageTag))
+			);
+			allTagsExist = tagChecks.every(Boolean);
 		}
 
 		if (!hasCommit || !allTagsExist) {

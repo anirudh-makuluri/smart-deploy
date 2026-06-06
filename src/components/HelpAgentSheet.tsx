@@ -16,154 +16,23 @@ import {
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import {
+	docCitationsForDisplay,
+	sourceToHref,
+	sourceToLabel,
+	STARTER_PROMPTS,
+} from "@/components/help-agent-sheet/helpAgentSheetUtils";
+import { useHelpAgentSheet } from "@/components/help-agent-sheet/useHelpAgentSheet";
 
 type HelpAgentSheetProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 };
 
-type ChatMessage = {
-	id: string;
-	role: "user" | "assistant";
-	content: string;
-	citations?: string[];
-	model?: string;
-	responseTimeMs?: number;
-	mossRetrievalMs?: number | null;
-};
-
-const STARTER_PROMPTS = [
-	"Why is my deploy failing?",
-	"How do I set up Supabase correctly?",
-	"Why is WebSocket not connecting?",
-];
-
-function slugFromDocFilename(filename: string): string {
-	return filename.replace(/\.md$/i, "").replace(/_/g, "-").toLowerCase();
-}
-
-function sourceToHref(source: string): string {
-	if (source === "README.md") return "/docs";
-	const docMatch = /^docs\/(.+\.md)$/i.exec(source);
-	if (!docMatch) return "/docs";
-	return `/docs/${slugFromDocFilename(docMatch[1])}`;
-}
-
-function sourceToLabel(source: string): string {
-	if (source === "README.md") return "README";
-	return source.replace(/^docs\//, "").replace(/\.md$/i, "");
-}
-
 export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetProps) {
-	const [input, setInput] = React.useState("");
-	const [pending, setPending] = React.useState(false);
-	const [copiedMessageId, setCopiedMessageId] = React.useState<string | null>(null);
-	const [feedbackByMessageId, setFeedbackByMessageId] = React.useState<Record<string, "helpful" | "unhelpful">>({});
-	const [messages, setMessages] = React.useState<ChatMessage[]>([
-		{
-			id: "welcome",
-			role: "assistant",
-			content:
-				"I can help you troubleshoot Smart Deploy using the project docs. Ask what you're stuck on and include exact errors when possible.",
-			citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
-		},
-	]);
-	const endRef = React.useRef<HTMLDivElement | null>(null);
-
-	React.useEffect(() => {
-		endRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, pending]);
-
-	const copyAssistantMessage = React.useCallback(async (messageId: string, content: string) => {
-		try {
-			await navigator.clipboard.writeText(content);
-			setCopiedMessageId(messageId);
-			window.setTimeout(() => {
-				setCopiedMessageId((current) => (current === messageId ? null : current));
-			}, 1400);
-		} catch {
-			// Ignore clipboard errors on unsupported contexts.
-		}
-	}, []);
-
-	const setFeedback = React.useCallback((messageId: string, feedback: "helpful" | "unhelpful") => {
-		setFeedbackByMessageId((prev) => ({ ...prev, [messageId]: feedback }));
-	}, []);
-
-	const askHelpAgent = React.useCallback(async (question: string) => {
-		const cleaned = question.trim();
-		if (!cleaned || pending) return;
-
-		const nextUserMessage: ChatMessage = {
-			id: `${Date.now()}-user`,
-			role: "user",
-			content: cleaned,
-		};
-
-		setMessages((prev) => [...prev, nextUserMessage]);
-		setInput("");
-		setPending(true);
-
-		try {
-			const history = [...messages, nextUserMessage].slice(-8).map((message) => ({
-				role: message.role,
-				content: message.content,
-			}));
-
-			const response = await fetch("/api/help-agent", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					question: cleaned,
-					history,
-				}),
-			});
-
-			const data = (await response.json()) as {
-				answer?: string;
-				citations?: string[];
-				model?: string;
-				responseTimeMs?: number;
-				mossRetrievalMs?: number | null;
-				error?: string;
-			};
-
-			if (!response.ok) {
-				throw new Error(data.error || "Help agent request failed");
-			}
-
-			setMessages((prev) => [
-				...prev,
-				{
-					id: `${Date.now()}-assistant`,
-					role: "assistant",
-					content: data.answer || "I couldn't generate a response right now.",
-					citations: Array.isArray(data.citations) ? data.citations : [],
-					model: typeof data.model === "string" ? data.model : undefined,
-					responseTimeMs: typeof data.responseTimeMs === "number" ? data.responseTimeMs : undefined,
-					mossRetrievalMs:
-						typeof data.mossRetrievalMs === "number" || data.mossRetrievalMs === null
-							? data.mossRetrievalMs
-							: undefined,
-				},
-			]);
-		} catch (error) {
-			setMessages((prev) => [
-				...prev,
-				{
-					id: `${Date.now()}-error`,
-					role: "assistant",
-					content:
-						error instanceof Error
-							? `I hit an issue while responding: ${error.message}`
-							: "I hit an issue while responding. Please retry.",
-					citations: ["docs/TROUBLESHOOTING.md"],
-				},
-			]);
-		} finally {
-			setPending(false);
-		}
-	}, [messages, pending]);
+	const { state, endRef, dispatch, copyAssistantMessage, setFeedback, askHelpAgent, submitInput } =
+		useHelpAgentSheet();
+	const { input, pending, copiedMessageId, feedbackByMessageId, messages } = state;
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
@@ -231,7 +100,7 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 									)}
 									{message.citations && message.citations.length > 0 ? (
 										<div className="mt-2 flex flex-wrap gap-2">
-											{message.citations.filter((citation) => citation !== "README.md").map((citation) => (
+											{docCitationsForDisplay(message.citations).map((citation) => (
 												<Link
 													key={`${message.id}-${citation}`}
 													href={sourceToHref(citation)}
@@ -266,7 +135,7 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 													size="icon"
 													className={cn(
 														"h-7 w-7 text-muted-foreground hover:text-foreground",
-														feedbackByMessageId[message.id] === "helpful" && "text-emerald-500 hover:text-emerald-500"
+														feedbackByMessageId[message.id] === "helpful" && "text-emerald-500 hover:text-emerald-500",
 													)}
 													onClick={() => setFeedback(message.id, "helpful")}
 													aria-label="Mark response helpful"
@@ -279,7 +148,7 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 													size="icon"
 													className={cn(
 														"h-7 w-7 text-muted-foreground hover:text-foreground",
-														feedbackByMessageId[message.id] === "unhelpful" && "text-rose-500 hover:text-rose-500"
+														feedbackByMessageId[message.id] === "unhelpful" && "text-rose-500 hover:text-rose-500",
 													)}
 													onClick={() => setFeedback(message.id, "unhelpful")}
 													aria-label="Mark response unhelpful"
@@ -293,7 +162,9 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 													{typeof message.responseTimeMs === "number" || typeof message.mossRetrievalMs === "number" ? (
 														<div>
 															{typeof message.responseTimeMs === "number" ? `Response: ${message.responseTimeMs} ms` : ""}
-															{typeof message.mossRetrievalMs === "number" ? `${typeof message.responseTimeMs === "number" ? " · " : ""}Moss: ${message.mossRetrievalMs} ms` : ""}
+															{typeof message.mossRetrievalMs === "number"
+																? `${typeof message.responseTimeMs === "number" ? " · " : ""}Moss: ${message.mossRetrievalMs} ms`
+																: ""}
 														</div>
 													) : null}
 												</div>
@@ -314,21 +185,15 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 					</ScrollArea>
 
 					<div className="border-t border-border/60 p-4">
-						<form
-							className="space-y-2"
-							onSubmit={(event) => {
-								event.preventDefault();
-								void askHelpAgent(input);
-							}}
-						>
+						<div className="space-y-2">
 							<Textarea
 								value={input}
-								onChange={(event) => setInput(event.target.value)}
+								onChange={(event) => dispatch({ type: "set_input", value: event.target.value })}
 								onKeyDown={(event) => {
 									if (event.key === "Enter" && !event.shiftKey) {
 										event.preventDefault();
 										if (!pending && input.trim().length > 0) {
-											void askHelpAgent(input);
+											submitInput();
 										}
 									}
 								}}
@@ -340,12 +205,12 @@ export default function HelpAgentSheet({ open, onOpenChange }: HelpAgentSheetPro
 								<Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground">
 									Browse docs
 								</Link>
-								<Button type="submit" size="sm" disabled={pending || input.trim().length === 0}>
+								<Button type="button" size="sm" disabled={pending || input.trim().length === 0} onClick={submitInput}>
 									<Send className="size-4" />
 									Ask agent
 								</Button>
 							</div>
-						</form>
+						</div>
 					</div>
 				</div>
 			</SheetContent>

@@ -96,28 +96,35 @@ async function cleanupSharedAlbForTargetGroup(targetGroupArn: string, region: st
 				new DescribeListenersCommand({ LoadBalancerArn: albArn })
 			);
 
-			for (const listener of listenersResult.Listeners || []) {
-				const listenerArn = listener.ListenerArn;
-				if (!listenerArn) continue;
+			const listeners = listenersResult.Listeners || [];
+			const ruleArnsToDelete = (
+				await Promise.all(
+					listeners.map(async (listener) => {
+						const listenerArn = listener.ListenerArn;
+						if (!listenerArn) return [] as string[];
+						const rulesResult = await elbClient.send(
+							new DescribeRulesCommand({ ListenerArn: listenerArn })
+						);
+						return (rulesResult.Rules || []).flatMap((rule) => {
+							const forwardsTarget = (rule.Actions || []).some(
+								(action) =>
+									action.Type === "forward" && action.TargetGroupArn === targetGroupArn
+							);
+							return forwardsTarget && rule.RuleArn ? [rule.RuleArn] : [];
+						});
+					})
+				)
+			).flat();
 
-				const rulesResult = await elbClient.send(
-					new DescribeRulesCommand({ ListenerArn: listenerArn })
-				);
-
-				for (const rule of rulesResult.Rules || []) {
-					const forwardsTarget = (rule.Actions || []).some(
-						(action) =>
-							action.Type === "forward" && action.TargetGroupArn === targetGroupArn
-					);
-					if (forwardsTarget && rule.RuleArn) {
-						try {
-							await elbClient.send(new DeleteRuleCommand({ RuleArn: rule.RuleArn }));
-						} catch {
-							// Ignore rule delete errors
-						}
+			await Promise.all(
+				ruleArnsToDelete.map(async (ruleArn) => {
+					try {
+						await elbClient.send(new DeleteRuleCommand({ RuleArn: ruleArn }));
+					} catch {
+						// Ignore rule delete errors
 					}
-				}
-			}
+				})
+			);
 		} catch {
 			// Ignore listener/rule cleanup errors
 		}
@@ -127,18 +134,16 @@ async function cleanupSharedAlbForTargetGroup(targetGroupArn: string, region: st
 		await elbClient.send(new DeleteTargetGroupCommand({ TargetGroupArn: targetGroupArn }));
 
 		if (albArn) {
-			let hasOtherRoutes = false;
 			const remainingListeners = await elbClient.send(
 				new DescribeListenersCommand({ LoadBalancerArn: albArn })
 			);
-			for (const listener of remainingListeners.Listeners || []) {
-				if (!listener.ListenerArn) continue;
-				const rulesResult = await elbClient.send(
-					new DescribeRulesCommand({ ListenerArn: listener.ListenerArn })
-				);
-				hasOtherRoutes =
-					hasOtherRoutes ||
-					(rulesResult.Rules || []).some((rule) =>
+			const routeChecks = await Promise.all(
+				(remainingListeners.Listeners || []).map(async (listener) => {
+					if (!listener.ListenerArn) return false;
+					const rulesResult = await elbClient.send(
+						new DescribeRulesCommand({ ListenerArn: listener.ListenerArn })
+					);
+					return (rulesResult.Rules || []).some((rule) =>
 						(rule.Actions || []).some(
 							(action) =>
 								action.Type === "forward" &&
@@ -146,7 +151,9 @@ async function cleanupSharedAlbForTargetGroup(targetGroupArn: string, region: st
 								action.TargetGroupArn !== targetGroupArn
 						)
 					);
-			}
+				})
+			);
+			const hasOtherRoutes = routeChecks.some(Boolean);
 
 			if (!hasOtherRoutes) {
 				console.log("No other routes on shared ALB. Deleting ALB...");
@@ -168,11 +175,11 @@ async function resolveEcsTargetGroupArn(deployConfig: DeployConfig, region: stri
 		awsNameChunk(`sd-${repoName}-${serviceName}-tg`, 32),
 		awsNameChunk(`sd-${repoName}-app-tg`, 32),
 	];
-	for (const name of [...new Set(candidates)]) {
-		const arn = await findTargetGroupArnByName(name, region, null);
-		if (arn) return arn;
-	}
-	return null;
+	const uniqueCandidates = [...new Set(candidates)];
+	const arns = await Promise.all(
+		uniqueCandidates.map((name) => findTargetGroupArnByName(name, region, null))
+	);
+	return arns.find((arn) => arn) ?? null;
 }
 
 async function deleteEcsDeployment(deployConfig: DeployConfig): Promise<void> {

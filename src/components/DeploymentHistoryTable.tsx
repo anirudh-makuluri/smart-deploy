@@ -24,9 +24,16 @@ import type { DeployStep } from "@/app/types";
 import { DeploymentLogsModal, type DeploymentLogsModalPrefetched } from "@/components/DeploymentLogsModal";
 import { fetchDeploymentHistoryAllPage } from "@/lib/graphqlClient";
 import { useQuery } from "@tanstack/react-query";
+import {
+	deploymentHistoryTableReducer,
+	deploymentHistoryEnvOptions,
+	deploymentHistoryStatusOptions,
+	initialDeploymentHistoryTableState,
+	type DeploymentHistoryTableState,
+} from "@/components/deployment-history-table/deploymentHistoryTableState";
 
-const statusOptions = ["all", "success", "failed"] as const;
-const envOptions = ["all", "production", "staging", "development"] as const;
+const statusOptions = deploymentHistoryStatusOptions;
+const envOptions = deploymentHistoryEnvOptions;
 
 type DeploymentHistoryRow = {
 	id: string;
@@ -85,18 +92,10 @@ function downloadCsv(rows: DeploymentHistoryRow[]) {
 	URL.revokeObjectURL(url);
 }
 
-type LogsModalState = {
-	repoName: string;
-	serviceName: string;
-	prefetched?: DeploymentLogsModalPrefetched;
-} | null;
 
 export default function DeploymentHistoryTable() {
-	const [logsModal, setLogsModal] = React.useState<LogsModalState>(null);
-	const [query, setQuery] = React.useState("");
-	const [statusFilter, setStatusFilter] = React.useState<(typeof statusOptions)[number]>("all");
-	const [envFilter, setEnvFilter] = React.useState<(typeof envOptions)[number]>("all");
-	const [page, setPage] = React.useState(1);
+	const [state, dispatch] = React.useReducer(deploymentHistoryTableReducer, initialDeploymentHistoryTableState);
+	const { logsModal, query, statusFilter, envFilter, page } = state;
 	const limit = 10;
 
 	const historyQuery = useQuery({
@@ -130,7 +129,7 @@ export default function DeploymentHistoryTable() {
 		<div className="rounded-xl border border-border bg-card/60 p-4">
 			<DeploymentLogsModal
 				open={logsModal != null}
-				onClose={() => setLogsModal(null)}
+				onClose={() => dispatch({ type: "set_logs_modal", value: null })}
 				repoName={logsModal?.repoName ?? ""}
 				serviceName={logsModal?.serviceName ?? ""}
 				prefetched={logsModal?.prefetched}
@@ -141,11 +140,11 @@ export default function DeploymentHistoryTable() {
 					<Input
 						placeholder="Filter deployments..."
 						value={query}
-						onChange={(e) => setQuery(e.target.value)}
+						onChange={(e) => dispatch({ type: "set_query", value: e.target.value })}
 						className="pl-9 border-border bg-background/60"
 					/>
 				</div>
-				<Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusOptions[number])}>
+				<Select value={statusFilter} onValueChange={(value) => dispatch({ type: "set_status_filter", value: value as typeof statusOptions[number] })}>
 					<SelectTrigger className="w-40 border-border bg-background/60">
 						<SelectValue placeholder="All Statuses" />
 					</SelectTrigger>
@@ -157,7 +156,7 @@ export default function DeploymentHistoryTable() {
 						))}
 					</SelectContent>
 				</Select>
-				<Select value={envFilter} onValueChange={(value) => setEnvFilter(value as typeof envOptions[number])}>
+				<Select value={envFilter} onValueChange={(value) => dispatch({ type: "set_env_filter", value: value as typeof envOptions[number] })}>
 					<SelectTrigger className="w-44 border-border bg-background/60">
 						<SelectValue placeholder="All Environments" />
 					</SelectTrigger>
@@ -204,13 +203,16 @@ export default function DeploymentHistoryTable() {
 								<TableRow
 									key={row.id}
 									onClick={() =>
-										setLogsModal({
-											repoName: row.repo_name,
-											serviceName: row.service_name,
-											prefetched: {
-												steps: row.steps,
-												status: row.success ? "success" : "error",
-												error: row.success ? null : "Deployment failed",
+										dispatch({
+											type: "set_logs_modal",
+											value: {
+												repoName: row.repo_name,
+												serviceName: row.service_name,
+												prefetched: {
+													steps: row.steps,
+													status: row.success ? "success" : "error",
+													error: row.success ? null : "Deployment failed",
+												},
 											},
 										})
 									}
@@ -272,7 +274,7 @@ export default function DeploymentHistoryTable() {
 						variant="outline"
 						className="border-border bg-background/60"
 						disabled={page === 1 || loading}
-						onClick={() => setPage((current) => Math.max(1, current - 1))}
+						onClick={() => dispatch({ type: "set_page", value: Math.max(1, page - 1) })}
 					>
 						Previous
 					</Button>
@@ -280,7 +282,7 @@ export default function DeploymentHistoryTable() {
 						variant="outline"
 						className="border-border bg-background/60"
 						disabled={page >= Math.ceil(total / limit) || loading}
-						onClick={() => setPage((current) => current + 1)}
+						onClick={() => dispatch({ type: "set_page", value: page + 1 })}
 					>
 						Next
 					</Button>

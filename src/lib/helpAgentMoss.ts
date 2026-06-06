@@ -24,8 +24,7 @@ const mossIndexName = process.env.MOSS_HELP_AGENT_INDEX_NAME?.trim() || "smart_d
 let initPromise: Promise<{ client: MossClientLike; indexName: string } | null> | null = null;
 
 async function loadOptionalMossModule(): Promise<unknown> {
-	const dynamicImport = new Function("moduleName", "return import(moduleName);") as (moduleName: string) => Promise<unknown>;
-	return dynamicImport("@moss-dev/moss-web");
+	return import("@moss-dev/moss-web");
 }
 
 function isMossEnabled(): boolean {
@@ -134,7 +133,10 @@ export async function getMossHelpContext(question: string, limit = 4): Promise<H
 
 	try {
 		const queried = await runtime.client.query(runtime.indexName, question, { topK: limit });
-		const docs = (queried.docs ?? []).map(parseMossText).filter((chunk) => chunk.content.length > 0);
+		const docs = (queried.docs ?? []).flatMap((doc) => {
+			const chunk = parseMossText(doc);
+			return chunk.content.length > 0 ? [chunk] : [];
+		});
 		return dedupeChunks(docs).slice(0, limit);
 	} catch (error) {
 		console.warn("Help-agent Moss query failed; using deterministic context only", error);

@@ -3,7 +3,7 @@
  * Manages screenshot generation and refresh with on-demand semantics
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 interface UsePreviewScreenshotProps {
@@ -26,7 +26,7 @@ export function usePreviewScreenshot({
 	onDeploymentsRefetch,
 }: UsePreviewScreenshotProps) {
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [lastAutoRequestKey, setLastAutoRequestKey] = useState<string | null>(null);
+	const lastAutoRequestKeyRef = useRef<string | null>(null);
 
 	const requestScreenshot = useCallback(
 		async (force = false) => {
@@ -85,15 +85,15 @@ export function usePreviewScreenshot({
 	useEffect(() => {
 		if (!repoName || !serviceName) return;
 		const autoRequestKey = `${repoName}::${serviceName}`;
-		if (lastAutoRequestKey === autoRequestKey) return; // Only request once per repo/service
+		if (lastAutoRequestKeyRef.current === autoRequestKey) return; // Only request once per repo/service
 		if (deploymentStatus !== "running") return;
 		if (screenshotUrl) return; // Already have one
 		if (!hasStoredLiveUrl) return; // Can't generate without a live URL
 
-		setLastAutoRequestKey(autoRequestKey);
+		lastAutoRequestKeyRef.current = autoRequestKey;
 		console.debug(`[Screenshot] Auto-generating for ${repoName}/${serviceName}`);
 		void requestScreenshot(false);
-	}, [deploymentStatus, hasStoredLiveUrl, lastAutoRequestKey, repoName, requestScreenshot, screenshotUrl, serviceName]);
+	}, [deploymentStatus, hasStoredLiveUrl, repoName, requestScreenshot, screenshotUrl, serviceName]);
 
 	return {
 		isRefreshing,

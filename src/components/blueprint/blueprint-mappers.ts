@@ -104,7 +104,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		},
 	});
 
-	for (const service of services) {
+	for (const [index, service] of services.entries()) {
 		const id = serviceNodeId(service.name);
 		nodes.push({
 			id,
@@ -112,7 +112,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			title: service.name,
 			subtitle: [service.framework, service.language].filter(Boolean).join(" · ") || "Service",
 			x: COLUMN_X.context,
-			y: services.length === 1 ? ROW_Y.middle : ROW_Y.top + services.indexOf(service) * 120,
+			y: services.length === 1 ? ROW_Y.middle : ROW_Y.top + index * 120,
 			width: NODE_WIDTH,
 			height: NODE_HEIGHT,
 			data: {

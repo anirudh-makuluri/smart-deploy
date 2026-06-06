@@ -98,24 +98,25 @@ export async function ensureSSMInstanceProfile(
 		}
 	}
 
-	await runAWSCommand(
-		[
-			"iam",
-			"attach-role-policy",
-			"--role-name",
-			SSM_ROLE_NAME,
-			"--policy-arn",
-			SSM_MANAGED_POLICY_ARN,
-		],
-		ws,
-		"setup"
-	);
-
-	await runAWSCommand(
-		["iam", "create-instance-profile", "--instance-profile-name", SSM_PROFILE_NAME],
-		ws,
-		"setup"
-	);
+	await Promise.all([
+		runAWSCommand(
+			[
+				"iam",
+				"attach-role-policy",
+				"--role-name",
+				SSM_ROLE_NAME,
+				"--policy-arn",
+				SSM_MANAGED_POLICY_ARN,
+			],
+			ws,
+			"setup"
+		),
+		runAWSCommand(
+			["iam", "create-instance-profile", "--instance-profile-name", SSM_PROFILE_NAME],
+			ws,
+			"setup"
+		),
+	]);
 
 	await runAWSCommand(
 		[
@@ -216,13 +217,11 @@ function normalizeDockerfilePathsInCompose(compose: string): string {
  * Keys that name a directory only (e.g. "client") are written to client/Dockerfile.
  */
 function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
-	const entries = Object.entries(dockerfiles || {})
-		.map(([filePath, content]) => {
-			const raw = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
-			const safePath = canonicalDockerfileDeployPath(raw);
-			return [safePath, content] as [string, string];
-		})
-		.filter(([safePath]) => isSafeDockerfileRelPath(safePath));
+	const entries = Object.entries(dockerfiles || {}).flatMap(([filePath, content]) => {
+		const raw = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
+		const safePath = canonicalDockerfileDeployPath(raw);
+		return isSafeDockerfileRelPath(safePath) ? [[safePath, content] as [string, string]] : [];
+	});
 
 	if (entries.length === 0) return "";
 
@@ -806,12 +805,12 @@ export async function ensureInstanceSsmReady(
 
 	const deadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 		if (await isInstanceSsmManaged(instanceId, region, ws)) {
 			send("Instance is now registered with SSM.", "deploy");
 			return;
 		}
 		send("Still waiting for SSM agent to register...", "deploy");
+		await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 	}
 
 	// If instance has our profile but still not registered, try one reboot (helps when profile was attached after launch)
@@ -826,12 +825,12 @@ export async function ensureInstanceSsmReady(
 			await new Promise((r) => setTimeout(r, 60_000)); // wait for reboot
 			const rebootDeadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
 			while (Date.now() < rebootDeadline) {
-				await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 				if (await isInstanceSsmManaged(instanceId, region, ws)) {
 					send("Instance is now registered with SSM after reboot.", "deploy");
 					return;
 				}
 				send("Still waiting for SSM agent after reboot...", "deploy");
+				await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 			}
 		} catch {
 			// ignore reboot errors, fall through to final error
@@ -1137,7 +1136,7 @@ export async function runRedeployViaSsm(params: {
 	send("Redeploy command sent. Streaming output...", "deploy");
 	const pollIntervalMs = 2000;
 	let lastSentLength = 0;
-	const terminalStates = ["Success", "Failed", "Cancelled", "TimedOut"];
+	const terminalStates = new Set(["Success", "Failed", "Cancelled", "TimedOut"]);
 
 	while (true) {
 		await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -1160,7 +1159,7 @@ export async function runRedeployViaSsm(params: {
 			lastSentLength = fullOutput.length;
 		}
 
-		if (status && terminalStates.includes(status)) {
+		if (status && terminalStates.has(status)) {
 			const success = status === "Success";
 			if (!success && stderr) send(`Stderr: ${stderr}`, "deploy");
 			return { success, output: fullOutput };

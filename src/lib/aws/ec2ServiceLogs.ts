@@ -47,13 +47,11 @@ function sanitizeConsoleOutput(raw: string): string {
 }
 
 function parseLogLines(raw: string): LogEntry[] {
-	const lines = sanitizeConsoleOutput(raw)
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-
+	const lines = sanitizeConsoleOutput(raw).split("\n");
 	const parsed: LogEntry[] = [];
-	for (const line of lines) {
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line) continue;
 		const withoutComposePrefix = line.includes("|") ? line.split("|").slice(1).join("|").trim() : line;
 		const m = withoutComposePrefix.match(/^(\d{4}-\d{2}-\d{2}T[^\s]+)\s+(.*)$/);
 		if (m) {

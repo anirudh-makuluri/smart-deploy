@@ -55,7 +55,7 @@ function getHostedZoneId(): string {
 	return (process.env.ROUTE53_HOSTED_ZONE_ID || config.ROUTE53_HOSTED_ZONE_ID || "").trim();
 }
 
-function useWildcardMode(options?: AddRoute53DnsOptions): boolean {
+function isWildcardDnsMode(options?: AddRoute53DnsOptions): boolean {
 	const raw = (process.env.ROUTE53_USE_WILDCARD ?? config.ROUTE53_USE_WILDCARD ?? "true").trim().toLowerCase();
 	if (raw === "false" || raw === "0") return false;
 	return Boolean(options?.sharedAlbDns?.trim());
@@ -282,7 +282,7 @@ export async function addRoute53DnsRecord(
 	const subdomain = resolveSubdomain(name, options, baseDomain);
 	const customUrl = `https://${subdomain}.${baseDomain}`;
 
-	if (useWildcardMode(options)) {
+	if (isWildcardDnsMode(options)) {
 		if (shouldEnsureWildcard() && sharedAlbDns) {
 			const wildcard = await ensureWildcardAlbRecord(sharedAlbDns, region);
 			if (!wildcard.ok) {

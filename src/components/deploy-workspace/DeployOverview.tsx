@@ -244,6 +244,7 @@ export default function DeployOverview({
 									src={screenshotUrl}
 									alt={`Screenshot of ${deployment.serviceName}`}
 									fill
+									sizes="(max-width: 768px) 100vw, 768px"
 									unoptimized
 									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
 								/>
@@ -253,6 +254,7 @@ export default function DeployOverview({
 								<iframe
 									src={displayUrl}
 									title={`Snapshot of ${deployment.serviceName}`}
+									sandbox=""
 									className="absolute inset-0 h-full w-full pointer-events-none overflow-hidden rounded-b-lg"
 									loading="lazy"
 								/>

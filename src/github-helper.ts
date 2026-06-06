@@ -1,5 +1,13 @@
 import { repoType } from "./app/types";
 
+const IMPORTANT_REPO_FILES = new Set([
+	"package.json",
+	"Dockerfile",
+	"requirements.txt",
+	"main.py",
+	"Procfile",
+]);
+
 export async function getGithubRepos(token: string) {
 	try {
 		const repos: repoType[] = [];
@@ -108,17 +116,14 @@ export async function getRepoFilePaths(full_name: string, branch: string, token:
 		return { filePaths: [], fileContents: {} };
 	}
 
-	const filePaths = treeData.tree
-		?.filter((item: any) => item.type === "blob")
-		?.map((item: any) => item.path);
+	const filePaths =
+		treeData.tree?.flatMap((item: any) => (item.type === "blob" ? [item.path] : [])) ?? [];
 
-
-	const importantFiles = ["package.json", "Dockerfile", "requirements.txt", "main.py", "Procfile"];
 
 	const fileContents: Record<string, string> = {};
 
 	for (const file of filePaths) {
-		if (importantFiles.includes(file)) {
+		if (IMPORTANT_REPO_FILES.has(file)) {
 			const content = await getFileContentFromRepo(full_name, file, token);
 			if (content) fileContents[file] = content;
 		}
