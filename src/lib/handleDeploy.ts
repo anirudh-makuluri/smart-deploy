@@ -17,8 +17,13 @@ import { cloudResourcesFromDeployResult } from "./cloudResources";
 import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
 import { MultiServiceConfig } from "./multiServiceDetector";
 import { dbHelper } from "../db-helper";
-import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
+import {
+	type ActiveDeployRun,
+	startDeploymentRun,
+	createDeployRunStepFlushHandler,
+} from "./deployRunTracker";
+import { uploadDeployRunLogs } from "./aws/deployRunLogs";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
 import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
 import { hasUsableRailpackPlan, pickDeployUnitForBuild } from "./sdArtifactsBuildContext";
@@ -788,7 +793,16 @@ export async function handleDeploy(
 
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps, options);
+	let activeDeployRun: ActiveDeployRun | null = null;
+	const send = createDeployStepsLogger(ws, deploySteps, {
+		...options,
+		onStepsChange: (steps) => {
+			if (activeDeployRun) {
+				createDeployRunStepFlushHandler(activeDeployRun, () => deploySteps)(steps);
+			}
+			options?.onStepsChange?.(steps);
+		},
+	});
 	if (ws) {
 		(ws as any).__deploySend = send;
 	}
@@ -821,6 +835,19 @@ export async function handleDeploy(
 				}),
 				userID
 			);
+
+			activeDeployRun = await startDeploymentRun({
+				userId: userID,
+				repoName: deployConfig.repoName,
+				serviceName: deployConfig.serviceName,
+				branch: deployConfig.branch,
+				commitSha: deployConfig.commitSha ?? undefined,
+				responseId: deployConfig.responseId ?? null,
+				region: deployConfig.region,
+			});
+			if (ws && activeDeployRun) {
+				(ws as any).__deployRun = activeDeployRun;
+			}
 		}
 		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps, rollbackHistoryEntry);
 	} catch (error: any) {
@@ -852,7 +879,16 @@ export async function handleManualRollback(args: {
 	const ws = args.ws;
 	const userID = args.userID;
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps, args.options);
+	let activeDeployRun: ActiveDeployRun | null = null;
+	const send = createDeployStepsLogger(ws, deploySteps, {
+		...args.options,
+		onStepsChange: (steps) => {
+			if (activeDeployRun) {
+				createDeployRunStepFlushHandler(activeDeployRun, () => deploySteps)(steps);
+			}
+			args.options?.onStepsChange?.(steps);
+		},
+	});
 	if (ws) {
 		(ws as any).__deploySend = send;
 	}
@@ -874,6 +910,19 @@ export async function handleManualRollback(args: {
 		}
 		if (deployConfig.ownerID !== userID) {
 			throw new Error("Forbidden: deployment does not belong to user");
+		}
+
+		activeDeployRun = await startDeploymentRun({
+			userId: userID,
+			repoName: deployConfig.repoName,
+			serviceName: deployConfig.serviceName,
+			branch: deployConfig.branch,
+			commitSha: deployConfig.commitSha ?? undefined,
+			responseId: deployConfig.responseId ?? null,
+			region: deployConfig.region,
+		});
+		if (ws && activeDeployRun) {
+			(ws as any).__deployRun = activeDeployRun;
 		}
 
 		const targetHistoryResponse = await dbHelper.getDeploymentHistoryEntryById(historyEntryId, userID);
@@ -1129,7 +1178,8 @@ async function saveDeploymentToDB(
 	customUrl?: string | null,
 	durationMs?: number,
 	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null,
-	failure?: DeploymentFailureRecord | null
+	failure?: DeploymentFailureRecord | null,
+	activeDeployRun?: ActiveDeployRun | null
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
@@ -1206,42 +1256,46 @@ async function saveDeploymentToDB(
 			}
 		}
 
-		// Record deployment history using repo_name + service_name
-		const historyEntry = {
-			timestamp: new Date().toISOString(),
-			success,
-			steps,
-			configSnapshot: configSnapshotFromDeployConfig(minimalDeployment),
-			releaseArtifact: attachDeployConfigToReleaseArtifact(releaseArtifact, minimalDeployment) ?? releaseArtifact ?? {},
-			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
-			...(deployConfig.branch && { branch: deployConfig.branch }),
-			...(durationMs && { durationMs }),
-			...(failure?.code ? { failureCode: failure.code } : {}),
-			...(failure?.classification ? { failureClassification: failure.classification } : {}),
-		};
-
-		const historyResponse = await dbHelper.addDeploymentHistory(
-			deployConfig.repoName,
-			deployConfig.serviceName,
-			userID,
-			historyEntry
-		);
-
-		if (historyResponse.error) {
-			console.error("Failed to record deployment history:", historyResponse.error);
-			captureServerEvent({
-				distinctId: userID,
-				event: "deploy_persistence_failed",
-				properties: {
-					phase: "add_deployment_history",
-					repo_name: deployConfig.repoName ?? null,
-					service_name: deployConfig.serviceName ?? null,
-					success,
-					error: String(historyResponse.error),
-				},
+		if (activeDeployRun) {
+			const finalArtifact =
+				attachDeployConfigToReleaseArtifact(releaseArtifact, minimalDeployment) ?? releaseArtifact ?? {};
+			const uploaded = await uploadDeployRunLogs({
+				userId: activeDeployRun.userId,
+				runId: activeDeployRun.runId,
+				steps,
+				region: activeDeployRun.region ?? deployConfig.region,
 			});
-		} else {
-			console.log("Deployment history recorded:", historyResponse.id);
+
+			const finalizeResponse = await dbHelper.finalizeDeploymentRun({
+				runId: activeDeployRun.runId,
+				userId: activeDeployRun.userId,
+				success,
+				durationMs,
+				steps,
+				releaseArtifact: finalArtifact,
+				failureCode: failure?.code ?? null,
+				failureClassification: failure?.classification ?? null,
+				logRef: uploaded?.logRef ?? null,
+				stepSummary: uploaded?.stepSummary,
+				logTail: uploaded?.logTail,
+			});
+
+			if (finalizeResponse.error) {
+				console.error("Failed to finalize deployment run:", finalizeResponse.error);
+				captureServerEvent({
+					distinctId: userID,
+					event: "deploy_persistence_failed",
+					properties: {
+						phase: "finalize_deployment_run",
+						repo_name: deployConfig.repoName ?? null,
+						service_name: deployConfig.serviceName ?? null,
+						success,
+						error: String(finalizeResponse.error),
+					},
+				});
+			} else {
+				console.log("Deployment run finalized:", activeDeployRun.runId);
+			}
 		}
 	} catch (error) {
 		console.error("Error saving deployment to DB:", error);
@@ -1321,6 +1375,7 @@ async function sendDeployComplete(
 			"Warning: deploy metadata was not persisted because userID is missing."
 		);
 	}
+	const activeDeployRun = (ws as { __deployRun?: ActiveDeployRun } | null | undefined)?.__deployRun ?? null;
 	try {
 		await saveDeploymentToDB(
 			deployConfig,
@@ -1332,7 +1387,8 @@ async function sendDeployComplete(
 			customDns?.success ? customDns.customUrl : null,
 			durationMs,
 			lifecycle?.releaseArtifact ?? null,
-			failure
+			failure,
+			activeDeployRun
 		);
 		if (lifecycle?.postPersistConfig && userID) {
 			const restoreResult = await dbHelper.updateDeployments(lifecycle.postPersistConfig, userID);

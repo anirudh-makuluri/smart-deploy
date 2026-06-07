@@ -1,5 +1,6 @@
+import * as React from "react";
 import { formatTimestamp } from "@/lib/utils";
-import type { DeploymentHistoryEntry } from "@/app/types";
+import type { DeployStep, DeploymentHistoryEntry } from "@/app/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,42 @@ export function DeploymentHistoryEntryItem({
 	onWhyDidItFail,
 	onRollback,
 }: DeploymentHistoryEntryItemProps) {
+	const [displaySteps, setDisplaySteps] = React.useState<DeployStep[]>(entry.steps);
+	const [logsLoading, setLogsLoading] = React.useState(false);
+	const [logsError, setLogsError] = React.useState<string | null>(null);
+
+	React.useEffect(() => {
+		setDisplaySteps(entry.steps);
+		setLogsError(null);
+	}, [entry]);
+
+	React.useEffect(() => {
+		if (!entry.logRef) return;
+		let cancelled = false;
+		void (async () => {
+			setLogsLoading(true);
+			try {
+				const res = await fetch(`/api/deployment-runs/${entry.id}/logs`);
+				const data = (await res.json()) as { steps?: DeployStep[]; error?: string };
+				if (!res.ok) {
+					throw new Error(data.error || "Failed to load deploy logs");
+				}
+				if (!cancelled && data.steps) {
+					setDisplaySteps(data.steps);
+				}
+			} catch (error) {
+				if (!cancelled) {
+					setLogsError(error instanceof Error ? error.message : "Failed to load deploy logs");
+				}
+			} finally {
+				if (!cancelled) setLogsLoading(false);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [entry.id, entry.logRef]);
+
 	return (
 		<AccordionItem key={entry.id} value={entry.id} className="border-border px-4">
 			<AccordionTrigger className="text-foreground hover:no-underline hover:text-muted-foreground py-3">
@@ -98,9 +135,18 @@ export function DeploymentHistoryEntryItem({
 				<div className="space-y-4">
 					<div>
 						<p className="text-xs font-medium text-muted-foreground mb-2">Logs</p>
+						{logsLoading && (
+							<p className="text-xs text-muted-foreground mb-2 flex items-center gap-2">
+								<Loader2 className="size-3 animate-spin" />
+								Loading full deploy logs…
+							</p>
+						)}
+						{logsError && (
+							<p className="text-xs text-amber-500 mb-2">{logsError}</p>
+						)}
 						<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
 							<div className="space-y-3 text-xs font-mono text-muted-foreground">
-								{entry.steps.map((step) => (
+								{displaySteps.map((step) => (
 									<div key={step.id} className="bg-background/50 p-2 rounded border border-border/50">
 										<p className="font-semibold text-foreground mb-1">
 											{step.label} ({step.status})

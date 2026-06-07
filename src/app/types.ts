@@ -267,6 +267,8 @@ export type DeploymentHistoryEntry = {
 	failureCode?: DeploymentFailureCode | null;
 	/** Structured failure metadata derived from logs and lifecycle state */
 	failureClassification?: DeploymentFailureClassification | null;
+	/** S3 object key when full logs are stored externally (deployment_runs). */
+	logRef?: string | null;
 };
 
 /** sd-artifacts `AnalyzeResponse` fields. See `sd-artifacts-integration.md` §4. */

@@ -71,38 +71,36 @@ begin
   end if;
 end $$;
 
--- Deployment history: stored per user so it survives deployment deletion
-create table if not exists public.deployment_history (
+-- Deployment runs: per-attempt metadata; full pipeline logs in S3 (LOGS_BUCKET).
+-- Intentionally no FK to deployments so runs survive deployment deletion.
+create table if not exists public.deployment_runs (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references public."user"(id) on delete cascade,
   repo_name text not null,
   service_name text not null,
-  timestamp timestamptz not null default now(),
-  success boolean not null,
-  steps jsonb not null default '[]',
-  config_snapshot jsonb not null default '{}',
-  release_artifact jsonb not null default '{}',
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  success boolean,
+  duration_ms int,
+  branch text,
   commit_sha text,
   commit_message text,
-  branch text,
-  duration_ms int,
   failure_code text,
-  failure_classification jsonb
+  failure_classification jsonb,
+  release_artifact jsonb not null default '{}',
+  response_id uuid references public.analysis_responses(id) on delete set null,
+  log_store text not null default 's3',
+  log_ref text,
+  step_summary jsonb not null default '[]',
+  log_tail jsonb not null default '[]'
 );
 
-alter table public.deployment_history
-  add column if not exists release_artifact jsonb not null default '{}';
-alter table public.deployment_history
-  add column if not exists failure_code text;
-alter table public.deployment_history
-  add column if not exists failure_classification jsonb;
-
-create index if not exists idx_deployment_history_user_repo_service
-  on public.deployment_history(user_id, repo_name, service_name);
-create index if not exists idx_deployment_history_user_time
-  on public.deployment_history(user_id, timestamp desc);
-create index if not exists idx_deployment_history_latest_success
-  on public.deployment_history(user_id, repo_name, service_name, success, timestamp desc);
+create index if not exists idx_deployment_runs_user_repo_service
+  on public.deployment_runs(user_id, repo_name, service_name);
+create index if not exists idx_deployment_runs_user_started
+  on public.deployment_runs(user_id, started_at desc);
+create index if not exists idx_deployment_runs_latest_success
+  on public.deployment_runs(user_id, repo_name, service_name, success, started_at desc);
 
 -- Help-agent chats: one row per completed Q/A exchange.
 create table if not exists public.help_agent_chats (
@@ -242,7 +240,7 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 -- RLS: disable or set policies as needed; service role bypasses RLS
 alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;
-alter table public.deployment_history enable row level security;
+alter table public.deployment_runs enable row level security;
 alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
@@ -282,8 +280,9 @@ stable
 as $$
   with filtered as (
     select success, duration_ms
-    from public.deployment_history
-    where p_user_id is null or user_id = p_user_id
+    from public.deployment_runs
+    where finished_at is not null
+      and (p_user_id is null or user_id = p_user_id)
   ),
   counts as (
     select
@@ -321,39 +320,40 @@ as $$
       and (p_user_id is null or user_id = p_user_id)
     group by artifact_type
   ),
-  history as (
-    select success, config_snapshot::jsonb as config_snapshot
-    from public.deployment_history
-    where (p_user_id is null or user_id = p_user_id)
+  runs as (
+    select success, release_artifact::jsonb as release_artifact
+    from public.deployment_runs
+    where finished_at is not null
+      and (p_user_id is null or user_id = p_user_id)
   ),
   success_total as (
     select count(*)::bigint as n
-    from history
+    from runs
     where success = true
   ),
   success_flags as (
     select
       count(*) filter (
         where success = true
-          and coalesce((config_snapshot #>> '{scanResults,has_existing_dockerfiles}')::boolean, false) = false
-          and coalesce(jsonb_typeof(config_snapshot #> '{scanResults,dockerfiles}'), '') = 'object'
+          and coalesce((release_artifact #>> '{deployConfig,scanResults,has_existing_dockerfiles}')::boolean, false) = false
+          and coalesce(jsonb_typeof(release_artifact #> '{deployConfig,scanResults,dockerfiles}'), '') = 'object'
           and exists (
             select 1
-            from jsonb_each(coalesce(config_snapshot #> '{scanResults,dockerfiles}', '{}'::jsonb))
+            from jsonb_each(coalesce(release_artifact #> '{deployConfig,scanResults,dockerfiles}', '{}'::jsonb))
           )
       )::bigint as success_with_generated_dockerfiles,
 
       count(*) filter (
         where success = true
-          and coalesce((config_snapshot #>> '{scanResults,has_existing_compose}')::boolean, false) = false
-          and length(coalesce(config_snapshot #>> '{scanResults,docker_compose}', '')) > 0
+          and coalesce((release_artifact #>> '{deployConfig,scanResults,has_existing_compose}')::boolean, false) = false
+          and length(coalesce(release_artifact #>> '{deployConfig,scanResults,docker_compose}', '')) > 0
       )::bigint as success_with_generated_compose,
 
       count(*) filter (
         where success = true
-          and length(coalesce(config_snapshot #>> '{scanResults,nginx_conf}', '')) > 0
+          and length(coalesce(release_artifact #>> '{deployConfig,scanResults,nginx_conf}', '')) > 0
       )::bigint as success_with_nginx_conf
-    from history
+    from runs
   )
   select jsonb_build_object(
     'generated_counts', jsonb_build_object(

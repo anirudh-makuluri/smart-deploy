@@ -13,6 +13,7 @@ import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { isEcsCloudResources } from "@/lib/cloudResources";
+import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
 import {
 	fetchAndBuildRepo,
 	fetchLatestCommit,
@@ -290,9 +291,12 @@ export async function serviceLogs(
 				: null;
 
 			if (ecsResources) {
-				const region = deployConfig.region || config.AWS_REGION;
+				const logs = await getEcsServiceLogs({
+					ecs: ecsResources,
+					limit: limitNum,
+				});
 				return {
-					logs: [],
+					logs,
 					source: "ecs",
 				};
 			}

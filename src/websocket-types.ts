@@ -1,5 +1,6 @@
 import { DeployConfig, DeployStep } from "./app/types";
 import { isEcsCloudResources } from "@/lib/cloudResources";
+import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
@@ -107,8 +108,12 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 	if (deployConfig?.status !== "running") return;
 
 	if (isEcsCloudResources(deployConfig?.cloudResources)) {
+		const logs = await getEcsServiceLogs({
+			ecs: deployConfig.cloudResources,
+			limit: 50,
+		});
 		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
+			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs } }));
 		}
 		return;
 	}

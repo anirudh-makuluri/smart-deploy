@@ -193,6 +193,7 @@ export const typeDefs = `
     durationMs: Int
     failureCode: String
     failureClassification: JSON
+    logRef: String
   }
 
   type DeploymentHistoryPage {
