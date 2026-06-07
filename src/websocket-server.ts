@@ -10,6 +10,7 @@ import { getSupabaseServer } from "./lib/supabaseServer";
 import { isDraftDeploymentStatus } from "./lib/deploymentStatus";
 import { verifyWebSocketAuthToken } from "./lib/wsAuth";
 import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
+import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
 
 async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
 	let resolvedUserId = userID;
@@ -236,6 +237,7 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 server.listen(port, "0.0.0.0", () => {
 	console.log(`WebSocket server running on 0.0.0.0:${port}`);
 	console.log(`[ws] allowed origins: ${allowedOriginsLabel}`);
+	startDeploymentHealthReconciler();
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients

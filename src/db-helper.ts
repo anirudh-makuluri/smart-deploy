@@ -522,6 +522,28 @@ export const dbHelper = {
 		}
 	},
 
+	listDeploymentsForHealthReconcile: async function () {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: rows, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.in("status", ["running", "failed"]);
+
+			if (error) return { error: error.message };
+
+			const hydratedRows = attachAnalysisPayload(
+				(rows || []) as DeploymentDbRow[],
+				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
+			);
+			const deployments = hydratedRows.map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			return { deployments };
+		} catch (error) {
+			console.error("listDeploymentsForHealthReconcile error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	getUserDeployments: async function (userID: string) {
 		try {
 			const supabase = getSupabaseServer();
