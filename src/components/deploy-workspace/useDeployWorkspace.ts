@@ -28,6 +28,7 @@ import {
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
 import {
+	canManageRuntimeDeploymentStatus,
 	isDraftDeploymentStatus,
 	isInProgressDeploymentStatus,
 	resolveDeploymentStatus,
@@ -361,7 +362,8 @@ export function useDeployWorkspace() {
 			setActiveSection("logs");
 			return;
 		}
-		if (deployDisabled) {
+		const isRuntimeRedeploy = canManageRuntimeDeploymentStatus(effectiveDeploymentStatus);
+		if (deployDisabled && !isRuntimeRedeploy) {
 			toast.error(deployDisabledMessage || "Deployment configuration is incomplete.");
 			return;
 		}

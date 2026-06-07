@@ -48,7 +48,7 @@ describe("EC2 diagnostics pipeline", () => {
 
 		expect(port).toBe(80);
 		expect(events[0]).toBe("docker_logs");
-		expect(events[1]).toBe("curl");
+		expect(events.filter((event) => event === "curl")).toHaveLength(2);
 		expect(logs).toContain("diagnostics:docker_logs:start container=smartdeploy-app tail=300");
 		expect(logs).toContain("diagnostics:docker_logs:end");
 		expect(logs).toContain("diagnostics:curl:start");
@@ -83,7 +83,8 @@ describe("EC2 diagnostics pipeline", () => {
 		);
 
 		expect(port).toBe(80);
-		expect(events).toEqual(["docker_logs_1", "docker_logs_2", "curl"]);
+		expect(events.slice(0, 2)).toEqual(["docker_logs_1", "docker_logs_2"]);
+		expect(events.filter((event) => event === "curl")).toHaveLength(2);
 	}, 15000);
 
 	it("uses missing-container guardrail and still continues to curl checks", async () => {

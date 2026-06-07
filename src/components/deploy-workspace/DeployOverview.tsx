@@ -195,8 +195,8 @@ export default function DeployOverview({
 					{onRedeploy && (
 						<DeployOptions
 							onDeploy={onRedeploy}
-							disabled={isDeploying || deployDisabled}
-							title={deployDisabled ? deployDisabledReason : undefined}
+							disabled={isDeploying || (deployDisabled && !canManageDeployment)}
+							title={deployDisabled && !canManageDeployment ? deployDisabledReason : undefined}
 							repo={repo}
 							branch={resolveWorkspaceBranch(repo, deployment.branch) || ""}
 						/>
