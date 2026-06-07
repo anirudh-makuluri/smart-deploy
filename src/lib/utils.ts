@@ -1,9 +1,28 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
 import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
-import { getDeploymentKind, isDirectStaticScanResults } from "@/lib/deploymentKind";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
+import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
+import { isEcsCloudResources, isStaticS3CloudResources } from "@/lib/cloudResources";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+
+const TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+	timeZoneName: "short",
+});
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+	year: "numeric",
+	month: "short",
+	day: "numeric",
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+	timeZoneName: "short",
+});
 
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs))
@@ -25,28 +44,12 @@ export function formatTimestamp(isoString: string | undefined): string {
 	yesterday.setDate(now.getDate() - 1);
 	const isYesterday = date.toDateString() === yesterday.toDateString();
 
-	const timeFormatter = new Intl.DateTimeFormat(undefined, {
-		hour: 'numeric',
-		minute: '2-digit',
-		hour12: true,
-		timeZoneName: 'short',
-	});
-
 	if (isSameDay) {
-		return `Today at ${timeFormatter.format(date)}`;
+		return `Today at ${TIME_FORMATTER.format(date)}`;
 	} else if (isYesterday) {
-		return `Yesterday at ${timeFormatter.format(date)}`;
+		return `Yesterday at ${TIME_FORMATTER.format(date)}`;
 	} else {
-		const dateFormatter = new Intl.DateTimeFormat(undefined, {
-			year: 'numeric',
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit',
-			hour12: true,
-			timeZoneName: 'short',
-		});
-		return dateFormatter.format(date);
+		return DATE_TIME_FORMATTER.format(date);
 	}
 }
 
@@ -54,14 +57,14 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	if (!target) return "Unknown";
 
 	const targetNames: Record<DeploymentTarget, string> = {
-		'ec2': 'AWS EC2',
-		'cloud_run': 'Google Cloud Run',
+		ecs: "AWS ECS (Fargate)",
+		static_s3: "Static site (S3 / CDN)",
 	};
 
 	return targetNames[target] || target;
 }
 
-/** Sanitize a string for use as a DNS subdomain (lowercase, a-z0-9-, max 63 chars). Exported for Vercel DNS API. */
+/** Sanitize a string for use as a DNS subdomain (lowercase, a-z0-9-, max 63 chars). */
 export function sanitizeSubdomain(s: string): string {
 	const out = s
 		.toLowerCase()
@@ -75,19 +78,37 @@ export function sanitizeSubdomain(s: string): string {
 const deploymentDomain = () =>
 	(typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim()) || "";
 
-/** URL to show for "Visit" / "Open link". Prefers stored custom_url; else *.NEXT_PUBLIC_DEPLOYMENT_DOMAIN when set; else deployUrl. */
-export function getDeploymentDisplayUrl(d: { deployUrl?: string | null; custom_url?: string | null; service_name?: string; id?: string }): string | undefined {
-	const custom = (d.custom_url ?? "").trim();
-	if (custom) return custom;
+/** URL to show for "Visit" / "Open link". Prefers hosted subdomain URL; else cloud resource base URL. */
+export function getDeploymentDisplayUrl(
+	d: Pick<DeployConfig, "hostedSubdomain" | "cloudResources" | "serviceName" | "id"> & {
+		deployUrl?: string | null;
+		custom_url?: string | null;
+		service_name?: string;
+	}
+): string | undefined {
+	const hosted = getDeploymentHostedUrl(d);
+	if (hosted) return hosted;
+
+	const resources = d.cloudResources;
+	if (isEcsCloudResources(resources) && resources.baseUrl?.trim()) {
+		return resources.baseUrl.trim();
+	}
+	if (isStaticS3CloudResources(resources) && resources.publicBaseUrl?.trim()) {
+		return resources.publicBaseUrl.trim();
+	}
+
+	const legacyCustom = (d.custom_url ?? "").trim();
+	if (legacyCustom) return legacyCustom;
+
 	const base = deploymentDomain();
 	if (base) {
-		const sub = sanitizeSubdomain((d.service_name ?? d.id ?? "app").toString());
+		const sub = sanitizeSubdomain((d.service_name ?? d.serviceName ?? d.id ?? "app").toString());
 		return `https://${sub}.${base.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
 	}
 	return d.deployUrl ?? undefined;
 }
 
-/** When using NEXT_PUBLIC_DEPLOYMENT_DOMAIN, this is the URL to point DNS to in Vercel (CNAME target). */
+/** When using NEXT_PUBLIC_DEPLOYMENT_DOMAIN, returns the deploy target host for Route 53 alias/CNAME. */
 export function getDeploymentDnsTarget(d: { deployUrl?: string | null }): string | undefined {
 	if (!deploymentDomain()) return undefined;
 	const url = d.deployUrl?.trim();
@@ -140,10 +161,14 @@ export function parseEnvLinesToEntries(text: string): { name: string; value: str
 
 /** Build env vars string from entries (newline-separated KEY=value) for form/deploy. */
 export function buildEnvVarsString(entries: { name: string; value: string }[]): string {
-	return entries
-		.filter((e) => e.name.trim().length > 0)
-		.map((e) => `${e.name.trim()}=${e.value}`)
-		.join("\n");
+	const lines: string[] = [];
+	for (const entry of entries) {
+		const name = entry.name.trim();
+		if (name.length > 0) {
+			lines.push(`${name}=${entry.value}`);
+		}
+	}
+	return lines.join("\n");
 }
 
 export function readDockerfile(file: File): Promise<string> {
@@ -246,7 +271,7 @@ export function getDeploymentForService(
 	const matches: DeployConfig[] = [];
 
 	for (const d of deployments) {
-		if (d.repoName !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+		if (d.repoName !== repoName && normalizeRepoUrl(d.repoUrl) !== normalizeRepoUrl(repoUrl)) continue;
 
 		const dbServiceName = d.serviceName || "";
 		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();
@@ -259,7 +284,7 @@ export function getDeploymentForService(
 
 	if (matches.length === 0) return undefined;
 
-	return matches.sort((a, b) => {
+	return matches.toSorted((a, b) => {
 		const statusRankA = getDeploymentStatusRank(a.status);
 		const statusRankB = getDeploymentStatusRank(b.status);
 		const statusDelta = statusRankB - statusRankA;
@@ -292,18 +317,11 @@ export function isDeploymentDisabled(deployment: DeployConfig): boolean {
 	if (!deployment) return true;
 
 	const scanResults = deployment.scanResults;
-	if (getDeploymentKind(deployment) === "direct-static") {
-		if (!isDirectStaticScanResults(scanResults)) return true;
-		const hasOutputDir = Boolean(scanResults.output_dir?.trim());
-		const hasNginxConf = Boolean(scanResults.nginx_conf?.trim());
-		return !(hasOutputDir && hasNginxConf);
+	if (isSdArtifactsAnalyzeScan(scanResults)) {
+		const st = scanResults.build_status;
+		if (st === "failed" || st === "error" || st === "not_run") return true;
+		return !scanResults.deploy_units?.length;
 	}
 
-	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
-		? (scanResults as SDArtifactsResponse)
-		: null;
-	const hasDockerfile = !!(scanResultsTyped?.dockerfiles && Object.keys(scanResultsTyped.dockerfiles).length > 0);
-	const hasNginxConf = !!scanResultsTyped?.nginx_conf?.trim();
-
-	return !(hasDockerfile && hasNginxConf);
+	return true;
 }

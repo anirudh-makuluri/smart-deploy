@@ -6,20 +6,26 @@
  */
 
 import { detectMultiService } from "@/lib/multiServiceDetector";
-import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
-import { getSubnetIds, deleteHostRule, ensureSharedAlb } from "@/lib/aws/awsHelpers";
-import { configureAlb } from "@/lib/aws/handleEC2";
+import {
+	getSubnetIds,
+	deleteHostRule,
+	ensureHostRule,
+	ensureSharedAlb,
+	findTargetGroupArnByName,
+} from "@/lib/aws/awsHelpers";
 import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace } from "@/lib/githubRepoArchive";
 import { deleteDeploymentForUser, controlDeploymentForUser } from "@/lib/deploymentActions";
 import { getGithubRepos } from "@/github-helper";
 import { invalidateRepoCache, ensureUserAndRepos } from "@/lib/sessionHelpers";
 import { createWebSocketLogger } from "@/lib/websocketLogger";
-import { addVercelDnsRecord } from "@/lib/vercelDns";
+import { addRoute53DnsRecord } from "@/lib/route53Dns";
 import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 import { dbHelper } from "@/db-helper";
 import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { classifyServiceForDetection } from "@/lib/serviceDetectionClassification";
+import { isEcsDeployment, isEcsCloudResources } from "@/lib/cloudResources";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import config from "@/config";
 import fs from "fs";
 import path from "path";
@@ -149,35 +155,90 @@ export function normalizeCustomUrlInput(value?: string): string | null {
 }
 
 export function buildServicesForDeployment(deployment: any): any[] {
-	const services = (deployment.scanResults?.services || []).filter(Boolean);
 	const fallbackName = deployment.serviceName || deployment.repoName;
-	if (services.length === 0) {
-		return [{ name: fallbackName, dir: ".", port: 8080 }];
+	const scan = deployment.scanResults;
+	if (scan?.deploy_units && Array.isArray(scan.deploy_units)) {
+		const units = scan.deploy_units.filter(Boolean);
+		if (units.length === 0) {
+			return [{ name: fallbackName, dir: ".", port: 8080 }];
+		}
+		return units.map((unit: { name?: string; root?: string; port?: number; framework?: string | null; provider?: string }) => ({
+			name: unit.name || fallbackName,
+			dir: unit.root || ".",
+			port: unit.port || 8080,
+			relativePath: unit.root,
+			framework: unit.framework,
+			language: unit.provider,
+		}));
 	}
-	return services.map((svc: any) => ({
-		name: svc.name || fallbackName,
-		dir: svc.build_context || ".",
-		port: svc.port || 8080,
-		relativePath: svc.build_context,
-		framework: svc.framework,
-		language: svc.language,
-	}));
+	return [{ name: fallbackName, dir: ".", port: 8080 }];
 }
 
-export async function configureCustomDomainForDeployment(
-	deployment: any,
-	previousCustomUrl: string | null
-): Promise<void> {
-	const instanceId = deployment.ec2?.instanceId?.trim();
-	const vpcId = deployment.ec2?.vpcId?.trim();
-	const securityGroupId = deployment.ec2?.securityGroupId?.trim();
-	if (!instanceId || !vpcId || !securityGroupId) {
-		throw new Error("EC2 metadata missing; cannot reconfigure custom domain.");
-	}
+function hostnameFromUrl(url: string | null | undefined): string | null {
+	if (!url?.trim()) return null;
+	return url.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim() || null;
+}
 
-	const region = (deployment.awsRegion || config.AWS_REGION).trim();
-	if (!region) {
-		throw new Error("Missing AWS region for deployment.");
+function awsNameChunk(s: string, max: number): string {
+	const out = s
+		.toLowerCase()
+		.replace(/[^a-z0-9-]/g, "-")
+		.replace(/-+/g, "-")
+		.replace(/^-|-$/g, "")
+		.slice(0, max);
+	return out || "app";
+}
+
+async function resolveEcsTargetGroupArn(deployment: any, region: string): Promise<string | null> {
+	const stored = isEcsCloudResources(deployment.cloudResources)
+		? deployment.cloudResources.targetGroupArn?.trim()
+		: "";
+	if (stored) return stored;
+
+	const repoName = String(deployment.repoName || "").trim();
+	const services = buildServicesForDeployment(deployment);
+	const unitName = services[0]?.name || deployment.serviceName || "app";
+	const serviceName = deployment.serviceName || deployment.repoName || "app";
+	const candidates = [
+		awsNameChunk(`sd-${repoName}-${unitName}-tg`, 32),
+		awsNameChunk(`sd-${repoName}-${serviceName}-tg`, 32),
+	];
+	const arns = await Promise.all(
+		[...new Set(candidates)].map((name) => findTargetGroupArnByName(name, region, null))
+	);
+	return arns.find((arn) => arn) ?? null;
+}
+
+async function removeOldAlbHostRule(
+	listenerArn: string | undefined,
+	previousCustomUrl: string | null,
+	newHostname: string | null,
+	region: string,
+	send: ReturnType<typeof createWebSocketLogger>
+): Promise<void> {
+	if (!previousCustomUrl || !listenerArn) return;
+	const oldHostname = hostnameFromUrl(previousCustomUrl);
+	if (!oldHostname || oldHostname === newHostname) return;
+	try {
+		const deleted = await deleteHostRule(listenerArn, oldHostname, region, null);
+		if (deleted) {
+			send(`Removed ALB listener rule for old domain: ${oldHostname}`, "deploy");
+		}
+	} catch (error) {
+		console.error("Error removing old domain rule:", error);
+		send(`Warning: Could not remove old domain rule: ${error}`, "deploy");
+	}
+}
+
+async function configureCustomDomainForEcs(
+	deployment: any,
+	previousCustomUrl: string | null,
+	region: string
+): Promise<void> {
+	const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const vpcId = ecsResources?.vpcId?.trim();
+	if (!vpcId) {
+		throw new Error("ECS deployment metadata missing; cannot reconfigure custom domain.");
 	}
 
 	const subnetIds = await getSubnetIds(vpcId, null);
@@ -185,81 +246,73 @@ export async function configureCustomDomainForDeployment(
 		throw new Error(`Unable to determine subnet IDs in VPC ${vpcId}.`);
 	}
 
-	const net: any = {
-		vpcId,
-		subnetIds,
-		securityGroupId,
-	};
-
-	const services = buildServicesForDeployment(deployment);
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 	const send = createWebSocketLogger(null);
+	const hostname = hostnameFromUrl(hostedUrlFromSubdomain(deployment.hostedSubdomain));
+	if (!hostname) {
+		throw new Error("Invalid custom domain hostname.");
+	}
 
-	// First: Create the NEW domain configuration (ALB rule + DNS)
-	// If this fails, old domain remains active as fallback
-	await configureAlb({
-		deployConfig: deployment,
-		instanceId,
-		existingInstanceId: undefined,
-		services,
-		repoName: deployment.repoName,
-		net,
+	const alb = await ensureSharedAlb({
+		vpcId,
+		subnetIds: subnetIds.slice(0, 2),
 		region,
-		certificateArn,
 		ws: null,
-		send,
+		certificateArn,
 	});
 
-	const deployUrl = (deployment.deployUrl || deployment.ec2?.sharedAlbDns || deployment.ec2?.baseUrl || "").trim();
+	const listenerArn =
+		ecsResources?.alb?.listenerArn?.trim() ||
+		(certificateArn ? alb.httpsListenerArn : alb.httpListenerArn) ||
+		alb.httpsListenerArn ||
+		alb.httpListenerArn;
+	if (!listenerArn) {
+		throw new Error("ALB listener not found for ECS custom domain update.");
+	}
+
+	const targetGroupArn = await resolveEcsTargetGroupArn(deployment, region);
+	if (!targetGroupArn) {
+		throw new Error("ECS target group not found; redeploy once then retry.");
+	}
+
+	await ensureHostRule(listenerArn, hostname, targetGroupArn, region, null);
+
+	const serviceName = deployment.serviceName || deployment.service_name || deployment.repoName;
+	const sharedAlbDns = String(ecsResources?.alb?.dnsName ?? alb.dnsName ?? "").trim();
+	const deployUrl = sharedAlbDns
+		? `https://${sharedAlbDns}`
+		: deployment.deployUrl || ecsResources?.baseUrl || "";
 	if (!deployUrl) {
-		throw new Error("Missing deployment URL for Vercel DNS configuration.");
+		throw new Error("Missing deployment URL for Route 53 DNS configuration.");
 	}
 
-	const target = deployment.deploymentTarget ?? "ec2";
-	const result = await addVercelDnsRecord(deployUrl, deployment.service_name, {
-		deploymentTarget: target,
+	const result = await addRoute53DnsRecord(deployUrl, serviceName, {
+		deploymentTarget: "ecs",
 		previousCustomUrl,
+		sharedAlbDns: sharedAlbDns || null,
+		awsRegion: region,
 	});
-
 	if (!result.success) {
-		throw new Error(result.error ?? "Failed to add Vercel DNS record");
+		throw new Error(result.error ?? "Failed to add Route 53 DNS record");
 	}
 
-	// Second: Only after new domain is fully configured, remove the old one
-	// If old domain deletion fails, new domain is already live (degraded state, but working)
-	if (previousCustomUrl) {
-		try {
-			const alb = await ensureSharedAlb({
-				vpcId: net.vpcId,
-				subnetIds: net.subnetIds.slice(0, 2),
-				region,
-				ws: null,
-				certificateArn,
-			});
+	await removeOldAlbHostRule(listenerArn, previousCustomUrl, hostname, region, send);
+}
 
-			// Extract hostname from the previous custom URL
-			const oldHostname = (previousCustomUrl || "")
-				.replace(/^https?:\/\//, "")
-				.replace(/\/.*$/, "")
-				.trim();
-
-			if (oldHostname) {
-				// Determine which listener to query based on certificate config
-				const listenerArn = certificateArn ? alb.httpsListenerArn : alb.httpListenerArn;
-				if (listenerArn) {
-					const deleted = await deleteHostRule(listenerArn, oldHostname, region, null);
-					if (deleted) {
-						send(`Removed ALB listener rule for old domain: ${oldHostname}`, "deploy");
-					}
-				}
-			}
-		} catch (error) {
-			// Log but don't fail - old domain deletion issues should not block the update
-			// New domain is already live at this point
-			console.error("Error removing old domain rule:", error);
-			send(`Warning: Could not remove old domain rule: ${error}`, "deploy");
-		}
+export async function configureCustomDomainForDeployment(
+	deployment: any,
+	previousCustomUrl: string | null
+): Promise<void> {
+	const region = (deployment.region || config.AWS_REGION).trim();
+	if (!region) {
+		throw new Error("Missing AWS region for deployment.");
 	}
+
+	if (!isEcsDeployment(deployment)) {
+		throw new Error("Custom domain updates are only supported for ECS deployments.");
+	}
+
+	await configureCustomDomainForEcs(deployment, previousCustomUrl, region);
 }
 
 export function sanitizeSubdomain(subdomain: string): string {
@@ -274,8 +327,8 @@ export function sanitizeSubdomain(subdomain: string): string {
 
 export function sortAndLimitRepos(repoList: Awaited<ReturnType<typeof ensureUserAndRepos>>["repoList"]) {
 	const APP_OVERVIEW_REPO_LIMIT = 25;
-	return [...repoList]
-		.sort((a, b) => {
+	return repoList
+		.toSorted((a, b) => {
 			const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 			const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 			return dateB - dateA;
@@ -284,7 +337,7 @@ export function sortAndLimitRepos(repoList: Awaited<ReturnType<typeof ensureUser
 }
 
 export function sortReposByLatestCommit(repoList: Awaited<ReturnType<typeof ensureUserAndRepos>>["repoList"]) {
-	return [...repoList].sort((a, b) => {
+	return repoList.toSorted((a, b) => {
 		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 		return dateB - dateA;

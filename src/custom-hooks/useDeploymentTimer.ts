@@ -10,6 +10,20 @@ interface UseDeploymentTimerProps {
 	deployStatus: "not-started" | "running" | "success" | "error";
 }
 
+function formatDeploymentElapsedTime(seconds: number) {
+	const hrs = Math.floor(seconds / 3600);
+	const mins = Math.floor((seconds % 3600) / 60);
+	const secs = seconds % 60;
+
+	if (hrs > 0) {
+		return `${hrs}h ${mins}m ${secs}s`;
+	} else if (mins > 0) {
+		return `${mins}m ${secs}s`;
+	}
+
+	return `${secs}s`;
+}
+
 export function useDeploymentTimer({ isActive, deployStatus }: UseDeploymentTimerProps) {
 	const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -40,22 +54,8 @@ export function useDeploymentTimer({ isActive, deployStatus }: UseDeploymentTime
 		};
 	}, [isActive, deployStatus]);
 
-	const formatTime = (seconds: number) => {
-		const hrs = Math.floor(seconds / 3600);
-		const mins = Math.floor((seconds % 3600) / 60);
-		const secs = seconds % 60;
-
-		if (hrs > 0) {
-			return `${hrs}h ${mins}m ${secs}s`;
-		} else if (mins > 0) {
-			return `${mins}m ${secs}s`;
-		}
-
-		return `${secs}s`;
-	};
-
 	return {
 		elapsedSeconds,
-		formattedTime: formatTime(elapsedSeconds),
+		formattedTime: formatDeploymentElapsedTime(elapsedSeconds),
 	};
 }

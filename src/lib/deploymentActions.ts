@@ -1,9 +1,9 @@
-import { EC2Client, StartInstancesCommand, StopInstancesCommand } from "@aws-sdk/client-ec2";
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
-import { deleteVercelDnsRecord } from "@/lib/vercelDns";
+import { deleteRoute53DnsRecord } from "@/lib/route53Dns";
 import { dbHelper } from "@/db-helper";
 import config from "@/config";
-import { DeployConfig, EC2Details } from "@/app/types";
+import { DeployConfig } from "@/app/types";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { transitionDeploymentStatus } from "@/lib/deploymentStatus";
 import { runCommandLiveWithOutput } from "@/server-helper";
 
@@ -17,7 +17,7 @@ export type DeleteDeploymentResult = {
 	status: "success" | "error";
 	message?: string;
 	details?: string;
-	vercelDnsDeleted?: number;
+	dnsRecordsDeleted?: number;
 };
 
 export type DeploymentControlArgs = {
@@ -64,10 +64,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	const deployConfig = deployment as DeployConfig;
 	const cloudProvider = deployConfig.cloudProvider || "aws";
-	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
-	const deploymentTarget =
-		deployConfig.deploymentTarget ||
-		(ec2Casted?.instanceId ? "ec2" : undefined);
+	const deploymentTarget = deployConfig.deploymentTarget || "ecs";
 
 	try {
 		if (cloudProvider === "aws" && deploymentTarget) {
@@ -104,14 +101,14 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 	}
 
 	try {
-		const dnsResult = await deleteVercelDnsRecord({
-		customUrl: deployConfig.liveUrl || null,
-		serviceName: deployConfig.serviceName || validServiceName || null,
+		const dnsResult = await deleteRoute53DnsRecord({
+			customUrl: hostedUrlFromSubdomain(deployConfig.hostedSubdomain),
+			serviceName: deployConfig.serviceName || validServiceName || null,
 		});
 		if (!dnsResult.success) {
 			return {
 				status: "error",
-				message: "Failed to delete Vercel DNS record",
+				message: "Failed to delete Route 53 DNS record",
 				details: dnsResult.error,
 			};
 		}
@@ -130,7 +127,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 		return {
 			status: "success",
 			message: "Deployment deleted; no traces left.",
-			vercelDnsDeleted: dnsResult.deletedCount,
+			dnsRecordsDeleted: dnsResult.deletedCount,
 		};
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -157,40 +154,13 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 		const deployConfig = deployment as DeployConfig;
 		const cloudProvider = deployConfig.cloudProvider || "aws";
 
-		if (cloudProvider === "aws" && deployConfig.deploymentTarget === "ec2") {
-		const ec2ConfigPause = (deployConfig.ec2 || {}) as EC2Details;
-		const instanceId = ec2ConfigPause?.instanceId;
-		if (!instanceId) {
-			return { status: "error", message: "No EC2 instanceId stored for this deployment" };
-		}
-
-		const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-		const clientConfig: ConstructorParameters<typeof EC2Client>[0] = { region };
-			if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
-				clientConfig.credentials = {
-					accessKeyId: config.AWS_ACCESS_KEY_ID,
-					secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
+		if (cloudProvider === "aws" && (deployConfig.deploymentTarget === "ecs" || deployConfig.deploymentTarget === "static_s3")) {
+			if (action === "pause" || action === "resume") {
+				return {
+					status: "error",
+					message: "Pause and resume are not supported for ECS or static S3 deployments yet.",
 				};
 			}
-			const ec2 = new EC2Client(clientConfig);
-
-			if (action === "pause") {
-				await ec2.send(new StopInstancesCommand({ InstanceIds: [instanceId] }));
-				await dbHelper.updateDeployments(
-					{ ...deployConfig, status: transitionDeploymentStatus(deployConfig.status, "pause_requested") },
-					userID
-				);
-				return { status: "success", message: "EC2 instance stopping" };
-			}
-			if (action === "resume") {
-				await ec2.send(new StartInstancesCommand({ InstanceIds: [instanceId] }));
-				await dbHelper.updateDeployments(
-					{ ...deployConfig, status: transitionDeploymentStatus(deployConfig.status, "resume_requested") },
-					userID
-				);
-				return { status: "success", message: "EC2 instance starting" };
-			}
-			return { status: "error", message: "Invalid action for AWS EC2. Must be pause or resume." };
 		}
 	}
 

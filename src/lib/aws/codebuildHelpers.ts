@@ -17,7 +17,9 @@ import {
 } from "@aws-sdk/client-iam";
 import { getAwsClientConfig } from "./sdkClients";
 import { getAwsAccountId } from "./ecrHelpers";
-import type { SDArtifactsResponse } from "../../app/types";
+import config from "../../config";
+import type { SDArtifactsResponse, SDRailpackPlan } from "../../app/types";
+import { railpackFrontendBuildkitSyntax } from "../sdArtifactsBuildContext";
 
 type SendFn = (msg: string, stepId: string) => void;
 
@@ -58,6 +60,36 @@ export async function ensureCodeBuildRole(
 	}));
 	const roleArn = createResp.Role!.Arn!;
 
+	const staticBucket = config.STATIC_SITE_BUCKET?.trim();
+	const staticStatements: object[] = [];
+	if (staticBucket) {
+		staticStatements.push({
+			Effect: "Allow",
+			Action: [
+				"s3:ListBucket",
+				"s3:GetBucketLocation",
+			],
+			Resource: `arn:aws:s3:::${staticBucket}`,
+		});
+		staticStatements.push({
+			Effect: "Allow",
+			Action: [
+				"s3:PutObject",
+				"s3:GetObject",
+				"s3:DeleteObject",
+				"s3:AbortMultipartUpload",
+			],
+			Resource: `arn:aws:s3:::${staticBucket}/*`,
+		});
+		if (config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim()) {
+			staticStatements.push({
+				Effect: "Allow",
+				Action: ["cloudfront:CreateInvalidation"],
+				Resource: "*",
+			});
+		}
+	}
+
 	const permissionsPolicy = JSON.stringify({
 		Version: "2012-10-17",
 		Statement: [
@@ -82,6 +114,7 @@ export async function ensureCodeBuildRole(
 				],
 				Resource: "*",
 			},
+			...staticStatements,
 		],
 	});
 
@@ -147,91 +180,60 @@ function yamlListEntry(line: string, spaces: number): string {
 	return " ".repeat(spaces) + "- " + quoted;
 }
 
-export function generateBuildspec(params: {
+function buildRailpackEcrBuildspec(params: {
 	ecrRegistry: string;
 	ecrRepoName: string;
 	imageTag: string;
 	region: string;
-	scanResults?: SDArtifactsResponse;
+	railpack: {
+		plan: SDRailpackPlan;
+		contextRelative: string;
+		railpackVersion?: string | null;
+		imageUri: string;
+	};
 }): string {
-	const { ecrRegistry, ecrRepoName, imageTag, region, scanResults } = params;
-	const fullUri = `${ecrRegistry}/${ecrRepoName}:${imageTag}`;
-	const services = scanResults?.services || [];
-	const dockerfiles = scanResults?.dockerfiles || {};
-	const hasCompose = !!scanResults?.docker_compose;
-
+	const { ecrRegistry, region, railpack } = params;
+	const fullUri = railpack.imageUri;
+	const syntax = railpackFrontendBuildkitSyntax(railpack.railpackVersion);
+	const ctx = (railpack.contextRelative || ".").replace(/\\/g, "/").trim() || ".";
+	if (ctx !== "." && !/^[a-zA-Z0-9._\-/]+$/.test(ctx)) {
+		throw new Error(`Unsafe Railpack build context path: ${ctx}`);
+	}
+	const planJson = JSON.stringify(railpack.plan);
+	const planB64 = Buffer.from(planJson, "utf8").toString("base64");
+	const chunkSize = 3000;
 	const preBuildCmds: string[] = [
 		"echo Logging in to Amazon ECR...",
 		'REGION="${AWS_DEFAULT_REGION:-${AWS_REGION}}"',
 		`if [ -z "$REGION" ]; then REGION="${region}"; fi`,
 		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${ecrRegistry}`,
-		// When DOCKERHUB_USERNAME + DOCKERHUB_TOKEN are passed as CodeBuild env overrides, authenticate to Docker Hub before docker build (avoids anonymous 429 rate limits).
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
 		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
 		"cd src",
 		'if [ -n "$COMMIT_SHA" ]; then git checkout $COMMIT_SHA; fi',
-	];
-
-	// Write Dockerfiles from scan_results
-	for (const [relPath, content] of Object.entries(dockerfiles)) {
-		const safePath = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
-		if (!safePath || safePath.includes("..")) continue;
-		const dir = safePath.includes("/") ? safePath.substring(0, safePath.lastIndexOf("/")) : "";
-		const b64 = Buffer.from(content, "utf8").toString("base64");
-		if (dir) preBuildCmds.push(`mkdir -p "${dir}"`);
-		preBuildCmds.push(`echo "${b64}" | base64 -d > "${safePath}"`);
-	}
-
-	if (hasCompose) {
-		const composeContent = scanResults?.docker_compose;
-		if (composeContent) {
-			const b64 = Buffer.from(composeContent, "utf8").toString("base64");
-			preBuildCmds.push(`echo "${b64}" | base64 -d > docker-compose.yml`);
-		}
-	}
-
-	preBuildCmds.push(
 		'if [ -n "$APP_ENV_VARS_B64" ]; then echo "$APP_ENV_VARS_B64" | base64 -d > .env; fi',
-	);
-
-	let buildCmds: string[];
-	let postBuildCmds: string[];
-
-	if (hasCompose && services.length > 1) {
-		buildCmds = [
-			"echo Building with docker-compose...",
-			"docker-compose build",
-		];
-		postBuildCmds = ["echo Tagging and pushing images to ECR..."];
-		for (const svc of services) {
-			const svcUri = `${ecrRegistry}/${ecrRepoName}-${svc.name}:${imageTag}`;
-			postBuildCmds.push(
-				`IMAGE_ID=$(docker-compose images ${svc.name} -q 2>/dev/null | head -1); ` +
-					`if [ -z "$IMAGE_ID" ]; then IMAGE_ID=$(docker images -q --filter "reference=*${svc.name}*" | head -1); fi; ` +
-					`if [ -n "$IMAGE_ID" ]; then docker tag "$IMAGE_ID" "${svcUri}"; docker push "${svcUri}" || echo "Warning: could not push ${svc.name}"; ` +
-					`else echo "Warning: could not find image for ${svc.name}"; fi`,
-			);
-		}
-		postBuildCmds.push(
-			`IMAGE_ID=$(docker-compose images ${services[0].name} -q 2>/dev/null | head -1); ` +
-				`if [ -z "$IMAGE_ID" ]; then IMAGE_ID=$(docker images -q --filter "reference=*${services[0].name}*" | head -1); fi; ` +
-				`if [ -n "$IMAGE_ID" ]; then docker tag "$IMAGE_ID" "${fullUri}"; docker push "${fullUri}"; ` +
-				`else echo "Warning: could not find image for ${services[0].name}"; fi`,
-		);
-	} else {
-		const dockerfilePath = services[0]?.dockerfile_path || Object.keys(dockerfiles)[0] || "Dockerfile";
-		const buildContext = services[0]?.build_context || ".";
-		buildCmds = [
-			`echo Building Docker image from ${dockerfilePath}...`,
-			`docker build -f ${dockerfilePath} -t ${fullUri} ${buildContext}`,
-		];
-		postBuildCmds = [
-			"echo Pushing image to ECR...",
-			`docker push ${fullUri}`,
-		];
+		"rm -f /tmp/railpack-plan.b64",
+	];
+	for (let i = 0; i < planB64.length; i += chunkSize) {
+		const part = planB64.slice(i, i + chunkSize);
+		preBuildCmds.push(`printf '%s' ${JSON.stringify(part)} >> /tmp/railpack-plan.b64`);
 	}
-
+	preBuildCmds.push(
+		"base64 -d /tmp/railpack-plan.b64 > /tmp/railpack-plan.json",
+		"rm -f /tmp/railpack-plan.b64",
+	);
+	if (ctx !== ".") {
+		preBuildCmds.push(`cd ${JSON.stringify(ctx)}`);
+	}
+	const buildkitArg = JSON.stringify(syntax);
+	const imageArg = JSON.stringify(fullUri);
+	const buildCmds = [
+		'echo "Building image with Railpack (buildx)..."',
+		"docker buildx create --use 2>/dev/null || docker buildx inspect --bootstrap 2>/dev/null || true",
+		`docker buildx build --provenance=false --sbom=false --build-arg BUILDKIT_SYNTAX=${buildkitArg} -f /tmp/railpack-plan.json -t ${imageArg} --push .`,
+	];
+	const postBuildCmds = ['echo "Railpack image push complete."'];
 	const SP = 6;
 	const lines = [
 		"version: 0.2",
@@ -247,6 +249,99 @@ export function generateBuildspec(params: {
 		...postBuildCmds.map((c) => yamlListEntry(c, SP)),
 	];
 	return lines.join("\n") + "\n";
+}
+
+function buildExistingDockerEcrBuildspec(params: {
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	region: string;
+	contextRelative: string;
+	dockerfilePath: string;
+}): string {
+	const fullUri = `${params.ecrRegistry}/${params.ecrRepoName}:${params.imageTag}`;
+	const ctx = (params.contextRelative || ".").replace(/\\/g, "/").trim() || ".";
+	const dockerfile = (params.dockerfilePath || "Dockerfile").replace(/\\/g, "/").replace(/^\.\//, "");
+	if (ctx !== "." && !/^[a-zA-Z0-9._\-/]+$/.test(ctx)) {
+		throw new Error(`Unsafe Docker build context path: ${ctx}`);
+	}
+	if (!dockerfile || dockerfile.includes("..")) {
+		throw new Error(`Invalid Dockerfile path: ${dockerfile}`);
+	}
+
+	const preBuildCmds: string[] = [
+		"echo Logging in to Amazon ECR...",
+		'REGION="${AWS_DEFAULT_REGION:-${AWS_REGION}}"',
+		`if [ -z "$REGION" ]; then REGION="${params.region}"; fi`,
+		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${params.ecrRegistry}`,
+		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
+		"echo Cloning source repository...",
+		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
+		"cd src",
+		'if [ -n "$COMMIT_SHA" ]; then git checkout $COMMIT_SHA; fi',
+		'if [ -n "$APP_ENV_VARS_B64" ]; then echo "$APP_ENV_VARS_B64" | base64 -d > .env; fi',
+	];
+	if (ctx !== ".") {
+		preBuildCmds.push(`cd ${JSON.stringify(ctx)}`);
+	}
+
+	const buildCmds = [
+		`echo Building Docker image from ${dockerfile}...`,
+		`docker build -f ${JSON.stringify(dockerfile)} -t ${JSON.stringify(fullUri)} .`,
+		`docker push ${JSON.stringify(fullUri)}`,
+	];
+	const postBuildCmds = ['echo "Docker image push complete."'];
+	const SP = 6;
+	const lines = [
+		"version: 0.2",
+		"phases:",
+		"  pre_build:",
+		"    commands:",
+		...preBuildCmds.map((c) => yamlListEntry(c, SP)),
+		"  build:",
+		"    commands:",
+		...buildCmds.map((c) => yamlListEntry(c, SP)),
+		"  post_build:",
+		"    commands:",
+		...postBuildCmds.map((c) => yamlListEntry(c, SP)),
+	];
+	return lines.join("\n") + "\n";
+}
+
+export function generateBuildspec(params: {
+	ecrRegistry: string;
+	ecrRepoName: string;
+	imageTag: string;
+	region: string;
+	scanResults?: SDArtifactsResponse;
+	deployUnit?: { root?: string; type?: string } | null;
+	railpack?: {
+		plan: SDRailpackPlan;
+		contextRelative: string;
+		railpackVersion?: string | null;
+		imageUri: string;
+	};
+}): string {
+	const { ecrRegistry, ecrRepoName, imageTag, region, scanResults, deployUnit, railpack } = params;
+	if (railpack?.plan && typeof railpack.plan === "object" && Object.keys(railpack.plan).length > 0) {
+		return buildRailpackEcrBuildspec({ ecrRegistry, ecrRepoName, imageTag, region, railpack });
+	}
+
+	const isExistingDocker =
+		deployUnit?.type === "existing_docker" || scanResults?.deploy_shape === "existing_docker";
+	if (isExistingDocker) {
+		return buildExistingDockerEcrBuildspec({
+			ecrRegistry,
+			ecrRepoName,
+			imageTag,
+			region,
+			contextRelative: deployUnit?.root || ".",
+			dockerfilePath: "Dockerfile",
+		});
+	}
+
+	void scanResults;
+	throw new Error("Railpack plan or existing_docker unit is required to generate a CodeBuild buildspec.");
 }
 
 // ─── Start Build ──────────────────────────────────────────────────────────
@@ -360,14 +455,15 @@ export async function waitForBuildAndStreamLogs(params: {
 			const build = buildResp.builds?.[0];
 			if (!build) continue;
 
+			const buildLogs = build.logs;
 			// Prefer log stream/group from the build response when available
-			if (!logStreamName && build.logs?.streamName) logStreamName = build.logs.streamName;
-			if (build.logs?.groupName) logGroupName = build.logs.groupName;
-			if (!sentLogLocation && (build.logs?.deepLink || build.logs?.groupName || build.logs?.streamName)) {
+			if (!logStreamName && buildLogs?.streamName) logStreamName = buildLogs.streamName;
+			if (buildLogs?.groupName) logGroupName = buildLogs.groupName;
+			if (!sentLogLocation && (buildLogs?.deepLink || buildLogs?.groupName || buildLogs?.streamName)) {
 				const parts: string[] = [];
-				if (build.logs?.groupName) parts.push(`group=${build.logs.groupName}`);
-				if (build.logs?.streamName) parts.push(`stream=${build.logs.streamName}`);
-				if (build.logs?.deepLink) parts.push(`link=${build.logs.deepLink}`);
+				if (buildLogs?.groupName) parts.push(`group=${buildLogs.groupName}`);
+				if (buildLogs?.streamName) parts.push(`stream=${buildLogs.streamName}`);
+				if (buildLogs?.deepLink) parts.push(`link=${buildLogs.deepLink}`);
 				send(`CodeBuild logs: ${parts.join(" | ")}`, "build");
 				sentLogLocation = true;
 			}

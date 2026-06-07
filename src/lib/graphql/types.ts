@@ -76,45 +76,46 @@ export const typeDefs = `
   }
 
   enum DeploymentTarget {
-    ec2
-    cloud_run
+    ecs
+    static_s3
   }
 
-  type TokenUsage {
-    input_tokens: Int!
-    output_tokens: Int!
-    total_tokens: Int!
+  type EcsAlbResources {
+    dnsName: String!
+    listenerArn: String
   }
 
-  type EC2Details {
-    success: Boolean!
-    baseUrl: String!
-    instanceId: String!
-    publicIp: String!
-    vpcId: String!
-    subnetId: String!
-    securityGroupId: String!
-    amiId: String!
-    sharedAlbDns: String!
-    instanceType: String!
-  }
-
-  type CloudRunDetails {
-    serviceId: String!
+  type EcsCloudResources {
+    target: String!
     region: String!
-    projectId: String!
+    cluster: String!
+    service: String!
+    baseUrl: String!
+    alb: EcsAlbResources
+    targetGroupArn: String
+    taskDefinitionArn: String
+    logGroup: String
+    vpcId: String
+  }
+
+  type StaticS3CloudResources {
+    target: String!
+    region: String!
+    bucket: String!
+    keyPrefix: String!
+    publicBaseUrl: String!
+    cloudFrontDistributionId: String
   }
 
   type Deployment {
     id: String!
     repoName: String!
-    url: String!
+    repoUrl: String!
     branch: String!
-    kind: String
     responseId: String
     commitSha: String
-    envVars: String
-    liveUrl: String
+    hostedSubdomain: String
+    hostedUrl: String
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus!
@@ -123,9 +124,9 @@ export const typeDefs = `
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
-    awsRegion: String
-    ec2: EC2Details
-    cloudRun: CloudRunDetails
+    region: String
+    secretsArn: String
+    cloudResources: JSON
     scanResults: JSON!
   }
 
@@ -156,30 +157,6 @@ export const typeDefs = `
   # ──────────────────────────────────────────────────────────────
   # Scan Results / Infrastructure Types
   # ──────────────────────────────────────────────────────────────
-
-  type ScanService {
-    name: String!
-    build_context: String!
-    port: Int!
-    dockerfile_path: String!
-    language: String
-    framework: String
-  }
-
-  type SDArtifacts {
-    commit_sha: String
-    stack_summary: String!
-    services: [ScanService!]!
-    dockerfiles: JSON!
-    docker_compose: String!
-    nginx_conf: String!
-    has_existing_dockerfiles: Boolean!
-    has_existing_compose: Boolean!
-    risks: [String!]!
-    confidence: Float!
-    hadolint_results: JSON!
-    token_usage: TokenUsage!
-  }
 
   # ──────────────────────────────────────────────────────────────
   # Deployment History Types
@@ -216,6 +193,7 @@ export const typeDefs = `
     durationMs: Int
     failureCode: String
     failureClassification: JSON
+    logRef: String
   }
 
   type DeploymentHistoryPage {
@@ -276,7 +254,7 @@ export const typeDefs = `
   type DeleteResult {
     status: String!
     message: String
-    vercelDnsDeleted: Int
+    dnsRecordsDeleted: Int
   }
 
   type CloneResult {
@@ -286,12 +264,7 @@ export const typeDefs = `
   type PrefillResult {
     found: Boolean!
     branch: String
-    results: SDArtifacts
-  }
-
-  type DirectStaticConfigResult {
-    branch: String
-    results: JSON!
+    results: JSON
   }
 
   type RefreshResult {
@@ -317,13 +290,11 @@ export const typeDefs = `
   input DeployConfigInput {
     id: String
     repoName: String!
-    url: String
+    repoUrl: String
     branch: String
-    kind: String
     responseId: String
     commitSha: String
-    envVars: String
-    liveUrl: String
+    hostedSubdomain: String
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus
@@ -332,9 +303,9 @@ export const typeDefs = `
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
-    awsRegion: String
-    ec2: JSON
-    cloudRun: JSON
+    region: String
+    secretsArn: String
+    cloudResources: JSON
     scanResults: JSON
   }
 
@@ -445,13 +416,6 @@ export const typeDefs = `
       branch: String
       packagePath: String
     ): PrefillResult!
-
-    buildDirectStaticConfig(
-      url: String!
-      branch: String
-      servicePath: String!
-      serviceType: String!
-    ): DirectStaticConfigResult!
 
     # Refresh repos from GitHub
     refreshRepos: RefreshResult!

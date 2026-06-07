@@ -8,11 +8,12 @@
 import { dbHelper } from "@/db-helper";
 import { ensureUserAndRepos } from "@/lib/sessionHelpers";
 import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
-import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
 import { resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
-import { EC2Details } from "@/app/types";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { isEcsCloudResources } from "@/lib/cloudResources";
+import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
 import {
 	fetchAndBuildRepo,
 	fetchLatestCommit,
@@ -285,26 +286,23 @@ export async function serviceLogs(
 				throw new Error("Deployment not found");
 			}
 			
-			const ec2Casted = (deployConfig?.ec2 || {}) as EC2Details;
-			const instanceId = ec2Casted?.instanceId;
+			const ecsResources = isEcsCloudResources(deployConfig?.cloudResources)
+				? deployConfig.cloudResources
+				: null;
 
-			if (instanceId) {
-				const region = deployConfig.awsRegion || config.AWS_REGION;
-				const logs = await getInitialEc2ServiceLogs({
-					instanceId,
-					region,
-					serviceName: serviceNameStr,
+			if (ecsResources) {
+				const logs = await getEcsServiceLogs({
+					ecs: ecsResources,
 					limit: limitNum,
 				});
-
 				return {
 					logs,
-					source: "ec2",
+					source: "ecs",
 				};
 			}
 		}
 
-		// Otherwise query GCP logs
+		// Legacy GCP Cloud Run logs (no longer deployed; return empty)
 		const logs = (await getInitialLogs(serviceNameStr, limitNum)) as {
 			timestamp?: string;
 			message?: string;
@@ -342,9 +340,8 @@ function mapDeploymentTargetToEnum(target: string | null | undefined): string | 
 	if (!target) return null;
 	
 	const targetMap: Record<string, string> = {
-		"ec2": "ec2",
-		"cloud_run": "cloud_run",
-		"cloudrun": "cloud_run",
+		"ecs": "ecs",
+		"static_s3": "static_s3",
 	};
 	
 	return targetMap[target.toLowerCase().replace(/-/g, "_")] || null;
@@ -366,40 +363,7 @@ function transformDeployment(deployment: any) {
 		return obj;
 	};
 
-	const sanitizeEc2Details = (ec2: any): EC2Details | null => {
-		const candidate = nullifyIfEmpty(ec2);
-		if (!candidate) return null;
-
-		const requiredStringKeys: Array<keyof Omit<EC2Details, "success">> = [
-			"baseUrl",
-			"instanceId",
-			"publicIp",
-			"vpcId",
-			"subnetId",
-			"securityGroupId",
-			"amiId",
-			"sharedAlbDns",
-			"instanceType",
-		];
-
-		for (const key of requiredStringKeys) {
-			const v = (candidate as any)[key];
-			if (typeof v !== "string" || !v.trim()) return null;
-		}
-
-		return {
-			success: typeof candidate.success === "boolean" ? candidate.success : true,
-			baseUrl: candidate.baseUrl,
-			instanceId: candidate.instanceId,
-			publicIp: candidate.publicIp,
-			vpcId: candidate.vpcId,
-			subnetId: candidate.subnetId,
-			securityGroupId: candidate.securityGroupId,
-			amiId: candidate.amiId,
-			sharedAlbDns: candidate.sharedAlbDns,
-			instanceType: candidate.instanceType,
-		};
-	};
+	const hostedSubdomain = deployment.hostedSubdomain ?? null;
 
 	return {
 		id: deployment.id,
@@ -408,25 +372,24 @@ function transformDeployment(deployment: any) {
 		ownerID: deployment.ownerID,
 		status: resolveDeploymentStatus({
 			status: deployment.status,
-			liveUrl: deployment.liveUrl,
+			hostedSubdomain,
 			screenshotUrl: deployment.screenshotUrl,
 		}),
 		firstDeployment: deployment.firstDeployment,
 		lastDeployment: deployment.lastDeployment,
 		revision: deployment.revision,
-		url: deployment.url || "",
+		repoUrl: deployment.repoUrl || "",
 		branch: deployment.branch || "main",
-		kind: deployment.kind || "container",
 		responseId: deployment.responseId ?? null,
 		commitSha: deployment.commitSha || undefined,
-		envVars: deployment.envVars || undefined,
-		liveUrl: deployment.liveUrl || undefined,
+		hostedSubdomain: hostedSubdomain || undefined,
+		hostedUrl: hostedUrlFromSubdomain(hostedSubdomain) || undefined,
 		screenshotUrl: deployment.screenshotUrl || undefined,
 		scanResults: deployment.scanResults || {},
 		cloudProvider: deployment.cloudProvider ? mapCloudProviderToEnum(deployment.cloudProvider) : null,
 		deploymentTarget: deployment.deploymentTarget ? mapDeploymentTargetToEnum(deployment.deploymentTarget) : null,
-		awsRegion: deployment.awsRegion || undefined,
-		ec2: sanitizeEc2Details(deployment.ec2),
-		cloudRun: nullifyIfEmpty(deployment.cloudRun),
+		region: deployment.region || undefined,
+		secretsArn: deployment.secretsArn || undefined,
+		cloudResources: nullifyIfEmpty(deployment.cloudResources),
 	};
 }

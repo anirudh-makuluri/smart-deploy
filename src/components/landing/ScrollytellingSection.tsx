@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
 import { Bot, CheckCircle2, Circle, Loader2, Terminal, XCircle } from "lucide-react";
 
 type Step = {
@@ -73,6 +73,68 @@ const storyContext: StoryContext = {
 	instanceIp: "34.219.22.101",
 	deploymentTarget: "AWS / EC2",
 };
+
+function buildStoryTimelineLogs({
+	activeStep,
+	fixCompleteForStep,
+	scanLogs,
+	selectedBranch,
+}: {
+	activeStep: number;
+	fixCompleteForStep: { step: number; complete: boolean } | null;
+	scanLogs: LogEntry[];
+	selectedBranch: string;
+}): LogEntry[] {
+	const fixCompleteForTimeline =
+		activeStep < 4 ? false : activeStep > 4 ? true : fixCompleteForStep?.step === 4 && fixCompleteForStep.complete;
+
+	const scanLogsForTimeline =
+		activeStep === 0
+			? []
+			: activeStep > 1
+				? scanLogMessages.map((text, index) => ({ id: index + 100, text, phase: "scan" as const }))
+				: scanLogs;
+
+	const timeline: LogEntry[] = [
+		{ id: 1000, text: `[setup] repo connected: ${storyContext.repoSlug}`, phase: "setup" },
+		{ id: 1001, text: `[setup] branch selected: ${selectedBranch}`, phase: "setup" },
+		...scanLogsForTimeline,
+	];
+
+	if (activeStep >= 2) {
+		timeline.push({ id: 2000, text: "[preview] pipeline map ready for review", phase: "preview", tone: "success" });
+	}
+	if (activeStep >= 3) {
+		timeline.push(
+			{ id: 3000, text: "[deploy] building image layer cache", phase: "deploy" },
+			{ id: 3001, text: "[deploy] pushing artifacts to registry", phase: "deploy" },
+			{ id: 3002, text: "[deploy] running health checks on /api/health", phase: "deploy", tone: "error" },
+			{ id: 3003, text: "[deploy] ERROR: health check failed at /api/health", phase: "deploy", tone: "error" }
+		);
+	}
+	if (activeStep >= 4) {
+		timeline.push(
+			{ id: 4000, text: "[ai] analyzing deploy logs and config snapshot", phase: "fix" },
+			{ id: 4001, text: "[ai] root cause: port mismatch between service and reverse proxy", phase: "fix" },
+			{
+				id: 4002,
+				text: fixCompleteForTimeline
+					? "[ai] patch applied to docker-compose and nginx.conf"
+					: "[ai] patching docker-compose and nginx.conf...",
+				phase: "fix",
+				tone: fixCompleteForTimeline ? "success" : "default",
+			}
+		);
+		if (fixCompleteForTimeline) {
+			timeline.push({ id: 4003, text: "[deploy] retry passed: /api/health returned 200", phase: "fix", tone: "success" });
+		}
+	}
+	if (activeStep >= 5) {
+		timeline.push({ id: 5000, text: `[live] promoted release on ${storyContext.customDomain}`, phase: "live", tone: "success" });
+	}
+
+	return timeline;
+}
 
 const setupBranchOptions = [storyContext.defaultBranch, "develop", storyContext.releaseBranch];
 const scanFrameCount = scanProgressMessages.length + 1;
@@ -209,7 +271,7 @@ function StepItem({
 			data-step-index={index}
 			className="flex h-[60vh] items-center py-6 sm:h-[68vh] sm:py-8 lg:h-[75vh]"
 		>
-			<motion.article
+			<m.article
 				layout
 				animate={{ opacity: isActive ? 1 : 0.55, y: isActive ? 0 : 8 }}
 				transition={{ duration: 0.2, ease: "easeOut" }}
@@ -222,7 +284,7 @@ function StepItem({
 				</p>
 				<h3 className="mt-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">{step.title}</h3>
 				<p className="mt-2 text-sm text-muted-foreground">{step.description}</p>
-			</motion.article>
+			</m.article>
 		</div>
 	);
 }
@@ -231,10 +293,10 @@ function LogsPanel({ logs }: { logs: LogEntry[] }) {
 	return (
 		<div className="rounded-xl border border-border/65 bg-background/70 p-3">
 			<p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">Logs</p>
-			<motion.ul layout className="mt-2 space-y-1.5">
+			<m.ul layout className="mt-2 space-y-1.5">
 				<AnimatePresence initial={false}>
 					{logs.map((log) => (
-						<motion.li
+						<m.li
 							key={log.id}
 							layout
 							initial={{ opacity: 0, y: 12 }}
@@ -250,10 +312,10 @@ function LogsPanel({ logs }: { logs: LogEntry[] }) {
 							}`}
 						>
 							{log.text}
-						</motion.li>
+						</m.li>
 					))}
 				</AnimatePresence>
-			</motion.ul>
+			</m.ul>
 		</div>
 	);
 }
@@ -286,7 +348,7 @@ function ScanTerminalViewMock({ activeLine, logs }: { activeLine: number; logs: 
 							const isCompleted = isScanComplete ? index <= activeNodeIndex : index < activeNodeIndex;
 							const isActive = !isScanComplete && index === activeNodeIndex;
 							return (
-								<motion.div
+								<m.div
 									key={node.id}
 									layout
 									className={`rounded-md border px-2 py-1.5 ${
@@ -310,7 +372,7 @@ function ScanTerminalViewMock({ activeLine, logs }: { activeLine: number; logs: 
 											<p className="truncate text-[10px] text-muted-foreground">{node.desc}</p>
 										</div>
 									</div>
-								</motion.div>
+								</m.div>
 							);
 						})}
 					</div>
@@ -329,10 +391,10 @@ function ScanTerminalViewMock({ activeLine, logs }: { activeLine: number; logs: 
 					</div>
 
 					<div className="overflow-hidden rounded-md border border-[#1e1e1e] bg-[#0d0d0d]">
-						<motion.ul layout className="max-h-44 min-h-36 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
+						<m.ul layout className="max-h-44 min-h-36 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
 							<AnimatePresence initial={false}>
 								{logs.map((log) => (
-									<motion.li
+									<m.li
 										key={log.id}
 										layout
 										initial={{ opacity: 0, y: 8 }}
@@ -350,10 +412,10 @@ function ScanTerminalViewMock({ activeLine, logs }: { activeLine: number; logs: 
 										}
 									>
 										{log.text}
-									</motion.li>
+									</m.li>
 								))}
 							</AnimatePresence>
-						</motion.ul>
+						</m.ul>
 
 						<div className="border-t border-[#1e1e1e] bg-[#0a0a0a] px-2 py-2">
 							<div className="mb-1 flex items-center justify-between">
@@ -361,7 +423,7 @@ function ScanTerminalViewMock({ activeLine, logs }: { activeLine: number; logs: 
 								<span className="font-mono text-[10px] text-slate-200">{progress}%</span>
 							</div>
 							<div className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
-								<motion.div
+								<m.div
 									layout
 									className="h-full rounded-full bg-primary"
 									animate={{ width: `${progress}%` }}
@@ -385,11 +447,21 @@ function SetupViewMock({
 	onSelectedBranchChange: (branch: string) => void;
 	isVisible: boolean;
 }) {
-	const [branchOpen, setBranchOpen] = React.useState(false);
-	const [isDemoRunning, setIsDemoRunning] = React.useState(true);
+	const [branchDemo, dispatchBranchDemo] = React.useReducer(
+		(_state: { branchOpen: boolean }, action: { type: "set_open"; open: boolean }) => ({ branchOpen: action.open }),
+		{ branchOpen: false },
+	);
+	const isDemoRunningRef = React.useRef(true);
+	const stopDemoCycleRef = React.useRef<(() => void) | null>(null);
+
+	const stopDemo = React.useCallback(() => {
+		isDemoRunningRef.current = false;
+		stopDemoCycleRef.current?.();
+		stopDemoCycleRef.current = null;
+	}, []);
 
 	React.useEffect(() => {
-		if (!isVisible || !isDemoRunning) return;
+		if (!isVisible || !isDemoRunningRef.current) return;
 
 		let cancelled = false;
 		const openDelayMs = 700;
@@ -399,18 +471,18 @@ function SetupViewMock({
 		const activeTimers: number[] = [];
 
 		const runCycle = () => {
-			if (cancelled) return;
-			setBranchOpen(false);
+			if (cancelled || !isDemoRunningRef.current) return;
+			dispatchBranchDemo({ type: "set_open", open: false });
 
 			activeTimers.push(
 				window.setTimeout(() => {
-					if (!cancelled) setBranchOpen(true);
+					if (!cancelled && isDemoRunningRef.current) dispatchBranchDemo({ type: "set_open", open: true });
 				}, openDelayMs)
 			);
 
 			activeTimers.push(
 				window.setTimeout(() => {
-					if (!cancelled) {
+					if (!cancelled && isDemoRunningRef.current) {
 						onSelectedBranchChange(
 							selectedBranch === setupBranchOptions[0] ? setupBranchOptions[2] : setupBranchOptions[0]
 						);
@@ -420,7 +492,7 @@ function SetupViewMock({
 
 			activeTimers.push(
 				window.setTimeout(() => {
-					if (!cancelled) setBranchOpen(false);
+					if (!cancelled && isDemoRunningRef.current) dispatchBranchDemo({ type: "set_open", open: false });
 				}, closeDelayMs)
 			);
 		};
@@ -428,20 +500,19 @@ function SetupViewMock({
 		runCycle();
 		const intervalId = window.setInterval(runCycle, cycleDurationMs);
 
-		return () => {
+		const cleanup = () => {
 			cancelled = true;
 			window.clearInterval(intervalId);
 			for (const timerId of activeTimers) {
 				window.clearTimeout(timerId);
 			}
 		};
-	}, [isDemoRunning, isVisible, onSelectedBranchChange, selectedBranch]);
+		stopDemoCycleRef.current = cleanup;
 
-	React.useEffect(() => {
-		if (!isVisible) {
-			setBranchOpen(false);
-		}
-	}, [isVisible]);
+		return cleanup;
+	}, [isVisible, onSelectedBranchChange, selectedBranch]);
+
+	const displayedBranchOpen = isVisible && branchDemo.branchOpen;
 
 	return (
 		<div className="rounded-xl border border-border/65 bg-background/70 p-3">
@@ -456,29 +527,29 @@ function SetupViewMock({
 				<div className="grid gap-2 sm:grid-cols-2">
 					<div
 						className="rounded-lg border border-border/60 bg-card/70 p-2.5"
-						onFocusCapture={() => setIsDemoRunning(false)}
-						onPointerDown={() => setIsDemoRunning(false)}
+						onFocusCapture={stopDemo}
+						onPointerDown={stopDemo}
 					>
 						<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Deployment branch</p>
 						<div className="relative mt-2">
-							<motion.button
+							<m.button
 								type="button"
-								onClick={() => setBranchOpen((previous) => !previous)}
+								onClick={() => dispatchBranchDemo({ type: "set_open", open: !branchDemo.branchOpen })}
 								className="flex w-full items-center justify-between rounded-md border border-border/60 bg-background/70 px-2 py-1.5 text-xs text-foreground"
 								whileTap={{ scale: 0.99 }}
 							>
 								<span>{selectedBranch}</span>
-								<motion.span
-									animate={{ rotate: branchOpen ? 180 : 0 }}
+								<m.span
+									animate={{ rotate: displayedBranchOpen ? 180 : 0 }}
 									transition={{ duration: 0.18, ease: "easeOut" }}
 									className="text-[10px] text-muted-foreground"
 								>
 									v
-								</motion.span>
-							</motion.button>
+								</m.span>
+							</m.button>
 							<AnimatePresence>
-								{branchOpen ? (
-									<motion.ul
+								{displayedBranchOpen ? (
+									<m.ul
 										initial={{ opacity: 0, y: -6, height: 0 }}
 										animate={{ opacity: 1, y: 0, height: "auto" }}
 										exit={{ opacity: 0, y: -4, height: 0 }}
@@ -486,12 +557,12 @@ function SetupViewMock({
 										className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-border/65 bg-card/95 shadow-md"
 									>
 										{setupBranchOptions.map((branch) => (
-											<motion.li
+											<m.li
 												key={branch}
 												layout
 												onClick={() => {
 													onSelectedBranchChange(branch);
-													setBranchOpen(false);
+													dispatchBranchDemo({ type: "set_open", open: false });
 												}}
 												className={`cursor-pointer px-2 py-1.5 text-xs transition-colors ${
 													branch === selectedBranch
@@ -500,9 +571,9 @@ function SetupViewMock({
 												}`}
 											>
 												{branch}
-											</motion.li>
+											</m.li>
 										))}
-									</motion.ul>
+									</m.ul>
 								) : null}
 							</AnimatePresence>
 						</div>
@@ -554,7 +625,7 @@ function PreviewViewMock({ selectedBranch }: { selectedBranch: string }) {
 					<div className="flex items-center">
 						{previewStages.map((stage, index) => (
 							<React.Fragment key={stage.id}>
-								<motion.div
+								<m.div
 									layout
 									className="w-[102px] rounded-lg border border-border/60 bg-card/75 px-2 py-2 sm:w-[142px]"
 								>
@@ -567,7 +638,7 @@ function PreviewViewMock({ selectedBranch }: { selectedBranch: string }) {
 											OK
 										</span>
 									</div>
-								</motion.div>
+								</m.div>
 								{index < previewStages.length - 1 ? <div className="h-px w-3 shrink-0 bg-border/80 sm:w-5" /> : null}
 							</React.Fragment>
 						))}
@@ -584,14 +655,14 @@ function PreviewViewMock({ selectedBranch }: { selectedBranch: string }) {
 								<React.Fragment key={`${stage.id}-artifacts`}>
 									<div className="flex w-[102px] flex-col gap-1.5 sm:w-[142px]">
 										{artifacts.map((artifact) => (
-											<motion.div
+											<m.div
 												key={`${stage.id}-${artifact.title}`}
 												layout
 												className="rounded-md border border-border/60 bg-background/75 px-2 py-1.5"
 											>
 												<p className="truncate text-[10px] font-medium text-muted-foreground">{artifact.title}</p>
 												<p className="truncate font-mono text-[10px] text-foreground">{artifact.subtitle}</p>
-											</motion.div>
+											</m.div>
 										))}
 									</div>
 									{index < previewStages.length - 1 ? <div className="w-3 shrink-0 sm:w-5" /> : null}
@@ -604,14 +675,16 @@ function PreviewViewMock({ selectedBranch }: { selectedBranch: string }) {
 		</div>
 	);
 }
+const deployFailureSteps = [
+	{ id: "auth", status: "success" },
+	{ id: "build", status: "success" },
+	{ id: "setup", status: "success" },
+	{ id: "deploy", status: "error" },
+	{ id: "done", status: "idle" },
+] as const;
+
 function DeployFailureViewMock({ logs }: { logs: LogEntry[] }) {
-	const deploySteps = [
-		{ id: "auth", status: "success" },
-		{ id: "build", status: "success" },
-		{ id: "setup", status: "success" },
-		{ id: "deploy", status: "error" },
-		{ id: "done", status: "idle" },
-	] as const;
+	const deploySteps = deployFailureSteps;
 	const completedSteps = deploySteps.filter((step) => step.status === "success").length;
 	const progress = Math.round((completedSteps / deploySteps.length) * 100);
 
@@ -660,10 +733,10 @@ function DeployFailureViewMock({ logs }: { logs: LogEntry[] }) {
 				<div className="border-b border-[#1e1e1e] bg-[#0a0a0a] px-2 py-1.5">
 					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Deploy Logs</p>
 				</div>
-				<motion.ul layout className="min-h-36 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
+				<m.ul layout className="min-h-36 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
 					<AnimatePresence initial={false}>
 						{logs.map((log) => (
-							<motion.li
+							<m.li
 								key={log.id}
 								layout
 								initial={{ opacity: 0, y: 8 }}
@@ -679,10 +752,10 @@ function DeployFailureViewMock({ logs }: { logs: LogEntry[] }) {
 								}
 							>
 								{log.text}
-							</motion.li>
+							</m.li>
 						))}
 					</AnimatePresence>
-				</motion.ul>
+				</m.ul>
 			</div>
 		</div>
 	);
@@ -738,7 +811,7 @@ function AIFixViewMock({ fixComplete, logs }: { fixComplete: boolean; logs: LogE
 				<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Fix plan</p>
 				<div className="mt-2 space-y-1.5">
 					{fixSteps.map((step) => (
-						<motion.div
+						<m.div
 							key={step.id}
 							layout
 							className={`rounded-md border px-2 py-1.5 ${
@@ -759,7 +832,7 @@ function AIFixViewMock({ fixComplete, logs }: { fixComplete: boolean; logs: LogE
 								)}
 								<p className="text-xs text-foreground">{step.label}</p>
 							</div>
-						</motion.div>
+						</m.div>
 					))}
 				</div>
 			</div>
@@ -768,10 +841,10 @@ function AIFixViewMock({ fixComplete, logs }: { fixComplete: boolean; logs: LogE
 				<div className="border-b border-[#1e1e1e] bg-[#0a0a0a] px-2 py-1.5">
 					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">AI Recovery Logs</p>
 				</div>
-				<motion.ul layout className="min-h-28 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
+				<m.ul layout className="min-h-28 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
 					<AnimatePresence initial={false}>
 						{logs.map((log) => (
-							<motion.li
+							<m.li
 								key={log.id}
 								layout
 								initial={{ opacity: 0, y: 8 }}
@@ -785,10 +858,10 @@ function AIFixViewMock({ fixComplete, logs }: { fixComplete: boolean; logs: LogE
 								}
 							>
 								{log.text}
-							</motion.li>
+							</m.li>
 						))}
 					</AnimatePresence>
-				</motion.ul>
+				</m.ul>
 			</div>
 		</div>
 	);
@@ -891,7 +964,7 @@ function NodeChip({
 	const palette = nodePalette[state];
 
 	return (
-		<motion.div
+		<m.div
 			layout
 			transition={{ duration: 0.2, ease: "easeOut" }}
 			className="rounded-xl border px-2.5 py-1.5 text-center text-xs font-semibold transition-colors sm:px-3 sm:py-2 sm:text-sm"
@@ -903,7 +976,7 @@ function NodeChip({
 			}}
 		>
 			{label}
-		</motion.div>
+		</m.div>
 	);
 }
 
@@ -917,23 +990,20 @@ function FlowUI({
 	isCompact?: boolean;
 }) {
 	const [scanLine, setScanLine] = React.useState(0);
-	const [scanLogs, setScanLogs] = React.useState<LogEntry[]>([]);
-	const [fixComplete, setFixComplete] = React.useState(false);
+	const [scanLogs, setScanLogs] = React.useState<LogEntry[]>(() =>
+		activeStep === 1 ? [{ id: 1, text: scanLogMessages[0], phase: "scan" }] : []
+	);
+	const [fixCompleteForStep, setFixCompleteForStep] = React.useState<{ step: number; complete: boolean } | null>(null);
 	const [selectedBranch, setSelectedBranch] = React.useState(storyContext.defaultBranch);
-	const nextLogId = React.useRef(0);
+	const nextLogId = React.useRef(activeStep === 1 ? 1 : 0);
+
+	const displayedScanLine = activeStep === 0 ? 0 : activeStep > 1 ? scanFrameCount - 1 : scanLine;
+	const fixComplete =
+		activeStep < 4 ? false : activeStep > 4 ? true : fixCompleteForStep?.step === 4 && fixCompleteForStep.complete;
 
 	React.useEffect(() => {
-		if (!isVisible) {
-			return;
-		}
-		if (activeStep === 0) {
-			setScanLine(0);
-			return;
-		}
-		if (activeStep > 1) {
-			setScanLine(scanFrameCount - 1);
-			return;
-		}
+		if (!isVisible || activeStep !== 1) return;
+
 		const interval = window.setInterval(() => {
 			setScanLine((prev) => {
 				if (prev >= scanFrameCount - 1) {
@@ -947,22 +1017,7 @@ function FlowUI({
 	}, [activeStep, isVisible]);
 
 	React.useEffect(() => {
-		if (!isVisible) {
-			return;
-		}
-		if (activeStep === 0) {
-			setScanLogs([]);
-			return;
-		}
-		if (activeStep !== 1) {
-			return;
-		}
-
-		setScanLogs((previous) => {
-			if (previous.length > 0) return previous;
-			nextLogId.current += 1;
-			return [{ id: nextLogId.current, text: scanLogMessages[0], phase: "scan" }];
-		});
+		if (!isVisible || activeStep !== 1) return;
 
 		const interval = window.setInterval(() => {
 			let shouldStop = false;
@@ -995,19 +1050,8 @@ function FlowUI({
 	}, [activeStep, isVisible]);
 
 	React.useEffect(() => {
-		if (!isVisible) {
-			return;
-		}
-		if (activeStep < 4) {
-			setFixComplete(false);
-			return;
-		}
-		if (activeStep > 4) {
-			setFixComplete(true);
-			return;
-		}
-		setFixComplete(false);
-		const timeout = window.setTimeout(() => setFixComplete(true), 900);
+		if (!isVisible || activeStep !== 4) return;
+		const timeout = window.setTimeout(() => setFixCompleteForStep({ step: 4, complete: true }), 900);
 		return () => window.clearTimeout(timeout);
 	}, [activeStep, isVisible]);
 
@@ -1023,47 +1067,12 @@ function FlowUI({
 						: "logs";
 	const activeWorkspaceTabLabel = workspaceTabs.find((tab) => tab.id === activeWorkspaceTab)?.label ?? "Overview";
 
-	const storyTimelineLogs = React.useMemo(() => {
-		const timeline: LogEntry[] = [
-			{ id: 1000, text: `[setup] repo connected: ${storyContext.repoSlug}`, phase: "setup" },
-			{ id: 1001, text: `[setup] branch selected: ${selectedBranch}`, phase: "setup" },
-			...scanLogs,
-		];
-
-		if (activeStep >= 2) {
-			timeline.push({ id: 2000, text: "[preview] pipeline map ready for review", phase: "preview", tone: "success" });
-		}
-		if (activeStep >= 3) {
-			timeline.push(
-				{ id: 3000, text: "[deploy] building image layer cache", phase: "deploy" },
-				{ id: 3001, text: "[deploy] pushing artifacts to registry", phase: "deploy" },
-				{ id: 3002, text: "[deploy] running health checks on /api/health", phase: "deploy", tone: "error" },
-				{ id: 3003, text: "[deploy] ERROR: health check failed at /api/health", phase: "deploy", tone: "error" }
-			);
-		}
-		if (activeStep >= 4) {
-			timeline.push(
-				{ id: 4000, text: "[ai] analyzing deploy logs and config snapshot", phase: "fix" },
-				{ id: 4001, text: "[ai] root cause: port mismatch between service and reverse proxy", phase: "fix" },
-				{
-					id: 4002,
-					text: fixComplete
-						? "[ai] patch applied to docker-compose and nginx.conf"
-						: "[ai] patching docker-compose and nginx.conf...",
-					phase: "fix",
-					tone: fixComplete ? "success" : "default",
-				}
-			);
-			if (fixComplete) {
-				timeline.push({ id: 4003, text: "[deploy] retry passed: /api/health returned 200", phase: "fix", tone: "success" });
-			}
-		}
-		if (activeStep >= 5) {
-			timeline.push({ id: 5000, text: `[live] promoted release on ${storyContext.customDomain}`, phase: "live", tone: "success" });
-		}
-
-		return timeline;
-	}, [activeStep, fixComplete, scanLogs, selectedBranch]);
+	const storyTimelineLogs = buildStoryTimelineLogs({
+		activeStep,
+		fixCompleteForStep,
+		scanLogs,
+		selectedBranch,
+	});
 
 	const scanViewLogs = storyTimelineLogs.filter((log) => log.phase === "setup" || log.phase === "scan").slice(-8);
 	const failureLogs = storyTimelineLogs.filter((log) => log.phase === "scan" || log.phase === "preview" || log.phase === "deploy").slice(-6);
@@ -1118,21 +1127,21 @@ function FlowUI({
 			<div className="mt-3 overflow-x-auto pb-1">
 				<div className="grid min-w-[380px] grid-cols-[minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)_14px_minmax(0,1fr)] items-center gap-1.5 sm:min-w-[540px] sm:grid-cols-[minmax(0,1fr)_40px_minmax(0,1fr)_40px_minmax(0,1fr)_40px_minmax(0,1fr)] sm:gap-2">
 					<NodeChip label="Repo" state={nodeStates.repo} />
-					<motion.div
+					<m.div
 						layout
 						animate={{ backgroundColor: getConnectorColor(nodeStates.repo) }}
 						transition={{ duration: 0.2 }}
 						className="h-px w-full rounded-full"
 					/>
 					<NodeChip label="Build" state={nodeStates.build} />
-					<motion.div
+					<m.div
 						layout
 						animate={{ backgroundColor: getConnectorColor(nodeStates.build) }}
 						transition={{ duration: 0.2 }}
 						className="h-px w-full rounded-full"
 					/>
 					<NodeChip label="Deploy" state={nodeStates.deploy} />
-					<motion.div
+					<m.div
 						layout
 						animate={{ backgroundColor: getConnectorColor(nodeStates.deploy) }}
 						transition={{ duration: 0.2 }}
@@ -1144,7 +1153,7 @@ function FlowUI({
 
 			<div className={`mt-4 space-y-3 ${isCompact ? "min-h-0" : "min-[420px]:min-h-[22rem] sm:min-h-[24rem] lg:min-h-[25.5rem]"}`}>
 				{activeStep === 0 ? (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0, y: 14 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={{ opacity: 0, y: -10 }}
@@ -1155,57 +1164,57 @@ function FlowUI({
 							onSelectedBranchChange={setSelectedBranch}
 							isVisible={isVisible}
 						/>
-					</motion.div>
+					</m.div>
 				) : null}
 
-				{activeStep === 1 ? <ScanTerminalViewMock activeLine={scanLine} logs={scanViewLogs} /> : null}
+				{activeStep === 1 ? <ScanTerminalViewMock activeLine={displayedScanLine} logs={scanViewLogs} /> : null}
 				{activeStep === 2 ? (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0, y: 14 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={{ opacity: 0, y: -10 }}
 						transition={{ duration: 0.2, ease: "easeOut" }}
 					>
 						<PreviewViewMock selectedBranch={selectedBranch} />
-					</motion.div>
+					</m.div>
 				) : null}
 				{activeStep === 3 ? (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0, y: 14 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={{ opacity: 0, y: -10 }}
 						transition={{ duration: 0.2, ease: "easeOut" }}
 					>
 						<DeployFailureViewMock logs={failureLogs} />
-					</motion.div>
+					</m.div>
 				) : null}
 				{activeStep === 4 ? (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0, y: 14 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={{ opacity: 0, y: -10 }}
 						transition={{ duration: 0.2, ease: "easeOut" }}
 					>
 						<AIFixViewMock fixComplete={fixComplete} logs={aiRecoveryLogs} />
-					</motion.div>
+					</m.div>
 				) : null}
 				{activeStep === 5 ? (
-					<motion.div
+					<m.div
 						initial={{ opacity: 0, y: 14 }}
 						animate={{ opacity: 1, y: 0 }}
 						exit={{ opacity: 0, y: -10 }}
 						transition={{ duration: 0.2, ease: "easeOut" }}
 					>
 						<LiveSuccessViewMock />
-					</motion.div>
+					</m.div>
 				) : null}
 
 				<div className="hidden rounded-xl border border-border/65 bg-background/70 p-3">
 					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Story timeline</p>
-					<motion.ul layout className="mt-2 space-y-1">
+					<m.ul layout className="mt-2 space-y-1">
 						<AnimatePresence initial={false}>
 							{storyTimelineLogs.slice(-5).map((log) => (
-								<motion.li
+								<m.li
 									key={log.id}
 									layout
 									initial={{ opacity: 0, y: 8 }}
@@ -1221,10 +1230,10 @@ function FlowUI({
 									}`}
 								>
 									{log.text}
-								</motion.li>
+								</m.li>
 							))}
 						</AnimatePresence>
-					</motion.ul>
+					</m.ul>
 				</div>
 			</div>
 		</div>
@@ -1233,10 +1242,29 @@ function FlowUI({
 
 export function ScrollytellingSection() {
 	const [activeStep, setActiveStep] = React.useState(0);
-	const [isDesktop, setIsDesktop] = React.useState(false);
+	const [isDesktop, setIsDesktop] = React.useState(
+		() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+	);
 	const [isSectionVisible, setIsSectionVisible] = React.useState(false);
 	const stepRefs = React.useRef<Array<HTMLDivElement | null>>([]);
 	const sectionRef = React.useRef<HTMLElement | null>(null);
+	const visibilityObserverRef = React.useRef<IntersectionObserver | null>(null);
+
+	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
+		sectionRef.current = node;
+		visibilityObserverRef.current?.disconnect();
+		visibilityObserverRef.current = null;
+		if (!node) return;
+
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
+			},
+			{ threshold: [0, 0.12, 0.3] }
+		);
+		visibilityObserverRef.current = observer;
+		observer.observe(node);
+	}, []);
 
 	const setStepRef = React.useCallback((index: number, node: HTMLDivElement | null) => {
 		stepRefs.current[index] = node;
@@ -1245,7 +1273,6 @@ export function ScrollytellingSection() {
 	React.useEffect(() => {
 		const mediaQuery = window.matchMedia("(min-width: 1024px)");
 		const syncLayout = () => setIsDesktop(mediaQuery.matches);
-		syncLayout();
 		if (typeof mediaQuery.addEventListener === "function") {
 			mediaQuery.addEventListener("change", syncLayout);
 			return () => mediaQuery.removeEventListener("change", syncLayout);
@@ -1286,24 +1313,12 @@ export function ScrollytellingSection() {
 		return () => observer.disconnect();
 	}, [isDesktop]);
 
-	React.useEffect(() => {
-		const sectionNode = sectionRef.current;
-		if (!sectionNode) return;
-
-		const visibilityObserver = new IntersectionObserver(
-			([entry]) => {
-				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
-			},
-			{ threshold: [0, 0.12, 0.3] }
-		);
-
-		visibilityObserver.observe(sectionNode);
-		return () => visibilityObserver.disconnect();
-	}, []);
+	React.useEffect(() => () => visibilityObserverRef.current?.disconnect(), []);
 
 	return (
+		<LazyMotion features={domAnimation} strict>
 		<section
-			ref={sectionRef}
+			ref={setSectionNode}
 			id="flow"
 			className="w-full scroll-mt-20 border-t border-border/60 bg-muted/20 px-4 py-16 sm:scroll-mt-24 sm:px-6 sm:py-20 lg:px-10"
 		>
@@ -1343,7 +1358,7 @@ export function ScrollytellingSection() {
 					<div className="mt-8 lg:hidden">
 						<div className="sticky top-16 z-10 h-[calc(100svh-5.5rem)]">
 							<div className="grid h-full grid-rows-[minmax(7rem,18svh)_minmax(0,1fr)] gap-3">
-								<motion.article
+								<m.article
 									key={`mobile-step-${activeStep}`}
 									initial={{ opacity: 0, y: 10 }}
 									animate={{ opacity: 1, y: 0 }}
@@ -1355,7 +1370,7 @@ export function ScrollytellingSection() {
 									</p>
 									<h3 className="mt-1.5 text-lg font-bold tracking-tight text-foreground">{steps[activeStep]?.title}</h3>
 									<p className="mt-1 text-xs leading-5 text-muted-foreground">{steps[activeStep]?.description}</p>
-								</motion.article>
+								</m.article>
 
 								<div className="min-h-0 overflow-y-auto pb-2">
 									<FlowUI activeStep={activeStep} isVisible={isSectionVisible} isCompact />
@@ -1378,5 +1393,6 @@ export function ScrollytellingSection() {
 				)}
 			</div>
 		</section>
+		</LazyMotion>
 	);
 }

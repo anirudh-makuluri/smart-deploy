@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function DELETE(req: Request) {
 	const session = await auth.api.getSession({ headers: req.headers });
 	const userId = session?.user?.id;
@@ -32,6 +34,7 @@ export async function DELETE(req: Request) {
 				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
 			},
 			body: JSON.stringify({ response_id }),
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

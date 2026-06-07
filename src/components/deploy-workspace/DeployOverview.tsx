@@ -1,7 +1,9 @@
 import Image from "next/image";
 import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, EC2Details, repoType } from "@/app/types";
+import { DeployConfig, repoType, type SDArtifactsResponse } from "@/app/types";
+import { isEcsCloudResources, isStaticS3CloudResources } from "@/lib/cloudResources";
+import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { canManageRuntimeDeploymentStatus, isLiveDeploymentStatus, resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import {
 	formatTimestamp,
@@ -12,6 +14,7 @@ import {
 import { resolveWorkspaceBranch } from "@/lib/repoBranch";
 import DeployOptions from "@/components/DeployOptions";
 import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
+import WorkloadInsightCard from "@/components/deploy-workspace/WorkloadInsightCard";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -124,29 +127,45 @@ export default function DeployOverview({
 	isChangingDeploymentState = false,
 	repo,
 }: DeployOverviewProps) {
-	const hasStoredLiveUrl = Boolean(deployment.liveUrl);
+	const hasHostedSubdomain = Boolean(deployment.hostedSubdomain?.trim());
 	const effectiveStatus =
 		resolveDeploymentStatus({
 			status: deployment.status,
-			liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+			hostedSubdomain: hasHostedSubdomain ? deployment.hostedSubdomain : null,
 			screenshotUrl: deployment.screenshotUrl,
 		});
 	const displayUrl = isLiveDeploymentStatus(effectiveStatus) ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshotUrl;
-	const customUrlRaw = deployment.liveUrl?.trim();
-	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
-	const hasAnyEndpoint = Boolean(customUrlRaw || instanceIpRaw);
+	const hostedUrl = getDeploymentHostedUrl(deployment) ?? "";
+	const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const staticResources = isStaticS3CloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const hasAnyEndpoint = Boolean(
+		hostedUrl ||
+			ecsResources?.baseUrl ||
+			staticResources?.publicBaseUrl ||
+			ecsResources?.service
+	);
 	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
-	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
-	const showEc2InstanceType =
-		deployment.deploymentTarget === "ec2" || !!ec2Casted.instanceId;
-	const ec2TypeDisplay =
-		ec2Casted.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+	const showEc2InstanceType = false;
+	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || Boolean(staticResources);
+	const secondaryAccessLabel = isStaticS3Target
+		? "S3 location"
+		: ecsResources
+			? "ECS service"
+			: "Infrastructure";
+	const secondaryAccessValue = isStaticS3Target
+		? staticResources
+			? `s3://${staticResources.bucket}/${staticResources.keyPrefix}`
+			: undefined
+		: ecsResources
+			? `${ecsResources.cluster}/${ecsResources.service}`
+			: undefined;
+	const ec2TypeDisplay = DEFAULT_EC2_INSTANCE_TYPE;
 	const ec2PriceEstimate = showEc2InstanceType
 		? formatApproxEc2PriceCompact(ec2TypeDisplay)
 		: null;
 
-	const regionDisplay = (deployment.awsRegion || region).trim() || region;
+	const regionDisplay = (deployment.region || ecsResources?.region || staticResources?.region || region).trim() || region;
 	const canManageDeployment = canManageRuntimeDeploymentStatus(effectiveStatus);
 	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
 	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
@@ -175,8 +194,8 @@ export default function DeployOverview({
 					{onRedeploy && (
 						<DeployOptions
 							onDeploy={onRedeploy}
-							disabled={isDeploying || deployDisabled}
-							title={deployDisabled ? deployDisabledReason : undefined}
+							disabled={isDeploying || (deployDisabled && !canManageDeployment)}
+							title={deployDisabled && !canManageDeployment ? deployDisabledReason : undefined}
 							repo={repo}
 							branch={resolveWorkspaceBranch(repo, deployment.branch) || ""}
 						/>
@@ -197,6 +216,8 @@ export default function DeployOverview({
 
 			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 				<div className="space-y-6">
+					{/* <WorkloadInsightCard scanResults={deployment.scanResults as SDArtifactsResponse | Record<string, never>} /> */}
+
 					<div className="rounded-xl border border-border bg-card">
 						<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
 							<span>Front page preview</span>
@@ -222,6 +243,7 @@ export default function DeployOverview({
 									src={screenshotUrl}
 									alt={`Screenshot of ${deployment.serviceName}`}
 									fill
+									sizes="(max-width: 768px) 100vw, 768px"
 									unoptimized
 									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
 								/>
@@ -231,6 +253,7 @@ export default function DeployOverview({
 								<iframe
 									src={displayUrl}
 									title={`Snapshot of ${deployment.serviceName}`}
+									sandbox=""
 									className="absolute inset-0 h-full w-full pointer-events-none overflow-hidden rounded-b-lg"
 									loading="lazy"
 								/>
@@ -259,8 +282,8 @@ export default function DeployOverview({
 								</div>
 								{hasAnyEndpoint ? (
 									<div className="space-y-3 border-t border-border/60 pt-3">
-										<EndpointRow label="Custom URL" value={customUrlRaw} />
-										<EndpointRow label="Instance IP" value={instanceIpRaw} />
+										<EndpointRow label="Hosted URL" value={hostedUrl} />
+										<EndpointRow label={secondaryAccessLabel} value={secondaryAccessValue} />
 									</div>
 								) : (
 									<p className="border-t border-border/60 pt-3 text-sm text-muted-foreground/70">Not available</p>

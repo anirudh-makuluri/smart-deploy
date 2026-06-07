@@ -78,10 +78,10 @@ function replaceOrAppendInstruction(
 }
 
 function splitRunSegments(command: string) {
-	return command
-		.split(/\s*(?:&&|;)\s*/g)
-		.map((segment) => segment.trim())
-		.filter(Boolean);
+	return command.split(/\s*(?:&&|;)\s*/g).flatMap((segment) => {
+		const trimmed = segment.trim();
+		return trimmed ? [trimmed] : [];
+	});
 }
 
 function findRunCommand(content: string, patterns: RegExp[]) {

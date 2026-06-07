@@ -28,7 +28,7 @@ export default function DashboardSideBar({
 	const { data: session } = authClient.useSession();
 	const { repoList, deployments } = useAppData();
 	const activeDeployments = deployments.filter((d) => {
-		const hasStoredLiveUrl = Boolean((d.liveUrl ?? "").trim());
+		const hasStoredLiveUrl = Boolean((d.hostedSubdomain ?? "").trim());
 		return isLiveDeploymentStatus(d.status) && hasStoredLiveUrl;
 	}).length;
 	const unhealthyDeployments = deployments.filter(

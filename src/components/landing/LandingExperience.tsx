@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, useReducedMotion } from "framer-motion";
+import { LazyMotion, domAnimation, m, useReducedMotion } from "framer-motion";
 import {
 	ArrowRight,
 	Boxes,
@@ -109,6 +109,38 @@ const supportedPythonFrameworks = [
 	"Gradio",
 ];
 
+const HERO_BLUEPRINT_ICON_MAP: Record<HeroNodeShape, LucideIcon> = {
+	repo: FolderGit2,
+	services: Boxes,
+	build: Hammer,
+	route: RouteIcon,
+	preview: Monitor,
+};
+
+const CLOUD_PROVIDERS = [
+	{ name: "AWS", logo: "/logos/aws.svg" },
+	{ name: "GCP", logo: "/logos/google-cloud.svg" },
+] as const;
+
+const SUPPORTED_FRAMEWORK_GROUPS = [
+	{
+		id: "js",
+		title: "JavaScript / TypeScript",
+		frameworks: supportedJsFrameworks,
+	},
+	{
+		id: "python",
+		title: "Python",
+		frameworks: supportedPythonFrameworks,
+	},
+] as const;
+
+const PUBLIC_METRICS_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
+	dateStyle: "medium",
+	timeStyle: "short",
+	timeZone: "UTC",
+});
+
 const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
 
 const heroNodes: HeroNode[] = [
@@ -141,15 +173,7 @@ function formatDurationMs(ms: number | null): string {
 }
 
 function HeroBlueprintGlyph({ shape }: { shape: HeroNodeShape }) {
-	const iconMap: Record<HeroNodeShape, LucideIcon> = {
-		repo: FolderGit2,
-		services: Boxes,
-		build: Hammer,
-		route: RouteIcon,
-		preview: Monitor,
-	};
-
-	const Icon = iconMap[shape];
+	const Icon = HERO_BLUEPRINT_ICON_MAP[shape];
 	const frameClass =
 		shape === "preview"
 			? "border-primary/36 bg-primary/16 text-primary"
@@ -166,7 +190,7 @@ function HeroBlueprintCanvas() {
 	const prefersReducedMotion = useReducedMotion();
 
 	return (
-		<motion.div
+		<m.div
 			initial={prefersReducedMotion ? false : { opacity: 0, y: 22 }}
 			animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 			transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.14 }}
@@ -228,7 +252,7 @@ function HeroBlueprintCanvas() {
 					</div>
 				</div>
 			</div>
-		</motion.div>
+		</m.div>
 	);
 }
 
@@ -257,7 +281,7 @@ function WhySmartDeploy() {
 			{whyCards.map((card, index) => {
 				const Icon = card.icon;
 				return (
-					<motion.div
+					<m.div
 						key={card.title}
 						initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
 						whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -281,7 +305,7 @@ function WhySmartDeploy() {
 							<p className="mt-2 text-sm leading-6 text-muted-foreground">{card.detail}</p>
 							<p className="mt-4 rounded-lg border border-border/60 bg-background/70 px-3 py-2 text-xs text-foreground">{card.proof}</p>
 						</div>
-					</motion.div>
+					</m.div>
 				);
 			})}
 		</div>
@@ -289,14 +313,9 @@ function WhySmartDeploy() {
 }
 
 function CloudProviders() {
-	const providers = [
-		{ name: "AWS", logo: "/logos/aws.svg" },
-		{ name: "GCP", logo: "/logos/google-cloud.svg" },
-	];
-
 	return (
 		<ul className="flex flex-wrap items-center justify-center gap-x-8 gap-y-4">
-			{providers.map((provider) => (
+			{CLOUD_PROVIDERS.map((provider) => (
 				<li key={provider.name} className="flex items-center gap-2.5 text-foreground">
 					<Image src={provider.logo} alt={`${provider.name} logo`} width={28} height={28} className="size-7" />
 					<span className="text-base font-semibold">{provider.name}</span>
@@ -307,22 +326,9 @@ function CloudProviders() {
 }
 
 function SupportedFrameworks() {
-	const groups = [
-		{
-			id: "js",
-			title: "JavaScript / TypeScript",
-			frameworks: supportedJsFrameworks,
-		},
-		{
-			id: "python",
-			title: "Python",
-			frameworks: supportedPythonFrameworks,
-		},
-	];
-
 	return (
 		<div className="grid gap-4 lg:grid-cols-2">
-			{groups.map((group) => (
+			{SUPPORTED_FRAMEWORK_GROUPS.map((group) => (
 				<div key={group.id} className="landing-panel landing-shell p-5 sm:p-6">
 					<div className="flex items-center justify-between gap-2 border-b border-border/60 pb-3">
 						<p className="text-sm font-semibold text-foreground">{group.title}</p>
@@ -355,11 +361,7 @@ function StatsBoard({ metrics }: { metrics: DeployMetricsSummary | null }) {
 	const median = formatDurationMs(metrics?.medianDurationMs ?? null);
 	const p95 = formatDurationMs(metrics?.p95DurationMs ?? null);
 	const updatedAt = metrics
-		? `${new Intl.DateTimeFormat("en-US", {
-				dateStyle: "medium",
-				timeStyle: "short",
-				timeZone: "UTC",
-		  }).format(new Date(metrics.computedAt))} UTC`
+		? `${PUBLIC_METRICS_TIMESTAMP_FORMATTER.format(new Date(metrics.computedAt))} UTC`
 		: "Telemetry appears after the first deployment";
 
 	return (
@@ -438,6 +440,7 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 	}, []);
 
 	return (
+		<LazyMotion features={domAnimation} strict>
 		<div className="landing-bg h-svh overflow-x-hidden overflow-y-auto stealth-scrollbar pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] text-foreground md:pb-0">
 			<header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
 				<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
@@ -477,7 +480,7 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 				<section className="landing-hero-bg relative overflow-hidden px-6 sm:px-8 lg:px-10">
 					<div className="relative z-10 mx-auto grid min-h-[calc(92svh-4.5rem)] w-full max-w-7xl items-start gap-12 py-14 sm:py-16 lg:min-h-[calc(88svh-4.5rem)] lg:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] lg:gap-10 lg:py-20">
 						<div className="max-w-2xl pt-4 lg:pt-12">
-							<motion.h1
+							<m.h1
 								initial={prefersReducedMotion ? false : { opacity: 0, y: 24 }}
 								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 								transition={prefersReducedMotion ? undefined : { duration: 0.55, ease: "easeOut" }}
@@ -485,16 +488,16 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 							>
 								<span className="block">Deploy anything.</span>
 								<span className="mt-1.5 block">Inspect everything.</span>
-							</motion.h1>
-							<motion.p
+							</m.h1>
+							<m.p
 								initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
 								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 								transition={prefersReducedMotion ? undefined : { duration: 0.52, ease: "easeOut", delay: 0.08 }}
 								className="mt-7 max-w-[24rem] text-lg leading-8 text-white/72 sm:text-[1.3rem]"
 							>
 								See the deploy path before release.
-							</motion.p>
-							<motion.div
+							</m.p>
+							<m.div
 								initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
 								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 								transition={prefersReducedMotion ? undefined : { duration: 0.48, ease: "easeOut", delay: 0.16 }}
@@ -514,7 +517,7 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 								>
 									<a href="#flow">See How It Works</a>
 								</Button>
-							</motion.div>
+							</m.div>
 						</div>
 
 						<div className="relative pt-2 lg:pt-16">
@@ -576,6 +579,7 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 			<PublicPageFooterContent primaryHref={primaryHref} />
 			<PublicBottomNav links={landingMobileNavLinks} />
 		</div>
+		</LazyMotion>
 	);
 }
 

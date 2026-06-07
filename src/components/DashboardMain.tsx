@@ -1,149 +1,26 @@
 "use client";
 
-import * as React from "react";
-import Link from "next/link";
-import DeploymentHistoryTable from "./DeploymentHistoryTable";
-import { useAppData } from "@/store/useAppData";
-import { Boxes, Plus, RefreshCcw, ExternalLink } from "lucide-react";
-import { countDeployedServicesForRepo, formatTimestamp } from "@/lib/utils";
-import { useRouter } from "next/navigation";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { addPublicRepo } from "@/lib/graphqlClient";
-import { isDraftDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
-import { toast } from "sonner";
-import { RepoServicesRecord } from "@/app/types";
-import LanguageIcon from "./LanguageIcon";
-import { authClient } from "@/lib/auth-client";
-
-function normalizeUrl(url: string): string {
-	return url?.replace(/\.git$/, "").toLowerCase().trim();
-}
-
-function getErrorMessage(error?: Error | { message?: string } | null): string {
-	if (!error) return "Failed to fetch repository";
-	if (error instanceof Error) return error.message;
-	return error.message || "Failed to fetch repository";
-}
+import DashboardDeploymentsView from "@/components/dashboard/DashboardDeploymentsView";
+import DashboardOverviewView from "@/components/dashboard/DashboardOverviewView";
+import DashboardRepositoriesView from "@/components/dashboard/DashboardRepositoriesView";
+import { useDashboardMain } from "@/components/dashboard/useDashboardMain";
 
 type DashboardMainProps = {
 	activeView: "overview" | "deployments" | "repositories";
 };
 
 export default function DashboardMain({ activeView }: DashboardMainProps) {
-	const router = useRouter();
-	const { data: session } = authClient.useSession();
-	const { deployments, repoServices, repoList, isLoading, setAppData, refreshRepoList } = useAppData();
-	const [isRefreshing, setIsRefreshing] = React.useState(false);
-	const [showAddRepo, setShowAddRepo] = React.useState(false);
-	const [repoUrl, setRepoUrl] = React.useState("");
-	const [isLoadingRepo, setIsLoadingRepo] = React.useState(false);
-	const [repoSearch, setRepoSearch] = React.useState("");
-
-	// Overview: repo is deployed if it has any deployment (repo-level or per-service)
-	const repoCards = repoServices
-		.filter((record: RepoServicesRecord) => (record.services?.length ?? 0) > 0)
-		.map((record : RepoServicesRecord) => {
-		const repoUrlNorm = normalizeUrl(record.repo_url);
-		const matchingRepo = repoList.find(
-			(repo) => normalizeUrl(repo.html_url) === repoUrlNorm || repo.full_name === `${record.repo_owner}/${record.repo_name}`
-		);
-		const repoDeployments = deployments.filter((d) => normalizeUrl(d.url ?? "") === repoUrlNorm);
-		const totalServices = record.services?.length ?? 0;
-		const activeRepoDeployments = repoDeployments.filter((d) => !isDraftDeploymentStatus(d.status));
-		const hasFailed = repoDeployments.some((d) => d.status === "failed");
-		const deployedServicesCount = countDeployedServicesForRepo(record, repoDeployments);
-		const isDeployed = deployedServicesCount > 0;
-		const isCrashed = activeRepoDeployments.some((d) => isProblemDeploymentStatus(d.status) && d.status !== "failed");
-
-		const subtitle = isCrashed
-			? "Crashed"
-			: hasFailed
-				? "Failed"
-				: isDeployed
-					? "Deployed"
-					: "Not deployed";
-		const base = {
-			owner: record.repo_owner,
-			name: record.repo_name,
-			subtitle,
-			hasFailed,
-			language: matchingRepo?.language,
-		};
-		if (totalServices > 0) {
-			return {
-				...base,
-				subtitle: `${subtitle} · ${deployedServicesCount}/${totalServices} service${totalServices !== 1 ? "s" : ""}`,
-			};
-		}
-		return base;
-	});
-
-	async function handleRefresh() {
-		setIsRefreshing(true);
-		const response = await refreshRepoList();
-		setIsRefreshing(false);
-		toast(response.message);
-	}
-
-	function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
-		try {
-			let cleanUrl = url.trim();
-			cleanUrl = cleanUrl.replace(/\.git$/, "");
-			cleanUrl = cleanUrl.replace(/^https?:\/\//, "");
-			cleanUrl = cleanUrl.replace(/^github\.com\//, "");
-			cleanUrl = cleanUrl.replace(/\/$/, "");
-			const parts = cleanUrl.split("/").filter(Boolean);
-			if (parts.length >= 2) return { owner: parts[0], repo: parts[1] };
-			return null;
-		} catch {
-			return null;
-		}
-	}
-
-	async function handleAddPublicRepo() {
-		if (!repoUrl.trim()) {
-			toast.error("Please enter a GitHub URL");
-			return;
-		}
-		const parsed = parseGitHubUrl(repoUrl);
-		if (!parsed) {
-			toast.error("Invalid GitHub URL. Format: https://github.com/owner/repo");
-			return;
-		}
-		setIsLoadingRepo(true);
-		try {
-			const repo = await addPublicRepo(parsed.owner, parsed.repo);
-			if (!repo) {
-				toast.error("Failed to fetch repository");
-				return;
-			}
-			setRepoUrl("");
-			setShowAddRepo(false);
-			setAppData([repo, ...repoList], deployments, isLoading, repoServices);
-			toast.success(`Added ${repo.full_name}`);
-			router.push(`/${repo.owner.login}/${repo.name}`);
-		} catch (error) {
-			toast.error(getErrorMessage(error as Error | { message?: string } | null));
-		} finally {
-			setIsLoadingRepo(false);
-		}
-	}
-
-	const filteredRepositories = React.useMemo(() => {
-		const query = repoSearch.trim().toLowerCase();
-		if (!query) return repoList;
-		return repoList.filter((repo) =>
-			`${repo.full_name} ${repo.name} ${repo.owner?.login ?? ""} ${repo.latest_commit?.message ?? ""}`
-				.toLowerCase()
-				.includes(query)
-		);
-	}, [repoList, repoSearch]);
-
-	const visibleRepositories = React.useMemo(
-		() => (repoSearch.trim() ? filteredRepositories : filteredRepositories.slice(0, 10)),
-		[filteredRepositories, repoSearch]
-	);
+	const {
+		session,
+		isLoading,
+		repoCards,
+		visibleRepositories,
+		repoList,
+		ui,
+		dispatch,
+		handleRefresh,
+		handleAddPublicRepo,
+	} = useDashboardMain();
 
 	return (
 		<main className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -164,181 +41,29 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 				</div>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-				{/* Deployments: repo cards with deployed/undeployed/crashed */}
 				<div className={activeView === "overview" ? "" : "hidden"}>
-					<div className="space-y-6">
-						{repoCards.length === 0 ? (
-							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
-								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
-								<p className="text-foreground font-medium">
-									{isLoading ? "Loading…" : "No detected repositories yet"}
-								</p>
-								<p className="mt-1 max-w-sm text-sm text-muted-foreground">
-									{isLoading
-										? "Fetching your data."
-										: "Open Repositories from the menu (phone) or sidebar (desktop), pick a repo, and we will detect and save its services there."}
-								</p>
-							</div>
-						) : (
-							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{repoCards.map(({ owner, name, subtitle, hasFailed, language }) => (
-									<div
-										key={`${owner}/${name}`}
-										className={`rounded-xl border p-4 bg-card hover:border-primary/40 transition-colors text-left ${hasFailed ? "border-destructive/50" : "border-border"
-											}`}
-									>
-										<Link
-										href={`/${owner}/${name}`}
-										className="flex items-center gap-3 min-w-0"
-									>
-											<LanguageIcon language={language} />
-											<div className="min-w-0">
-												<p className="font-semibold text-foreground truncate">
-													{owner} / {name}
-												</p>
-												<p className="text-sm text-muted-foreground">
-													{subtitle}
-												</p>
-											</div>
-										</Link>
-									</div>
-								))}
-							</div>
-						)}
-					</div>
+					<DashboardOverviewView repoCards={repoCards} isLoading={isLoading} />
 				</div>
-
-				{/* History View */}
 				<div className={activeView === "deployments" ? "" : "hidden"}>
-					<div className="space-y-4">
-						<div>
-							<h2 className="text-lg font-semibold text-foreground">Deployment History</h2>
-							<p className="text-sm text-muted-foreground">All services, newest first</p>
-						</div>
-						<DeploymentHistoryTable />
-					</div>
+					<DashboardDeploymentsView />
 				</div>
-
-				{/* Repositories View */}
 				<div className={activeView === "repositories" ? "" : "hidden"}>
-					<div className="space-y-4">
-						<div className="flex items-center justify-between gap-2">
-							<h2 className="text-lg font-semibold text-foreground">All Repositories</h2>
-							<div className="flex items-center gap-2">
-								<Button
-									onClick={() => setShowAddRepo((value) => !value)}
-									variant="outline"
-									size="sm"
-									className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-									title="Add public repository"
-								>
-									<Plus className="size-4" />
-								</Button>
-								<Button
-									onClick={handleRefresh}
-									variant="outline"
-									size="sm"
-									disabled={isRefreshing}
-									className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
-								>
-									<RefreshCcw className={`size-4 mr-1.5 ${isRefreshing ? "animate-spin" : ""}`} />
-									Refresh
-								</Button>
-							</div>
-						</div>
-						{showAddRepo && (
-							<div className="p-3 rounded-lg border border-border bg-background">
-								<p className="text-xs text-muted-foreground mb-2">Add Public Repository</p>
-								<div className="flex gap-2">
-									<Input
-										type="text"
-										placeholder="https://github.com/owner/repo"
-										value={repoUrl}
-										onChange={(e) => setRepoUrl(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") handleAddPublicRepo();
-											if (e.key === "Escape") {
-												setShowAddRepo(false);
-												setRepoUrl("");
-											}
-										}}
-										className="flex-1 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary text-sm"
-										disabled={isLoadingRepo}
-									/>
-									<Button
-										onClick={handleAddPublicRepo}
-										size="sm"
-										disabled={isLoadingRepo || !repoUrl.trim()}
-										className="landing-build-blue hover:opacity-95 text-primary-foreground shrink-0"
-									>
-										{isLoadingRepo ? (
-											<RefreshCcw className="size-4 animate-spin" />
-										) : (
-											<ExternalLink className="size-4" />
-										)}
-									</Button>
-								</div>
-								<p className="text-xs text-muted-foreground/70 mt-2">
-									Enter any public GitHub repository URL
-								</p>
-							</div>
-						)}
-						<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-							<Input
-								type="text"
-								placeholder="Search repositories..."
-								value={repoSearch}
-								onChange={(e) => setRepoSearch(e.target.value)}
-								className="max-w-md border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary text-sm"
-							/>
-							<p className="text-xs text-muted-foreground">
-								{repoSearch.trim()
-									? `${visibleRepositories.length} result${visibleRepositories.length !== 1 ? "s" : ""}`
-									: `Showing latest ${Math.min(10, repoList.length)} of ${repoList.length} repositories`}
-							</p>
-						</div>
-						{repoList.length === 0 ? (
-							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
-								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
-								<p className="text-foreground font-medium">
-									{isLoading ? "Loading…" : "No repositories yet"}
-								</p>
-							</div>
-						) : visibleRepositories.length === 0 ? (
-							<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
-								<Boxes className="size-12 text-muted-foreground/70 mb-4" />
-								<p className="text-foreground font-medium">No repositories match your search</p>
-								<p className="text-sm text-muted-foreground mt-1">Try a different owner, name, or commit keyword.</p>
-							</div>
-						) : (
-							<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-								{visibleRepositories.map((repo) => (
-									<Link
-										key={repo.id}
-										href={`/${repo.full_name}`}
-										className="rounded-xl border border-border p-4 bg-card hover:border-primary/40 transition-colors"
-									>
-										<div className="flex items-center gap-3 min-w-0">
-											<LanguageIcon language={repo.language} />
-											<div className="min-w-0">
-												<p className="font-semibold text-foreground truncate">{repo.full_name}</p>
-												{repo.latest_commit && (
-													<p className="text-sm text-muted-foreground truncate mt-1">
-														{repo.latest_commit.message}
-													</p>
-												)}
-												{repo.latest_commit?.date && (
-													<p className="text-xs text-muted-foreground/70 mt-1">
-														{formatTimestamp(repo.latest_commit.date)}
-													</p>
-												)}
-											</div>
-										</div>
-									</Link>
-								))}
-							</div>
-						)}
-					</div>
+					<DashboardRepositoriesView
+						repoList={repoList}
+						visibleRepositories={visibleRepositories}
+						repoSearch={ui.repoSearch}
+						onRepoSearchChange={(value) => dispatch({ type: "set_repo_search", value })}
+						showAddRepo={ui.showAddRepo}
+						onToggleAddRepo={() => dispatch({ type: "toggle_add_repo" })}
+						repoUrl={ui.repoUrl}
+						onRepoUrlChange={(value) => dispatch({ type: "set_repo_url", value })}
+						isLoadingRepo={ui.isLoadingRepo}
+						isRefreshing={ui.isRefreshing}
+						isLoading={isLoading}
+						onAddPublicRepo={handleAddPublicRepo}
+						onRefresh={handleRefresh}
+						onCancelAddRepo={() => dispatch({ type: "reset_add_repo" })}
+					/>
 				</div>
 			</div>
 		</main>

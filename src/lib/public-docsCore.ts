@@ -1,5 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
+import { slugFromMarkdownFilename, titleFromMarkdownFilename } from "@/lib/markdownDocSlugs";
+
+export { slugFromMarkdownFilename, titleFromMarkdownFilename };
 
 const DOCS_DIR = path.join(process.cwd(), "docs");
 const README_PATH = path.join(process.cwd(), "README.md");
@@ -9,18 +12,6 @@ export type DocGuideEntry = {
 	filename: string;
 	title: string;
 };
-
-export function slugFromMarkdownFilename(filename: string): string {
-	return filename.replace(/\.md$/i, "").replace(/_/g, "-").toLowerCase();
-}
-
-export function titleFromMarkdownFilename(filename: string): string {
-	const base = filename.replace(/\.md$/i, "");
-	return base
-		.split("_")
-		.map((word) => word.charAt(0) + word.slice(1).toLowerCase())
-		.join(" ");
-}
 
 export async function listDocMarkdownFiles(): Promise<DocGuideEntry[]> {
 	const names = await fs.readdir(DOCS_DIR);

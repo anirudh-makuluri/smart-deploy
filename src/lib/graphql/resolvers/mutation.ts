@@ -14,21 +14,23 @@ import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace, Gi
 import { detectMultiService, discoverServiceCatalog, sanitizeFolderServiceId } from "@/lib/multiServiceDetector";
 import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
-import { buildDirectStaticScanResults, isDirectStaticServiceType } from "@/lib/directStaticConfig";
 import { getSubnetIds } from "@/lib/aws/awsHelpers";
 import { configureAlb } from "@/lib/aws/handleEC2";
-import { addVercelDnsRecord } from "@/lib/vercelDns";
+import { lookupRoute53Subdomain } from "@/lib/route53Dns";
+import { getDeploymentBaseDomain, sanitizeSubdomain } from "@/lib/dnsUtils";
 import {
 	fetchAndBuildRepo,
 	toDetectedService,
 	redactTokenInText,
 	normalizeCustomUrlInput,
 	configureCustomDomainForDeployment,
-	sanitizeSubdomain,
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
 import config from "@/config";
 import type { DetectedServiceInfo } from "@/app/types";
+import { subdomainFromHostedUrl, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { isEcsDeployment } from "@/lib/cloudResources";
+import { getDeploymentBaseDomain as getBaseDomain } from "@/lib/dnsUtils";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -85,7 +87,7 @@ export async function updateDeployment(
 
 /**
  * Mutation.deleteDeployment
- * Deletes a deployment and related resources (Vercel DNS records, etc.)
+ * Deletes a deployment and related resources (Route 53 DNS records, etc.)
  */
 export async function deleteDeployment(
 	_: unknown,
@@ -110,7 +112,7 @@ export async function deleteDeployment(
 		return {
 			status: "success",
 			message: result.message ?? null,
-			vercelDnsDeleted: result.vercelDnsDeleted ?? 0,
+			dnsRecordsDeleted: result.dnsRecordsDeleted ?? 0,
 		};
 	});
 }
@@ -243,12 +245,13 @@ export async function detectServices(
 			);
 
 			const catalog = discoverServiceCatalog(repoRoot, parsed.repo);
-			const services = catalog.services.map((s: { name: string; workdir: string; language?: string; framework?: string; port?: number; relativePath?: string; build_context?: string }) =>
-				toDetectedService(s, repoRoot)
-			).map((d) => ({
-				...d,
-				language: d.language?.trim() ? d.language : "unknown",
-			}));
+			const services = catalog.services.map((s: { name: string; workdir: string; language?: string; framework?: string; port?: number; relativePath?: string; build_context?: string }) => {
+				const detected = toDetectedService(s, repoRoot);
+				return {
+					...detected,
+					language: detected.language?.trim() ? detected.language : "unknown",
+				};
+			});
 
 			return await persistRepoServiceCatalog(
 				userID,
@@ -501,10 +504,17 @@ export async function updateCustomDomain(
 			throw new Error("Unauthorized: deployment does not belong to you");
 		}
 
+		const hostedSubdomain = formattedCustomUrl ? subdomainFromHostedUrl(formattedCustomUrl) : null;
+		const previousHostedUrl =
+			hostedUrlFromSubdomain(deployment.hostedSubdomain) ??
+			(deployment.hostedSubdomain
+				? `https://${deployment.hostedSubdomain}.${getBaseDomain()}`
+				: null);
+
 		const updateResponse = await dbHelper.updateDeployments(
 			{
 				...deployment,
-				liveUrl: formattedCustomUrl ?? null,
+				hostedSubdomain,
 			},
 			userID
 		);
@@ -514,14 +524,13 @@ export async function updateCustomDomain(
 		}
 
 		let configureMessage: string | null = null;
-		if (deployment.status === "running" && ((deployment.ec2 || {}) as Record<string, unknown>)?.instanceId && formattedCustomUrl) {
-			const previousCustomUrl = deployment.liveUrl || null;
+		if (deployment.status === "running" && formattedCustomUrl && isEcsDeployment(deployment)) {
 			const updatedDeployment = {
 				...deployment,
-				liveUrl: formattedCustomUrl ?? null,
+				hostedSubdomain,
 			};
-			await configureCustomDomainForDeployment(updatedDeployment, previousCustomUrl);
-			configureMessage = "ALB and Vercel DNS updated";
+			await configureCustomDomainForDeployment(updatedDeployment, previousHostedUrl);
+			configureMessage = "ALB and Route 53 DNS updated";
 		}
 
 		const message = formattedCustomUrl
@@ -538,7 +547,7 @@ export async function updateCustomDomain(
 
 /**
  * Mutation.verifyDns
- * Verifies DNS subdomain availability via Vercel API
+ * Verifies DNS subdomain availability via Route 53 (exact records only; wildcard does not block).
  */
 export async function verifyDns(
 	_: unknown,
@@ -556,34 +565,14 @@ export async function verifyDns(
 
 		if (!subdomainTrimmed) throw new Error("Subdomain is required");
 
-		const token = (process.env.VERCEL_TOKEN || "").trim();
-		const domain = (process.env.VERCEL_DOMAIN || process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "").trim();
+		const baseDomain = getDeploymentBaseDomain();
+		const zoneId = (process.env.ROUTE53_HOSTED_ZONE_ID || "").trim();
+		if (!zoneId || !baseDomain) throw new Error("Route 53 DNS not configured");
 
-		if (!token || !domain) throw new Error("Vercel DNS not configured");
-
-		const baseDomain = domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 		const sanitized = sanitizeSubdomain(subdomainTrimmed);
-		const listUrl = `https://api.vercel.com/v4/domains/${encodeURIComponent(baseDomain)}/records`;
-		const headers = {
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "application/json",
-		};
+		const lookup = await lookupRoute53Subdomain(sanitized, baseDomain);
 
-		const listRes = await fetch(listUrl, { headers });
-		if (!listRes.ok) throw new Error("Failed to fetch DNS records");
-
-		const listData = await listRes.json();
-		const records = Array.isArray(listData.records)
-			? listData.records
-			: Array.isArray(listData)
-				? listData
-				: [];
-
-		const existingRecord = records.find(
-			(r: any) => r.name === sanitized && (r.type === "A" || r.type === "CNAME")
-		);
-
-		if (!existingRecord) {
+		if (!lookup.exists) {
 			return {
 				available: true,
 				subdomain: sanitized,
@@ -594,12 +583,10 @@ export async function verifyDns(
 			};
 		}
 
-		// If subdomain exists, check if it belongs to the current deployment
 		if (repoNameTrimmed && serviceNameTrimmed) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
 			if (deploymentRes.deployment) {
-				const currentCustomUrl = deploymentRes.deployment.liveUrl || "";
-				const currentSubdomain = currentCustomUrl.replace(/^https?:\/\//, "").replace(/\..*$/, "");
+				const currentSubdomain = (deploymentRes.deployment.hostedSubdomain || "").trim();
 
 				if (currentSubdomain === sanitized) {
 					return {
@@ -614,12 +601,11 @@ export async function verifyDns(
 			}
 		}
 
-		// Subdomain is taken, suggest alternatives
 		const alternatives: string[] = [];
 		for (let i = 1; i <= 5; i += 1) {
 			const alt = `${sanitized}-${i}`;
-			const altExists = records.find((r: any) => r.name === alt && (r.type === "A" || r.type === "CNAME"));
-			if (!altExists) alternatives.push(alt);
+			const altLookup = await lookupRoute53Subdomain(alt, baseDomain);
+			if (!altLookup.exists) alternatives.push(alt);
 			if (alternatives.length >= 3) break;
 		}
 
@@ -734,77 +720,6 @@ export async function prefillInfra(
 			};
 		} catch (inner: unknown) {
 			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to prefill infrastructure");
-			throw new Error(message);
-		} finally {
-			try {
-				fs.rmSync(tmpDir, { recursive: true, force: true });
-			} catch {
-				// ignore cleanup errors
-			}
-		}
-	});
-}
-
-/**
- * Mutation.buildDirectStaticConfig
- * Builds deterministic direct-static deployment config for a detected static service.
- */
-export async function buildDirectStaticConfig(
-	_: unknown,
-	{
-		url,
-		branch,
-		servicePath,
-		serviceType,
-	}: { url: string; branch?: string; servicePath: string; serviceType: string },
-	ctx: GraphQLContext
-) {
-	return withTiming("buildDirectStaticConfig", async () => {
-		if (!ctx.githubToken) throw new Error("GitHub not connected");
-
-		const urlTrimmed = String(url ?? "").trim();
-		let branchTrimmed = String(branch ?? "").trim();
-		const servicePathTrimmed = String(servicePath ?? ".").trim() || ".";
-		const serviceTypeTrimmed = String(serviceType ?? "").trim();
-
-		if (!urlTrimmed) throw new Error("Missing url");
-		if (!isDirectStaticServiceType(serviceTypeTrimmed)) {
-			throw new Error("Unsupported service type for direct static config");
-		}
-
-		let repoUrl = urlTrimmed.replace(/\.git$/, "");
-		if (!repoUrl.startsWith("http")) {
-			repoUrl = repoUrl.includes("/") ? `https://github.com/${repoUrl}` : "";
-		}
-		if (!repoUrl || !repoUrl.includes("github.com")) {
-			throw new Error("Invalid repository URL");
-		}
-
-		const parsed = parseGithubOwnerRepo(repoUrl);
-		if (!parsed) throw new Error("Could not parse GitHub owner/repo from URL");
-
-		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "direct-static-config-"));
-
-		try {
-			if (!branchTrimmed) {
-				const { default_branch } = await fetchRepoMetadata(parsed.owner, parsed.repo, ctx.githubToken);
-				branchTrimmed = default_branch;
-			}
-
-			const { repoRoot, effectiveBranch } = await prepareGithubRepoWorkspace(
-				parsed.owner,
-				parsed.repo,
-				branchTrimmed,
-				ctx.githubToken,
-				tmpDir
-			);
-
-			return {
-				branch: effectiveBranch,
-				results: buildDirectStaticScanResults(repoRoot, servicePathTrimmed, serviceTypeTrimmed),
-			};
-		} catch (inner: unknown) {
-			const message = resolveMutationErrorMessage(inner, ctx.githubToken, "Failed to build direct static config");
 			throw new Error(message);
 		} finally {
 			try {

@@ -30,6 +30,8 @@ type RecentDeploymentSummary = {
 };
 
 const JSON_FENCE_REGEX = /```(?:json)?\s*([\s\S]*?)```/i;
+const DEFAULT_HELP_CITATIONS = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
+const LOW_CONFIDENCE = "low" as const;
 
 function parseModelJson(raw: string): HelpAgentResponse | null {
 	const fenced = JSON_FENCE_REGEX.exec(raw);
@@ -64,9 +66,11 @@ async function callHelpAgentLLM(prompt: string): Promise<LLMFallbackResult> {
 }
 
 function summarizeRecentLogs(logs: string[], maxLines = 4): string[] {
-	const trimmed = logs
-		.map((line) => String(line || "").trim())
-		.filter((line) => line.length > 0);
+	const trimmed: string[] = [];
+	for (const line of logs) {
+		const value = String(line || "").trim();
+		if (value.length > 0) trimmed.push(value);
+	}
 	if (trimmed.length === 0) return [];
 	return trimmed.slice(-maxLines);
 }
@@ -173,10 +177,13 @@ ${context || "(no matching docs found for this question)"}`;
 }
 
 function normalizeCitations(citations: string[], contextSources: Set<string>): string[] {
-	const normalized = citations
-		.map((citation) => citation.trim())
-		.filter((citation) => citation !== "README.md")
-		.filter((citation) => contextSources.has(citation));
+	const normalized: string[] = [];
+	for (const citation of citations) {
+		const trimmed = citation.trim();
+		if (trimmed !== "README.md" && contextSources.has(trimmed)) {
+			normalized.push(trimmed);
+		}
+	}
 	return Array.from(new Set(normalized));
 }
 
@@ -257,8 +264,8 @@ export async function POST(req: Request) {
 	if (chunks.length === 0 && recentDeployments.length === 0) {
 		const answer =
 			"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.";
-		const citations = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
-		const confidence = "low" as const;
+		const citations = DEFAULT_HELP_CITATIONS;
+		const confidence = LOW_CONFIDENCE;
 		const responseTimeMs = Date.now() - startedAt;
 		await persistHelpAgentChat({
 			userID: session.user.id,
@@ -288,7 +295,7 @@ export async function POST(req: Request) {
 		if (!parsed) {
 			const answer = llm.text.trim().slice(0, 2000);
 			const citations = preferredDocFallback(contextSources);
-			const confidence = "low" as const;
+			const confidence = LOW_CONFIDENCE;
 			const responseTimeMs = Date.now() - startedAt;
 			await persistHelpAgentChat({
 				userID: session.user.id,
@@ -337,8 +344,8 @@ export async function POST(req: Request) {
 		console.error("Help agent request failed:", error);
 		const answer =
 			"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.";
-		const citations = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
-		const confidence = "low" as const;
+		const citations = DEFAULT_HELP_CITATIONS;
+		const confidence = LOW_CONFIDENCE;
 		const responseTimeMs = Date.now() - startedAt;
 		await persistHelpAgentChat({
 			userID: session.user.id,

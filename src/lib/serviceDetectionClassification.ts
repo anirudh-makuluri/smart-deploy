@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
-import type { DeploymentKind, StaticServiceType } from "@/app/types";
+import type { StaticServiceType } from "@/app/types";
 
 type ServiceClassification = {
-	deployMode: DeploymentKind;
+	deployMode: "container";
+	/** Optional UI hint for likely static framework (analyze determines actual deploy path). */
 	serviceType?: StaticServiceType;
 };
 
@@ -131,65 +132,62 @@ function looksLikePlainStaticSite(serviceRoot: string): boolean {
 	return !hasDockerfile(serviceRoot) && !hasComposeFile(serviceRoot);
 }
 
-function classifyStaticApp(serviceRoot: string, framework: string | undefined): ServiceClassification | null {
+/** Infer likely static framework for UI only; deploy mode is always container + analyze. */
+function inferStaticServiceType(serviceRoot: string, framework: string | undefined): StaticServiceType | undefined {
 	const pkg = readPackageJson(serviceRoot);
 	const deps = collectDependencies(pkg);
 	const frameworkName = (framework ?? "").trim().toLowerCase();
 
 	if (serviceRoot && (hasComposeFile(serviceRoot) || hasDockerfile(serviceRoot))) {
-		return { deployMode: "container" };
+		return undefined;
 	}
 	if (isServerFramework(frameworkName) && frameworkName !== "nextjs") {
-		return { deployMode: "container" };
+		return undefined;
 	}
 
 	if (deps.next || frameworkName === "nextjs") {
-		if (!hasExplicitNextStaticExport(serviceRoot) || !hasBuildScript(pkg)) {
-			return { deployMode: "container" };
-		}
-		return { deployMode: "direct-static", serviceType: "next-export" };
+		if (!hasExplicitNextStaticExport(serviceRoot) || !hasBuildScript(pkg)) return undefined;
+		return "next-export";
 	}
 
 	if (deps.astro || frameworkName === "astro") {
-		if (isAstroServerOutput(serviceRoot) || !hasBuildScript(pkg)) {
-			return { deployMode: "container" };
-		}
-		return { deployMode: "direct-static", serviceType: "astro" };
+		if (isAstroServerOutput(serviceRoot) || !hasBuildScript(pkg)) return undefined;
+		return "astro";
 	}
 
 	if (deps["@angular/core"] || fileExists(serviceRoot, "angular.json") || frameworkName === "angular") {
-		if (!hasBuildScript(pkg)) return { deployMode: "container" };
-		return { deployMode: "direct-static", serviceType: "angular" };
+		if (!hasBuildScript(pkg)) return undefined;
+		return "angular";
 	}
 
 	if (deps["react-scripts"]) {
-		if (!hasBuildScript(pkg)) return { deployMode: "container" };
-		return { deployMode: "direct-static", serviceType: "cra" };
+		if (!hasBuildScript(pkg)) return undefined;
+		return "cra";
 	}
 
 	const hasVite = Boolean(deps.vite) || ["vite.config.ts", "vite.config.js", "vite.config.mjs", "vite.config.cjs"].some((file) => fileExists(serviceRoot, file));
 	if (hasVite) {
-		if (!hasBuildScript(pkg)) return { deployMode: "container" };
-		if (deps.vue || frameworkName === "vue") return { deployMode: "direct-static", serviceType: "vue" };
-		if (deps.svelte || frameworkName === "svelte") return { deployMode: "direct-static", serviceType: "svelte" };
-		return { deployMode: "direct-static", serviceType: "vite" };
+		if (!hasBuildScript(pkg)) return undefined;
+		if (deps.vue || frameworkName === "vue") return "vue";
+		if (deps.svelte || frameworkName === "svelte") return "svelte";
+		return "vite";
 	}
 
 	if (looksLikePlainStaticSite(serviceRoot)) {
-		return { deployMode: "direct-static", serviceType: "static-html" };
+		return "static-html";
 	}
 
 	if (hasStaticConfigFile(serviceRoot) && hasBuildScript(pkg)) {
-		return { deployMode: "direct-static", serviceType: "vite" };
+		return "vite";
 	}
 
-	return null;
+	return undefined;
 }
 
 export function classifyServiceForDetection(repoRoot: string, service: ServiceLike): ServiceClassification {
 	if (service.dockerfile) return { deployMode: "container" };
 
 	const serviceRoot = resolveServiceRoot(repoRoot, service);
-	const classified = classifyStaticApp(serviceRoot, service.framework);
-	return classified ?? { deployMode: "container" };
+	const serviceType = inferStaticServiceType(serviceRoot, service.framework);
+	return serviceType ? { deployMode: "container", serviceType } : { deployMode: "container" };
 }

@@ -28,16 +28,12 @@ async function proxy(req: NextRequest, params: { path?: string[] }) {
 	headers.delete("connection");
 	headers.delete("content-length");
 
-	const init: RequestInit = {
+	const upstreamRes = await fetch(upstreamUrl, {
 		method: req.method,
 		headers,
-		// Only include a body for methods that can have one.
 		body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
-		// Prevent Next from caching proxy responses.
 		cache: "no-store",
-	};
-
-	const upstreamRes = await fetch(upstreamUrl, init);
+	});
 
 	const resHeaders = new Headers(upstreamRes.headers);
 	resHeaders.delete("content-encoding");

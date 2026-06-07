@@ -26,10 +26,10 @@ describe("DashboardSideBar", () => {
 		appState = {
 			repoList: [{ id: 1 }, { id: 2 }, { id: 3 }],
 			deployments: [
-				{ id: "1", status: "running", liveUrl: "https://repo-one.example.com", serviceName: "web", repoName: "repo1", url: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ec2", awsRegion: "", ec2: null, cloudRun: null, scanResults: {} },
-				{ id: "2", status: "failed", liveUrl: null, serviceName: "web", repoName: "repo2", url: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ec2", awsRegion: "", ec2: null, cloudRun: null, scanResults: {} },
-				{ id: "3", status: "didnt_deploy", liveUrl: null, serviceName: "web", repoName: "repo3", url: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ec2", awsRegion: "", ec2: null, cloudRun: null, scanResults: {} },
-				{ id: "4", status: "paused", liveUrl: null, serviceName: "web", repoName: "repo4", url: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ec2", awsRegion: "", ec2: null, cloudRun: null, scanResults: {} },
+				{ id: "1", status: "running", hostedSubdomain: "repo-one", serviceName: "web", repoName: "repo1", repoUrl: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ecs", region: "", cloudResources: null, scanResults: {} },
+				{ id: "2", status: "failed", hostedSubdomain: null, serviceName: "web", repoName: "repo2", repoUrl: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ecs", region: "", cloudResources: null, scanResults: {} },
+				{ id: "3", status: "didnt_deploy", hostedSubdomain: null, serviceName: "web", repoName: "repo3", repoUrl: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ecs", region: "", cloudResources: null, scanResults: {} },
+				{ id: "4", status: "paused", hostedSubdomain: null, serviceName: "web", repoName: "repo4", repoUrl: "", branch: "", commitSha: null, envVars: null, screenshotUrl: null, firstDeployment: null, lastDeployment: null, revision: null, cloudProvider: "aws", deploymentTarget: "ecs", region: "", cloudResources: null, scanResults: {} },
 			],
 		};
 	});

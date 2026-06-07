@@ -1,3 +1,5 @@
+"use client";
+
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -34,13 +36,20 @@ const components: Components = {
 				</Link>
 			);
 		}
+		if (resolved?.startsWith("http")) {
+			return (
+				<a
+					href={resolved}
+					className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+					rel="noreferrer"
+					target="_blank"
+				>
+					{children}
+				</a>
+			);
+		}
 		return (
-			<a
-				href={resolved}
-				className="font-medium text-foreground underline underline-offset-2 hover:text-primary"
-				rel={resolved?.startsWith("http") ? "noreferrer" : undefined}
-				target={resolved?.startsWith("http") ? "_blank" : undefined}
-			>
+			<a href={resolved} className="font-medium text-foreground underline underline-offset-2 hover:text-primary">
 				{children}
 			</a>
 		);

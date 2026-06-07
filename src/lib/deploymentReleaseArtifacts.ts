@@ -3,7 +3,7 @@ import type {
 	DeploymentReleaseArtifact,
 	EcrImageReleaseArtifact,
 	EcrServiceImageRef,
-	Ec2ConfigReleaseArtifact,
+	StaticSiteReleaseArtifact,
 } from "@/app/types";
 
 function cloneJsonObject<T>(value: T): T {
@@ -22,17 +22,6 @@ export function sanitizeDeployConfigForHistory(config: DeployConfig | null): Rec
 	return snapshot;
 }
 
-export function buildEc2ConfigReleaseArtifact(deployConfig: DeployConfig): Ec2ConfigReleaseArtifact {
-	return {
-		kind: "ec2_config",
-		cloudProvider: "aws",
-		deploymentTarget: "ec2",
-		branch: deployConfig.branch ?? null,
-		commitSha: deployConfig.commitSha ?? null,
-		deployConfig: sanitizeDeployConfigForHistory(deployConfig),
-	};
-}
-
 export function buildEcrImageReleaseArtifact(args: {
 	deployConfig: DeployConfig;
 	region: string;
@@ -46,7 +35,7 @@ export function buildEcrImageReleaseArtifact(args: {
 	return {
 		kind: "ecr_image",
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
+		deploymentTarget: "ecs",
 		region: args.region,
 		ecrRegistry: args.ecrRegistry,
 		ecrRepoName: args.ecrRepoName,
@@ -74,12 +63,40 @@ export function isEcrImageReleaseArtifact(value: unknown): value is EcrImageRele
 	return isRecord(value) && value.kind === "ecr_image";
 }
 
-export function isEc2ConfigReleaseArtifact(value: unknown): value is Ec2ConfigReleaseArtifact {
+export function isLegacyEc2ConfigReleaseArtifact(value: unknown): boolean {
 	return isRecord(value) && value.kind === "ec2_config";
 }
 
+export function buildStaticSiteReleaseArtifact(args: {
+	deployConfig: DeployConfig;
+	region: string;
+	bucket: string;
+	keyPrefix: string;
+	publicBaseUrl: string;
+	cloudFrontDistributionId?: string | null;
+}): StaticSiteReleaseArtifact {
+	const baseUrl = args.publicBaseUrl.trim().replace(/\/+$/, "");
+	return {
+		kind: "static_site",
+		cloudProvider: "aws",
+		deploymentTarget: "static_s3",
+		region: args.region,
+		bucket: args.bucket,
+		keyPrefix: args.keyPrefix,
+		publicBaseUrl: baseUrl,
+		cloudFrontDistributionId: args.cloudFrontDistributionId ?? null,
+		branch: args.deployConfig.branch ?? null,
+		commitSha: args.deployConfig.commitSha ?? null,
+		deployConfig: sanitizeDeployConfigForHistory(args.deployConfig),
+	};
+}
+
+export function isStaticSiteReleaseArtifact(value: unknown): value is StaticSiteReleaseArtifact {
+	return isRecord(value) && value.kind === "static_site";
+}
+
 export function hasUsableReleaseArtifact(value: unknown): value is DeploymentReleaseArtifact {
-	return isEcrImageReleaseArtifact(value) || isEc2ConfigReleaseArtifact(value);
+	return isEcrImageReleaseArtifact(value) || isStaticSiteReleaseArtifact(value);
 }
 
 export function ecrImageRefFromArtifact(artifact: EcrImageReleaseArtifact): string {
@@ -111,16 +128,21 @@ export function deployConfigFromReleaseArtifact(
 	if (!isRecord(artifact.deployConfig)) return null;
 	const storedConfig = cloneJsonObject(artifact.deployConfig) as Partial<DeployConfig> & Record<string, unknown>;
 	delete storedConfig.envVars;
+	const artifactTarget = (artifact as { deploymentTarget?: DeployConfig["deploymentTarget"] }).deploymentTarget;
+	const storedTarget = storedConfig.deploymentTarget as DeployConfig["deploymentTarget"] | undefined;
+	const resolvedTarget: DeployConfig["deploymentTarget"] =
+		isStaticSiteReleaseArtifact(artifact) ? "static_s3" : artifactTarget || storedTarget || "ecs";
+	const legacyUrl = storedConfig.repoUrl ?? storedConfig.url;
 	return {
 		...currentDeployConfig,
 		...storedConfig,
 		envVars: currentDeployConfig.envVars ?? null,
 		repoName: (storedConfig.repoName as string | undefined) || currentDeployConfig.repoName,
 		serviceName: (storedConfig.serviceName as string | undefined) || currentDeployConfig.serviceName,
-		url: (storedConfig.url as string | undefined) || currentDeployConfig.url,
+		repoUrl: (legacyUrl as string | undefined) || currentDeployConfig.repoUrl,
 		branch: (storedConfig.branch as string | undefined) || currentDeployConfig.branch,
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
+		deploymentTarget: resolvedTarget,
 	} as DeployConfig;
 }
 

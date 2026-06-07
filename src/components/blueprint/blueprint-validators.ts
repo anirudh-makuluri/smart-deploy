@@ -1,84 +1,39 @@
 import type { BlueprintValidationIssue } from "@/components/blueprint/blueprint-types";
-import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
-
-function serviceNodeId(name: string) {
-	return `service-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
-}
+import type { DeployConfig, ScanResultsPayload } from "@/app/types";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 export function validateBlueprint(
 	deployment: DeployConfig,
-	scanResults: SDArtifactsResponse | null
+	scanResults: ScanResultsPayload | null
 ): BlueprintValidationIssue[] {
-	if (!scanResults) return [];
+	if (!scanResults || !isSdArtifactsAnalyzeScan(scanResults)) return [];
 
 	const issues: BlueprintValidationIssue[] = [];
-	const services = scanResults.services ?? [];
-	const seenPorts = new Map<number, string>();
-
-	services.forEach((service) => {
-		const nodeId = serviceNodeId(service.name);
-
-		if (!service.dockerfile_path?.trim() || !scanResults.dockerfiles?.[service.dockerfile_path]) {
-			issues.push({
-				id: `${nodeId}-dockerfile`,
-				nodeId,
-				severity: "warning",
-				title: "Missing Dockerfile mapping",
-				description: `${service.name} does not currently point to a generated Dockerfile artifact.`,
-			});
-		}
-
-		if (!service.build_context?.trim()) {
-			issues.push({
-				id: `${nodeId}-context`,
-				nodeId,
-				severity: "info",
-				title: "Build context not explicit",
-				description: `${service.name} is missing a clear build context. Using "." can work, but it is harder to reason about in monorepos.`,
-			});
-		}
-
-		if (!Number.isFinite(service.port) || service.port <= 0) {
-			issues.push({
-				id: `${nodeId}-port`,
-				nodeId,
-				severity: "warning",
-				title: "Port is missing or invalid",
-				description: `${service.name} needs a valid runtime port so routing and health checks stay predictable.`,
-			});
-		} else {
-			const seenBy = seenPorts.get(service.port);
-			if (seenBy) {
-				issues.push({
-					id: `${nodeId}-duplicate-port`,
-					nodeId,
-					severity: "warning",
-					title: "Port collision detected",
-					description: `${service.name} and ${seenBy} both expose port ${service.port}.`,
-				});
-			} else {
-				seenPorts.set(service.port, service.name);
-			}
-		}
-	});
-
-	if (services.length > 1 && !scanResults.docker_compose?.trim()) {
+	if (scanResults.build_status === "failed" || scanResults.build_status === "error") {
 		issues.push({
-			id: "compose-missing",
-			severity: "info",
-			title: "No compose artifact present",
-			description: "This repo has multiple detected services, but no docker-compose file is part of the current deployment bundle.",
+			id: "analyze-build-failed",
+			severity: "warning",
+			title: "Analyze build did not pass",
+			description: `Railpack build status is "${scanResults.build_status}". Review deploy briefing before deploying.`,
 		});
 	}
-
-	if (deployment.liveUrl?.trim() && !scanResults.nginx_conf?.trim() && services.length > 0) {
+	for (const unit of scanResults.deploy_units) {
+		if (!unit.artifacts?.railpack_plan && unit.type !== "existing_docker") {
+			issues.push({
+				id: `unit-${unit.name}-no-plan`,
+				severity: "warning",
+				title: `Missing Railpack plan for ${unit.name}`,
+				description: "Re-run analyze or send feedback to generate a build plan for this unit.",
+			});
+		}
+	}
+	if (deployment.hostedSubdomain?.trim() && scanResults.deploy_shape === "server") {
 		issues.push({
-			id: "domain-without-nginx",
+			id: "domain-server-routing",
 			severity: "info",
-			title: "Public URL without visible ingress mapping",
-			description: "A custom or live URL exists, but the current scan results do not include nginx routing details.",
+			title: "Custom domain on server workload",
+			description: "Ingress is configured at deploy time (ALB). Ensure the service port matches the analyze unit.",
 		});
 	}
-
 	return issues;
 }

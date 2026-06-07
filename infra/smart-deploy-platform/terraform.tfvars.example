@@ -1,0 +1,33 @@
+aws_region   = "us-west-2"
+project_name = "smart-deploy"
+environment  = "prod"
+
+# Static sites — private S3 + CloudFront OAC
+s3_bucket_name          = "smart-deploy-static-site"
+create_s3_bucket        = true
+cloudfront_spa_fallback = true
+
+# If you already created the bucket manually, use:
+# create_s3_bucket = false
+# Then run: terraform import 'aws_s3_bucket.static[0]' smart-deploy-static-site
+# (or keep create_s3_bucket=false and rely on data.aws_s3_bucket.existing)
+
+# ECS Fargate (Railpack server / existing_docker deploys)
+ecs_cluster_name        = "smart-deploy-cluster"
+create_ecs_cluster      = true
+ecs_execution_role_name = "smartdeploy-ecs-execution"
+
+# If the cluster already exists:
+# create_ecs_cluster = false
+
+# VPC / subnets (default VPC public subnets if empty)
+vpc_id         = ""
+ecs_subnet_ids = []
+
+# Optional: pin subnets (need ≥2 in different AZs for the shared ALB)
+# ecs_subnet_ids = ["subnet-aaa", "subnet-bbb"]
+
+# Route 53 — wildcard DNS for ECS deploy URLs (*.domain → shared ALB)
+# deployment_domain     = "smart-deploy.xyz"
+# route53_hosted_zone_id = "Z0123456789ABC"
+# shared_alb_dns_name   = "smartdeploy-419078-alb-1393676891.us-west-2.elb.amazonaws.com"

@@ -254,7 +254,7 @@ export async function handleMultiServiceDeploy(
 	const send = createWebSocketLogger(ws);
 
 	const projectId = config.GCP_PROJECT_ID;
-	const repoUrl = deployConfig.url;
+	const repoUrl = deployConfig.repoUrl;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "default-app";
 
 	const appDir = cloneDir;

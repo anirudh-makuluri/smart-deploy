@@ -19,11 +19,17 @@ export async function GET() {
 		readme.trim(),
 	];
 
-	for (const docMeta of docs) {
-		const doc = await readDocsMarkdownBySlug(docMeta.slug);
+	const docContents = await Promise.all(
+		docs.map(async (docMeta) => {
+			const doc = await readDocsMarkdownBySlug(docMeta.slug);
+			if (!doc) return null;
+			return { filename: doc.filename, content: doc.content.trim() };
+		})
+	);
+	for (const doc of docContents) {
 		if (!doc) continue;
 		chunks.push(sectionHeader(`docs/${doc.filename}`));
-		chunks.push(doc.content.trim());
+		chunks.push(doc.content);
 	}
 
 	return new NextResponse(chunks.join("\n"), {

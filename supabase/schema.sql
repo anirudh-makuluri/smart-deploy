@@ -5,46 +5,40 @@
 -- Identity lives in Better Auth's `public."user"` (created by `npm run auth:migrate`).
 -- App tables reference that id via foreign keys (same string id the session uses).
 
--- Deployments: one row per deployment; id = deployment id (e.g. repo/branch slug)
-create table if not exists public.deployments (
+create table public.deployments (
   id text primary key,
   repo_name text not null,
+  repo_url text not null default '',
   service_name text not null,
   owner_id text not null references public."user"(id) on delete cascade,
-  
-  -- Core deployment fields
-  url text not null default '',
-  branch text not null default '',
-  kind text not null default 'container',
+
+  branch text not null default 'main',
   commit_sha text,
-  env_vars text,
-  live_url text,
+  hosted_subdomain text,
   screenshot_url text,
-  cloud_provider text default 'aws',
-  deployment_target text default 'ec2',
-  aws_region text not null default 'us-west-2',
-  
-  -- Status and metadata
-  status text default 'didnt_deploy',
+
+  cloud_provider text not null default 'aws',
+  deployment_target text not null default 'ecs',
+  region text not null default 'us-west-2',
+
+  status text not null default 'didnt_deploy',
   first_deployment timestamptz,
   last_deployment timestamptz,
-  revision int default 1,
-  
-  -- Complex nested objects stay in JSONB
-  ec2 jsonb,
-  cloud_run jsonb,
-  -- Link to full scan payload in analysis_responses
+  revision int not null default 1,
+
+  cloud_resources jsonb,
+  secrets_arn text,
+
   response_id uuid
 );
 
-create index if not exists idx_deployments_owner on public.deployments(owner_id);
-create index if not exists idx_deployments_region on public.deployments(aws_region);
-create index if not exists idx_deployments_provider on public.deployments(cloud_provider);
-
--- Ensure existing deployments tables get the new pointer column.
-alter table public.deployments add column if not exists response_id uuid;
-alter table public.deployments add column if not exists kind text not null default 'container';
-create index if not exists idx_deployments_response_id on public.deployments(response_id);
+create unique index idx_deployments_hosted_subdomain
+  on public.deployments(hosted_subdomain)
+  where hosted_subdomain is not null;
+create index idx_deployments_owner on public.deployments(owner_id);
+create index idx_deployments_region on public.deployments(region);
+create index idx_deployments_provider on public.deployments(cloud_provider);
+create index idx_deployments_response_id on public.deployments(response_id);
 
 -- Full analysis responses are stored separately and linked by deployments.response_id
 create table if not exists public.analysis_responses (
@@ -77,88 +71,36 @@ begin
   end if;
 end $$;
 
--- Backfill legacy deployments.scan_results into analysis_responses before dropping the old column.
-do $$
-begin
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'deployments'
-      and column_name = 'scan_results'
-  ) then
-    with migrated as (
-      select
-        d.id as deployment_id,
-        gen_random_uuid() as analysis_id,
-        d.url,
-        d.commit_sha,
-        d.service_name,
-        d.scan_results
-      from public.deployments d
-      where d.response_id is null
-        and d.scan_results is not null
-        and jsonb_typeof(d.scan_results) = 'object'
-        and d.scan_results <> '{}'::jsonb
-    ),
-    inserted as (
-      insert into public.analysis_responses (
-        id, endpoint, repo_url, commit_sha, package_path, service_name, from_cache, passed, payload
-      )
-      select
-        m.analysis_id,
-        '/legacy-migration',
-        coalesce(m.url, ''),
-        m.commit_sha,
-        '.',
-        m.service_name,
-        false,
-        false,
-        jsonb_set(m.scan_results, '{response_id}', to_jsonb(m.analysis_id::text), true)
-      from migrated m
-      on conflict (id) do nothing
-    )
-    update public.deployments d
-    set response_id = m.analysis_id
-    from migrated m
-    where d.id = m.deployment_id;
-
-    alter table public.deployments drop column if exists scan_results;
-  end if;
-end $$;
-
--- Deployment history: stored per user so it survives deployment deletion
-create table if not exists public.deployment_history (
+-- Deployment runs: per-attempt metadata; full pipeline logs in S3 (LOGS_BUCKET).
+-- Intentionally no FK to deployments so runs survive deployment deletion.
+create table if not exists public.deployment_runs (
   id uuid primary key default gen_random_uuid(),
   user_id text not null references public."user"(id) on delete cascade,
   repo_name text not null,
   service_name text not null,
-  timestamp timestamptz not null default now(),
-  success boolean not null,
-  steps jsonb not null default '[]',
-  config_snapshot jsonb not null default '{}',
-  release_artifact jsonb not null default '{}',
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  success boolean,
+  duration_ms int,
+  branch text,
   commit_sha text,
   commit_message text,
-  branch text,
-  duration_ms int,
   failure_code text,
-  failure_classification jsonb
+  failure_classification jsonb,
+  release_artifact jsonb not null default '{}',
+  response_id uuid references public.analysis_responses(id) on delete set null,
+  log_store text not null default 's3',
+  log_ref text,
+  step_summary jsonb not null default '[]',
+  log_tail jsonb not null default '[]'
 );
 
-alter table public.deployment_history
-  add column if not exists release_artifact jsonb not null default '{}';
-alter table public.deployment_history
-  add column if not exists failure_code text;
-alter table public.deployment_history
-  add column if not exists failure_classification jsonb;
-
-create index if not exists idx_deployment_history_user_repo_service
-  on public.deployment_history(user_id, repo_name, service_name);
-create index if not exists idx_deployment_history_user_time
-  on public.deployment_history(user_id, timestamp desc);
-create index if not exists idx_deployment_history_latest_success
-  on public.deployment_history(user_id, repo_name, service_name, success, timestamp desc);
+create index if not exists idx_deployment_runs_user_repo_service
+  on public.deployment_runs(user_id, repo_name, service_name);
+create index if not exists idx_deployment_runs_user_started
+  on public.deployment_runs(user_id, started_at desc);
+create index if not exists idx_deployment_runs_latest_success
+  on public.deployment_runs(user_id, repo_name, service_name, success, started_at desc);
 
 -- Help-agent chats: one row per completed Q/A exchange.
 create table if not exists public.help_agent_chats (
@@ -298,7 +240,7 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 -- RLS: disable or set policies as needed; service role bypasses RLS
 alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;
-alter table public.deployment_history enable row level security;
+alter table public.deployment_runs enable row level security;
 alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
@@ -338,8 +280,9 @@ stable
 as $$
   with filtered as (
     select success, duration_ms
-    from public.deployment_history
-    where p_user_id is null or user_id = p_user_id
+    from public.deployment_runs
+    where finished_at is not null
+      and (p_user_id is null or user_id = p_user_id)
   ),
   counts as (
     select
@@ -377,39 +320,40 @@ as $$
       and (p_user_id is null or user_id = p_user_id)
     group by artifact_type
   ),
-  history as (
-    select success, config_snapshot::jsonb as config_snapshot
-    from public.deployment_history
-    where (p_user_id is null or user_id = p_user_id)
+  runs as (
+    select success, release_artifact::jsonb as release_artifact
+    from public.deployment_runs
+    where finished_at is not null
+      and (p_user_id is null or user_id = p_user_id)
   ),
   success_total as (
     select count(*)::bigint as n
-    from history
+    from runs
     where success = true
   ),
   success_flags as (
     select
       count(*) filter (
         where success = true
-          and coalesce((config_snapshot #>> '{scanResults,has_existing_dockerfiles}')::boolean, false) = false
-          and coalesce(jsonb_typeof(config_snapshot #> '{scanResults,dockerfiles}'), '') = 'object'
+          and coalesce((release_artifact #>> '{deployConfig,scanResults,has_existing_dockerfiles}')::boolean, false) = false
+          and coalesce(jsonb_typeof(release_artifact #> '{deployConfig,scanResults,dockerfiles}'), '') = 'object'
           and exists (
             select 1
-            from jsonb_each(coalesce(config_snapshot #> '{scanResults,dockerfiles}', '{}'::jsonb))
+            from jsonb_each(coalesce(release_artifact #> '{deployConfig,scanResults,dockerfiles}', '{}'::jsonb))
           )
       )::bigint as success_with_generated_dockerfiles,
 
       count(*) filter (
         where success = true
-          and coalesce((config_snapshot #>> '{scanResults,has_existing_compose}')::boolean, false) = false
-          and length(coalesce(config_snapshot #>> '{scanResults,docker_compose}', '')) > 0
+          and coalesce((release_artifact #>> '{deployConfig,scanResults,has_existing_compose}')::boolean, false) = false
+          and length(coalesce(release_artifact #>> '{deployConfig,scanResults,docker_compose}', '')) > 0
       )::bigint as success_with_generated_compose,
 
       count(*) filter (
         where success = true
-          and length(coalesce(config_snapshot #>> '{scanResults,nginx_conf}', '')) > 0
+          and length(coalesce(release_artifact #>> '{deployConfig,scanResults,nginx_conf}', '')) > 0
       )::bigint as success_with_nginx_conf
-    from history
+    from runs
   )
   select jsonb_build_object(
     'generated_counts', jsonb_build_object(

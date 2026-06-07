@@ -19,7 +19,7 @@ import {
 	isLiveDeploymentStatus,
 	resolveDeploymentStatus,
 } from "@/lib/deploymentStatus";
-import { getDeploymentForService } from "@/lib/utils";
+import { getDeploymentDisplayUrl, getDeploymentForService } from "@/lib/utils";
 import ServiceTypeIcon, { ServiceTypeBadge } from "@/components/ServiceTypeIcon";
 
 export type RepoCatalogActions = {
@@ -141,7 +141,7 @@ export default function RepoServicesList({
 						const status = deployment
 							? resolveDeploymentStatus({
 								status: deployment.status,
-								liveUrl: deployment.liveUrl,
+								hostedSubdomain: deployment.hostedSubdomain,
 								screenshotUrl: deployment.screenshotUrl,
 							})
 							: undefined;
@@ -152,46 +152,30 @@ export default function RepoServicesList({
 						const isPaused = status === "paused";
 						const isStopped = status === "stopped";
 						const isInProgress = isInProgressDeploymentStatus(status);
-						const liveUrl = deployment?.liveUrl;
+						const displayUrl = deployment ? getDeploymentDisplayUrl(deployment) : undefined;
 
 						const handleCardClick = () => {
 							void openWorkspaceForService(svc);
 						};
 
-						const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleCardClick();
-							}
-						};
-
-						const handleLiveUrlClick = (e: React.MouseEvent) => {
-							e.stopPropagation();
-							if (liveUrl) {
-								window.open(liveUrl, "_blank");
-							}
-						};
-
 						return (
-							<div
+							<button
+								type="button"
 								key={`${svc.path}::${svc.name}`}
-								role="button"
-								tabIndex={0}
 								onClick={handleCardClick}
-								onKeyDown={handleCardKeyDown}
-								className={`hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
+								className={`w-full hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
 									}`}
 							>
 								<div className="flex items-center gap-3">
 									<ServiceTypeIcon deployMode={svc.deployMode} serviceType={svc.serviceType} />
 									<div className="min-w-0 flex-1">
 										<div className="font-semibold text-foreground truncate">
-											@{repoName}/{svc.name}
+											{repoName}/{svc.name}
 										</div>
 									</div>
 								</div>
 								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
-									{svc.path === "." ? "Root: ." : svc.path}
+									{svc.path === "." ? "Root directory" : svc.path}
 								</div>
 								<div className="mt-2">
 									<ServiceTypeBadge deployMode={svc.deployMode} serviceType={svc.serviceType} />
@@ -246,19 +230,19 @@ export default function RepoServicesList({
 											</span>
 										)}
 									</div>
-									{liveUrl && isOnline && (
+									{displayUrl && isOnline && (
 										<a
-											href={liveUrl}
+											href={displayUrl}
 											target="_blank"
 											rel="noopener noreferrer"
-											onClick={handleLiveUrlClick}
+											onClick={(e) => e.stopPropagation()}
 											className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
 										>
-											{liveUrl}
+											{displayUrl}
 										</a>
 									)}
 								</div>
-							</div>
+							</button>
 						);
 					})}
 				</div>

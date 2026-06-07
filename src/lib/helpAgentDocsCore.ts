@@ -104,13 +104,20 @@ async function buildCorpus(): Promise<InternalChunk[]> {
 	const [readme, docFiles] = await Promise.all([readProjectReadme(), listDocMarkdownFiles()]);
 	const chunks: InternalChunk[] = buildChunksFromMarkdown(readme, "README.md");
 
-	for (const docFile of docFiles) {
-		if (docFile.filename === "HELP_AGENT_BENCHMARK.md") continue;
-		const doc = await readDocsMarkdownBySlug(docFile.slug);
-		if (!doc) continue;
-		const source = `docs/${doc.filename}`;
-		chunks.push(...buildChunksFromMarkdown(doc.content, source));
-	}
+	const docChunks = await Promise.all(
+		docFiles.flatMap((docFile) =>
+			docFile.filename === "HELP_AGENT_BENCHMARK.md"
+				? []
+				: [
+						(async () => {
+							const doc = await readDocsMarkdownBySlug(docFile.slug);
+							if (!doc) return [] as InternalChunk[];
+							return buildChunksFromMarkdown(doc.content, `docs/${doc.filename}`);
+						})(),
+					]
+		)
+	);
+	chunks.push(...docChunks.flat());
 
 	return chunks;
 }
@@ -141,11 +148,10 @@ export async function getHelpContext(question: string, limit = 6): Promise<HelpD
 	const queryLower = question.toLowerCase().trim();
 
 	const ranked = corpus
-		.map((chunk) => {
+		.flatMap((chunk) => {
 			const score = scoreChunk(queryTokens, queryLower, chunk);
-			return { ...chunk, score };
+			return score > 0.9 ? [{ ...chunk, score }] : [];
 		})
-		.filter((chunk) => (chunk.score ?? 0) > 0.9)
 		.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 		.slice(0, limit)
 		.map(({ tokens: _tokens, ...chunk }) => chunk);

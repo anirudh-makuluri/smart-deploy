@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 const FAILED_TO_GET_SESSION = "FAILED_TO_GET_SESSION";
@@ -56,7 +55,6 @@ function clearAuthCookies() {
  * If session retrieval is broken, force sign-out to recover from a stuck auth state.
  */
 export function SessionFailureLogoutGuard() {
-	const router = useRouter();
 	const hasTriggeredRef = useRef(false);
 	const { error } = authClient.useSession();
 
@@ -72,10 +70,9 @@ export function SessionFailureLogoutGuard() {
 				// Continue with redirect even when sign-out request fails.
 			}
 			clearAuthCookies();
-			router.replace("/auth");
-			router.refresh();
+			window.location.assign("/auth");
 		})();
-	}, [error, router]);
+	}, [error]);
 
 	return null;
 }

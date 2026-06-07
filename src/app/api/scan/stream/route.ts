@@ -48,7 +48,8 @@ export async function POST(req: Request) {
 				"Content-Type": "application/json",
 				"Authorization": `Bearer ${process.env.SD_API_BEARER_TOKEN}`,
 			},
-			body: JSON.stringify(payload)
+			body: JSON.stringify(payload),
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

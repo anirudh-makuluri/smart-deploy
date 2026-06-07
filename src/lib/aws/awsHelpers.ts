@@ -311,7 +311,10 @@ function parseConditions(raw: string): Array<{ Field?: string; HostHeaderConfig?
 	const field = /Field=([^,]+)/.exec(raw)?.[1];
 	if (field === "host-header") {
 		const valuesRaw = /HostHeaderConfig=\{Values=([^}]+)\}/.exec(raw)?.[1] || "";
-		const values = valuesRaw.split(",").map((v) => v.trim()).filter(Boolean);
+		const values = valuesRaw.split(",").flatMap((v) => {
+			const trimmed = v.trim();
+			return trimmed ? [trimmed] : [];
+		});
 		return [{ Field: "host-header", HostHeaderConfig: { Values: values } }];
 	}
 	return [{ Field: field }];
@@ -421,16 +424,19 @@ export async function runAWSCommand(
 			}
 			if (command === "describe-subnets") {
 				const filters = getOptAll(options, "filters");
+				const subnetIds = getOptAll(options, "subnet-ids");
 				const resp = await client.send(new DescribeSubnetsCommand({
 					...(filters.length ? { Filters: parseFilters(filters) } : {}),
+					...(subnetIds.length ? { SubnetIds: subnetIds } : {}),
 				}));
 				const query = getOpt(options, "query") || "";
+				if (query.includes("Subnets[0].VpcId")) return asText(resp.Subnets?.[0]?.VpcId);
 				if (query.includes("Subnets[*].{SubnetId:SubnetId,AvailabilityZone:AvailabilityZone}")) {
 					const out = (resp.Subnets || []).map((s) => ({ SubnetId: s.SubnetId, AvailabilityZone: s.AvailabilityZone }));
 					return JSON.stringify(out);
 				}
 				if (query.includes("Subnets[*].SubnetId")) {
-					return (resp.Subnets || []).map((s) => s.SubnetId).filter(Boolean).join(" ");
+					return (resp.Subnets || []).flatMap((s) => (s.SubnetId ? [s.SubnetId] : [])).join(" ");
 				}
 				return JSON.stringify(resp.Subnets ?? []);
 			}
@@ -441,7 +447,7 @@ export async function runAWSCommand(
 				}));
 				const query = getOpt(options, "query") || "";
 				if (query.includes("AvailabilityZones[*].ZoneName")) {
-					return (resp.AvailabilityZones || []).map((z) => z.ZoneName).filter(Boolean).join(" ");
+					return (resp.AvailabilityZones || []).flatMap((z) => (z.ZoneName ? [z.ZoneName] : [])).join(" ");
 				}
 				return JSON.stringify(resp.AvailabilityZones ?? []);
 			}
@@ -630,10 +636,12 @@ export async function runAWSCommand(
 				}));
 				const query = getOpt(options, "query") || "";
 				if (query.includes("RouteTables[*].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,NatGatewayId]")) {
-					const out = (resp.RouteTables || []).map((rt) =>
-						(rt.Routes || [])
-							.filter((r) => r.DestinationCidrBlock === "0.0.0.0/0")
-							.map((r) => [r.GatewayId || null, r.NatGatewayId || null])
+					const out = (resp.RouteTables || []).flatMap((rt) =>
+						(rt.Routes || []).flatMap((r) =>
+							r.DestinationCidrBlock === "0.0.0.0/0"
+								? [[r.GatewayId || null, r.NatGatewayId || null]]
+								: []
+						)
 					);
 					return JSON.stringify(out);
 				}
@@ -1232,7 +1240,7 @@ export async function waitForResource(
 
 function getDeploymentBaseDomain(): string {
 	const domain = (
-		process.env.VERCEL_DOMAIN ||
+		process.env.ROUTE53_DOMAIN ||
 		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
 		""
 	).trim();
@@ -1250,10 +1258,26 @@ function sanitizeSubdomain(value: string): string {
 	return out || "app";
 }
 
+function subdomainLabelFromPreferred(preferred: string | undefined, baseDomain: string): string | null {
+	const raw = preferred?.trim();
+	if (!raw) return null;
+	const base = baseDomain.toLowerCase();
+	const host = raw.replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+	if (host.endsWith(`.${base}`)) {
+		const prefix = host.slice(0, -(base.length + 1));
+		if (prefix && !prefix.includes(".")) {
+			return sanitizeSubdomain(prefix);
+		}
+	}
+	return sanitizeSubdomain(host);
+}
+
 export function buildServiceHostname(serviceName: string, preferredSubdomain?: string): string | null {
 	const baseDomain = getDeploymentBaseDomain();
 	if (!baseDomain) return null;
-	const label = sanitizeSubdomain(preferredSubdomain?.trim() || serviceName);
+	const label =
+		subdomainLabelFromPreferred(preferredSubdomain, baseDomain) ||
+		sanitizeSubdomain(serviceName);
 	return `${label}.${baseDomain}`;
 }
 
@@ -1278,20 +1302,22 @@ export async function ensureAlbSecurityGroup(
 		ws
 	);
 
-	for (const port of [80, 443]) {
-		try {
-			await runAWSCommand([
-				"ec2",
-				"authorize-security-group-ingress",
-				"--group-id",
-				sgId,
-				"--ip-permissions",
-				`IpProtocol=tcp,FromPort=${port},ToPort=${port},IpRanges=[{CidrIp=0.0.0.0/0}]`,
-			], ws, "setup");
-		} catch {
-			// likely already exists
-		}
-	}
+	await Promise.all(
+		[80, 443].map(async (port) => {
+			try {
+				await runAWSCommand([
+					"ec2",
+					"authorize-security-group-ingress",
+					"--group-id",
+					sgId,
+					"--ip-permissions",
+					`IpProtocol=tcp,FromPort=${port},ToPort=${port},IpRanges=[{CidrIp=0.0.0.0/0}]`,
+				], ws, "setup");
+			} catch {
+				// likely already exists
+			}
+		})
+	);
 	return sgId;
 }
 
@@ -1413,14 +1439,11 @@ async function ensureAlb(
 	return { albArn, dnsName };
 }
 
-export async function ensureTargetGroup(
+export async function findTargetGroupArnByName(
 	tgName: string,
-	vpcId: string,
-	containerPort: number,
 	region: string,
-	ws: any,
-	opts?: { targetType?: "ip" | "instance"; healthCheckPath?: string }
-): Promise<string> {
+	ws: any
+): Promise<string | null> {
 	try {
 		const tgArn = (
 			await runAWSCommand(
@@ -1440,10 +1463,22 @@ export async function ensureTargetGroup(
 				"deploy"
 			)
 		).trim();
-		if (tgArn && tgArn !== "None") return tgArn;
+		return tgArn && tgArn !== "None" ? tgArn : null;
 	} catch {
-		// does not exist
+		return null;
 	}
+}
+
+export async function ensureTargetGroup(
+	tgName: string,
+	vpcId: string,
+	containerPort: number,
+	region: string,
+	ws: any,
+	opts?: { targetType?: "ip" | "instance"; healthCheckPath?: string }
+): Promise<string> {
+	const existing = await findTargetGroupArnByName(tgName, region, ws);
+	if (existing) return existing;
 
 	const targetType = opts?.targetType || "ip";
 	const healthCheckPath = opts?.healthCheckPath || "/";
@@ -1692,11 +1727,12 @@ export async function ensureHostRule(
 		return;
 	}
 
-	const numericPriorities = rules
-		.map((r) => r.Priority)
-		.filter((p): p is string => typeof p === "string" && p !== "default")
-		.map((p) => Number(p))
-		.filter((n) => Number.isFinite(n));
+	const numericPriorities = rules.flatMap((r) => {
+		const p = r.Priority;
+		if (typeof p !== "string" || p === "default") return [];
+		const n = Number(p);
+		return Number.isFinite(n) ? [n] : [];
+	});
 
 	const maxPriority = numericPriorities.length ? Math.max(...numericPriorities) : 100;
 	let priority = maxPriority + 1;
@@ -1823,17 +1859,24 @@ async function stripForwardRulesFromListener(listenerArn: string, region: string
 		return;
 	}
 	let removed = 0;
-	for (const rule of rules) {
-		if (rule.IsDefault || rule.Priority === "default") continue;
-		const hasForward = (rule.Actions || []).some((a) => a.Type === "forward");
-		if (!hasForward || !rule.RuleArn) continue;
-		try {
-			await runAWSCommand(["elbv2", "delete-rule", "--rule-arn", rule.RuleArn, "--region", region], ws, "deploy");
-			removed++;
-		} catch {
-			// already deleted or race
-		}
-	}
+	const rulesToDelete = rules.filter(
+		(rule) =>
+			!rule.IsDefault &&
+			rule.Priority !== "default" &&
+			(rule.Actions || []).some((a) => a.Type === "forward") &&
+			Boolean(rule.RuleArn)
+	);
+	const deleteResults = await Promise.all(
+		rulesToDelete.map(async (rule) => {
+			try {
+				await runAWSCommand(["elbv2", "delete-rule", "--rule-arn", rule.RuleArn!, "--region", region], ws, "deploy");
+				return true;
+			} catch {
+				return false;
+			}
+		})
+	);
+	removed = deleteResults.filter(Boolean).length;
 	if (removed > 0) {
 		send(`Removed ${removed} legacy HTTP forward rule(s); app routes now use HTTPS (443) only.`, "deploy");
 	}

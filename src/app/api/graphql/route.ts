@@ -48,8 +48,10 @@ export async function executeGraphQLOperation(
 	};
 
 	// Import resolvers
-	const Query: typeof QueryResolvers = await import("@/lib/graphql/resolvers/query");
-	const Mutation: typeof MutationResolvers = await import("@/lib/graphql/resolvers/mutation");
+	const [Query, Mutation]: [typeof QueryResolvers, typeof MutationResolvers] = await Promise.all([
+		import("@/lib/graphql/resolvers/query"),
+		import("@/lib/graphql/resolvers/mutation"),
+	]);
 	type ResolverContext = typeof context;
 	type ResolverFunction = (
 		parent: null,

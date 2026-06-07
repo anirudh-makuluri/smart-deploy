@@ -40,17 +40,8 @@ export default function DeployWorkspaceMenu({
 	footer,
 	collapsed = false,
 	onToggleCollapsed,
-	deploymentKind = "container",
 }: DeployWorkspaceMenuProps) {
-	const menuItems = React.useMemo(
-		() =>
-			MENU_ITEMS.map((item) =>
-				item.id === "scan"
-					? { ...item, label: deploymentKind === "direct-static" ? "Configure" : "Scan" }
-					: item
-			),
-		[deploymentKind]
-	);
+	const menuItems = MENU_ITEMS;
 
 	return (
 		<nav className="flex h-full min-h-0 flex-col">
@@ -70,6 +61,7 @@ export default function DeployWorkspaceMenu({
 						const Icon = MENU_ICONS[item.id];
 						return (
 						<button
+							type="button"
 							key={item.id}
 							onClick={() => onChange(item.id)}
 							title={collapsed ? item.label : undefined}

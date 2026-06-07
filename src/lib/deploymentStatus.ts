@@ -94,14 +94,14 @@ export function normalizeDeploymentStatus(
 
 export function resolveDeploymentStatus(args: {
 	status: string | null | undefined;
-	liveUrl?: string | null;
+	hostedSubdomain?: string | null;
 	screenshotUrl?: string | null;
 }): DeploymentStatus {
 	const normalized = normalizeDeploymentStatus(args.status);
-	const hasStoredLiveUrl = Boolean(args.liveUrl?.trim());
+	const hasHostedSubdomain = Boolean(args.hostedSubdomain?.trim());
 	const hasPreviewEvidence = Boolean(args.screenshotUrl?.trim());
 
-	if (normalized === "running" && !hasStoredLiveUrl && !hasPreviewEvidence) {
+	if (normalized === "running" && !hasHostedSubdomain && !hasPreviewEvidence) {
 		return "didnt_deploy";
 	}
 

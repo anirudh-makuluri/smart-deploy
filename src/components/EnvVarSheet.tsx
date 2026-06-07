@@ -21,6 +21,21 @@ type EnvVarEntry = {
 	value: string;
 }
 
+function createRowIds(length: number): string[] {
+	return Array.from({ length }, () => crypto.randomUUID());
+}
+
+function syncRowIds(rowIds: string[], targetLength: number): string[] {
+	const next = [...rowIds];
+	while (next.length < targetLength) {
+		next.push(crypto.randomUUID());
+	}
+	while (next.length > targetLength) {
+		next.pop();
+	}
+	return next;
+}
+
 type EnvVarSheetProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -36,13 +51,24 @@ export default function EnvVarSheet({
 }: EnvVarSheetProps) {
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
+	const [rowIds, setRowIds] = React.useState<string[]>(() => createRowIds(entries.length));
+	const [trackedEntryCount, setTrackedEntryCount] = React.useState(entries.length);
 
+	if (entries.length !== trackedEntryCount) {
+		setTrackedEntryCount(entries.length);
+		setRowIds((prev) => syncRowIds(prev, entries.length));
+	}
 
 	const handleAddVariable = () => {
 		onEntriesChange([...entries, { name: "", value: "" }]);
 	};
 
 	const handleRemoveVariable = (index: number) => {
+		setRowIds((prev) => {
+			const next = [...prev];
+			next.splice(index, 1);
+			return next;
+		});
 		const newEntries = entries.filter((_, i) => i !== index);
 		onEntriesChange(newEntries);
 	};
@@ -92,6 +118,7 @@ export default function EnvVarSheet({
 				});
 
 				const finalEntries = Array.from(uniqueEntriesMap.entries()).map(([name, value]) => ({ name, value }));
+				setRowIds(createRowIds(finalEntries.length > 0 ? finalEntries.length : 1));
 				onEntriesChange(finalEntries.length > 0 ? finalEntries : [{ name: "", value: "" }]);
 				toast.success(`Imported ${parsed.length} environment variables`);
 			}
@@ -113,6 +140,7 @@ export default function EnvVarSheet({
 				parsed.forEach(e => { if (e.name) entryMap.set(e.name, e.value) });
 
 				const merged = Array.from(entryMap.entries()).map(([name, value]) => ({ name, value }));
+				setRowIds(createRowIds(merged.length));
 				onEntriesChange(merged);
 				toast.success(`Imported ${parsed.length} variables from ${file.name}`);
 			} else {
@@ -153,6 +181,7 @@ export default function EnvVarSheet({
 							onChange={handleFileUpload}
 							className="hidden"
 							accept=".env,text/plain"
+							aria-label="Upload .env file"
 						/>
 						<div className="h-4 w-px bg-white/10 mx-1" />
 						<Button
@@ -186,7 +215,7 @@ export default function EnvVarSheet({
 									</div>
 									<div className="space-y-2">
 										{entries.map((entry, index) => (
-											<div key={index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
+											<div key={rowIds[index] ?? index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
 												<Input
 													value={entry.name}
 													onPaste={(e) => handlePaste(index, e)}

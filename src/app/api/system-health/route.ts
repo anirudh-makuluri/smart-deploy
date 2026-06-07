@@ -10,10 +10,20 @@ type ServiceStatus = {
 	message: string;
 };
 
+const SD_ARTIFACTS_SERVICE_NAME = "SD Artifacts server";
+
+const SYSTEM_HEALTH_UNAVAILABLE_SERVICES: ServiceStatus[] = [
+	{
+		name: SD_ARTIFACTS_SERVICE_NAME,
+		status: "unavailable",
+		message: "System health unavailable",
+	},
+];
+
 async function checkAnalyzeHealth(): Promise<ServiceStatus> {
 	const baseUrl = process.env.SD_API_BASE_URL;
 	const bearerToken = process.env.SD_API_BEARER_TOKEN;
-	const serviceName = "SD Artifacts server";
+	const serviceName = SD_ARTIFACTS_SERVICE_NAME;
 
 	if (!baseUrl || !bearerToken) {
 		return {
@@ -53,6 +63,10 @@ async function checkAnalyzeHealth(): Promise<ServiceStatus> {
 	}
 }
 
+async function loadHealthServices(): Promise<ServiceStatus[]> {
+	return [await checkAnalyzeHealth()];
+}
+
 export async function GET(req?: Request) {
 	let userID: string | undefined;
 	try {
@@ -69,7 +83,7 @@ export async function GET(req?: Request) {
 
 	try {
 		/** WebSocket worker health comes from the browser session (`useWorkerWebSocket`); server only checks SD Artifacts here. */
-		const services = [await checkAnalyzeHealth()];
+		const services = await loadHealthServices();
 
 		const overallStatus = services.every((service) => service.status === "healthy") ? "healthy" : "degraded";
 
@@ -86,11 +100,7 @@ export async function GET(req?: Request) {
 		return NextResponse.json(
 			{
 				status: "unavailable",
-				services: [{
-					name: "SD Artifacts server",
-					status: "unavailable",
-					message: "System health unavailable",
-				}],
+				services: SYSTEM_HEALTH_UNAVAILABLE_SERVICES,
 				timestamp: new Date().toISOString(),
 			},
 			{ status: 200 }

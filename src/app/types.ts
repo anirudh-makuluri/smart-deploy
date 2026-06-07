@@ -35,8 +35,9 @@ export type repoType = {
 
 // Cloud provider types
 export type CloudProvider = 'aws' | 'gcp';
-export type DeploymentTarget = 'ec2' | 'cloud_run';
-export type DeploymentKind = 'container' | 'direct-static';
+export type DeploymentTarget = "ecs" | "static_s3";
+/** Legacy UI label; all deployments are container-based via sd-artifacts. */
+export type DeploymentKind = "container";
 export type StaticServiceType =
 	| 'vite'
 	| 'cra'
@@ -48,44 +49,51 @@ export type StaticServiceType =
 	| 'static-html';
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
-// ── Per-service deployment details (stored after deploy; reused on redeploy) ──
+// ── Cloud resources (stored after deploy in deployments.cloud_resources) ──
 
-export type EC2Details = {
-	success: boolean;
-	baseUrl: string;
-	instanceId: string;
-	publicIp: string;
-	vpcId: string;
-	subnetId: string;
-	securityGroupId: string;
-	amiId: string;
-	sharedAlbDns: string;
-	instanceType: string;
-};
-
-export type CloudRunDetails = {
-	serviceId: string;
+export type EcsCloudResources = {
+	target: "ecs";
 	region: string;
-	projectId: string;
+	cluster: string;
+	service: string;
+	baseUrl: string;
+	alb?: { dnsName: string; listenerArn?: string };
+	targetGroupArn?: string;
+	taskDefinitionArn?: string;
+	logGroup?: string;
+	vpcId?: string;
 };
+
+export type StaticS3CloudResources = {
+	target: "static_s3";
+	region: string;
+	bucket: string;
+	keyPrefix: string;
+	publicBaseUrl: string;
+	cloudFrontDistributionId?: string | null;
+};
+
+export type CloudResources = EcsCloudResources | StaticS3CloudResources;
 
 // ── Main deployment config ──
 
 export type DeployConfig = {
 	id: string;
 	repoName: string;
-	url: string;
+	repoUrl: string;
 	branch: string;
-	kind?: DeploymentKind;
 	/** Linked analysis_responses.id for the latest scan payload */
 	responseId?: string | null;
 	/** Commit SHA that was deployed; null if never deployed */
 	commitSha: string | null;
-	/** Environment variables as JSON string (optional for deployment) */
-	envVars: string | null;
-	/** Live deployment URL (either auto-deployed or custom); null if didnt_deploy */
-	liveUrl: string | null;
-	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage); null if didnt_deploy */
+	/**
+	 * Legacy session-only env string (CodeBuild build-time until phase 2).
+	 * Runtime ECS vars are stored in AWS Secrets Manager (`secretsArn`).
+	 */
+	envVars?: string | null;
+	/** User-chosen subdomain on the platform domain; globally unique when set */
+	hostedSubdomain: string | null;
+	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage) */
 	screenshotUrl: string | null;
 	serviceName: string;
 	/** Deployment status */
@@ -98,16 +106,16 @@ export type DeployConfig = {
 	revision: number | null;
 	/** Cloud provider (defaults to 'aws') */
 	cloudProvider: CloudProvider;
-	/** Deployment target (defaults to 'ec2' for AWS) */
+	/** Deployment target */
 	deploymentTarget: DeploymentTarget;
-	/** AWS region (defaults to value from config) */
-	awsRegion: string;
-	/** AWS EC2 deployment details (null if not deployed to EC2 or status === didnt_deploy) */
-	ec2: EC2Details | null;
-	/** Google Cloud Run deployment details (null if not deployed to Cloud Run or status === didnt_deploy) */
-	cloudRun: CloudRunDetails | null;
-	/** Analysis/scan results from detectServices */
-	scanResults: SDArtifactsResponse | Record<string, never>;
+	/** AWS region for deploy configuration */
+	region: string;
+	/** AWS Secrets Manager secret ARN; null until configured */
+	secretsArn?: string | null;
+	/** Running deployment infrastructure; null until deployed */
+	cloudResources: CloudResources | null;
+	/** Analysis/scan results hydrated from analysis_responses */
+	scanResults: ScanResultsPayload;
 }
 
 export type EcrServiceImageRef = {
@@ -120,7 +128,7 @@ export type EcrServiceImageRef = {
 export type EcrImageReleaseArtifact = {
 	kind: "ecr_image";
 	cloudProvider: "aws";
-	deploymentTarget: "ec2";
+	deploymentTarget: "ecs";
 	region: string;
 	ecrRegistry: string;
 	ecrRepoName: string;
@@ -133,10 +141,15 @@ export type EcrImageReleaseArtifact = {
 	deployConfig: Record<string, unknown>;
 };
 
-export type Ec2ConfigReleaseArtifact = {
-	kind: "ec2_config";
+export type StaticSiteReleaseArtifact = {
+	kind: "static_site";
 	cloudProvider: "aws";
-	deploymentTarget: "ec2";
+	deploymentTarget: "static_s3";
+	region: string;
+	bucket: string;
+	keyPrefix: string;
+	publicBaseUrl: string;
+	cloudFrontDistributionId?: string | null;
 	branch?: string | null;
 	commitSha?: string | null;
 	deployConfig: Record<string, unknown>;
@@ -144,7 +157,7 @@ export type Ec2ConfigReleaseArtifact = {
 
 export type DeploymentReleaseArtifact =
 	| EcrImageReleaseArtifact
-	| Ec2ConfigReleaseArtifact;
+	| StaticSiteReleaseArtifact;
 
 export type DeploymentFailureStage =
 	| "clone"
@@ -204,16 +217,6 @@ export type DeployStep = {
 }
 
 
-
-
-
-
-
-
-
-
-
-
 /** Service info detected via GraphQL detectServices and persisted in repo_services. */
 export type DetectedServiceInfo = {
 	name: string;
@@ -221,7 +224,7 @@ export type DetectedServiceInfo = {
 	language: string;
 	framework?: string;
 	port?: number | null;
-	deployMode: DeploymentKind;
+	deployMode: "container";
 	serviceType?: StaticServiceType;
 };
 
@@ -234,12 +237,6 @@ export type RepoServicesRecord = {
 	services: DetectedServiceInfo[];
 	is_monorepo: boolean;
 	updated_at: string;
-};
-
-/** Per-platform compatibility from LLM: true if the project can run on that platform. */
-export type ServiceCompatibility = {
-	ec2?: boolean;
-	cloud_run?: boolean;
 };
 
 
@@ -270,53 +267,90 @@ export type DeploymentHistoryEntry = {
 	failureCode?: DeploymentFailureCode | null;
 	/** Structured failure metadata derived from logs and lifecycle state */
 	failureClassification?: DeploymentFailureClassification | null;
+	/** S3 object key when full logs are stored externally (deployment_runs). */
+	logRef?: string | null;
 };
 
+/** sd-artifacts `AnalyzeResponse` fields. See `sd-artifacts-integration.md` §4. */
+export type SDAnalyzeBuildStatus =
+	| "passed"
+	| "failed"
+	| "partial"
+	| "skipped"
+	| "error"
+	| "not_run";
+
+export type SDDeployShape =
+	| "static"
+	| "static_build"
+	| "server"
+	| "multi"
+	| "existing_docker";
+
+export type SDRailpackPlan = {
+	steps?: Array<{ name: string; commands?: Array<{ cmd: string }> }>;
+	deploy?: {
+		startCommand?: string;
+		variables?: Record<string, string>;
+	};
+};
+
+export type SDDeployUnit = {
+	name: string;
+	root: string;
+	type: string;
+	provider: string;
+	framework: string | null;
+	port: number;
+	artifacts: {
+		railpack_plan: SDRailpackPlan | null;
+		railpack_json: Record<string, unknown> | null;
+	};
+};
+
+export type SDBuildVerification = {
+	backend?: string;
+	status?: string;
+	message?: string;
+	attempts?: number;
+	duration_seconds?: number;
+	log_excerpt?: string;
+};
+
+export type SDRepairAttempt = {
+	attempt?: number;
+	unit_name?: string;
+	diagnosis?: string;
+	patch?: Record<string, unknown>;
+	railpack_json_after_merge?: Record<string, unknown> | null;
+	build_log_excerpt?: string;
+	build_exit_code?: number | null;
+	duration_seconds?: number;
+	result?: string;
+};
+
+/** sd-artifacts `AnalyzeResponse` (§4). */
 export type SDArtifactsResponse = {
-	response_id?: string | null;
+	response_id: string;
 	commit_sha: string;
-	stack_tokens: string[];
-	files: {
-		name: string;
-		content: string;
-		location: string;
-	}[];
-	risks: string[];
-	confidence: number;
+	package_path: string;
+	deploy_shape: SDDeployShape;
+	build_status: SDAnalyzeBuildStatus;
+	railpack_version: string | null;
+	workflow_version: string | null;
+	deploy_briefing: string;
+	deploy_units: SDDeployUnit[];
+	build_verification: SDBuildVerification;
+	repair_history: SDRepairAttempt[];
+	pipeline_trace: Array<Record<string, unknown>>;
+	errors: string[];
+	llm_outputs: Record<string, unknown>;
+	inputs_snapshot: Record<string, unknown>;
 	token_usage: {
 		input_tokens: number;
 		output_tokens: number;
 		total_tokens: number;
 	};
-	// Legacy/derived fields still used by current UI components.
-	stack_summary?: string;
-	services?: {
-		name: string;
-		build_context: string;
-		port: number;
-		dockerfile_path: string;
-		execution_root?: string;
-		language?: string;
-		framework?: string;
-	}[];
-	dockerfiles?: Record<string, string>;
-	docker_compose?: string | null;
-	nginx_conf?: string | null;
-	has_existing_dockerfiles?: boolean;
-	has_existing_compose?: boolean;
-	hadolint_results?: Record<string, string | Record<string, unknown> | unknown[]>;
-	commands?: Record<string, unknown> | string[];
-	build_verification?: Record<string, unknown>;
-	llm_outputs?: Record<string, unknown>;
-
-	// Direct static deployment fields
-	serviceType?: StaticServiceType;
-	framework?: string;
-	language?: string;
-	workdir?: string;
-	package_manager?: PackageManager;
-	install?: string[];
-	build?: string[];
-	output_dir?: string;
-	spa_fallback?: boolean;
 };
+
+export type ScanResultsPayload = SDArtifactsResponse | Record<string, never>;

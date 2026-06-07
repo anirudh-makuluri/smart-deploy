@@ -55,6 +55,7 @@ export async function POST(req: Request) {
 				...(failure_logs && { failure_logs }),
 				...(failed_artifact_scope && { failed_artifact_scope }),
 			}),
+			cache: "no-store",
 		});
 
 		if (!response.ok) {

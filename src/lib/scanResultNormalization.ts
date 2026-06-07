@@ -1,31 +1,179 @@
-import type { SDArtifactsResponse } from "@/app/types";
+import type {
+	SDAnalyzeBuildStatus,
+	SDArtifactsResponse,
+	SDBuildVerification,
+	SDDeployShape,
+	SDDeployUnit,
+	SDRailpackPlan,
+	SDRepairAttempt,
+} from "@/app/types";
 
-function defaultArtifacts(): SDArtifactsResponse {
+const ANALYZE_BUILD_STATUSES: SDAnalyzeBuildStatus[] = [
+	"passed",
+	"failed",
+	"partial",
+	"skipped",
+	"error",
+	"not_run",
+];
+
+const ANALYZE_DEPLOY_SHAPES: SDDeployShape[] = [
+	"static",
+	"static_build",
+	"server",
+	"multi",
+	"existing_docker",
+];
+
+function parseBuildStatus(value: unknown): SDAnalyzeBuildStatus {
+	if (typeof value === "string" && ANALYZE_BUILD_STATUSES.includes(value as SDAnalyzeBuildStatus)) {
+		return value as SDAnalyzeBuildStatus;
+	}
+	return "not_run";
+}
+
+function parseDeployShape(value: unknown): SDDeployShape {
+	if (typeof value === "string" && ANALYZE_DEPLOY_SHAPES.includes(value as SDDeployShape)) {
+		return value as SDDeployShape;
+	}
+	return "server";
+}
+
+function parseRailpackPlan(value: unknown): SDRailpackPlan | null {
+	if (value === null) return null;
+	if (!value || typeof value !== "object") return null;
+	return value as SDRailpackPlan;
+}
+
+function parseDeployUnit(raw: Record<string, unknown>): SDDeployUnit | null {
+	const name = typeof raw.name === "string" ? raw.name.trim() : "";
+	if (!name) return null;
+	const root = typeof raw.root === "string" ? raw.root : ".";
+	const type = typeof raw.type === "string" ? raw.type : "server";
+	const provider = typeof raw.provider === "string" ? raw.provider : "unknown";
+	const framework =
+		raw.framework === null ? null : typeof raw.framework === "string" ? raw.framework : null;
+	const port =
+		typeof raw.port === "number" && Number.isFinite(raw.port) && raw.port > 0 ? Math.floor(raw.port) : 3000;
+
+	const art =
+		raw.artifacts && typeof raw.artifacts === "object"
+			? (raw.artifacts as Record<string, unknown>)
+			: {};
+	const railpack_plan = parseRailpackPlan(art.railpack_plan);
+	const railpack_json =
+		art.railpack_json === null
+			? null
+			: art.railpack_json && typeof art.railpack_json === "object"
+				? (art.railpack_json as Record<string, unknown>)
+				: null;
+
 	return {
-		response_id: null,
-		commit_sha: "unknown",
-		stack_tokens: [],
-		files: [],
-		risks: [],
-		confidence: 0,
-		token_usage: {
-			input_tokens: 0,
-			output_tokens: 0,
-			total_tokens: 0,
-		},
-		// Legacy/derived shape for existing UI.
-		stack_summary: "",
-		services: [],
-		dockerfiles: {},
-		docker_compose: null,
-		nginx_conf: null,
-		has_existing_dockerfiles: false,
-		has_existing_compose: false,
-		hadolint_results: {},
-		commands: {},
-		build_verification: {},
-		llm_outputs: {},
+		name,
+		root,
+		type,
+		provider,
+		framework,
+		port,
+		artifacts: { railpack_plan, railpack_json },
 	};
+}
+
+function parseBuildVerification(value: unknown): SDBuildVerification {
+	if (!value || typeof value !== "object") return {};
+	const v = value as Record<string, unknown>;
+	return {
+		backend: typeof v.backend === "string" ? v.backend : undefined,
+		status: typeof v.status === "string" ? v.status : undefined,
+		message: typeof v.message === "string" ? v.message : undefined,
+		attempts: typeof v.attempts === "number" ? v.attempts : undefined,
+		duration_seconds: typeof v.duration_seconds === "number" ? v.duration_seconds : undefined,
+		log_excerpt: typeof v.log_excerpt === "string" ? v.log_excerpt : undefined,
+	};
+}
+
+function parseRepairHistory(value: unknown): SDRepairAttempt[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter((r): r is Record<string, unknown> => Boolean(r && typeof r === "object"))
+		.map((r) => ({
+			attempt: typeof r.attempt === "number" ? r.attempt : undefined,
+			unit_name: typeof r.unit_name === "string" ? r.unit_name : undefined,
+			diagnosis: typeof r.diagnosis === "string" ? r.diagnosis : undefined,
+			patch: r.patch && typeof r.patch === "object" ? (r.patch as Record<string, unknown>) : undefined,
+			railpack_json_after_merge:
+				r.railpack_json_after_merge === null
+					? null
+					: r.railpack_json_after_merge && typeof r.railpack_json_after_merge === "object"
+						? (r.railpack_json_after_merge as Record<string, unknown>)
+						: undefined,
+			build_log_excerpt: typeof r.build_log_excerpt === "string" ? r.build_log_excerpt : undefined,
+			build_exit_code: typeof r.build_exit_code === "number" ? r.build_exit_code : null,
+			duration_seconds: typeof r.duration_seconds === "number" ? r.duration_seconds : undefined,
+			result: typeof r.result === "string" ? r.result : undefined,
+		}));
+}
+
+function parseTokenUsage(value: unknown): SDArtifactsResponse["token_usage"] {
+	const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+	return {
+		input_tokens: typeof raw.input_tokens === "number" ? raw.input_tokens : 0,
+		output_tokens: typeof raw.output_tokens === "number" ? raw.output_tokens : 0,
+		total_tokens: typeof raw.total_tokens === "number" ? raw.total_tokens : 0,
+	};
+}
+
+/** Map sd-artifacts `AnalyzeResponse` into `SDArtifactsResponse`. */
+function normalizeSdAnalyzePayload(p: Record<string, unknown>): SDArtifactsResponse | null {
+	if (!Array.isArray(p.deploy_units)) return null;
+
+	const deploy_units = (p.deploy_units as unknown[])
+		.filter((u): u is Record<string, unknown> => Boolean(u && typeof u === "object"))
+		.map((u) => parseDeployUnit(u))
+		.filter((u): u is SDDeployUnit => Boolean(u));
+
+	const errorsRaw = Array.isArray(p.errors) ? p.errors : [];
+	const errors = errorsRaw.filter((e): e is string => typeof e === "string");
+
+	const pipeline_trace = Array.isArray(p.pipeline_trace)
+		? p.pipeline_trace.filter((r): r is Record<string, unknown> => Boolean(r && typeof r === "object"))
+		: [];
+
+	return {
+		response_id: typeof p.response_id === "string" ? p.response_id : "",
+		commit_sha: typeof p.commit_sha === "string" ? p.commit_sha : "",
+		package_path: typeof p.package_path === "string" ? p.package_path : ".",
+		deploy_shape: parseDeployShape(p.deploy_shape),
+		build_status: parseBuildStatus(p.build_status),
+		railpack_version: p.railpack_version === null || typeof p.railpack_version === "string" ? p.railpack_version : null,
+		workflow_version:
+			p.workflow_version === null || typeof p.workflow_version === "string" ? p.workflow_version : null,
+		deploy_briefing: typeof p.deploy_briefing === "string" ? p.deploy_briefing : "",
+		deploy_units,
+		build_verification: parseBuildVerification(p.build_verification),
+		repair_history: parseRepairHistory(p.repair_history),
+		pipeline_trace,
+		errors,
+		llm_outputs:
+			p.llm_outputs && typeof p.llm_outputs === "object"
+				? (p.llm_outputs as Record<string, unknown>)
+				: {},
+		inputs_snapshot:
+			p.inputs_snapshot && typeof p.inputs_snapshot === "object"
+				? (p.inputs_snapshot as Record<string, unknown>)
+				: {},
+		token_usage: parseTokenUsage(p.token_usage),
+	};
+}
+
+/** True when the payload is a normalized sd-artifacts analyze scan. */
+export function isSdArtifactsAnalyzeScan(scan: unknown): scan is SDArtifactsResponse {
+	return (
+		typeof scan === "object" &&
+		scan !== null &&
+		!Array.isArray(scan) &&
+		Array.isArray((scan as SDArtifactsResponse).deploy_units)
+	);
 }
 
 function unwrapKnownContainers(value: unknown): unknown {
@@ -76,6 +224,7 @@ function parseLooseJson(raw: string): unknown {
 	}
 }
 
+/** Normalize an sd-artifacts analyze payload (HTTP or SSE complete event). */
 export function normalizeScanResultPayload(value: unknown): SDArtifactsResponse | null {
 	try {
 		let payload: unknown = value;
@@ -91,87 +240,9 @@ export function normalizeScanResultPayload(value: unknown): SDArtifactsResponse 
 
 		if (!payload || typeof payload !== "object") return null;
 		const p = payload as Record<string, unknown>;
-		const base = defaultArtifacts();
 
-		const tokenUsageRaw = (p.token_usage && typeof p.token_usage === "object") ? (p.token_usage as Record<string, unknown>) : {};
-		const servicesRaw = Array.isArray(p.services) ? p.services : [];
-		const filesRaw = Array.isArray(p.files) ? p.files : [];
-		const files = filesRaw
-			.filter((f): f is Record<string, unknown> => Boolean(f && typeof f === "object"))
-			.map((f) => ({
-				name: typeof f.name === "string" ? f.name : "",
-				content: typeof f.content === "string" ? f.content : "",
-				location: typeof f.location === "string" ? f.location : "",
-			}))
-			.filter((f) => f.name && f.location);
-
-		// Derive legacy fields from files[] to keep current UI working.
-		const dockerfilesFromFiles: Record<string, string> = {};
-		let composeFromFiles: string | null = null;
-		let nginxFromFiles: string | null = null;
-		for (const f of files) {
-			const loweredName = f.name.toLowerCase();
-			const loweredLocation = f.location.toLowerCase();
-			if (loweredName === "dockerfile" || loweredLocation.endsWith("/dockerfile") || loweredLocation === "dockerfile") {
-				dockerfilesFromFiles[f.location] = f.content;
-			} else if (loweredName === "docker-compose.yml" || loweredLocation.endsWith("/docker-compose.yml") || loweredLocation === "docker-compose.yml") {
-				composeFromFiles = f.content;
-			} else if (loweredName === "nginx.conf" || loweredLocation.endsWith("/nginx.conf") || loweredLocation === "/etc/nginx/conf.d/nginx.conf") {
-				nginxFromFiles = f.content;
-			}
-		}
-
-		return {
-			...base,
-			response_id: typeof p.response_id === "string" ? p.response_id : base.response_id,
-			commit_sha: typeof p.commit_sha === "string" ? p.commit_sha : base.commit_sha,
-			stack_tokens: Array.isArray(p.stack_tokens) ? p.stack_tokens.filter((v): v is string => typeof v === "string") : base.stack_tokens,
-			files,
-			risks: Array.isArray(p.risks) ? p.risks.filter((r): r is string => typeof r === "string") : base.risks,
-			confidence: typeof p.confidence === "number" ? p.confidence : base.confidence,
-			token_usage: {
-				input_tokens: typeof tokenUsageRaw.input_tokens === "number" ? tokenUsageRaw.input_tokens : 0,
-				output_tokens: typeof tokenUsageRaw.output_tokens === "number" ? tokenUsageRaw.output_tokens : 0,
-				total_tokens: typeof tokenUsageRaw.total_tokens === "number" ? tokenUsageRaw.total_tokens : 0,
-			},
-			stack_summary: typeof p.stack_summary === "string"
-				? p.stack_summary
-				: (Array.isArray(p.stack_tokens) ? p.stack_tokens.filter((v): v is string => typeof v === "string").join(", ") : base.stack_summary),
-			services: servicesRaw
-				.filter((s): s is Record<string, unknown> => Boolean(s && typeof s === "object"))
-				.map((svc) => ({
-					name: typeof svc.name === "string" ? svc.name : "service",
-					build_context: typeof svc.build_context === "string" ? svc.build_context : ".",
-					port: typeof svc.port === "number" ? svc.port : 80,
-					dockerfile_path: typeof svc.dockerfile_path === "string" ? svc.dockerfile_path : "Dockerfile",
-					...(typeof svc.execution_root === "string" ? { execution_root: svc.execution_root } : {}),
-					...(typeof svc.language === "string" ? { language: svc.language } : {}),
-					...(typeof svc.framework === "string" ? { framework: svc.framework } : {}),
-				})),
-			dockerfiles: Object.keys(dockerfilesFromFiles).length > 0
-				? dockerfilesFromFiles
-				: (p.dockerfiles && typeof p.dockerfiles === "object")
-				? Object.fromEntries(
-					Object.entries(p.dockerfiles as Record<string, unknown>).filter(([, v]) => typeof v === "string") as Array<[string, string]>
-				)
-				: base.dockerfiles,
-			docker_compose: composeFromFiles ?? (typeof p.docker_compose === "string" ? p.docker_compose : null),
-			nginx_conf: nginxFromFiles ?? (typeof p.nginx_conf === "string" ? p.nginx_conf : null),
-			has_existing_dockerfiles: typeof p.has_existing_dockerfiles === "boolean" ? p.has_existing_dockerfiles : base.has_existing_dockerfiles,
-			has_existing_compose: typeof p.has_existing_compose === "boolean" ? p.has_existing_compose : base.has_existing_compose,
-			hadolint_results: (p.hadolint_results && typeof p.hadolint_results === "object")
-				? Object.fromEntries(
-					Object.entries(p.hadolint_results as Record<string, unknown>).map(([k, v]) => {
-						if (typeof v === "string") return [k, v];
-						if (v && typeof v === "object") return [k, v as Record<string, unknown> | unknown[]];
-						return [k, String(v ?? "")];
-					})
-				)
-				: base.hadolint_results,
-			commands: (p.commands && (Array.isArray(p.commands) || typeof p.commands === "object")) ? (p.commands as Record<string, unknown> | string[]) : base.commands,
-			build_verification: (p.build_verification && typeof p.build_verification === "object") ? (p.build_verification as Record<string, unknown>) : base.build_verification,
-			llm_outputs: (p.llm_outputs && typeof p.llm_outputs === "object") ? (p.llm_outputs as Record<string, unknown>) : base.llm_outputs,
-		};
+		if (!Array.isArray(p.deploy_units)) return null;
+		return normalizeSdAnalyzePayload(p);
 	} catch {
 		return null;
 	}

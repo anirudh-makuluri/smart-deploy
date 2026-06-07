@@ -7,10 +7,10 @@ export function parseAllowedOrigins(rawOrigins: string | undefined) {
 		return [];
 	}
 
-	return rawOrigins
-		.split(",")
-		.map((origin) => normalizeOrigin(origin))
-		.filter(Boolean);
+	return rawOrigins.split(",").flatMap((origin) => {
+		const normalized = normalizeOrigin(origin);
+		return normalized ? [normalized] : [];
+	});
 }
 
 export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]) {

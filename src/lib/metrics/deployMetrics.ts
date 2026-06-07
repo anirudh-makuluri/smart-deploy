@@ -11,14 +11,18 @@ export type { DeployMetricsSummary } from "@/lib/metrics/deployMetricsCore";
 
 const PAGE_SIZE = 1000;
 
-async function fetchDeploymentHistoryRows(filterUserId: string | null): Promise<
+async function fetchDeploymentRunRows(filterUserId: string | null): Promise<
 	{ success: boolean; duration_ms: number | null }[]
 > {
 	const supabase = getSupabaseServer();
 	const rows: { success: boolean; duration_ms: number | null }[] = [];
 	let from = 0;
 	for (;;) {
-		let q = supabase.from("deployment_history").select("success, duration_ms").range(from, from + PAGE_SIZE - 1);
+		let q = supabase
+			.from("deployment_runs")
+			.select("success, duration_ms")
+			.not("finished_at", "is", null)
+			.range(from, from + PAGE_SIZE - 1);
 		if (filterUserId !== null) {
 			q = q.eq("user_id", filterUserId);
 		}
@@ -45,7 +49,7 @@ async function getDeployMetricsSummaryUncached(filterUserId: string | null): Pro
 		const payload = typeof data === "object" && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
 		return mapRpcToSummary(payload, computedAt);
 	}
-	const rows = await fetchDeploymentHistoryRows(filterUserId);
+	const rows = await fetchDeploymentRunRows(filterUserId);
 	return aggregateRowsToSummary(rows, computedAt);
 }
 

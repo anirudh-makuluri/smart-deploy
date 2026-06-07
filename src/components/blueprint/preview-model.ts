@@ -1,6 +1,7 @@
 import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
-import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
-import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { defaultRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { shouldDeployStaticSiteToS3 } from "@/lib/deployRouting";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 export type PreviewStepId = "auth" | "build" | "setup" | "deploy" | "done";
 
@@ -46,7 +47,7 @@ export type PreviewArtifact = {
 		| "openEnvVars"
 		| "openNginx"
 		| "openCustomDomain";
-	/** Optional payload the UI can use (e.g. dockerfile path). */
+	/** Optional payload the UI can use (e.g. deploy unit name). */
 	meta?: Record<string, string | number | boolean | null | undefined>;
 };
 
@@ -56,12 +57,18 @@ export type PreviewStep = {
 	description: string;
 };
 
+export type PreviewDeployRoute = "static_s3" | "ecs";
+
 export type PreviewModel = {
 	steps: PreviewStep[];
 	artifacts: PreviewArtifact[];
 	warnings: PreviewWarning[];
-	/** True when CodeBuild will build via docker-compose (multi-service). */
+	/** True when analyze returned multiple deploy units. */
 	composeBuildMode: boolean;
+	/** Resolved from analyze + service name; null when analyze is missing. */
+	deployRoute: PreviewDeployRoute | null;
+	/** Short label for the preview header. */
+	pipelineLabel: string;
 };
 
 function safeTrim(value: string | null | undefined) {
@@ -74,37 +81,78 @@ export function buildPreviewModel(params: {
 }): PreviewModel {
 	const { deployment, scanResults } = params;
 
-	const steps: PreviewStep[] = [
-		{
-			id: "auth",
-			label: "Auth & resolve ref",
-			description: "Resolve branch/commit and authenticate to start a build.",
-		},
-		{
-			id: "build",
-			label: "Clone & build images (CodeBuild)",
-			description: "CodeBuild clones the repo, writes generated artifacts, then builds images and pushes to ECR.",
-		},
-		{
-			id: "setup",
-			label: "Infra setup (VPC, key, security)",
-			description: "Prepare networking, instance permissions, and prerequisites for EC2.",
-		},
-		{
-			id: "deploy",
-			label: "Deploy to EC2 (SSM) + reverse proxy",
-			description: "Launch/reuse EC2, deploy containers, and configure Nginx routing.",
-		},
-		{
-			id: "done",
-			label: "Domain & routing",
-			description: "Configure ALB host routing and optional DNS to make the deployment reachable.",
-		},
-	];
+	const isAnalyze = isSdArtifactsAnalyzeScan(scanResults);
+	const units = isAnalyze ? scanResults.deploy_units : [];
+	const composeBuildMode = isAnalyze && scanResults.deploy_shape === "multi" && units.length > 1;
+	const unitCount = units.length;
+	const deployRoute: PreviewDeployRoute | null = isAnalyze
+		? shouldDeployStaticSiteToS3(scanResults, deployment.serviceName)
+			? "static_s3"
+			: "ecs"
+		: null;
+	const isStatic = deployRoute === "static_s3";
 
-	const services = scanResults?.services ?? [];
-	const composeBuildMode = Boolean(scanResults?.docker_compose?.trim()) && services.length > 1;
-	const dockerfileCount = Object.keys(scanResults?.dockerfiles ?? {}).length;
+	const steps: PreviewStep[] = isStatic
+		? [
+				{
+					id: "auth",
+					label: "Auth & resolve ref",
+					description: "Resolve branch/commit and authenticate to start a build.",
+				},
+				{
+					id: "build",
+					label: "Build & publish (CodeBuild)",
+					description: "CodeBuild clones the repo, runs the static build (or syncs files), then uploads to S3.",
+				},
+				{
+					id: "setup",
+					label: "CDN & bucket",
+					description: "Artifacts land in your static site bucket; CloudFront serves them publicly.",
+				},
+				{
+					id: "deploy",
+					label: "Invalidate cache",
+					description: "Optional CloudFront invalidation so visitors see the latest build.",
+				},
+				{
+					id: "done",
+					label: "Public URL",
+					description: "Site is available at your configured CloudFront or custom domain.",
+				},
+			]
+		: [
+				{
+					id: "auth",
+					label: "Auth & resolve ref",
+					description: "Resolve branch/commit and authenticate to start a build.",
+				},
+				{
+					id: "build",
+					label: "Clone & build images (CodeBuild)",
+					description: "CodeBuild clones the repo, runs Railpack or Dockerfile, then pushes images to ECR.",
+				},
+				{
+					id: "setup",
+					label: "ECS prerequisites",
+					description: "Fargate task definition uses your cluster, subnets, security groups, and execution role.",
+				},
+				{
+					id: "deploy",
+					label: "ECS Fargate + ALB",
+					description: "Register the service, wire the shared ALB host rule, and run the container.",
+				},
+				{
+					id: "done",
+					label: "Domain & routing",
+					description: "Configure ALB host routing and Route 53 DNS for the custom domain.",
+				},
+			];
+
+	const pipelineLabel = !isAnalyze
+		? "Run Smart Analysis"
+		: isStatic
+			? "CodeBuild → S3 + CloudFront"
+			: "CodeBuild → ECR → ECS Fargate";
 
 	const artifacts: PreviewArtifact[] = [];
 	const warnings: PreviewWarning[] = [];
@@ -115,7 +163,7 @@ export function buildPreviewModel(params: {
 		stepId: "auth",
 		kind: "repo",
 		title: "Repository",
-		subtitle: safeTrim(deployment.url) || "Not set",
+		subtitle: safeTrim(deployment.repoUrl) || "Not set",
 	});
 	artifacts.push({
 		id: "auth:branch",
@@ -136,38 +184,25 @@ export function buildPreviewModel(params: {
 	}
 
 	// ── build ───────────────────────────────────────────────────────────────
-	if (composeBuildMode) {
+	if (isAnalyze) {
 		artifacts.push({
-			id: "build:compose",
-			stepId: "build",
-			kind: "compose",
-			title: "docker-compose.yml",
-			subtitle: "Used to build multi-service images",
-			action: "openCompose",
-		});
-	} else {
-		artifacts.push({
-			id: "build:dockerfiles",
+			id: "build:units",
 			stepId: "build",
 			kind: "dockerfiles",
-			title: `Dockerfile${dockerfileCount === 1 ? "" : "s"}`,
-			subtitle: dockerfileCount > 0 ? `${dockerfileCount} generated` : "Missing",
+			title: `Deploy unit${unitCount === 1 ? "" : "s"}`,
+			subtitle: unitCount > 0 ? `${unitCount} · ${scanResults.deploy_shape}` : "Missing",
 			action: "openDockerfile",
 		});
 	}
 
-	if (composeBuildMode && dockerfileCount > 0) {
-		artifacts.push({
-			id: "build:dockerfiles",
-			stepId: "build",
-			kind: "dockerfiles",
-			title: `Dockerfile${dockerfileCount === 1 ? "" : "s"}`,
-			subtitle: `${dockerfileCount} generated (used by compose builds)`,
-			action: "openDockerfile",
-		});
-	}
-
-	const contexts = Array.from(new Set(services.map((s) => safeTrim(s.build_context)).filter(Boolean)));
+	const contexts = Array.from(
+		new Set(
+			units.flatMap((u) => {
+				const root = safeTrim(u.root);
+				return root ? [root] : [];
+			})
+		)
+	);
 	if (contexts.length > 0) {
 		artifacts.push({
 			id: "build:contexts",
@@ -178,13 +213,23 @@ export function buildPreviewModel(params: {
 		});
 	}
 
-	artifacts.push({
-		id: "build:ecr",
-		stepId: "build",
-		kind: "ecrOutput",
-		title: "ECR output",
-		subtitle: "Images are tagged and pushed for deployment",
-	});
+	if (isStatic) {
+		artifacts.push({
+			id: "build:s3",
+			stepId: "build",
+			kind: "ecrOutput",
+			title: "S3 output",
+			subtitle: "Build artifacts synced to STATIC_SITE_BUCKET",
+		});
+	} else {
+		artifacts.push({
+			id: "build:ecr",
+			stepId: "build",
+			kind: "ecrOutput",
+			title: "ECR output",
+			subtitle: "Images are tagged and pushed for ECS deployment",
+		});
+	}
 
 	// ── setup ───────────────────────────────────────────────────────────────
 	artifacts.push({
@@ -192,130 +237,97 @@ export function buildPreviewModel(params: {
 		stepId: "setup",
 		kind: "region",
 		title: "Region",
-		subtitle: safeTrim(deployment.awsRegion) || defaultAwsRegionForDeploy(),
+		subtitle: safeTrim(deployment.region) || defaultRegionForDeploy(),
 		action: "openInfra",
 	});
-	artifacts.push({
-		id: "setup:instance",
-		stepId: "setup",
-		kind: "instanceType",
-		title: "Instance type",
-		subtitle:
-			safeTrim(
-				deployment.ec2 && typeof deployment.ec2 === "object"
-					? String((deployment.ec2 as { instanceType?: string }).instanceType ?? "")
-					: ""
-			) || DEFAULT_EC2_INSTANCE_TYPE,
-		action: "openInfra",
-	});
-	artifacts.push({
-		id: "setup:networking",
-		stepId: "setup",
-		kind: "networking",
-		title: "Networking",
-		subtitle: "VPC / subnet / security group will be created or reused",
-		action: "openInfra",
-	});
+	if (isStatic) {
+		artifacts.push({
+			id: "setup:cdn",
+			stepId: "setup",
+			kind: "networking",
+			title: "CloudFront",
+			subtitle: "Served via STATIC_SITE_PUBLIC_BASE_URL",
+		});
+	} else {
+		artifacts.push({
+			id: "setup:fargate",
+			stepId: "setup",
+			kind: "networking",
+			title: "Fargate networking",
+			subtitle: "ECS cluster · subnets · security groups · execution role",
+			action: "openInfra",
+		});
+	}
 
 	// ── deploy ──────────────────────────────────────────────────────────────
-	artifacts.push({
-		id: "deploy:env",
-		stepId: "deploy",
-		kind: "envVars",
-		title: "Runtime env vars",
-		subtitle: safeTrim(deployment.envVars) ? "Injected into .env on EC2" : "None",
-		action: "openEnvVars",
-	});
-	artifacts.push({
-		id: "deploy:nginx",
-		stepId: "deploy",
-		kind: "nginx",
-		title: "Reverse proxy (Nginx)",
-		subtitle: safeTrim(scanResults?.nginx_conf) ? "Uses nginx.conf from scan results" : "Uses default proxy config",
-		action: "openNginx",
-	});
+	if (!isStatic) {
+		artifacts.push({
+			id: "deploy:env",
+			stepId: "deploy",
+			kind: "envVars",
+			title: "Runtime env vars",
+			subtitle: safeTrim(deployment.secretsArn) ? "Stored in Secrets Manager" : "None",
+			action: "openEnvVars",
+		});
+	}
 
 	// ── done ────────────────────────────────────────────────────────────────
 	artifacts.push({
 		id: "done:domain",
 		stepId: "done",
 		kind: "customDomain",
-		title: "Custom domain / live URL",
-		subtitle: safeTrim(deployment.liveUrl) ? safeTrim(deployment.liveUrl).replace(/^https?:\/\//, "") : "Not set",
+		title: "Hosted subdomain",
+		subtitle: safeTrim(deployment.hostedSubdomain) || "Not set",
 		action: "openCustomDomain",
 	});
 
 	// ── warnings/invariants ────────────────────────────────────────────────
-	if (!scanResults) {
+	if (isAnalyze && unitCount < 1) {
 		warnings.push({
-			id: "no-scan-results",
+			id: "missing-deploy-units",
 			severity: "warning",
-			title: "No scan results available",
-			description: "Preview requires scan artifacts (Dockerfiles, nginx.conf, etc.). Run a scan first.",
+			title: "No deploy units available",
+			description: "Analyze must return at least one deploy unit to build an image.",
 			stepId: "build",
+			artifactId: "build:units",
 		});
 	}
 
-	if (scanResults && dockerfileCount < 1) {
-		warnings.push({
-			id: "missing-dockerfiles",
-			severity: "warning",
-			title: "No Dockerfiles available",
-			description: "At least one Dockerfile is required to build an image.",
-			stepId: "build",
-			artifactId: "build:dockerfiles",
-		});
-	}
+	if (isAnalyze) {
+		const st = scanResults.build_status;
+		if (st === "failed" || st === "error" || st === "not_run") {
+			warnings.push({
+				id: "analyze-build-status",
+				severity: "warning",
+				title: "Analyze build did not pass",
+				description: `Railpack build status is "${st}". Review deploy briefing before deploying.`,
+				stepId: "build",
+			});
+		}
 
-	if (composeBuildMode && scanResults) {
-		for (const svc of services) {
-			const path = safeTrim(svc.dockerfile_path);
-			if (!path) {
+		for (const unit of units) {
+			if (!unit.artifacts?.railpack_plan && unit.type !== "existing_docker") {
 				warnings.push({
-					id: `compose-missing-dockerfile-path:${svc.name}`,
+					id: `unit-${unit.name}-no-plan`,
 					severity: "warning",
-					title: "Service missing Dockerfile path",
-					description: `${svc.name} is part of the compose build, but has no dockerfile_path set.`,
+					title: `Missing Railpack plan for ${unit.name}`,
+					description: "Re-run analyze or send feedback to generate a build plan for this unit.",
 					stepId: "build",
-					artifactId: "build:compose",
-				});
-				continue;
-			}
-			if (!(scanResults.dockerfiles ?? {})[path]) {
-				warnings.push({
-					id: `compose-missing-dockerfile:${svc.name}`,
-					severity: "warning",
-					title: "Compose references missing Dockerfile",
-					description: `${svc.name} expects ${path}, but that file isn't present in generated Dockerfiles.`,
-					stepId: "build",
-					artifactId: "build:compose",
+					artifactId: "build:units",
 				});
 			}
 		}
 	}
 
-	if (composeBuildMode && services.length <= 1) {
+	if (composeBuildMode && units.length <= 1) {
 		warnings.push({
-			id: "compose-without-multiservice",
+			id: "multi-shape-single-unit",
 			severity: "info",
-			title: "Compose present but not multi-service",
-			description: "Compose build mode only applies when multiple services are detected.",
+			title: "Multi shape with one unit",
+			description: "deploy_shape is multi but only one unit was returned.",
 			stepId: "build",
-			artifactId: "build:compose",
 		});
 	}
 
-	if (safeTrim(deployment.liveUrl) && !safeTrim(scanResults?.nginx_conf)) {
-		warnings.push({
-			id: "domain-without-nginx",
-			severity: "info",
-			title: "Domain set without explicit nginx routing",
-			description: "A public URL exists, but nginx.conf is missing. The deployment will fall back to a default reverse proxy.",
-			stepId: "deploy",
-			artifactId: "deploy:nginx",
-		});
-	}
-
-	return { steps, artifacts, warnings, composeBuildMode };
+	return { steps, artifacts, warnings, composeBuildMode, deployRoute, pipelineLabel };
 }
-

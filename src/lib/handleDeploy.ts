@@ -3,29 +3,35 @@ import os from "os";
 import path from "path";
 import crypto from "crypto";
 import config from "../config";
-import { runCommandLiveWithWebSocket } from "../server-helper";
 import {
 	DeploymentTarget,
 	DeployConfig,
-	EC2Details,
+	CloudResources,
 	DeployStep,
 	SDArtifactsResponse,
 	DeploymentHistoryEntry,
 	DeploymentReleaseArtifact,
 	EcrServiceImageRef,
 } from "../app/types";
-import { detectMultiService, MultiServiceConfig } from "./multiServiceDetector";
-import { detectDatabase, DatabaseConfig } from "./databaseDetector";
-import { handleMultiServiceDeploy } from "./handleMultiServiceDeploy";
+import { cloudResourcesFromDeployResult } from "./cloudResources";
+import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
+import { buildVerificationCandidates, fetchWithTimeout } from "./deploymentHealthProbe";
+import { MultiServiceConfig } from "./multiServiceDetector";
 import { dbHelper } from "../db-helper";
-import { configSnapshotFromDeployConfig } from "./utils";
 import { createWebSocketLogger, createDeployStepsLogger } from "./websocketLogger";
+import {
+	type ActiveDeployRun,
+	startDeploymentRun,
+	createDeployRunStepFlushHandler,
+} from "./deployRunTracker";
+import { uploadDeployRunLogs } from "./aws/deployRunLogs";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
+import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
+import { hasUsableRailpackPlan, pickDeployUnitForBuild } from "./sdArtifactsBuildContext";
 
 // AWS imports
-import { setupAWSCredentials } from "./aws";
-import { configureAlb, handleEC2, handleEC2FromEcr, resolveServices } from "./aws/handleEC2";
-import { createRDSInstance } from "./aws/handleRDS";
+import { configureAlb, resolveServices, type EC2Result } from "./aws/handleEC2";
+import { isExistingDockerUnit } from "./deployRouting";
 
 // CodeBuild + ECR imports
 import {
@@ -39,41 +45,43 @@ import {
 	describeEcrImageByTag,
 } from "./aws/ecrHelpers";
 import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
+import { deployRailpackServerToEcs, ecsRailpackFromEcrConfigured } from "./aws/ecsRailpackDeploy";
+import {
+	buildStaticSiteS3Prefix,
+	runStaticSiteCodeBuildPipeline,
+	shouldDeployStaticSiteToS3,
+	staticSiteDeployConfigured,
+} from "./aws/staticSiteCodebuild";
 import { SSM_PROFILE_NAME } from "./aws/ec2SsmHelpers";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { EC2Client, TerminateInstancesCommand } from "@aws-sdk/client-ec2";
 import { getAwsClientConfig } from "./aws/sdkClients";
 import { captureServerEvent } from "./analytics/posthogServer";
 
-// GCP imports (for Cloud SQL)
-import { createCloudSQLInstance, generateCloudSQLConnectionString } from "./handleDatabaseDeploy";
-import { addVercelDnsRecord, AddVercelDnsResult } from "./vercelDns";
+import { addRoute53DnsRecord, AddRoute53DnsResult, getDeployUrlHostname } from "./route53Dns";
+import { ensureHostRule } from "./aws/awsHelpers";
 import { githubAuthenticatedCloneUrl } from "./githubGitAuth";
 import { fetchRepoMetadata, parseGithubOwnerRepo } from "./githubRepoArchive";
-import { canManageRuntimeDeploymentStatus, normalizeDeploymentStatus, transitionDeploymentStatus } from "./deploymentStatus";
+import {
+	canManageRuntimeDeploymentStatus,
+	isInProgressDeploymentStatus,
+	normalizeDeploymentStatus,
+	transitionDeploymentStatus,
+} from "./deploymentStatus";
 import * as deployLogsStore from "./deployLogsStore";
 import {
 	attachDeployConfigToReleaseArtifact,
-	buildEc2ConfigReleaseArtifact,
 	buildEcrImageReleaseArtifact,
+	buildStaticSiteReleaseArtifact,
 	deployConfigFromReleaseArtifact,
 	ecrImageRefFromArtifact,
 	hasUsableReleaseArtifact,
-	isEc2ConfigReleaseArtifact,
+	isLegacyEc2ConfigReleaseArtifact,
 	isEcrImageReleaseArtifact,
+	isStaticSiteReleaseArtifact,
 	serviceImageRefsFromArtifact,
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
-
-function hasDirectStaticConfig(deployConfig: DeployConfig): boolean {
-	const scanResults = deployConfig.scanResults;
-	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return false;
-	const record = scanResults as Record<string, unknown>;
-	const outputDir = typeof record.output_dir === "string" ? record.output_dir.trim() : "";
-	if (!outputDir) return false;
-	if (deployConfig.kind === "direct-static") return true;
-	return typeof record.serviceType === "string" || Array.isArray(record.install) || Array.isArray(record.build);
-}
 
 type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
@@ -104,8 +112,9 @@ type VerificationResult =
 function cloneDeployConfigSnapshot(config: DeployConfig): DeployConfig {
 	return {
 		...config,
-		ec2: config.ec2 ? { ...config.ec2 } : null,
-		cloudRun: config.cloudRun ? { ...config.cloudRun } : null,
+		cloudResources: config.cloudResources
+			? (JSON.parse(JSON.stringify(config.cloudResources)) as CloudResources)
+			: null,
 		scanResults:
 			config.scanResults && typeof config.scanResults === "object"
 				? JSON.parse(JSON.stringify(config.scanResults))
@@ -152,48 +161,62 @@ async function buildEcrServiceImageRefs(params: {
 	services: Array<{ name: string }>;
 	send: (msg: string, stepId: string) => void;
 }): Promise<EcrServiceImageRef[]> {
-	const refs: EcrServiceImageRef[] = [];
-	for (const service of params.services) {
-		const serviceName = service.name?.trim();
-		if (!serviceName) continue;
-		const repoName = `${params.ecrRepoName}-${serviceName}`;
-		const image = await describeImageRefWithFallback({
-			region: params.region,
-			ecrRegistry: params.ecrRegistry,
-			ecrRepoName: repoName,
-			imageTag: params.imageTag,
-			serviceName,
-			send: params.send,
-		});
-		refs.push({
-			serviceName,
-			ecrRepoName: repoName,
-			imageUri: image.imageUri,
-			imageDigest: image.imageDigest ?? null,
-		});
-	}
+	const refs: EcrServiceImageRef[] = await Promise.all(
+		params.services.flatMap((service) => {
+			const serviceName = service.name?.trim();
+			if (!serviceName) return [];
+			const repoName = `${params.ecrRepoName}-${serviceName}`;
+			return [
+				(async () => {
+					const image = await describeImageRefWithFallback({
+						region: params.region,
+						ecrRegistry: params.ecrRegistry,
+						ecrRepoName: repoName,
+						imageTag: params.imageTag,
+						serviceName,
+						send: params.send,
+					});
+					return {
+						serviceName,
+						ecrRepoName: repoName,
+						imageUri: image.imageUri,
+						imageDigest: image.imageDigest ?? null,
+					};
+				})(),
+			];
+		})
+	);
 	return refs;
 }
 
 function buildMultiServiceConfigFromDeployConfig(deployConfig: DeployConfig): MultiServiceConfig {
 	const scanResults = deployConfig.scanResults;
-	const scanResultsTyped =
-		scanResults && typeof scanResults === "object" && "services" in scanResults
-			? (scanResults as SDArtifactsResponse)
-			: null;
-
+	if (!isSdArtifactsAnalyzeScan(scanResults)) {
+		return {
+			isMultiService: false,
+			services: [],
+			hasDockerCompose: false,
+			isMonorepo: false,
+		};
+	}
+	const units = scanResults.deploy_units;
 	return {
-		isMultiService: (scanResultsTyped?.services?.length || 0) > 1,
-		services: (scanResultsTyped?.services || []).map((service) => ({
-			name: service.name,
-			workdir: service.build_context || ".",
-			dockerfile: service.dockerfile_path,
-			port: service.port,
-			build_context: service.build_context || ".",
+		isMultiService: units.length > 1,
+		services: units.map((unit) => ({
+			name: unit.name,
+			workdir: unit.root || ".",
+			dockerfile: unit.type === "existing_docker" ? "Dockerfile" : `railpack:${unit.name}`,
+			port: unit.port,
+			build_context: unit.root || ".",
 		})),
-		hasDockerCompose: Boolean(scanResultsTyped?.docker_compose),
-		isMonorepo: (scanResultsTyped?.services?.length || 0) > 1,
+		hasDockerCompose: false,
+		isMonorepo: units.length > 1,
 	};
+}
+
+function isAwsEc2InstanceId(id: string | undefined | null): boolean {
+	const t = id?.trim() ?? "";
+	return /^i-[a-f0-9]{8,17}$/i.test(t);
 }
 
 function setStepState(steps: DeployStep[], stepId: string, status: DeployStep["status"]) {
@@ -201,6 +224,11 @@ function setStepState(steps: DeployStep[], stepId: string, status: DeployStep["s
 	if (step) {
 		step.status = status;
 	}
+}
+
+function deployConfigForStatusPersist(config: DeployConfig): DeployConfig {
+	const { scanResults: _scanResults, ...rest } = config;
+	return rest as DeployConfig;
 }
 
 async function updatePersistedDeploymentStatus(
@@ -211,63 +239,13 @@ async function updatePersistedDeploymentStatus(
 ) {
 	if (!userID) return;
 	await dbHelper.updateDeployments(
-		{
+		deployConfigForStatusPersist({
 			...deployConfig,
 			...overrides,
 			status,
-		},
+		}),
 		userID
 	);
-}
-
-function buildVerificationCandidates(baseUrl: string): string[] {
-	const trimmed = baseUrl.trim();
-	if (!trimmed) return [];
-	const urls = new Set<string>();
-	const paths = ["/", "/health", "/healthz", "/api/health"];
-	const baseCandidates = trimmed.startsWith("http")
-		? [trimmed]
-		: trimmed.includes(".elb.amazonaws.com")
-			? [`http://${trimmed}`, `https://${trimmed}`]
-			: [`https://${trimmed}`, `http://${trimmed}`];
-	for (const candidateBase of baseCandidates) {
-		for (const pathName of paths) {
-			try {
-				const url = new URL(candidateBase);
-				url.pathname = pathName;
-				url.search = "";
-				url.hash = "";
-				urls.add(url.toString());
-			} catch {
-				// Ignore malformed candidates and keep trying the next path.
-			}
-		}
-	}
-	return Array.from(urls);
-}
-
-async function fetchWithTimeout(url: string, timeoutMs: number, externalSignal?: AbortSignal) {
-	const controller = new AbortController();
-	const handleExternalAbort = () => controller.abort();
-	if (externalSignal) {
-		if (externalSignal.aborted) {
-			controller.abort();
-		} else {
-			externalSignal.addEventListener("abort", handleExternalAbort, { once: true });
-		}
-	}
-	const timer = setTimeout(() => controller.abort(), timeoutMs);
-	try {
-		return await fetch(url, {
-			method: "GET",
-			redirect: "follow",
-			cache: "no-store",
-			signal: controller.signal,
-		});
-	} finally {
-		clearTimeout(timer);
-		externalSignal?.removeEventListener("abort", handleExternalAbort);
-	}
 }
 
 function shouldForceVerificationFailure(deployConfig: DeployConfig): boolean {
@@ -301,8 +279,7 @@ async function verifyDeploymentReadiness(params: {
 	deployConfig.status = verifyingStatus;
 	setStepState(deploySteps, "verify", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, verifyingStatus, {
-		...(serviceDetails?.ec2 ? { ec2: serviceDetails.ec2 } : {}),
-		...(deployUrl ? { liveUrl: deployUrl } : {}),
+		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	});
 
 	const candidates = buildVerificationCandidates(deployUrl);
@@ -343,10 +320,10 @@ async function verifyDeploymentReadiness(params: {
 		};
 	}
 
-	const maxRounds = 6;
+	const maxRounds = 10;
 	const requestTimeoutMs = 8_000;
-	const roundDelayMs = 2_000;
-	const verificationDeadlineMs = 90_000;
+	const roundDelayMs = 20_000;
+	const verificationDeadlineMs = 300_000;
 	const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
 	for (let round = 1; round <= maxRounds; round += 1) {
 		const remainingBudgetMs = verificationDeadlineAt - Date.now();
@@ -521,51 +498,116 @@ async function restoreDeploymentFromHistory(params: {
 	deployConfig.status = rollbackStatus;
 	setStepState(deploySteps, "rollback", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, rollbackStatus, {
-		...(serviceDetails?.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	});
 	send(`Starting ${rollbackNoun} to ${previousLabel}...`, "rollback");
 
 	try {
-		const region = rollbackCandidate.awsRegion || config.AWS_REGION;
-		const repoName = rollbackCandidate.url.split("/").pop()?.replace(".git", "") || rollbackCandidate.repoName || "app";
+		const region = rollbackCandidate.region || config.AWS_REGION;
+		const repoName = rollbackCandidate.repoUrl.split("/").pop()?.replace(".git", "") || rollbackCandidate.repoName || "app";
 		const rollbackMultiServiceConfig = buildMultiServiceConfigFromDeployConfig(rollbackCandidate);
 		let rollbackResult;
 
-		if (isEcrImageReleaseArtifact(releaseArtifact)) {
-			const ecrAuth = await getEcrAuthToken(releaseArtifact.region || region);
-			const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
-			rollbackResult = await handleEC2FromEcr({
-				deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
-				imageUri: ecrImageRefFromArtifact(releaseArtifact),
-				imageTag: releaseArtifact.imageTag,
-				ecrRegistry: releaseArtifact.ecrRegistry,
-				ecrRepoName: releaseArtifact.ecrRepoName,
-				ecrPasswordB64,
-				serviceImageRefs: serviceImageRefsFromArtifact(releaseArtifact),
-				multiServiceConfig: rollbackMultiServiceConfig,
-				ws: null,
-				send,
-			});
-		} else if (isEc2ConfigReleaseArtifact(releaseArtifact)) {
+		if (isStaticSiteReleaseArtifact(releaseArtifact)) {
 			if (!token) {
 				setStepState(deploySteps, "rollback", "error");
-				send("ERROR: Config rollback requires a GitHub token but none is available.", "rollback");
+				send("ERROR: Static-site rollback requires a GitHub token for CodeBuild clone.", "rollback");
 				return {
 					success: false,
 					message: isAutomatic
-						? "Deployment verification failed and automatic config rollback could not run because a GitHub token was unavailable."
-						: "Rollback could not run because a GitHub token was unavailable for config-based redeploy.",
+						? "Deployment verification failed and automatic static-site rollback could not run because a GitHub token was unavailable."
+						: "Rollback could not run because a GitHub token was unavailable for static-site rebuild.",
 				};
 			}
-			rollbackResult = await handleEC2(
-				cloneDeployConfigSnapshot(rollbackCandidate),
-				".",
-				rollbackMultiServiceConfig,
+			const rbConfig = deployConfigFromReleaseArtifact(releaseArtifact, cloneDeployConfigSnapshot(rollbackCandidate));
+			if (!rbConfig) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic rollback could not read the static-site release config."
+						: "Rollback could not read the static-site release config.",
+				};
+			}
+			const parsedRb = parseGithubOwnerRepo(rbConfig.repoUrl);
+			const repoFullNameRb = parsedRb ? `${parsedRb.owner}/${parsedRb.repo}` : repoName;
+			const branchRb = rbConfig.branch?.trim() || rollbackCandidate.branch?.trim() || "";
+			if (!branchRb.trim()) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic static-site rollback could not determine a git branch."
+						: "Rollback could not determine a git branch for static-site rebuild.",
+				};
+			}
+			const commitRb = releaseArtifact.commitSha?.trim() || rbConfig.commitSha?.trim();
+			const envB64 = rbConfig.envVars ? Buffer.from(rbConfig.envVars, "utf8").toString("base64") : undefined;
+			const buildRes = await runStaticSiteCodeBuildPipeline({
+				region: releaseArtifact.region || region,
+				deployConfig: rbConfig,
+				repoFullName: repoFullNameRb,
+				branch: branchRb,
+				commitSha: commitRb,
 				token,
-				undefined,
-				null,
-				send
-			);
+				envVarsBase64: envB64,
+				send,
+			});
+			rollbackResult = {
+				success: buildRes.success,
+				baseUrl: releaseArtifact.publicBaseUrl,
+				serviceUrls: new Map(),
+				instanceId: `s3:${releaseArtifact.bucket}/${releaseArtifact.keyPrefix}`,
+				publicIp: "",
+				vpcId: "",
+				subnetId: "",
+				securityGroupId: "",
+				amiId: "s3-static",
+			};
+		} else if (isEcrImageReleaseArtifact(releaseArtifact)) {
+			const rb = rollbackCandidate.scanResults;
+			const scanForRb =
+				rb && typeof rb === "object" && isSdArtifactsAnalyzeScan(rb)
+					? (rb as SDArtifactsResponse)
+					: undefined;
+			const unitRb =
+				scanForRb?.deploy_units?.length
+					? pickDeployUnitForBuild(scanForRb, rollbackCandidate.serviceName)
+					: null;
+			if (!ecsRailpackFromEcrConfigured()) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: isAutomatic
+						? "Deployment verification failed and automatic ECS rollback could not run because ECS is not configured."
+						: "ECS rollback requires ECS_CLUSTER_NAME, ECS_SUBNET_IDS, ECS_SECURITY_GROUP_IDS, and ECS_EXECUTION_ROLE_ARN.",
+				};
+			}
+			if (!unitRb) {
+				setStepState(deploySteps, "rollback", "error");
+				return {
+					success: false,
+					message: "Rollback could not resolve a deploy unit from scan results.",
+				};
+			}
+			rollbackResult = await deployRailpackServerToEcs({
+				deployConfig: cloneDeployConfigSnapshot(rollbackCandidate),
+				region,
+				repoName,
+				imageUri: ecrImageRefFromArtifact(releaseArtifact),
+				containerPort: unitRb.port || 3000,
+				unitName: unitRb.name || "app",
+				ws: null,
+				send,
+			});
+		} else if (isLegacyEc2ConfigReleaseArtifact(releaseArtifact)) {
+			setStepState(deploySteps, "rollback", "error");
+			return {
+				success: false,
+				message: isAutomatic
+					? "Deployment verification failed and automatic rollback could not restore a legacy EC2 deployment. Redeploy from a recent ECS or static-site release."
+					: "Legacy EC2 config rollback is no longer supported. Redeploy from a recent ECS or static-site release.",
+			};
 		} else {
 			setStepState(deploySteps, "rollback", "error");
 			return {
@@ -587,8 +629,12 @@ async function restoreDeploymentFromHistory(params: {
 			};
 		}
 
-		const failedInstanceId = serviceDetails?.ec2?.instanceId?.trim();
-		if (failedInstanceId && failedInstanceId !== rollbackResult.instanceId) {
+		const failedInstanceId = "";
+		if (
+			isAwsEc2InstanceId(failedInstanceId) &&
+			isAwsEc2InstanceId(rollbackResult.instanceId) &&
+			failedInstanceId !== rollbackResult.instanceId
+		) {
 			const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
 			const services = resolveServices(repoName, rollbackCandidate, rollbackMultiServiceConfig);
 			await configureAlb({
@@ -610,31 +656,49 @@ async function restoreDeploymentFromHistory(params: {
 
 			const ec2 = new EC2Client(getAwsClientConfig(region));
 			try {
-				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId] }));
+				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId!] }));
 				send(`Terminated failed rollback candidate instance ${failedInstanceId}.`, "rollback");
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				send(`Rollback restored traffic, but failed to terminate candidate instance ${failedInstanceId}: ${message}`, "rollback");
 			}
+		} else if (isAwsEc2InstanceId(failedInstanceId) && rollbackResult.instanceId.startsWith("ecs:")) {
+			const ec2 = new EC2Client(getAwsClientConfig(region));
+			try {
+				await ec2.send(new TerminateInstancesCommand({ InstanceIds: [failedInstanceId!] }));
+				send(`Terminated failed instance ${failedInstanceId} after ECS rollback.`, "rollback");
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				send(`ECS rollback succeeded, but terminating instance ${failedInstanceId} failed: ${message}`, "rollback");
+			}
 		}
 
 		setStepState(deploySteps, "rollback", "success");
+		const rollbackTarget: DeploymentTarget = isStaticSiteReleaseArtifact(releaseArtifact)
+			? "static_s3"
+			: "ecs";
 		const restoredConfig = cloneDeployConfigSnapshot(rollbackCandidate);
 		restoredConfig.status = transitionDeploymentStatus(rollbackStatus, "rollback_succeeded");
-		restoredConfig.liveUrl = rollbackCandidate.liveUrl;
+		restoredConfig.hostedSubdomain = rollbackCandidate.hostedSubdomain;
 		restoredConfig.screenshotUrl = rollbackCandidate.screenshotUrl;
-		restoredConfig.ec2 = {
-			success: true,
-			baseUrl: rollbackResult.baseUrl,
-			instanceId: rollbackResult.instanceId,
-			publicIp: rollbackResult.publicIp,
-			vpcId: rollbackResult.vpcId,
-			subnetId: rollbackResult.subnetId,
-			securityGroupId: rollbackResult.securityGroupId,
-			amiId: rollbackResult.amiId,
-			sharedAlbDns: rollbackResult.sharedAlbDns || rollbackCandidate.ec2?.sharedAlbDns || "",
-			instanceType: rollbackCandidate.ec2?.instanceType || serviceDetails?.ec2?.instanceType || "t3.micro",
-		};
+		restoredConfig.deploymentTarget = rollbackTarget;
+		restoredConfig.cloudResources = cloudResourcesFromDeployResult(
+			rollbackTarget,
+			region,
+			rollbackResult,
+			isStaticSiteReleaseArtifact(releaseArtifact)
+				? {
+					bucket: releaseArtifact.bucket,
+					keyPrefix: releaseArtifact.keyPrefix,
+					cloudFrontDistributionId: releaseArtifact.cloudFrontDistributionId,
+				}
+				: {
+					cluster: config.ECS_CLUSTER_NAME?.trim(),
+					service: rollbackResult.instanceId?.startsWith("ecs:")
+						? rollbackResult.instanceId.slice(4).split("/").pop()
+						: undefined,
+				}
+		);
 
 		send(`SUCCESS: ${isAutomatic ? "Automatic rollback" : "Rollback"} restored ${previousLabel}.`, "rollback");
 		return {
@@ -659,7 +723,7 @@ async function restoreDeploymentFromHistory(params: {
 }
 
 /**
- * Main deployment handler - routes to AWS (default) or GCP
+ * Main deployment handler — CodeBuild + ECR, then runtime placement (EC2 or ECS).
  */
 export async function handleDeploy(
 	deployConfig: DeployConfig,
@@ -670,24 +734,26 @@ export async function handleDeploy(
 ): Promise<string> {
 	const deployStartTime = Date.now();
 	const shouldLoadRollbackHistory = canManageRuntimeDeploymentStatus(deployConfig.status);
-	const isDirectStatic = hasDirectStaticConfig(deployConfig);
-	const scanResultsCasted = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "dockerfiles" in deployConfig.scanResults
-		? (deployConfig.scanResults as Record<string, unknown>).dockerfiles as Record<string, string>
-		: {};
-	const dockerfileCount = Object.keys(scanResultsCasted || {}).length;
-	if (!isDirectStatic && dockerfileCount < 1) {
-		throw new Error("Deployment requires at least one Dockerfile in scan results.");
+	const isRailpackAnalyze = isSdArtifactsAnalyzeScan(deployConfig.scanResults);
+	if (!isRailpackAnalyze) {
+		throw new Error("Deployment requires a completed sd-artifacts analyze scan.");
 	}
-	const nginxConf = deployConfig.scanResults && typeof deployConfig.scanResults === "object" && "nginx_conf" in deployConfig.scanResults
-		? ((deployConfig.scanResults as Record<string, unknown>).nginx_conf as string)
-		: "";
-	if (!nginxConf?.trim()) {
-		throw new Error("Deployment requires nginx.conf in scan results.");
+	if (isRailpackAnalyze && !(deployConfig.scanResults as SDArtifactsResponse).deploy_units?.length) {
+		throw new Error("Analyze response has no deploy_units.");
 	}
 
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps, options);
+	let activeDeployRun: ActiveDeployRun | null = null;
+	const send = createDeployStepsLogger(ws, deploySteps, {
+		...options,
+		onStepsChange: (steps) => {
+			if (activeDeployRun) {
+				createDeployRunStepFlushHandler(activeDeployRun, () => deploySteps)(steps);
+			}
+			options?.onStepsChange?.(steps);
+		},
+	});
 	if (ws) {
 		(ws as any).__deploySend = send;
 	}
@@ -708,15 +774,31 @@ export async function handleDeploy(
 		}
 
 		if (userID) {
-			const startingStatus = transitionDeploymentStatus(deployConfig.status, "deploy_requested");
+			const normalizedStatus = normalizeDeploymentStatus(deployConfig.status);
+			const startingStatus = isInProgressDeploymentStatus(normalizedStatus)
+				? normalizedStatus
+				: transitionDeploymentStatus(normalizedStatus, "deploy_requested");
 			deployConfig.status = startingStatus;
 			await dbHelper.updateDeployments(
-				{
+				deployConfigForStatusPersist({
 					...deployConfig,
 					status: startingStatus,
-				},
+				}),
 				userID
 			);
+
+			activeDeployRun = await startDeploymentRun({
+				userId: userID,
+				repoName: deployConfig.repoName,
+				serviceName: deployConfig.serviceName,
+				branch: deployConfig.branch,
+				commitSha: deployConfig.commitSha ?? undefined,
+				responseId: deployConfig.responseId ?? null,
+				region: deployConfig.region,
+			});
+			if (ws && activeDeployRun) {
+				(ws as any).__deployRun = activeDeployRun;
+			}
 		}
 		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps, rollbackHistoryEntry);
 	} catch (error: any) {
@@ -748,7 +830,16 @@ export async function handleManualRollback(args: {
 	const ws = args.ws;
 	const userID = args.userID;
 	const deploySteps: DeployStep[] = [];
-	const send = createDeployStepsLogger(ws, deploySteps, args.options);
+	let activeDeployRun: ActiveDeployRun | null = null;
+	const send = createDeployStepsLogger(ws, deploySteps, {
+		...args.options,
+		onStepsChange: (steps) => {
+			if (activeDeployRun) {
+				createDeployRunStepFlushHandler(activeDeployRun, () => deploySteps)(steps);
+			}
+			args.options?.onStepsChange?.(steps);
+		},
+	});
 	if (ws) {
 		(ws as any).__deploySend = send;
 	}
@@ -770,6 +861,19 @@ export async function handleManualRollback(args: {
 		}
 		if (deployConfig.ownerID !== userID) {
 			throw new Error("Forbidden: deployment does not belong to user");
+		}
+
+		activeDeployRun = await startDeploymentRun({
+			userId: userID,
+			repoName: deployConfig.repoName,
+			serviceName: deployConfig.serviceName,
+			branch: deployConfig.branch,
+			commitSha: deployConfig.commitSha ?? undefined,
+			responseId: deployConfig.responseId ?? null,
+			region: deployConfig.region,
+		});
+		if (ws && activeDeployRun) {
+			(ws as any).__deployRun = activeDeployRun;
 		}
 
 		const targetHistoryResponse = await dbHelper.getDeploymentHistoryEntryById(historyEntryId, userID);
@@ -796,8 +900,8 @@ export async function handleManualRollback(args: {
 				? latestSuccessfulResponse.history
 				: null;
 
-		const serviceDetails: ServiceDeployDetails | null = deployConfig.ec2
-			? { ec2: deployConfig.ec2 }
+		const serviceDetails: ServiceDeployDetails | null = deployConfig.cloudResources
+			? { cloudResources: deployConfig.cloudResources }
 			: null;
 		const rollbackAttempt = await restoreDeploymentFromHistory({
 			deployConfig,
@@ -842,7 +946,13 @@ export async function handleManualRollback(args: {
 		};
 		const verification = await verifyDeploymentReadiness({
 			deployConfig: verificationConfig,
-			deployUrl: rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl || "",
+			deployUrl:
+				getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
+				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
+					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
+					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
+						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
+						: ""),
 			userID,
 			token,
 			send,
@@ -860,8 +970,10 @@ export async function handleManualRollback(args: {
 			await sendDeployComplete(
 				ws,
 				verification.success
-					? (rollbackAttempt.restoredConfig.liveUrl ?? undefined)
-					: (verification.postPersistConfig?.liveUrl ?? rollbackAttempt.restoredConfig.liveUrl ?? undefined),
+					? (getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined)
+					: (verification.postPersistConfig
+						? getDeploymentHostedUrl(verification.postPersistConfig) ?? undefined
+						: getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined),
 				false,
 				failedVerificationConfig,
 				deploySteps,
@@ -870,7 +982,9 @@ export async function handleManualRollback(args: {
 				null,
 				verification.success
 					? serviceDetails
-					: (verification.postPersistConfig?.ec2 ? { ec2: verification.postPersistConfig.ec2 } : serviceDetails),
+					: (verification.postPersistConfig?.cloudResources
+						? { cloudResources: verification.postPersistConfig.cloudResources }
+						: serviceDetails),
 				durationMs,
 				{
 					errorMessage: verification.success ? "Rollback verification failed." : verification.errorMessage,
@@ -884,13 +998,18 @@ export async function handleManualRollback(args: {
 		}
 
 		const completionConfig: DeployConfig = verificationConfig;
-		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.ec2
-			? { ec2: rollbackAttempt.restoredConfig.ec2 }
+		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.cloudResources
+			? { cloudResources: rollbackAttempt.restoredConfig.cloudResources }
 			: null;
 		const durationMs = Date.now() - deployStartTime;
 		await sendDeployComplete(
 			ws,
-			rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl,
+			getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
+				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
+					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
+					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
+						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
+						: undefined),
 			true,
 			completionConfig,
 			deploySteps,
@@ -916,24 +1035,23 @@ export async function handleManualRollback(args: {
 				id: `rollback-${repoName}-${serviceName}`,
 				repoName,
 				serviceName,
-				url: "",
+				repoUrl: "",
 				branch: "",
 				commitSha: null,
 				envVars: null,
-				liveUrl: null,
+				hostedSubdomain: null,
 				screenshotUrl: null,
 				status: "failed",
 				firstDeployment: null,
 				lastDeployment: null,
 				revision: null,
 				cloudProvider: "aws",
-				deploymentTarget: "ec2",
-				awsRegion: config.AWS_REGION,
-				ec2: null,
-				cloudRun: null,
+				deploymentTarget: "ecs",
+				region: config.AWS_REGION,
+				cloudResources: null,
 				scanResults: {},
 			} as DeployConfig;
-			await sendDeployComplete(ws, undefined, false, fallbackConfig, deploySteps, userID, "ec2", null, null, durationMs, {
+			await sendDeployComplete(ws, undefined, false, fallbackConfig, deploySteps, userID, "ecs", null, null, durationMs, {
 				errorMessage: error instanceof Error ? error.message : String(error),
 			});
 		}
@@ -960,11 +1078,16 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "deploy", label: "🚀 Deploy to EC2" },
 		{ id: "done", label: "✅ Done" },
 	],
-	"ec2-codebuild": [
+	"ecs-codebuild": [
 		{ id: "auth", label: "🔐 Authentication" },
 		{ id: "build", label: "🐳 Build image (CodeBuild)" },
-		{ id: "setup", label: "⚙️ Setup (VPC, key, security)" },
-		{ id: "deploy", label: "🚀 Deploy to EC2" },
+		{ id: "deploy", label: "🚀 Deploy to ECS Fargate" },
+		{ id: "done", label: "✅ Done" },
+	],
+	"static-s3-codebuild": [
+		{ id: "auth", label: "🔐 Authentication" },
+		{ id: "build", label: "📦 Build static site (CodeBuild)" },
+		{ id: "deploy", label: "🌐 Publish to S3 / CDN" },
 		{ id: "done", label: "✅ Done" },
 	],
 	"cloud_run": [
@@ -1006,7 +1129,8 @@ async function saveDeploymentToDB(
 	customUrl?: string | null,
 	durationMs?: number,
 	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null,
-	failure?: DeploymentFailureRecord | null
+	failure?: DeploymentFailureRecord | null,
+	activeDeployRun?: ActiveDeployRun | null
 ): Promise<void> {
 	if (!userID) {
 		console.warn("No userID provided - skipping database save");
@@ -1025,16 +1149,16 @@ async function saveDeploymentToDB(
 	}
 
 	try {
-		// Prepare minimal deployment config for DB
-		const minimalDeployment: DeployConfig = {
+		// Prepare minimal deployment config for DB (omit scanResults — lifecycle updates must not re-upsert analysis)
+		const hostedFromDns = customUrl ? subdomainFromHostedUrl(customUrl) : null;
+		const minimalDeployment: DeployConfig = deployConfigForStatusPersist({
 			...deployConfig,
 			status: success
 				? transitionDeploymentStatus(deployConfig.status, "deployment_succeeded")
 				: transitionDeploymentStatus(deployConfig.status, "deployment_failed"),
-			...(deployUrl && { liveUrl: deployUrl }),
-			...(customUrl && { liveUrl: customUrl }),
-			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
-		};
+			...(hostedFromDns ? { hostedSubdomain: hostedFromDns } : {}),
+			...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
+		});
 
 		// Update deployment document (creates if doesn't exist)
 		const updateResponse = await dbHelper.updateDeployments(minimalDeployment, userID);
@@ -1056,7 +1180,7 @@ async function saveDeploymentToDB(
 
 			// Kick off screenshot generation in the background so deploy completion isn't delayed.
 			if (success) {
-				const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
+				const screenshotTargetUrl = (customUrl ?? getDeploymentHostedUrl(minimalDeployment) ?? deployUrl) || "";
 				if (screenshotTargetUrl.trim()) {
 					void (async () => {
 						try {
@@ -1083,42 +1207,46 @@ async function saveDeploymentToDB(
 			}
 		}
 
-		// Record deployment history using repo_name + service_name
-		const historyEntry = {
-			timestamp: new Date().toISOString(),
-			success,
-			steps,
-			configSnapshot: configSnapshotFromDeployConfig(minimalDeployment),
-			releaseArtifact: attachDeployConfigToReleaseArtifact(releaseArtifact, minimalDeployment) ?? releaseArtifact ?? {},
-			...(deployConfig.commitSha && { commitSha: deployConfig.commitSha }),
-			...(deployConfig.branch && { branch: deployConfig.branch }),
-			...(durationMs && { durationMs }),
-			...(failure?.code ? { failureCode: failure.code } : {}),
-			...(failure?.classification ? { failureClassification: failure.classification } : {}),
-		};
-
-		const historyResponse = await dbHelper.addDeploymentHistory(
-			deployConfig.repoName,
-			deployConfig.serviceName,
-			userID,
-			historyEntry
-		);
-
-		if (historyResponse.error) {
-			console.error("Failed to record deployment history:", historyResponse.error);
-			captureServerEvent({
-				distinctId: userID,
-				event: "deploy_persistence_failed",
-				properties: {
-					phase: "add_deployment_history",
-					repo_name: deployConfig.repoName ?? null,
-					service_name: deployConfig.serviceName ?? null,
-					success,
-					error: String(historyResponse.error),
-				},
+		if (activeDeployRun) {
+			const finalArtifact =
+				attachDeployConfigToReleaseArtifact(releaseArtifact, minimalDeployment) ?? releaseArtifact ?? {};
+			const uploaded = await uploadDeployRunLogs({
+				userId: activeDeployRun.userId,
+				runId: activeDeployRun.runId,
+				steps,
+				region: activeDeployRun.region ?? deployConfig.region,
 			});
-		} else {
-			console.log("Deployment history recorded:", historyResponse.id);
+
+			const finalizeResponse = await dbHelper.finalizeDeploymentRun({
+				runId: activeDeployRun.runId,
+				userId: activeDeployRun.userId,
+				success,
+				durationMs,
+				steps,
+				releaseArtifact: finalArtifact,
+				failureCode: failure?.code ?? null,
+				failureClassification: failure?.classification ?? null,
+				logRef: uploaded?.logRef ?? null,
+				stepSummary: uploaded?.stepSummary,
+				logTail: uploaded?.logTail,
+			});
+
+			if (finalizeResponse.error) {
+				console.error("Failed to finalize deployment run:", finalizeResponse.error);
+				captureServerEvent({
+					distinctId: userID,
+					event: "deploy_persistence_failed",
+					properties: {
+						phase: "finalize_deployment_run",
+						repo_name: deployConfig.repoName ?? null,
+						service_name: deployConfig.serviceName ?? null,
+						success,
+						error: String(finalizeResponse.error),
+					},
+				});
+			} else {
+				console.log("Deployment run finalized:", activeDeployRun.runId);
+			}
 		}
 	} catch (error) {
 		console.error("Error saving deployment to DB:", error);
@@ -1157,7 +1285,7 @@ function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], 
 
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
-	ec2?: EC2Details;
+	cloudResources?: CloudResources | null;
 };
 
 async function sendDeployComplete(
@@ -1168,7 +1296,7 @@ async function sendDeployComplete(
 	deploySteps: DeployStep[],
 	userID: string | undefined,
 	deploymentTarget?: string,
-	vercelDns?: AddVercelDnsResult | null,
+	customDns?: AddRoute53DnsResult | null,
 	serviceDetails?: ServiceDeployDetails | null,
 	durationMs?: number,
 	lifecycle?: DeploymentLifecycleOptions
@@ -1198,6 +1326,7 @@ async function sendDeployComplete(
 			"Warning: deploy metadata was not persisted because userID is missing."
 		);
 	}
+	const activeDeployRun = (ws as { __deployRun?: ActiveDeployRun } | null | undefined)?.__deployRun ?? null;
 	try {
 		await saveDeploymentToDB(
 			deployConfig,
@@ -1206,10 +1335,11 @@ async function sendDeployComplete(
 			deploySteps,
 			userID,
 			serviceDetails,
-			vercelDns?.success ? vercelDns.customUrl : null,
+			customDns?.success ? customDns.customUrl : null,
 			durationMs,
 			lifecycle?.releaseArtifact ?? null,
-			failure
+			failure,
+			activeDeployRun
 		);
 		if (lifecycle?.postPersistConfig && userID) {
 			const restoreResult = await dbHelper.updateDeployments(lifecycle.postPersistConfig, userID);
@@ -1269,7 +1399,7 @@ async function sendDeployComplete(
 				commit_sha: deployConfig.commitSha ?? null,
 				failed_step: failedStep,
 				steps_count: deploySteps.length,
-				has_custom_domain: Boolean(vercelDns?.success && vercelDns.customUrl),
+				has_custom_domain: Boolean(customDns?.success && customDns.customUrl),
 			},
 		});
 	}
@@ -1280,23 +1410,23 @@ async function sendDeployComplete(
 		deploymentTarget: string | null;
 		finalStatus?: DeployConfig["status"] | null;
 		rolledBack?: boolean;
-		vercelDnsAdded?: boolean;
-		vercelDnsError?: string | null;
+		customDnsAdded?: boolean;
+		customDnsError?: string | null;
 		customUrl?: string | null;
 		error?: string | null;
-		ec2?: EC2Details;
+		cloudResources?: CloudResources | null;
 	} = {
-		deployUrl: lifecycle?.postPersistConfig?.liveUrl ?? deployUrl ?? null,
+		deployUrl: deployUrl ?? null,
 		success,
 		deploymentTarget: deploymentTarget ?? null,
 	};
-	if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
-	if (vercelDns) {
-		payload.vercelDnsAdded = vercelDns.success;
-		if (vercelDns.success) {
-			payload.customUrl = vercelDns.customUrl ?? null;
+	if (serviceDetails?.cloudResources) payload.cloudResources = serviceDetails.cloudResources;
+	if (customDns) {
+		payload.customDnsAdded = customDns.success;
+		if (customDns.success) {
+			payload.customUrl = customDns.customUrl ?? null;
 		} else {
-			payload.vercelDnsError = vercelDns.error ?? null;
+			payload.customDnsError = customDns.error ?? null;
 		}
 	}
 	if (!success && lifecycle?.errorMessage) {
@@ -1329,139 +1459,6 @@ async function sendDeployComplete(
 }
 
 /**
- * Handles AWS deployment with automatic service selection
- */
-async function handleAWSDeploy(
-	deployConfig: DeployConfig,
-	appDir: string,
-	tmpDir: string,
-	multiServiceConfig: MultiServiceConfig,
-	dbConfig: DatabaseConfig | null,
-	token: string,
-	ws: any,
-	userID: string | undefined,
-	deployStartTime: number,
-	send: (msg: string, stepId: string) => void,
-	deploySteps: DeployStep[]
-): Promise<string> {
-
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
-
-	// Setup AWS credentials
-	send("Authenticating with AWS...", 'auth');
-	await setupAWSCredentials(ws);
-	send("✅ AWS credentials authenticated", 'auth');
-
-	// EC2-only AWS deploy path
-	const target: DeploymentTarget = 'ec2';
-	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS.ec2);
-
-	// Handle database provisioning if needed
-	let dbConnectionString: string | undefined;
-	if (dbConfig) {
-		send("Provisioning AWS RDS database...", 'database');
-		try {
-			const { connectionString } = await createRDSInstance(
-				dbConfig,
-				repoName,
-				region,
-				ws
-			);
-			dbConnectionString = connectionString;
-			send(`Database provisioned successfully`, 'database');
-		} catch (error: any) {
-			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
-		}
-	} else {
-		send("✅ No database provisioning required", 'database');
-	}
-
-	let result: string;
-	let deployUrl: string | undefined;
-	const serviceDetails: ServiceDeployDetails = {};
-	let success = false;
-
-	const ec2Result = await handleEC2(
-		deployConfig,
-		appDir,
-		multiServiceConfig,
-		token,
-		dbConnectionString,
-		ws,
-		send
-	);
-	success = ec2Result.success;
-
-	// Extract only the serializable fields for storage (exclude Maps like serviceUrls)
-	const ec2Details = deployConfig.ec2 || {};
-	const ec2Typed = (ec2Details && typeof ec2Details === "object" && "instanceType" in ec2Details) 
-		? (ec2Details as EC2Details)
-		: null;
-	serviceDetails.ec2 = {
-		success: ec2Result.success,
-		baseUrl: ec2Result.baseUrl,
-		instanceId: ec2Result.instanceId,
-		publicIp: ec2Result.publicIp,
-		vpcId: ec2Result.vpcId,
-		subnetId: ec2Result.subnetId,
-		securityGroupId: ec2Result.securityGroupId,
-		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns || "",
-		instanceType: ec2Typed?.instanceType || "t3.micro",
-	};
-
-	if (ec2Result.baseUrl == "") {
-		send(`❌ Deployment failed: Server is not responding on any known ports. Please check your application and try again.`, 'deploy');
-		result = "error";
-	} else {
-		// Build summary
-		let ec2Summary = `\nDeployment completed!\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += `\nService URLs:\n`;
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
-		}
-		send(ec2Summary, 'done');
-		deployUrl = ec2Result.sharedAlbDns || ec2Result.baseUrl;
-		result = "done";
-	}
-
-
-	let vercelResult: AddVercelDnsResult | null = null;
-	if (deployUrl && deployConfig.liveUrl != deployUrl && deployConfig.serviceName?.trim() && success) {
-		send("Adding Vercel DNS record...", 'done');
-		vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
-			deploymentTarget: target,
-			previousCustomUrl: deployConfig.liveUrl ?? null,
-		});
-	}
-
-	if (vercelResult && vercelResult.success) {
-		send(`✅ Vercel DNS added successfully: ${vercelResult.customUrl}`, 'done');
-	} else if (deployUrl && vercelResult && success) {
-		send(`⚠️ Warning: Vercel DNS addition failed: ${vercelResult?.error ?? "Unknown error"}. Proceeding with instance IP.`, 'done');
-	}
-
-	// Mark final step by outcome
-	const doneStep = deploySteps.find(s => s.id === 'done');
-	if (doneStep) doneStep.status = success ? 'success' : 'error';
-
-	// Calculate deployment duration
-	const durationMs = Date.now() - deployStartTime;
-
-
-	// Notify client of success and URL (include service details so client can persist for redeploy/update/delete)
-	await sendDeployComplete(ws, deployUrl, success, deployConfig, deploySteps, userID, target, vercelResult, serviceDetails, durationMs);
-
-	// Cleanup
-	fs.rmSync(tmpDir, { recursive: true, force: true });
-	return result;
-}
-
-/**
  * Handles AWS deployment using CodeBuild + ECR pipeline.
  * No local clone required: CodeBuild pulls source directly from GitHub.
  */
@@ -1475,35 +1472,33 @@ async function handleAWSCodeBuildDeploy(
 	deploySteps: DeployStep[],
 	rollbackHistoryEntry: DeploymentHistoryEntry | null,
 ): Promise<string> {
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoUrl = deployConfig.url;
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoUrl = deployConfig.repoUrl;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const parsed = parseGithubOwnerRepo(repoUrl);
 	const repoFullName = parsed ? `${parsed.owner}/${parsed.repo}` : repoName;
 	const scanResults = deployConfig.scanResults;
-	const scanResultsTyped = (scanResults && typeof scanResults === "object" && "services" in scanResults)
-		? (scanResults as SDArtifactsResponse)
-		: null;
-	const directStaticConfig = hasDirectStaticConfig(deployConfig)
-		? (scanResults as Record<string, unknown>)
-		: null;
-	const rootCommands = (() => {
-		const raw = scanResults && typeof scanResults === "object" && "commands" in scanResults
-			? (scanResults as Record<string, unknown>).commands
-			: undefined;
-		if (Array.isArray(raw)) return raw.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-		if (raw && typeof raw === "object") {
-			const dot = (raw as Record<string, unknown>)["."];
-			if (Array.isArray(dot)) {
-				return dot.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-			}
-		}
-		return [] as string[];
-	})();
-
-	const target: DeploymentTarget = "ec2";
+	const scanResultsTyped = isSdArtifactsAnalyzeScan(scanResults) ? scanResults : null;
+	const scanResultsForCodebuild: SDArtifactsResponse | undefined = isSdArtifactsAnalyzeScan(scanResults)
+		? scanResults
+		: undefined;
+	const railpackUnit =
+		scanResultsForCodebuild?.deploy_units?.length
+			? pickDeployUnitForBuild(scanResultsForCodebuild, deployConfig.serviceName)
+			: null;
+	const railpackPlan = railpackUnit?.artifacts?.railpack_plan;
+	const useRailpackBuild = !!(railpackUnit && hasUsableRailpackPlan(railpackPlan));
+	const shouldStaticS3Build = shouldDeployStaticSiteToS3(scanResultsForCodebuild, deployConfig.serviceName);
+	const useStaticS3 = Boolean(shouldStaticS3Build && staticSiteDeployConfigured());
+	const isExistingDocker = scanResultsForCodebuild
+		? isExistingDockerUnit(scanResultsForCodebuild, deployConfig.serviceName)
+		: false;
+	const canBuildContainerImage = useRailpackBuild || isExistingDocker;
+	let target: DeploymentTarget = useStaticS3 ? "static_s3" : "ecs";
 	deployConfig.deploymentTarget = target;
-	sendDeploySteps(ws, (rootCommands.length > 0 || directStaticConfig) ? AWS_DEPLOY_STEPS.ec2 : AWS_DEPLOY_STEPS["ec2-codebuild"]);
+
+	const deployStepsKey = useStaticS3 ? "static-s3-codebuild" : "ecs-codebuild";
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[deployStepsKey]);
 
 	// ── Auth: verify AWS credentials via SDK ──
 	send("Authenticating with AWS...", "auth");
@@ -1515,139 +1510,17 @@ async function handleAWSCodeBuildDeploy(
 
 	const stsClient = new STSClient(getAwsClientConfig(region));
 	const identity = await stsClient.send(new GetCallerIdentityCommand({}));
-	// if (identity.Arn) send(`Authenticated as: ${identity.Arn}`, "auth");
-	// send("✅ AWS credentials verified", "auth");
+	void identity;
 
-	if (directStaticConfig || rootCommands.length > 0) {
-		if (directStaticConfig) {
-			send("Using direct-static deployment path (skipping CodeBuild/ECR)...", "deploy");
-		} else {
-			send("Using scan_results.commands deployment path (skipping CodeBuild/ECR)...", "deploy");
-		}
-		const multiServiceConfig = buildMultiServiceConfigFromDeployConfig(deployConfig);
-
-		const ec2Result = await handleEC2(
-			deployConfig,
-			".",
-			multiServiceConfig,
-			token,
-			undefined,
-			ws,
-			send
+	if (shouldStaticS3Build && !staticSiteDeployConfigured()) {
+		throw new Error(
+			"Static site deploy requires STATIC_SITE_BUCKET and STATIC_SITE_PUBLIC_BASE_URL on the Smart Deploy server."
 		);
-
-		const serviceDetails: ServiceDeployDetails = {};
-		const ec2Details2 = deployConfig.ec2 || {};
-		const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2)
-			? (ec2Details2 as EC2Details)
-			: null;
-		serviceDetails.ec2 = {
-			success: ec2Result.success,
-			baseUrl: ec2Result.baseUrl,
-			instanceId: ec2Result.instanceId,
-			publicIp: ec2Result.publicIp,
-			vpcId: ec2Result.vpcId,
-			subnetId: ec2Result.subnetId,
-			securityGroupId: ec2Result.securityGroupId,
-			amiId: ec2Result.amiId,
-			sharedAlbDns: ec2Result.sharedAlbDns || "",
-			instanceType: ec2Typed2?.instanceType || "t3.micro",
-		};
-		const releaseArtifact = buildEc2ConfigReleaseArtifact({
-			...deployConfig,
-			...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
-		});
-
-		let deployUrl: string | undefined;
-		let result: string;
-		if (!ec2Result.success || ec2Result.baseUrl === "") {
-			send("❌ Deployment failed: Server is not responding. Check deployment logs.", "deploy");
-			result = "error";
-		} else {
-			let ec2Summary = `\nDeployment completed!\n`;
-			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-			ec2Summary += `\nService URLs:\n`;
-			for (const [name, url] of ec2Result.serviceUrls.entries()) {
-				ec2Summary += `  - ${name}: ${url}\n`;
-			}
-			deployUrl = ec2Result.baseUrl || ec2Result.sharedAlbDns;
-			result = "done";
-		}
-
-		let vercelResult: AddVercelDnsResult | null = null;
-		if (deployUrl && deployConfig.liveUrl !== deployUrl && deployConfig.serviceName?.trim() && ec2Result.success) {
-			send("Adding Vercel DNS record...", "verify");
-			vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
-				deploymentTarget: target,
-				previousCustomUrl: deployConfig.liveUrl ?? null,
-			});
-		}
-		if (vercelResult?.success) {
-			send(`✅ Vercel DNS added: ${vercelResult.customUrl}`, "done");
-		} else if (deployUrl && vercelResult && ec2Result.success) {
-			send(`⚠️ Vercel DNS failed: ${vercelResult?.error ?? "Unknown error"}`, "done");
-		}
-
-		let finalSuccess = ec2Result.success;
-		let lifecycle: DeploymentLifecycleOptions | undefined;
-		const prematureDoneStep = deploySteps.find((step) => step.id === "done");
-		if (prematureDoneStep) {
-			prematureDoneStep.status = "pending";
-		}
-		if (ec2Result.success && deployUrl) {
-			const verification = await verifyDeploymentReadiness({
-				deployConfig,
-				deployUrl,
-				userID,
-				token,
-				send,
-				deploySteps,
-				rollbackHistoryEntry,
-				serviceDetails,
-			});
-			finalSuccess = verification.success;
-			if (!verification.success) {
-				lifecycle = {
-					errorMessage: verification.errorMessage,
-					postPersistConfig: verification.postPersistConfig,
-					finalStatus: verification.postPersistConfig?.status ?? "failed",
-					rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
-					releaseArtifact,
-				};
-				result = "error";
-			}
-		}
-		if (finalSuccess) {
-			let ec2Summary = "Deployment completed.\n";
-			ec2Summary += `Verified URL: ${deployUrl}\n`;
-			ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-			ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-			ec2Summary += "\nService URLs:\n";
-			for (const [name, url] of ec2Result.serviceUrls.entries()) {
-				ec2Summary += `  - ${name}: ${url}\n`;
-			}
-			send(`SUCCESS: ${ec2Summary.trimEnd()}`, "done");
-		}
-
-		const doneStep = deploySteps.find(s => s.id === "done");
-		if (doneStep) doneStep.status = finalSuccess ? "success" : "error";
-
-		const durationMs = Date.now() - deployStartTime;
-		await sendDeployComplete(
-			ws,
-			deployUrl,
-			finalSuccess,
-			deployConfig,
-			deploySteps,
-			userID,
-			target,
-			vercelResult,
-			serviceDetails,
-			durationMs,
-			lifecycle ?? { releaseArtifact }
+	}
+	if (!useStaticS3 && !ecsRailpackFromEcrConfigured()) {
+		throw new Error(
+			"Container deploy requires ECS configuration. Set ECS_CLUSTER_NAME, ECS_SUBNET_IDS (comma-separated), ECS_SECURITY_GROUP_IDS (comma-separated), and ECS_EXECUTION_ROLE_ARN."
 		);
-		return finalSuccess ? result : "error";
 	}
 
 	// Resolve branch
@@ -1670,45 +1543,11 @@ async function handleAWSCodeBuildDeploy(
 	const commitSha = deployConfig.commitSha?.trim();
 	const imageTag = commitSha ? commitSha.substring(0, 6) : `deploy-${Date.now().toString(36)}`;
 
-	// ── Build: CodeBuild + ECR ──
+	// ── Build: CodeBuild (static → S3, or Docker → ECR) then ECS / EC2 ──
 	const accountId = await getAwsAccountId(region);
-	const ecrRegistry = getEcrRegistry(accountId, region);
-	const ecrRepoName = `smartdeploy/${repoName}`;
-	const ecrAuth = await getEcrAuthToken(region);
-	const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
-
 	const envBase64 = deployConfig.envVars
 		? Buffer.from(deployConfig.envVars, "utf8").toString("base64")
 		: undefined;
-
-	const services = scanResultsTyped?.services || [];
-	const hasCompose = scanResults && typeof scanResults === "object" && "docker_compose" in scanResults && services.length > 1;
-	const repoNames = new Set<string>();
-	repoNames.add(ecrRepoName);
-	if (hasCompose) {
-		for (const svc of services) {
-			const name = (svc.name || "").trim();
-			if (name) repoNames.add(`${ecrRepoName}-${name}`);
-		}
-	}
-	send("Preparing ECR repositories...", "build");
-	for (const repo of repoNames) {
-		await ensureEcrRepository(repo, region, send);
-	}
-	// Grant EC2 instances ECR pull access
-	await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
-
-	const hasCommit = Boolean(commitSha);
-	let allTagsExist = hasCommit;
-	if (hasCommit) {
-		for (const repo of repoNames) {
-			const exists = await ecrImageTagExists(region, repo, imageTag);
-			if (!exists) {
-				allTagsExist = false;
-				break;
-			}
-		}
-	}
 
 	const dockerHubUser = config.DOCKERHUB_USERNAME?.trim();
 	const dockerHubToken = config.DOCKERHUB_TOKEN?.trim();
@@ -1718,156 +1557,276 @@ async function handleAWSCodeBuildDeploy(
 		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing. Docker Hub login will be skipped.", "build");
 	}
 
-	if (!hasCommit || !allTagsExist) {
-		const roleArn = await ensureCodeBuildRole(region, send);
-		const projectName = await ensureCodeBuildProject(region, roleArn, send);
+	let deployResult: EC2Result;
+	let releaseArtifact: DeploymentReleaseArtifact;
 
-		// Only pass scanResults if it has the proper structure
-		const scanResultsForBuild = (scanResults && "stack_summary" in scanResults) 
-			? (scanResults as SDArtifactsResponse)
-			: undefined;
-
-		const buildspec = generateBuildspec({
-			ecrRegistry,
-			ecrRepoName,
-			imageTag,
+	if (useStaticS3) {
+		if (shouldStaticS3Build && !staticSiteDeployConfigured()) {
+			throw new Error(
+				"static_build (no start command) requires STATIC_SITE_BUCKET and STATIC_SITE_PUBLIC_BASE_URL on the Smart Deploy server."
+			);
+		}
+		target = "static_s3";
+		deployConfig.deploymentTarget = "static_s3";
+		send("Publishing static site via CodeBuild → S3...", "build");
+		const staticBuild = await runStaticSiteCodeBuildPipeline({
 			region,
-			scanResults: scanResultsForBuild,
-		});
-
-		const buildId = await startBuild({
-			region,
-			projectName,
+			deployConfig,
 			repoFullName,
 			branch,
 			commitSha,
-			githubToken: token,
-			buildspec,
+			token,
 			envVarsBase64: envBase64,
 			dockerHub,
 			send,
 		});
-
-		const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
-		if (!buildResult.success) {
-			send("❌ Docker image build failed. Check build logs above.", "build");
-			throw new Error("CodeBuild failed: Docker image build did not succeed");
+		if (!staticBuild.success) {
+			send("❌ Static site build or S3 sync failed. Check CodeBuild logs above.", "build");
+			throw new Error("CodeBuild failed: static site pipeline did not succeed");
 		}
+		const bucket = config.STATIC_SITE_BUCKET!.trim();
+		const prefix = buildStaticSiteS3Prefix(repoName, deployConfig.serviceName).replace(/^\/+/, "");
+		const publicBase = config.STATIC_SITE_PUBLIC_BASE_URL!.trim().replace(/\/+$/, "");
+		const unitForUrl = pickDeployUnitForBuild(scanResultsForCodebuild!, deployConfig.serviceName);
+		const serviceUrls = new Map<string, string>();
+		if (unitForUrl?.name) serviceUrls.set(unitForUrl.name, publicBase);
+		else serviceUrls.set("site", publicBase);
+		deployResult = {
+			success: true,
+			baseUrl: publicBase,
+			serviceUrls,
+			instanceId: `s3:${bucket}/${prefix}`,
+			publicIp: "",
+			vpcId: "",
+			subnetId: "",
+			securityGroupId: "",
+			amiId: "s3-static",
+			sharedAlbDns: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || "",
+		};
+		releaseArtifact = buildStaticSiteReleaseArtifact({
+			deployConfig,
+			region,
+			bucket,
+			keyPrefix: prefix,
+			publicBaseUrl: publicBase,
+			cloudFrontDistributionId: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || null,
+		});
 	} else {
-		send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
-	}
+		const ecrRegistry = getEcrRegistry(accountId, region);
+		const ecrRepoName = `smartdeploy/${repoName}`;
+		const ecrAuth = await getEcrAuthToken(region);
+		const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
 
-	const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-	const primaryImage = await describeImageRefWithFallback({
-		region,
-		ecrRegistry,
-		ecrRepoName,
-		imageTag,
-		send,
-	});
-	const serviceImages = hasCompose
-		? await buildEcrServiceImageRefs({
+		const units = scanResultsTyped?.deploy_units || [];
+		const hasCompose = units.length > 1;
+		const repoNames = new Set<string>();
+		repoNames.add(ecrRepoName);
+		if (hasCompose) {
+			for (const unit of units) {
+				const name = (unit.name || "").trim();
+				if (name) repoNames.add(`${ecrRepoName}-${name}`);
+			}
+		}
+		send("Preparing ECR repositories...", "build");
+		await Promise.all([...repoNames].map((repo) => ensureEcrRepository(repo, region, send)));
+		await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
+
+		const hasCommit = Boolean(commitSha);
+		let allTagsExist = hasCommit;
+		if (hasCommit) {
+			const tagChecks = await Promise.all(
+				[...repoNames].map((repo) => ecrImageTagExists(region, repo, imageTag))
+			);
+			allTagsExist = tagChecks.every(Boolean);
+		}
+
+		if (!hasCommit || !allTagsExist) {
+			const roleArn = await ensureCodeBuildRole(region, send);
+			const projectName = await ensureCodeBuildProject(region, roleArn, send);
+
+			const imageUriForBuild = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+			if (isExistingDocker) {
+				send("CodeBuild will build from the repository Dockerfile.", "build");
+			} else if (useRailpackBuild) {
+				send("CodeBuild will use Railpack (docker buildx + pinned railpack-frontend).", "build");
+			} else if (!canBuildContainerImage) {
+				throw new Error("No Railpack plan or existing Dockerfile found for container build.");
+			}
+
+			const buildspec = generateBuildspec({
+				ecrRegistry,
+				ecrRepoName,
+				imageTag,
+				region,
+				scanResults: scanResultsForCodebuild,
+				deployUnit: railpackUnit,
+				railpack:
+					useRailpackBuild && railpackUnit && hasUsableRailpackPlan(railpackPlan)
+						? {
+							plan: railpackPlan,
+							contextRelative: railpackUnit.root || ".",
+							railpackVersion: scanResultsForCodebuild?.railpack_version ?? null,
+							imageUri: imageUriForBuild,
+						}
+						: undefined,
+			});
+
+			const buildId = await startBuild({
+				region,
+				projectName,
+				repoFullName,
+				branch,
+				commitSha,
+				githubToken: token,
+				buildspec,
+				envVarsBase64: envBase64,
+				dockerHub,
+				send,
+			});
+
+			const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
+			if (!buildResult.success) {
+				send("❌ Docker image build failed. Check build logs above.", "build");
+				throw new Error("CodeBuild failed: Docker image build did not succeed");
+			}
+		} else {
+			send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
+		}
+
+		const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+		const primaryImage = await describeImageRefWithFallback({
 			region,
 			ecrRegistry,
 			ecrRepoName,
 			imageTag,
-			services,
 			send,
-		})
-		: [];
-	send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
+		});
+		const serviceImages = hasCompose
+			? await buildEcrServiceImageRefs({
+				region,
+				ecrRegistry,
+				ecrRepoName,
+				imageTag,
+				services: units.map((u) => ({ name: u.name })),
+				send,
+			})
+			: [];
+		send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
 
-	// ── Setup + Deploy: EC2 from ECR ──
-	send("Setting up networking...", "setup");
-	const multiServiceConfig = buildMultiServiceConfigFromDeployConfig(deployConfig);
+		target = "ecs";
+		deployConfig.deploymentTarget = "ecs";
+		send("Deploying to ECS Fargate...", "deploy");
+		deployResult = await deployRailpackServerToEcs({
+			deployConfig,
+			region,
+			repoName,
+			imageUri: primaryImage.imageUri || imageUri,
+			containerPort: railpackUnit?.port || 3000,
+			unitName: railpackUnit?.name || "app",
+			ws,
+			send,
+		});
 
-	const ec2Result = await handleEC2FromEcr({
-		deployConfig,
-		imageUri: primaryImage.imageUri || imageUri,
-		imageTag,
-		ecrRegistry,
-		ecrRepoName,
-		ecrPasswordB64,
-		serviceImageRefs: serviceImages.map((serviceImage) => ({
-			serviceName: serviceImage.serviceName,
-			imageUri: serviceImage.imageUri,
-		})),
-		multiServiceConfig,
-		ws,
-		send,
-	});
+		releaseArtifact = buildEcrImageReleaseArtifact({
+			deployConfig,
+			region,
+			ecrRegistry,
+			ecrRepoName,
+			imageTag,
+			imageUri: primaryImage.imageUri || imageUri,
+			imageDigest: primaryImage.imageDigest ?? null,
+			serviceImages,
+		});
+	}
 
 	const serviceDetails: ServiceDeployDetails = {};
-	const ec2Details2 = deployConfig.ec2 || {};
-	const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2) 
-		? (ec2Details2 as EC2Details)
-		: null;
-	serviceDetails.ec2 = {
-		success: ec2Result.success,
-		baseUrl: ec2Result.baseUrl,
-		instanceId: ec2Result.instanceId,
-		publicIp: ec2Result.publicIp,
-		vpcId: ec2Result.vpcId,
-		subnetId: ec2Result.subnetId,
-		securityGroupId: ec2Result.securityGroupId,
-		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns || "",
-		instanceType: ec2Typed2?.instanceType || "t3.micro",
-	};
-	const releaseArtifact = buildEcrImageReleaseArtifact({
-		deployConfig: {
-			...deployConfig,
-			...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
-		},
+	serviceDetails.cloudResources = cloudResourcesFromDeployResult(
+		target,
 		region,
-		ecrRegistry,
-		ecrRepoName,
-		imageTag,
-		imageUri: primaryImage.imageUri || imageUri,
-		imageDigest: primaryImage.imageDigest ?? null,
-		serviceImages,
-	});
+		deployResult,
+		target === "static_s3"
+			? {
+				bucket: config.STATIC_SITE_BUCKET?.trim(),
+				keyPrefix: buildStaticSiteS3Prefix(repoName, deployConfig.serviceName).replace(/^\/+/, ""),
+				cloudFrontDistributionId: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || null,
+			}
+			: {
+				cluster: config.ECS_CLUSTER_NAME?.trim(),
+				service: deployResult.instanceId?.startsWith("ecs:")
+					? deployResult.instanceId.slice(4).split("/").pop()
+					: deployConfig.serviceName,
+			}
+	);
+	const mergedRelease = attachDeployConfigToReleaseArtifact(releaseArtifact, {
+		...deployConfig,
+		...(serviceDetails.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
+	} as DeployConfig);
+	if (mergedRelease) {
+		releaseArtifact = mergedRelease as DeploymentReleaseArtifact;
+	}
 
 	let deployUrl: string | undefined;
 	let result: string;
 
-	if (!ec2Result.success || ec2Result.baseUrl === "") {
+	if (!deployResult.success || deployResult.baseUrl === "") {
 		send("❌ Deployment failed: Server is not responding. Check your application and try again.", "deploy");
 		result = "error";
 	} else {
-		let ec2Summary = `\nDeployment completed!\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += `\nService URLs:\n`;
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
+		let deploySummary = `\nDeployment completed!\n`;
+		deploySummary += `Instance ID: ${deployResult.instanceId}\n`;
+		deploySummary += `Public IP: ${deployResult.publicIp}\n`;
+		deploySummary += `\nService URLs:\n`;
+		for (const [name, url] of deployResult.serviceUrls.entries()) {
+			deploySummary += `  - ${name}: ${url}\n`;
 		}
-		deployUrl = ec2Result.baseUrl || ec2Result.sharedAlbDns;
+		deployUrl = deployResult.baseUrl || deployResult.sharedAlbDns;
 		result = "done";
 	}
 
-	let vercelResult: AddVercelDnsResult | null = null;
-		if (deployUrl && deployConfig.liveUrl !== deployUrl && deployConfig.serviceName?.trim() && ec2Result.success) {
-			send("Adding Vercel DNS record...", "done");
-			vercelResult = await addVercelDnsRecord(deployUrl, deployConfig.serviceName, {
-				deploymentTarget: target,
-				previousCustomUrl: deployConfig.liveUrl ?? null,
+	let dnsResult: AddRoute53DnsResult | null = null;
+	const sharedAlbDns = deployResult.sharedAlbDns?.trim() || "";
+	if (deployResult.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
+		send("Configuring Route 53 DNS...", "done");
+		const previousHostedUrl = getDeploymentHostedUrl(deployConfig);
+		dnsResult = await addRoute53DnsRecord(deployUrl || `https://${sharedAlbDns}`, deployConfig.serviceName, {
+			deploymentTarget: target,
+			previousCustomUrl: previousHostedUrl,
+			sharedAlbDns: sharedAlbDns || null,
+			awsRegion: region,
 		});
 	}
 
-	if (vercelResult?.success) {
-		send(`✅ Vercel DNS added: ${vercelResult.customUrl}`, "done");
-	} else if (deployUrl && vercelResult && ec2Result.success) {
-		send(`⚠️ Vercel DNS failed: ${vercelResult?.error ?? "Unknown error"}`, "done");
+	if (dnsResult?.success) {
+		send(`✅ Route 53 DNS ready: ${dnsResult.customUrl}`, "done");
+		const customHost = getDeployUrlHostname(dnsResult.customUrl);
+		if (
+			customHost &&
+			deployResult.albListenerArn &&
+			deployResult.targetGroupArn
+		) {
+			send(`Configuring ALB host rule for ${customHost}...`, "done");
+			await ensureHostRule(
+				deployResult.albListenerArn,
+				customHost,
+				deployResult.targetGroupArn,
+				region,
+				ws
+			);
+		}
+		if (dnsResult.customUrl) {
+			deployUrl = dnsResult.customUrl;
+		}
+	} else if (dnsResult && deployResult.success) {
+		send(`⚠️ Route 53 DNS failed: ${dnsResult?.error ?? "Unknown error"}`, "done");
 	}
 
-	let finalSuccess = ec2Result.success;
+	let finalSuccess = deployResult.success;
 	let lifecycle: DeploymentLifecycleOptions | undefined;
 	const prematureDoneStep = deploySteps.find((step) => step.id === "done");
 	if (prematureDoneStep) {
 		prematureDoneStep.status = "pending";
 	}
-	if (ec2Result.success && deployUrl) {
+	if (deployResult.success && deployUrl) {
 		const verification = await verifyDeploymentReadiness({
 			deployConfig,
 			deployUrl,
@@ -1891,15 +1850,15 @@ async function handleAWSCodeBuildDeploy(
 		}
 	}
 	if (finalSuccess) {
-		let ec2Summary = "Deployment completed.\n";
-		ec2Summary += `Verified URL: ${deployUrl}\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += "\nService URLs:\n";
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
+		let deploySummary = "Deployment completed.\n";
+		deploySummary += `Verified URL: ${deployUrl}\n`;
+		deploySummary += `Instance ID: ${deployResult.instanceId}\n`;
+		deploySummary += `Public IP: ${deployResult.publicIp}\n`;
+		deploySummary += "\nService URLs:\n";
+		for (const [name, url] of deployResult.serviceUrls.entries()) {
+			deploySummary += `  - ${name}: ${url}\n`;
 		}
-		send(`SUCCESS: ${ec2Summary.trimEnd()}`, "done");
+		send(`SUCCESS: ${deploySummary.trimEnd()}`, "done");
 	}
 
 	const doneStep = deploySteps.find(s => s.id === "done");
@@ -1914,191 +1873,11 @@ async function handleAWSCodeBuildDeploy(
 		deploySteps,
 		userID,
 		target,
-		vercelResult,
+		dnsResult,
 		serviceDetails,
 		durationMs,
 		lifecycle ?? { releaseArtifact }
 	);
 
 	return finalSuccess ? result : "error";
-}
-
-/**
- * Handles GCP deployment (existing Cloud Run logic)
- */
-async function handleGCPDeploy(
-	deployConfig: DeployConfig,
-	appDir: string,
-	cloneDir: string,
-	tmpDir: string,
-	multiServiceConfig: MultiServiceConfig,
-	dbConfig: DatabaseConfig | null,
-	token: string,
-	ws: any,
-	userID: string | undefined,
-	deployStartTime: number,
-	send: (msg: string, stepId: string) => void,
-	deploySteps: DeployStep[]
-): Promise<string> {
-
-	const projectId = config.GCP_PROJECT_ID;
-	const keyObject = JSON.parse(config.GCP_SERVICE_ACCOUNT_KEY);
-	const keyPath = "/tmp/smartdeploy-key.json";
-	fs.writeFileSync(keyPath, JSON.stringify(keyObject, null, 2));
-
-	const gcpSteps = [
-		{ id: "auth", label: "🔐 Authentication" },
-		{ id: "clone", label: "📦 Cloning repository" },
-		{ id: "detect", label: "🔍 Analyzing app" },
-		{ id: "database", label: "🗄️ Database (Cloud SQL)" },
-		{ id: "docker", label: "🐳 Build image (Cloud Build)" },
-		{ id: "deploy", label: "🚀 Deploy to Cloud Run" },
-		{ id: "done", label: "✅ Done" },
-	];
-	sendDeploySteps(ws, gcpSteps);
-
-	send("Authenticating with Google Cloud...", 'auth');
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "activate-service-account", `--key-file=${keyPath}`], ws, 'auth', { send });
-	await runCommandLiveWithWebSocket("gcloud", ["config", "set", "project", projectId, "--quiet"], ws, 'auth', { send });
-	await runCommandLiveWithWebSocket("gcloud", ["auth", "configure-docker"], ws, 'auth', { send });
-
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "default-app";
-	const serviceName = `${repoName}`;
-
-	// Handle multi-service deployment
-	if (multiServiceConfig.isMultiService && multiServiceConfig.services.length > 1) {
-		send(`Detected multi-service application with ${multiServiceConfig.services.length} services`, 'detect');
-		send("Starting multi-service deployment...", 'detect');
-
-		const { serviceUrls } = await handleMultiServiceDeploy(
-			deployConfig,
-			token,
-			ws,
-			cloneDir
-		);
-
-		let summary = `\nMulti-service deployment completed!\n\nDeployed services:\n`;
-		for (const [name, url] of serviceUrls.entries()) {
-			summary += `  - ${name}: ${url}\n`;
-		}
-		send(summary, 'done');
-		const firstGcpUrl = serviceUrls.entries().next().value;
-		const gcpDeployUrl = firstGcpUrl ? firstGcpUrl[1] : undefined;
-		let vercelResult: AddVercelDnsResult | null = null;
-		if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
-			vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
-				deploymentTarget: "cloud_run",
-				previousCustomUrl: deployConfig.liveUrl ?? null,
-			});
-		}
-		const doneStep = deploySteps.find(s => s.id === 'done');
-		if (doneStep) doneStep.status = 'success';
-		const durationMs = Date.now() - deployStartTime;
-		const success = gcpDeployUrl ? true : false;
-		await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
-		fs.rmSync(tmpDir, { recursive: true, force: true });
-		return "done";
-	}
-
-	// Handle database provisioning for GCP
-	let dbConnectionString: string | undefined;
-	if (dbConfig) {
-		send("Provisioning Cloud SQL database...", 'database');
-		try {
-			const instanceName = `${repoName}-db-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-			const { connectionName, ipAddress } = await createCloudSQLInstance(
-				dbConfig,
-				projectId,
-				instanceName,
-				ws
-			);
-			dbConnectionString = generateCloudSQLConnectionString(dbConfig, connectionName, ipAddress, dbConfig.database);
-			send(`Database provisioned successfully`, 'database');
-		} catch (error: any) {
-			send(`Database provisioning failed: ${error.message}. Continuing without database.`, 'database');
-		}
-	}
-
-	// Single-service GCP deployment
-	const dockerfilePath = path.join(appDir, "Dockerfile");
-
-	if (!fs.existsSync(dockerfilePath)) {
-		const scanResults = deployConfig.scanResults;
-		const scanResultsTyped = (scanResults && typeof scanResults === "object" && "dockerfiles" in scanResults)
-			? (scanResults as SDArtifactsResponse)
-			: null;
-		const dockerfileContent = scanResultsTyped?.dockerfiles?.["Dockerfile"] || (scanResultsTyped?.services?.[0]?.dockerfile_path ? scanResultsTyped?.dockerfiles?.[scanResultsTyped.services[0].dockerfile_path] : null);
-
-		if (dockerfileContent) {
-			send(`Using AI-generated Dockerfile`, 'clone');
-			fs.writeFileSync(dockerfilePath, dockerfileContent);
-		} else {
-			throw new Error("No Dockerfile found in deployment config and no AI-generated Dockerfile available.");
-		}
-	}
-
-	const imageName = `${repoName}-image`;
-	const gcpImage = `gcr.io/${projectId}/${imageName}:latest`;
-
-	send("Building Docker image with Cloud Build...", 'docker');
-	await runCommandLiveWithWebSocket("gcloud", [
-		"builds", "submit",
-		"--tag", gcpImage,
-		appDir
-	], ws, 'docker', { send });
-
-	send("Deploying to Cloud Run...", 'deploy');
-
-	// Build environment variables
-	const envVarsList: string[] = [];
-	if (deployConfig.envVars) {
-		envVarsList.push(deployConfig.envVars.replace(/\r?\n/g, ","));
-	}
-	if (dbConnectionString) {
-		envVarsList.push(`DATABASE_URL=${dbConnectionString}`);
-		envVarsList.push(`ConnectionStrings__DefaultConnection=${dbConnectionString}`);
-	}
-
-	const envArgs = envVarsList.length > 0 ? ["--set-env-vars", envVarsList.join(",")] : [];
-
-	await runCommandLiveWithWebSocket("gcloud", [
-		"run", "deploy", serviceName,
-		"--image", gcpImage,
-		"--platform", "managed",
-		"--region", "us-central1",
-		"--allow-unauthenticated",
-		...envArgs
-	], ws, 'deploy', { send });
-
-	await runCommandLiveWithWebSocket("gcloud", [
-		"beta", "run", "services", "add-iam-policy-binding",
-		serviceName,
-		"--region=us-central1",
-		"--platform=managed",
-		"--member=allUsers",
-		"--role=roles/run.invoker",
-	], ws, 'deploy', { send });
-
-	send(`Deployment success`, 'done');
-
-	// Cloud Run URL format; we don't have the exact URL from gcloud output, so leave deployUrl for client to show "done"
-	const gcpDeployUrl = `https://console.cloud.google.com/run?project=${projectId}`;
-	let vercelResult: AddVercelDnsResult | null = null;
-	if (gcpDeployUrl && deployConfig.serviceName?.trim()) {
-		vercelResult = await addVercelDnsRecord(gcpDeployUrl, deployConfig.serviceName, {
-			deploymentTarget: "cloud_run",
-			previousCustomUrl: deployConfig.liveUrl ?? null,
-		});
-	}
-	const doneStep = deploySteps.find(s => s.id === 'done');
-	if (doneStep) doneStep.status = 'success';
-	const durationMs = Date.now() - deployStartTime;
-	const success = gcpDeployUrl ? true : false;
-
-	await sendDeployComplete(ws, gcpDeployUrl, success, deployConfig, deploySteps, userID, "cloud_run", vercelResult, null, durationMs);
-
-	// Cleanup temp folder
-	fs.rmSync(tmpDir, { recursive: true, force: true });
-
-	return "done";
 }

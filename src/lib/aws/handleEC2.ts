@@ -2,7 +2,54 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import config from "../../config";
-import { DeployConfig, EC2Details } from "../../app/types";
+import { DeployConfig } from "../../app/types";
+import { isEcsCloudResources } from "@/lib/cloudResources";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+
+/** Runtime EC2/ECS deploy result shape used by legacy ALB helpers (not persisted on DeployConfig). */
+export type EC2Details = {
+	success: boolean;
+	baseUrl: string;
+	instanceId: string;
+	publicIp: string;
+	vpcId: string;
+	subnetId: string;
+	securityGroupId: string;
+	amiId: string;
+	sharedAlbDns: string;
+	instanceType: string;
+	albListenerArn?: string;
+	targetGroupArn?: string;
+};
+
+type LegacyDeployConfig = DeployConfig & {
+	ec2?: EC2Details | null;
+};
+
+function legacyEc2(config: DeployConfig): EC2Details | null {
+	const resources = config.cloudResources;
+	if (isEcsCloudResources(resources)) {
+		return {
+			success: true,
+			baseUrl: resources.baseUrl,
+			instanceId: `ecs:${resources.cluster}/${resources.service}`,
+			publicIp: "",
+			vpcId: resources.vpcId || "",
+			subnetId: "",
+			securityGroupId: "",
+			amiId: "ecs-fargate",
+			sharedAlbDns: resources.alb?.dnsName || "",
+			instanceType: "Fargate",
+			albListenerArn: resources.alb?.listenerArn,
+			targetGroupArn: resources.targetGroupArn,
+		};
+	}
+	return (config as LegacyDeployConfig).ec2 ?? null;
+}
+
+function legacyLiveUrl(config: DeployConfig): string | null {
+	return hostedUrlFromSubdomain(config.hostedSubdomain);
+}
 import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import {
@@ -63,6 +110,9 @@ export type EC2Result = {
 	securityGroupId: string;
 	amiId: string;
 	sharedAlbDns?: string;
+	/** Set by ECS Fargate deploys so post-deploy DNS can sync ALB host-header rules. */
+	albListenerArn?: string;
+	targetGroupArn?: string;
 };
 
 type DirectStaticDeployDetails = {
@@ -73,14 +123,8 @@ type DirectStaticDeployDetails = {
 	packageManager?: string;
 };
 
-function hasDirectStaticScanResults(deployConfig: DeployConfig): boolean {
-	const scanResults = deployConfig.scanResults;
-	if (!scanResults || typeof scanResults !== "object" || Array.isArray(scanResults)) return false;
-	const record = scanResults as Record<string, unknown>;
-	const outputDir = typeof record.output_dir === "string" ? record.output_dir.trim() : "";
-	if (!outputDir) return false;
-	if (deployConfig.kind === "direct-static") return true;
-	return typeof record.serviceType === "string" || Array.isArray(record.install) || Array.isArray(record.build);
+function hasDirectStaticScanResults(_deployConfig: DeployConfig): boolean {
+	return false;
 }
 
 // ─── Pure helpers (env / compose / user-data) ───────────────────────────────
@@ -88,16 +132,17 @@ function hasDirectStaticScanResults(deployConfig: DeployConfig): boolean {
 function parseEnvVarsAllowCommasInValues(envVarsString: string): { key: string; value: string }[] {
 	const trimmed = envVarsString.trim();
 	if (!trimmed) return [];
-	const segments = trimmed.split(/\r?\n|,(?=[A-Za-z_][A-Za-z0-9_]*=)/).map(s => s.trim()).filter(Boolean);
-	return segments
-		.map(segment => {
-			const eqIdx = segment.indexOf("=");
-			if (eqIdx === -1) return null;
-			const key = segment.slice(0, eqIdx).trim();
-			const value = segment.slice(eqIdx + 1).trim();
-			return key ? { key, value } : null;
-		})
-		.filter((e): e is { key: string; value: string } => e != null);
+	return trimmed
+		.split(/\r?\n|,(?=[A-Za-z_][A-Za-z0-9_]*=)/)
+		.flatMap((segment) => {
+			const s = segment.trim();
+			if (!s) return [];
+			const eqIdx = s.indexOf("=");
+			if (eqIdx === -1) return [];
+			const key = s.slice(0, eqIdx).trim();
+			const value = s.slice(eqIdx + 1).trim();
+			return key ? [{ key, value }] : [];
+		});
 }
 
 function buildEnvFileContent(entries: { key: string; value: string }[]): string {
@@ -309,7 +354,7 @@ async function ensureNetworking(
 	let subnetIds: string[];
 	let securityGroupId: string;
 
-	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Casted = (legacyEc2(deployConfig) || {}) as EC2Details;
 	if (ec2Casted?.vpcId?.trim() && ec2Casted?.subnetId?.trim() && ec2Casted?.securityGroupId?.trim()) {
 		vpcId = ec2Casted.vpcId.trim();
 		subnetIds = [ec2Casted.subnetId.trim()];
@@ -339,10 +384,16 @@ async function ensureNetworking(
 	}
 	// Only add ingress rules that don't already exist to avoid InvalidPermission.Duplicate and noisy "Failed" logs
 	const existingPorts = await getExistingIngressPorts(securityGroupId, region, ws);
-	for (const port of ports) {
-		if (existingPorts.has(port)) continue;
-		await runAWSCommand(["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region], ws, "setup");
-	}
+	const portsToAuthorize = [...ports].filter((port) => !existingPorts.has(port));
+	await Promise.all(
+		portsToAuthorize.map((port) =>
+			runAWSCommand(
+				["ec2", "authorize-security-group-ingress", "--group-id", securityGroupId, "--protocol", "tcp", "--port", String(port), "--cidr", "0.0.0.0/0", "--region", region],
+				ws,
+				"setup"
+			)
+		)
+	);
 
 	return { vpcId, subnetIds, securityGroupId };
 }
@@ -375,7 +426,7 @@ async function redeployInstance(params: {
 
 	const script = directStatic
 		? buildStaticRedeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -387,7 +438,7 @@ async function redeployInstance(params: {
 			packageManager: directStatic.packageManager,
 		})
 		: buildRedeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -396,7 +447,6 @@ async function redeployInstance(params: {
 			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 			mainPort,
 			scanServices: (scanResultsCasted.services as Array<{name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string}>) || undefined,
-			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 		});
 	let ssmResult: { success: boolean };
 	try {
@@ -420,15 +470,15 @@ async function redeployInstance(params: {
 		send("Redeploy command failed. Check logs above.", "deploy");
 		return {
 			success: false,
-			baseUrl: deployConfig.liveUrl || ((deployConfig.ec2 || {}) as EC2Details)?.baseUrl || "",
+			baseUrl: legacyLiveUrl(deployConfig) || ((legacyEc2(deployConfig) || {}) as EC2Details)?.baseUrl || "",
 			serviceUrls: new Map(),
 			instanceId: existingInstanceId,
-			publicIp: ((deployConfig.ec2 || {}) as EC2Details)?.publicIp || "",
+			publicIp: ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp || "",
 			...net, subnetId: net.subnetIds[0], amiId,
 		};
 	}
 
-	const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
+	const publicIp = ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp?.trim() || (
 		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 	).trim();
 
@@ -471,7 +521,7 @@ async function launchNewInstance(params: {
 	const userData = directStatic
 		? generateStaticUserDataScript(nginxConf)
 		: generateUserDataScript(
-			deployConfig.url,
+			deployConfig.repoUrl,
 			deployConfig.branch?.trim() || "",
 			token,
 			envBase64,
@@ -484,7 +534,7 @@ async function launchNewInstance(params: {
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
 
-	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 	let instanceId: string;
 	try {
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
@@ -531,7 +581,7 @@ async function launchNewInstance(params: {
 
 	const firstDeployScript = directStatic
 		? buildStaticFirstDeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -548,7 +598,6 @@ async function launchNewInstance(params: {
 			dockerfiles: (scanResultsCasted.dockerfiles as Record<string, string>) || {},
 			mainPort,
 			scanServices: (scanResultsCasted.services as unknown as { name: string; build_context: string; port: number; dockerfile_path: string; language?: string; framework?: string }[]) || undefined,
-			commands: scanResultsCasted.commands as Record<string, unknown> | string[] | undefined,
 		});
 
 	send(directStatic ? "Publishing static site via SSM..." : "Deploying containers via SSM...", "deploy");
@@ -596,7 +645,7 @@ export async function configureAlb(params: {
 				: "ALB HTTP listener missing."
 		);
 	}
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 
 	await allowAlbToReachService(net.securityGroupId, alb.albSgId, 80, ws);
 
@@ -611,13 +660,15 @@ export async function configureAlb(params: {
 	await registerInstanceToTargetGroup(tgArn, instanceId, 80, region, ws);
 
 	const serviceUrls = new Map<string, string>();
-	for (const svc of services) {
-		const sub = services.length === 1 && deployConfig.serviceName?.trim() ? deployConfig.serviceName.trim() : svc.name;
-		const hostname = customHost || buildServiceHostname(svc.name, sub);
-		if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
-		const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
-		serviceUrls.set(svc.name, url);
-	}
+	await Promise.all(
+		services.map(async (svc) => {
+			const sub = services.length === 1 && deployConfig.serviceName?.trim() ? deployConfig.serviceName.trim() : svc.name;
+			const hostname = customHost || buildServiceHostname(svc.name, sub);
+			if (hostname) await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
+			const url = hostname ? `${certificateArn ? "https" : "http"}://${hostname}` : `${certificateArn ? "https" : "http"}://${alb.dnsName}`;
+			serviceUrls.set(svc.name, url);
+		})
+	);
 
 	return { sharedAlbDns: alb.dnsName, serviceUrls };
 }
@@ -721,6 +772,11 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 	let consecutiveErrors = 0;
 	let encodingErrorShown = false;
 	let cloudInitFailureDetected = false;
+	const USER_DATA_SUCCESS_RE = /Deployment complete!|Instance setup complete!|Static instance setup complete!/;
+	const CLOUD_INIT_FINISHED_RE = /Cloud-init v\..*finished/s;
+	const FAST_FAIL_ERROR_RE = /Deployment failed during instance initialization \(Cloud-init error\)|Deployment did not complete successfully/;
+	const ENCODING_ERROR_RE = /charmap|codec|encode/;
+
 	for (let i = 1; i <= 72; i++) {
 		try {
 			const raw = await getConsoleOutput(instanceId, region);
@@ -766,11 +822,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				}
 
 				// Check for success signals from the different user-data flows.
-				if (
-					clean.includes("Deployment complete!") ||
-					clean.includes("Instance setup complete!") ||
-					clean.includes("Static instance setup complete!")
-				) {
+				if (USER_DATA_SUCCESS_RE.test(clean)) {
 					if (cloudInitFailureDetected) {
 						send("✅ User-data script completed despite cloud-init warnings.", "deploy");
 					} else {
@@ -780,7 +832,7 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 				}
 
 				// If cloud-init finished but we haven't seen "Deployment complete!", wait a bit more
-				if (clean.includes("Cloud-init v.") && clean.includes("finished") && i >= 12) {
+				if (CLOUD_INIT_FINISHED_RE.test(clean) && i >= 12) {
 					send("Cloud-init finished. Checking if deployment completed...", "deploy");
 					if (i >= 18) {
 						send("❌ Error: Cloud-init finished but no deployment completion signal found. The build likely failed.", "deploy");
@@ -794,15 +846,11 @@ async function waitForUserData(instanceId: string, region: string, ws: any, send
 			const sanitized = sanitizeConsoleOutput(errorMsg.replace(/[\u2190-\u21FF\u2600-\u26FF\u2700-\u27BF]/g, ""));
 
 			// Fail fast on explicit user-data/cloud-init script failures instead of continuing the polling loop.
-			if (
-				cloudInitFailureDetected ||
-				errorMsg.includes("Deployment failed during instance initialization (Cloud-init error)") ||
-				errorMsg.includes("Deployment did not complete successfully")
-			) {
+			if (cloudInitFailureDetected || FAST_FAIL_ERROR_RE.test(errorMsg)) {
 				throw e instanceof Error ? e : new Error(sanitized);
 			}
 
-			if (errorMsg.includes("charmap") || errorMsg.includes("codec") || errorMsg.includes("encode")) {
+			if (ENCODING_ERROR_RE.test(errorMsg)) {
 				if (!encodingErrorShown) {
 					send(`Note: Console output encoding issue detected (Windows compatibility). Continuing...`, "deploy");
 					encodingErrorShown = true;
@@ -935,19 +983,38 @@ export async function detectRespondingPort(
 	try {
 		const { runCommandLiveWithWebSocket } = await import("@/server-helper");
 		const devNull = process.platform === "win32" ? "NUL" : "/dev/null";
-		const candidates = Array.from(new Set([80, 8080, ...services.map(s => s.port).filter(Boolean)]));
+		const candidates = Array.from(
+			new Set([
+				80,
+				8080,
+				...services.flatMap((s) => (typeof s.port === "number" && s.port ? [s.port] : [])),
+			])
+		);
 		send(skipDockerDiagnostics ? "Waiting for nginx to be ready (this may take a minute)..." : "Waiting for application to be ready (this may take a minute)...", "deploy");
 		send("diagnostics:curl:start", "deploy");
 		for (let attempt = 1; attempt <= curlAttempts; attempt++) {
-			for (const port of candidates) {
-				try {
-					const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
-					if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
-						send(`Detected responding port ${port} (HTTP ${code})`, "deploy");
-						send("diagnostics:curl:end", "deploy");
-						return port;
-					}
-				} catch { /* try next */ }
+			const results = await Promise.all(
+				candidates.map(async (port) => {
+					try {
+						const code = (await runCommandLiveWithWebSocket("curl", ["-s", "-o", devNull, "-w", "%{http_code}", "--connect-timeout", "4", `http://${publicIp}:${port}`], ws, "deploy")).trim();
+						if (code && code !== "000" && (code.startsWith("2") || code.startsWith("3") || code.startsWith("4"))) {
+							return { port, code };
+						}
+					} catch { /* try next */ }
+					return null;
+				})
+			);
+			let hit: { port: number; code: string } | null = null;
+			for (const result of results) {
+				if (result) {
+					hit = result;
+					break;
+				}
+			}
+			if (hit) {
+				send(`Detected responding port ${hit.port} (HTTP ${hit.code})`, "deploy");
+				send("diagnostics:curl:end", "deploy");
+				return hit.port;
 			}
 			if (attempt < curlAttempts) {
 				await new Promise(r => setTimeout(r, curlPollMs));
@@ -966,10 +1033,10 @@ function buildServiceUrls(
 	certificateArn: string,
 ): { baseUrl: string; serviceUrls: Map<string, string> } {
 	const serviceUrls = new Map<string, string>();
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
-	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 	let baseUrl: string;
 	if (deployConfig.serviceName) {
 		const host = customHost || buildServiceHostname(deployConfig.serviceName, deployConfig.serviceName);
@@ -1058,10 +1125,10 @@ export async function handleEC2(
 	parentSend?: SendFn,
 ): Promise<EC2Result> {
 	const send: SendFn = parentSend || createWebSocketLogger(ws);
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2ConfigMain = (legacyEc2(deployConfig) || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigMain?.instanceId?.trim() || "";
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -1133,7 +1200,7 @@ export async function handleEC2(
 		};
 	}
 
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);
@@ -1179,10 +1246,10 @@ export async function handleEC2FromEcr(params: {
 	send: SendFn;
 }): Promise<EC2Result> {
 	const { deployConfig, imageUri, imageTag, ecrRegistry, ecrRepoName, ecrPasswordB64, serviceImageRefs, multiServiceConfig, dbConnectionString, ws, send } = params;
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigEcr = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2ConfigEcr = (legacyEc2(deployConfig) || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigEcr?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -1251,10 +1318,10 @@ export async function handleEC2FromEcr(params: {
 
 			if (!ssmResult.success) {
 				send("❌ ECR deploy failed. Check logs above.", "deploy");
-				const ec2EcrCasted = (deployConfig.ec2 || {}) as EC2Details;
+				const ec2EcrCasted = (legacyEc2(deployConfig) || {}) as EC2Details;
 				return {
 					success: false,
-					baseUrl: deployConfig.liveUrl || ec2EcrCasted?.baseUrl || "",
+					baseUrl: legacyLiveUrl(deployConfig) || ec2EcrCasted?.baseUrl || "",
 					serviceUrls: new Map(),
 					instanceId: existingInstanceId,
 					publicIp: ec2EcrCasted?.publicIp || "",
@@ -1262,7 +1329,7 @@ export async function handleEC2FromEcr(params: {
 				};
 			}
 
-			const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
+			const publicIp = ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp?.trim() || (
 				await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 			).trim();
 
@@ -1294,7 +1361,7 @@ export async function handleEC2FromEcr(params: {
 	const instanceName = generateResourceName(repoName, "ec2");
 	let instanceId: string;
 	try {
-		const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+		const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
 		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
@@ -1347,7 +1414,7 @@ export async function handleEC2FromEcr(params: {
 		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
 	}
 
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);

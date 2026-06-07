@@ -124,18 +124,19 @@ export function prioritizeDiagnosticsLogs(steps: DeployStep[]): DeployStep[] {
 	for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
 		const logs = steps[stepIndex]?.logs || [];
 		for (let i = 0; i < logs.length; i++) {
-			if (logs[i]?.includes(DIAG_START)) {
-				let endIndex = -1;
-				for (let j = i + 1; j < logs.length; j++) {
-					if (logs[j]?.includes(DIAG_END)) {
-						endIndex = j;
-						break;
-					}
+			const logLine = logs[i];
+			if (typeof logLine !== "string" || !logLine.includes(DIAG_START)) continue;
+			let endIndex = -1;
+			for (let j = i + 1; j < logs.length; j++) {
+				const endLine = logs[j];
+				if (typeof endLine === "string" && endLine.includes(DIAG_END)) {
+					endIndex = j;
+					break;
 				}
-				latestStepIndex = stepIndex;
-				latestStartIndex = i;
-				latestEndIndex = endIndex;
 			}
+			latestStepIndex = stepIndex;
+			latestStartIndex = i;
+			latestEndIndex = endIndex;
 		}
 	}
 

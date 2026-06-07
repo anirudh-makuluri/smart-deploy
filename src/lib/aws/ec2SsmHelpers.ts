@@ -98,24 +98,25 @@ export async function ensureSSMInstanceProfile(
 		}
 	}
 
-	await runAWSCommand(
-		[
-			"iam",
-			"attach-role-policy",
-			"--role-name",
-			SSM_ROLE_NAME,
-			"--policy-arn",
-			SSM_MANAGED_POLICY_ARN,
-		],
-		ws,
-		"setup"
-	);
-
-	await runAWSCommand(
-		["iam", "create-instance-profile", "--instance-profile-name", SSM_PROFILE_NAME],
-		ws,
-		"setup"
-	);
+	await Promise.all([
+		runAWSCommand(
+			[
+				"iam",
+				"attach-role-policy",
+				"--role-name",
+				SSM_ROLE_NAME,
+				"--policy-arn",
+				SSM_MANAGED_POLICY_ARN,
+			],
+			ws,
+			"setup"
+		),
+		runAWSCommand(
+			["iam", "create-instance-profile", "--instance-profile-name", SSM_PROFILE_NAME],
+			ws,
+			"setup"
+		),
+	]);
 
 	await runAWSCommand(
 		[
@@ -216,13 +217,11 @@ function normalizeDockerfilePathsInCompose(compose: string): string {
  * Keys that name a directory only (e.g. "client") are written to client/Dockerfile.
  */
 function buildDockerfileWriteScript(dockerfiles: Record<string, string>): string {
-	const entries = Object.entries(dockerfiles || {})
-		.map(([filePath, content]) => {
-			const raw = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
-			const safePath = canonicalDockerfileDeployPath(raw);
-			return [safePath, content] as [string, string];
-		})
-		.filter(([safePath]) => isSafeDockerfileRelPath(safePath));
+	const entries = Object.entries(dockerfiles || {}).flatMap(([filePath, content]) => {
+		const raw = filePath.replace(/^\.\//, "").replace(/\\/g, "/");
+		const safePath = canonicalDockerfileDeployPath(raw);
+		return isSafeDockerfileRelPath(safePath) ? [[safePath, content] as [string, string]] : [];
+	});
 
 	if (entries.length === 0) return "";
 
@@ -368,7 +367,6 @@ docker system prune -af --volumes 2>/dev/null || true
  * Writes Dockerfiles + docker-compose.yml from scan_results if missing, then builds/runs.
  */
 type ScanServiceForDocker = { dockerfile_path?: string; build_context?: string };
-type DeployCommandsInput = Record<string, unknown> | string[] | undefined;
 type DirectStaticScriptInput = {
 	repoUrl: string;
 	branch: string;
@@ -384,24 +382,6 @@ type DirectStaticScriptInput = {
 
 function shellSingleQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
-}
-
-function extractDeployCommands(commands: DeployCommandsInput): string[] {
-	if (!commands) return [];
-	if (Array.isArray(commands)) {
-		return commands.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-	}
-	const root = commands["."];
-	if (Array.isArray(root)) {
-		return root.filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-	}
-	return [];
-}
-
-function buildCommandExecutionScript(commands: string[]): string {
-	if (commands.length === 0) return "";
-	const lines = commands.map((cmd, idx) => `echo "Running deploy command ${idx + 1}/${commands.length}: ${cmd.replace(/"/g, '\\"')}"\n${cmd}`);
-	return `echo "Executing scan_results.commands for deployment..."\n${lines.join("\n\n")}\n`;
 }
 
 function buildStaticRuntimeBootstrapScript(packageManager?: string): string {
@@ -554,17 +534,13 @@ export function buildFirstDeployScript(params: {
 	dockerfiles: Record<string, string>;
 	mainPort: string;
 	scanServices?: ScanServiceForDocker[] | null;
-	commands?: DeployCommandsInput;
 }): string {
-	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort, scanServices, commands } = params;
+	const { envFileContentBase64, dockerCompose, dockerfiles, mainPort, scanServices } = params;
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const deployCommands = extractDeployCommands(commands);
-	const runScript = deployCommands.length > 0
-		? buildCommandExecutionScript(deployCommands)
-		: buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== SSM first deploy: writing artifacts and building ==="
@@ -585,7 +561,7 @@ echo "====================================== Deployment script complete! =======
 
 /**
  * Builds the bash script run on the instance for redeploy (git pull + rebuild).
- * Uses scan_results to write Dockerfiles and docker-compose.yml if missing.
+ * Uses scan_results to write Dockerfiles and docker-compose.yml if missing, then runs containers.
  */
 export function buildRedeployScript(params: {
 	repoUrl: string;
@@ -597,7 +573,6 @@ export function buildRedeployScript(params: {
 	dockerfiles: Record<string, string>;
 	mainPort: string;
 	scanServices?: ScanServiceForDocker[] | null;
-	commands?: DeployCommandsInput;
 }): string {
 	const {
 		repoUrl,
@@ -609,17 +584,13 @@ export function buildRedeployScript(params: {
 		dockerfiles,
 		mainPort,
 		scanServices,
-		commands,
 	} = params;
 	const authenticatedUrl = githubAuthenticatedCloneUrl(repoUrl, token);
 
 	const dockerfileScript = buildDockerfileWriteScript(dockerfiles);
 	const composeScript = buildComposeWriteScript(dockerCompose);
 	const singleDocker = inferSingleDockerfileBuild(dockerfiles, scanServices);
-	const deployCommands = extractDeployCommands(commands);
-	const runScript = deployCommands.length > 0
-		? buildCommandExecutionScript(deployCommands)
-		: buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
+	const runScript = buildDockerRunScript(mainPort, singleDocker, Boolean(dockerCompose?.trim()));
 
 	return `set -e
 echo "=== Disk space before redeploy ==="
@@ -834,12 +805,12 @@ export async function ensureInstanceSsmReady(
 
 	const deadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 		if (await isInstanceSsmManaged(instanceId, region, ws)) {
 			send("Instance is now registered with SSM.", "deploy");
 			return;
 		}
 		send("Still waiting for SSM agent to register...", "deploy");
+		await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 	}
 
 	// If instance has our profile but still not registered, try one reboot (helps when profile was attached after launch)
@@ -854,12 +825,12 @@ export async function ensureInstanceSsmReady(
 			await new Promise((r) => setTimeout(r, 60_000)); // wait for reboot
 			const rebootDeadline = Date.now() + SSM_REGISTRATION_TIMEOUT_MS;
 			while (Date.now() < rebootDeadline) {
-				await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 				if (await isInstanceSsmManaged(instanceId, region, ws)) {
 					send("Instance is now registered with SSM after reboot.", "deploy");
 					return;
 				}
 				send("Still waiting for SSM agent after reboot...", "deploy");
+				await new Promise((r) => setTimeout(r, SSM_REGISTRATION_POLL_MS));
 			}
 		} catch {
 			// ignore reboot errors, fall through to final error
@@ -1165,7 +1136,7 @@ export async function runRedeployViaSsm(params: {
 	send("Redeploy command sent. Streaming output...", "deploy");
 	const pollIntervalMs = 2000;
 	let lastSentLength = 0;
-	const terminalStates = ["Success", "Failed", "Cancelled", "TimedOut"];
+	const terminalStates = new Set(["Success", "Failed", "Cancelled", "TimedOut"]);
 
 	while (true) {
 		await new Promise((r) => setTimeout(r, pollIntervalMs));
@@ -1188,7 +1159,7 @@ export async function runRedeployViaSsm(params: {
 			lastSentLength = fullOutput.length;
 		}
 
-		if (status && terminalStates.includes(status)) {
+		if (status && terminalStates.has(status)) {
 			const success = status === "Success";
 			if (!success && stderr) send(`Stderr: ${stderr}`, "deploy");
 			return { success, output: fullOutput };

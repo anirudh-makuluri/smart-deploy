@@ -1,4 +1,4 @@
--- Run once in Supabase SQL Editor if you already applied schema.sql before this function existed.
+-- Run once in Supabase SQL Editor after dropping deployment_history.
 -- Also appended to supabase/schema.sql for new installs.
 
 create or replace function public.get_deploy_metrics(p_user_id text default null)
@@ -8,8 +8,9 @@ stable
 as $$
   with filtered as (
     select success, duration_ms
-    from public.deployment_history
-    where p_user_id is null or user_id = p_user_id
+    from public.deployment_runs
+    where finished_at is not null
+      and (p_user_id is null or user_id = p_user_id)
   ),
   counts as (
     select

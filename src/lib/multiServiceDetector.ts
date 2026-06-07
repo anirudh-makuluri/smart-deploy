@@ -54,6 +54,7 @@ function inferDockerfileFromCompose(appDir: string, serviceName: string, buildCo
 }
 
 const COMPOSE_FILE_NAMES = ["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"] as const;
+const COMPOSE_FILE_NAME_SET = new Set<string>(COMPOSE_FILE_NAMES);
 
 /**
  * Parses a single compose file and returns non-database compose services (same rules as detectDockerCompose).
@@ -156,7 +157,7 @@ function dedupedComposePaths(repoRoot: string, maxDepth = 6): string[] {
 			if (e.isDirectory()) {
 				if (COMPOSE_CATALOG_SKIP_DIRS.has(e.name)) continue;
 				walk(full, depth + 1);
-			} else if ((COMPOSE_FILE_NAMES as readonly string[]).includes(e.name)) {
+			} else if (COMPOSE_FILE_NAME_SET.has(e.name)) {
 				found.push(full);
 			}
 		}
@@ -171,7 +172,7 @@ function dedupedComposePaths(repoRoot: string, maxDepth = 6): string[] {
 			byDir.set(dKey, p);
 		}
 	}
-	return [...byDir.values()].sort((a, b) => a.localeCompare(b));
+	return [...byDir.values()].toSorted((a, b) => a.localeCompare(b));
 }
 
 function allocateCatalogServiceName(used: Set<string>, base: string): string {
@@ -282,7 +283,7 @@ function dedupedDockerfileParentDirs(repoRoot: string, maxDepth = 6): string[] {
 		}
 	}
 	walk(repoRoot, 0);
-	return [...found].sort((a, b) => a.localeCompare(b));
+	return [...found].toSorted((a, b) => a.localeCompare(b));
 }
 
 function pickPrimaryDockerfileInDir(absDir: string): string | null {

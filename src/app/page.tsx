@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { LandingExperience } from "@/components/landing/LandingExperience";
 import { getGlobalDeployMetricsForPublic } from "@/lib/metrics/deployMetrics";
 import { auth } from "@/lib/auth";
@@ -5,6 +6,12 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = {
+	title: "Deploy anything. Inspect everything.",
+	description:
+		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+};
 
 const webApplicationJsonLd = {
 	"@context": "https://schema.org",
@@ -32,10 +39,7 @@ export default async function Home() {
 
 	return (
 		<>
-			<script
-				type="application/ld+json"
-				dangerouslySetInnerHTML={{ __html: JSON.stringify(webApplicationJsonLd) }}
-			/>
+			<script type="application/ld+json">{JSON.stringify(webApplicationJsonLd)}</script>
 			<LandingExperience isSignedIn={Boolean(session)} publicMetrics={publicMetrics} />
 		</>
 	);

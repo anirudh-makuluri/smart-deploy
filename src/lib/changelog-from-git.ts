@@ -73,7 +73,7 @@ export function groupCommitsByDate(commits: GitChangelogCommit[]): { date: strin
 		map.set(c.date, list);
 	}
 	return [...map.entries()]
-		.sort(([a], [b]) => b.localeCompare(a))
+		.toSorted(([a], [b]) => b.localeCompare(a))
 		.map(([date, list]) => ({ date, commits: list }));
 }
 

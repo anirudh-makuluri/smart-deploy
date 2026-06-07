@@ -12,8 +12,7 @@ type MossClientLike = {
 };
 
 async function loadOptionalMossModule(): Promise<unknown> {
-	const dynamicImport = new Function("moduleName", "return import(moduleName);") as (moduleName: string) => Promise<unknown>;
-	return dynamicImport("@moss-dev/moss-web");
+	return import("@moss-dev/moss-web");
 }
 
 function toMossText(source: string, section: string, content: string): string {

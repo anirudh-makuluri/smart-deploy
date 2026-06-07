@@ -81,6 +81,7 @@ function DeploymentLogsModalContent({
 					deployError={effectiveError}
 					repoNameForLogs={repoName}
 					serviceNameForLogs={serviceName}
+					isDeploymentLive={effectiveStatus === "success"}
 				/>
 			</div>
 			<div className="mt-4 flex justify-end">

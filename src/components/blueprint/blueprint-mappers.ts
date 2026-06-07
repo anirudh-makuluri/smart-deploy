@@ -2,6 +2,7 @@ import type { BlueprintEdge, BlueprintInput, BlueprintModel, BlueprintNode } fro
 import config from "@/config";
 import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
 import { validateBlueprint } from "@/components/blueprint/blueprint-validators";
+import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
 const NODE_WIDTH = 232;
 const HUB_WIDTH = 280;
@@ -31,13 +32,35 @@ function envVarCount(raw: string | null | undefined) {
 		.filter((line) => line && !line.startsWith("#")).length;
 }
 
+type BlueprintServiceRow = {
+	name: string;
+	framework?: string;
+	language?: string;
+	port?: number;
+	build_context?: string;
+	dockerfile_path?: string;
+};
+
+function blueprintServicesFromScan(scanResults: NonNullable<BlueprintInput["scanResults"]>): BlueprintServiceRow[] {
+	if (isSdArtifactsAnalyzeScan(scanResults)) {
+		return scanResults.deploy_units.map((unit) => ({
+			name: unit.name,
+			framework: unit.framework ?? undefined,
+			language: unit.provider,
+			port: unit.port,
+			build_context: unit.root,
+			dockerfile_path: unit.type === "existing_docker" ? "Dockerfile" : `railpack:${unit.name}`,
+		}));
+	}
+	return [];
+}
+
 function buildArtifactSummary(scanResults: NonNullable<BlueprintInput["scanResults"]>) {
-	const parts: string[] = [];
-	const dockerfileCount = Object.keys(scanResults.dockerfiles ?? {}).length;
-	if (dockerfileCount > 0) parts.push(`${dockerfileCount} Dockerfile${dockerfileCount === 1 ? "" : "s"}`);
-	if (scanResults.docker_compose?.trim()) parts.push("Compose");
-	if (scanResults.nginx_conf?.trim()) parts.push("Nginx");
-	return parts.length > 0 ? parts.join(" / ") : "No generated artifacts";
+	if (isSdArtifactsAnalyzeScan(scanResults)) {
+		const n = scanResults.deploy_units.length;
+		return `${scanResults.deploy_shape} · ${n} unit${n === 1 ? "" : "s"} · Railpack`;
+	}
+	return "No analyze data";
 }
 
 export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput): BlueprintModel {
@@ -56,65 +79,46 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 
 	const nodes: BlueprintNode[] = [];
 	const edges: BlueprintEdge[] = [];
-	const services = scanResults.services ?? [];
-	const dockerfileEntries = Object.entries(scanResults.dockerfiles ?? {});
-	const artifactCount =
-		dockerfileEntries.length +
-		(scanResults.docker_compose?.trim() ? 1 : 0) +
-		(scanResults.nginx_conf?.trim() ? 1 : 0);
+	const services = blueprintServicesFromScan(scanResults);
+	const isRailpackScan = isSdArtifactsAnalyzeScan(scanResults);
+	const artifactCount = isRailpackScan ? scanResults.deploy_units.length : 0;
 	const primaryService = services.find((service) => service.name === deployment.serviceName) ?? services[0];
-	const primaryDockerfile =
-		(primaryService?.dockerfile_path && scanResults.dockerfiles?.[primaryService.dockerfile_path] !== undefined)
-			? primaryService.dockerfile_path
-			: dockerfileEntries[0]?.[0];
-	const envCount = envVarCount(deployment.envVars);
+	const primaryDockerfile = isRailpackScan ? primaryService?.dockerfile_path : undefined;
+	const envCount = deployment.secretsArn?.trim() ? envVarCount(deployment.envVars) || 1 : 0;
 	const deployConfigId = "deploy-config";
 	const issues = validateBlueprint(deployment, scanResults);
 
 	nodes.push({
 		id: deployConfigId,
 		kind: "deployConfig",
-		title: "DeployConfig",
-		subtitle: `${deployment.cloudProvider.toUpperCase()} / ${deployment.deploymentTarget}`,
+		title: deployment.serviceName || "Deployment",
+		subtitle: buildArtifactSummary(scanResults),
 		x: COLUMN_X.config,
-		y: 280,
+		y: 200,
 		width: HUB_WIDTH,
-		height: 168,
+		height: NODE_HEIGHT + 24,
 		data: {
-			service: deployment.serviceName,
-			branch: deployment.branch || "not set",
+			branch: deployment.branch || "",
+			envCount,
 			target: deployment.deploymentTarget,
-			provider: deployment.cloudProvider,
-			region: deployment.awsRegion || config.AWS_REGION || "us-west-2",
-			envVars: envCount,
-			artifacts: buildArtifactSummary(scanResults),
 		},
 	});
 
-	const renderedServices = services.length > 0
-		? services
-		: [{ name: deployment.serviceName, framework: undefined, language: undefined, port: undefined, build_context: undefined, dockerfile_path: undefined }];
-
-	renderedServices.forEach((service, index) => {
+	for (const [index, service] of services.entries()) {
 		const id = serviceNodeId(service.name);
-		const isPrimary = service.name === (primaryService?.name ?? deployment.serviceName);
 		nodes.push({
 			id,
 			kind: "service",
 			title: service.name,
-			subtitle: [service.framework, service.language].filter(Boolean).join(" / ") || (isPrimary ? "Selected service" : "Detected service"),
+			subtitle: [service.framework, service.language].filter(Boolean).join(" · ") || "Service",
 			x: COLUMN_X.context,
-			y: ROW_Y.top + index * 160,
+			y: services.length === 1 ? ROW_Y.middle : ROW_Y.top + index * 120,
 			width: NODE_WIDTH,
 			height: NODE_HEIGHT,
 			data: {
-				repo: deployment.repoName,
-				service: service.name,
-				framework: service.framework || "unknown",
-				language: service.language || "unknown",
-				port: service.port ?? "",
-				buildContext: service.build_context ?? "",
-				dockerfilePath: service.dockerfile_path ?? "",
+				port: service.port,
+				buildContext: service.build_context,
+				dockerfile: service.dockerfile_path,
 			},
 		});
 		edges.push({
@@ -122,147 +126,34 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			from: id,
 			to: deployConfigId,
 			kind: "input",
-			label: isPrimary ? "service" : "service (detected)",
+			label: "service",
 		});
-	});
+	}
 
-	nodes.push({
-		id: "branch",
-		kind: "branch",
-		title: deployment.branch || "No branch",
-		subtitle: "Deployment branch",
-		x: COLUMN_X.context,
-		y: ROW_Y.middle,
-		width: NODE_WIDTH,
-		height: NODE_HEIGHT,
-		data: {
-			branch: deployment.branch || "not set",
-			commit: scanResults.commit_sha ? scanResults.commit_sha.slice(0, 7) : "latest",
-		},
-	});
-	edges.push({
-		id: "branch-deploy-config",
-		from: "branch",
-		to: deployConfigId,
-		kind: "input",
-		label: "branch",
-	});
-
-	nodes.push({
-		id: "env-vars",
-		kind: "envVars",
-		title: envCount > 0 ? `${envCount} variables` : "No env vars",
-		subtitle: "Runtime configuration",
-		x: COLUMN_X.context,
-		y: ROW_Y.bottom,
-		width: NODE_WIDTH,
-		height: NODE_HEIGHT,
-		data: {
-			value: deployment.envVars || "",
-			count: envCount,
-			status: envCount > 0 ? "configured" : "empty",
-		},
-	});
-	edges.push({
-		id: "env-deploy-config",
-		from: "env-vars",
-		to: deployConfigId,
-		kind: "input",
-		label: "env vars",
-	});
-
-	if (primaryDockerfile) {
-		const dockerfileContent = scanResults.dockerfiles?.[primaryDockerfile] || "";
+	if (isRailpackScan && primaryService) {
+		const unit = scanResults.deploy_units.find((u) => u.name === primaryService.name) ?? scanResults.deploy_units[0];
 		nodes.push({
-			id: "dockerfile",
+			id: "railpack-plan",
 			kind: "dockerfile",
-			title: primaryDockerfile,
-			subtitle: "Build artifact",
+			title: unit?.name ? `railpack:${unit.name}` : "Railpack plan",
+			subtitle: "Railpack build plan",
 			x: COLUMN_X.artifacts,
 			y: ROW_Y.top,
 			width: NODE_WIDTH,
 			height: NODE_HEIGHT,
 			data: {
-				fileName: primaryDockerfile,
-				buildContext: primaryService?.build_context || ".",
-				content: dockerfileContent,
+				fileName: primaryDockerfile || "railpack",
+				buildContext: unit?.root || ".",
+				content: unit?.artifacts.railpack_plan ? JSON.stringify(unit.artifacts.railpack_plan, null, 2) : "",
 			},
 		});
 		edges.push({
-			id: "dockerfile-service",
-			from: "dockerfile",
-			to: primaryService ? serviceNodeId(primaryService.name) : serviceNodeId(deployment.serviceName),
+			id: "railpack-service",
+			from: "railpack-plan",
+			to: serviceNodeId(primaryService.name),
 			kind: "reference",
 			label: "builds",
 		});
-	}
-
-	if (scanResults.docker_compose?.trim()) {
-		nodes.push({
-			id: "compose",
-			kind: "compose",
-			title: "docker-compose.yml",
-			subtitle: "Compose artifact",
-			x: COLUMN_X.artifacts,
-			y: ROW_Y.middle,
-			width: NODE_WIDTH,
-			height: NODE_HEIGHT,
-			data: {
-				services: services.length || 1,
-				included: "yes",
-				content: scanResults.docker_compose,
-			},
-		});
-		edges.push({
-			id: "compose-deploy-config",
-			from: "compose",
-			to: deployConfigId,
-			kind: "input",
-			label: "artifact",
-		});
-		if (primaryDockerfile) {
-			edges.push({
-				id: "dockerfile-compose",
-				from: "dockerfile",
-				to: "compose",
-				kind: "reference",
-				label: "references",
-			});
-		}
-	}
-
-	if (scanResults.nginx_conf?.trim()) {
-		nodes.push({
-			id: "nginx",
-			kind: "nginx",
-			title: "nginx.conf",
-			subtitle: "Routing artifact",
-			x: COLUMN_X.artifacts,
-			y: ROW_Y.bottom,
-			width: NODE_WIDTH,
-			height: NODE_HEIGHT,
-			data: {
-				present: "yes",
-				content: scanResults.nginx_conf,
-			},
-		});
-		edges.push({
-			id: "nginx-deploy-config",
-			from: "nginx",
-			to: deployConfigId,
-			kind: "input",
-			label: "artifact",
-		});
-
-		if (primaryService) {
-			edges.push({
-				id: "nginx-service-traffic",
-				from: "nginx",
-				to: serviceNodeId(primaryService.name),
-				kind: "traffic",
-				label: "routes",
-			});
-		}
 	}
 
 	nodes.push({
@@ -275,10 +166,10 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		width: NODE_WIDTH,
 		height: NODE_HEIGHT,
 		data: {
-			region: deployment.awsRegion || "",
+			region: deployment.region || "",
 			provider: deployment.cloudProvider,
 			target: deployment.deploymentTarget,
-			instanceType: deployment.ec2?.instanceType || DEFAULT_EC2_INSTANCE_TYPE,
+			instanceType: DEFAULT_EC2_INSTANCE_TYPE,
 		},
 	});
 	edges.push({
@@ -292,8 +183,8 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 	nodes.push({
 		id: "custom-domain",
 		kind: "customDomain",
-		title: deployment.liveUrl?.trim()
-			? deployment.liveUrl.replace(/^https?:\/\//, "")
+		title: deployment.hostedSubdomain?.trim()
+			? `${deployment.hostedSubdomain}.${process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz"}`
 			: "No custom domain",
 		subtitle: "Custom domain",
 		x: COLUMN_X.infrastructure,
@@ -301,7 +192,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		width: NODE_WIDTH,
 		height: NODE_HEIGHT,
 		data: {
-			url: deployment.liveUrl || "",
+			url: deployment.hostedSubdomain || "",
 		},
 	});
 
@@ -312,15 +203,6 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		kind: "input",
 		label: "domain",
 	});
-	if (scanResults.nginx_conf?.trim()) {
-		edges.push({
-			id: "domain-nginx",
-			from: "custom-domain",
-			to: "nginx",
-			kind: "traffic",
-			label: "public",
-		});
-	}
 
 	return {
 		nodes,
@@ -328,7 +210,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		issues,
 		metrics: {
 			serviceCount: services.length,
-			publicEndpoints: deployment.liveUrl?.trim() ? 1 : 0,
+			publicEndpoints: deployment.hostedSubdomain?.trim() ? 1 : 0,
 			artifactCount,
 		},
 	};

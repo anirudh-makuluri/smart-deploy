@@ -1,6 +1,7 @@
 import { DeployConfig, DeployStep } from "@/app/types";
 import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 import { getDeploymentDisplayUrl } from "@/lib/utils";
+import { subdomainFromHostedUrl } from "@/lib/hostedUrl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,10 +11,10 @@ export type DeployCompleteWsPayload = {
 	deploymentTarget?: string | null;
 	finalStatus?: DeployConfig["status"] | null;
 	rolledBack?: boolean;
-	ec2?: DeployConfig["ec2"];
+	cloudResources?: DeployConfig["cloudResources"];
 	error?: string;
-	vercelDnsAdded?: boolean;
-	vercelDnsError?: string | null;
+	customDnsAdded?: boolean;
+	customDnsError?: string | null;
 	customUrl?: string | null;
 };
 
@@ -203,10 +204,11 @@ export function useWorkerWebSocketSession({
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
 	const [deployStatus, setDeployStatus] = useState<DeployStatus>("not-started");
 	const [deployError, setDeployError] = useState<string | null>(null);
-	const [vercelDnsStatus, setVercelDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
-	const [vercelDnsError, setVercelDnsError] = useState<string | null>(null);
+	const [customDnsStatus, setCustomDnsStatus] = useState<"idle" | "adding" | "success" | "error">("idle");
+	const [customDnsError, setCustomDnsError] = useState<string | null>(null);
 	const [serviceLogs, setServiceLogs] = useState<ServiceLogEntry[]>([]);
 	const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
+	const [liveDeployConfig, setLiveDeployConfig] = useState<DeployConfig | null>(null);
 
 	const deployConfigRef = useRef<DeployConfig | null>(null);
 	const wasDeployingRef = useRef(false);
@@ -220,6 +222,12 @@ export function useWorkerWebSocketSession({
 	const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const openSocketRef = useRef<(onReady?: () => void) => WebSocket | null>(() => null);
 	const everOpenedRef = useRef(false);
+	const createWebSocketRef = useRef<() => WebSocket | null>(() => null);
+
+	const assignDeployConfig = useCallback((config: DeployConfig | null) => {
+		deployConfigRef.current = config;
+		setLiveDeployConfig(config);
+	}, []);
 
 	const clearRetryTimer = useCallback(() => {
 		if (retryTimerRef.current != null) {
@@ -227,6 +235,16 @@ export function useWorkerWebSocketSession({
 			retryTimerRef.current = null;
 		}
 	}, []);
+
+	const disconnectSocket = useCallback(() => {
+		connectInFlightRef.current = false;
+		connectionAttemptedRef.current = false;
+		everOpenedRef.current = false;
+		onReadyQueueRef.current = [];
+		clearRetryTimer();
+		wsRef.current?.close();
+		wsRef.current = null;
+	}, [clearRetryTimer]);
 
 	const flushOnReadyQueue = useCallback(() => {
 		const queue = onReadyQueueRef.current;
@@ -419,8 +437,8 @@ export function useWorkerWebSocketSession({
 
 							if (!completePayload.success) {
 								setDeployError(completePayload.error ?? "Deployment failed");
-								setVercelDnsStatus("idle");
-								setVercelDnsError(null);
+								setCustomDnsStatus("idle");
+								setCustomDnsError(null);
 								if (deployConfigRef.current) {
 									const currentConfig = deployConfigRef.current;
 									const deploymentTarget = completePayload.deploymentTarget;
@@ -428,15 +446,16 @@ export function useWorkerWebSocketSession({
 										typeof completePayload.deployUrl === "string" && completePayload.deployUrl.trim() !== ""
 											? completePayload.deployUrl.trim()
 											: undefined;
-									deployConfigRef.current = {
+									assignDeployConfig({
 										...currentConfig,
 										...(typeof deploymentTarget === "string" && deploymentTarget
 											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
 											: {}),
-										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
-										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
+										...(completePayload.cloudResources != null
+											? { cloudResources: completePayload.cloudResources }
+											: {}),
 										status: finalStatus,
-									};
+									});
 								}
 							} else {
 								setDeployError(null);
@@ -449,28 +468,29 @@ export function useWorkerWebSocketSession({
 									const deploymentTarget =
 										(completePayload.deploymentTarget as DeployConfig["deploymentTarget"] | null | undefined) ??
 										currentConfig.deploymentTarget;
+									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
+									const hostedSubdomain = customUrl ? subdomainFromHostedUrl(customUrl) : currentConfig.hostedSubdomain;
 									const updated: DeployConfig = {
 										...currentConfig,
-										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
 										status: "running",
 										...(deploymentTarget ? { deploymentTarget } : {}),
-										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
+										...(completePayload.cloudResources != null
+											? { cloudResources: completePayload.cloudResources }
+											: {}),
+										hostedSubdomain: hostedSubdomain ?? null,
 									};
-									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
-									const displayUrl = getDeploymentDisplayUrl(updated)?.trim() ?? "";
-									updated.liveUrl = customUrl || displayUrl || deployUrlFromPayload || currentConfig.liveUrl || null;
-									deployConfigRef.current = updated;
+									assignDeployConfig(updated);
 								}
 								setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));
-								if (completePayload.vercelDnsAdded === true) {
-									setVercelDnsStatus("success");
-									setVercelDnsError(null);
-								} else if (completePayload.vercelDnsError) {
-									setVercelDnsStatus("error");
-									setVercelDnsError(completePayload.vercelDnsError);
+								if (completePayload.customDnsAdded === true) {
+									setCustomDnsStatus("success");
+									setCustomDnsError(null);
+								} else if (completePayload.customDnsError) {
+									setCustomDnsStatus("error");
+									setCustomDnsError(completePayload.customDnsError);
 								} else {
-									setVercelDnsStatus("idle");
-									setVercelDnsError(null);
+									setCustomDnsStatus("idle");
+									setCustomDnsError(null);
 								}
 							}
 
@@ -512,7 +532,7 @@ export function useWorkerWebSocketSession({
 						retryTimerRef.current = setTimeout(() => {
 							retryTimerRef.current = null;
 							if (connectionEnabledRef.current) {
-								createWebSocket();
+								createWebSocketRef.current();
 							}
 						}, 1500);
 					}
@@ -528,7 +548,7 @@ export function useWorkerWebSocketSession({
 					retryTimerRef.current = setTimeout(() => {
 						retryTimerRef.current = null;
 						if (connectionEnabledRef.current) {
-							createWebSocket();
+							createWebSocketRef.current();
 						}
 					}, 1000);
 				}
@@ -536,7 +556,7 @@ export function useWorkerWebSocketSession({
 		})();
 
 		return null;
-	}, [announceActiveDeployments, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
+	}, [announceActiveDeployments, assignDeployConfig, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
@@ -559,6 +579,14 @@ export function useWorkerWebSocketSession({
 	}, [createWebSocket]);
 
 	useEffect(() => {
+		createWebSocketRef.current = createWebSocket;
+	}, [createWebSocket]);
+
+	useEffect(() => {
+		connectionEnabledRef.current = connectionEnabled;
+	}, [connectionEnabled]);
+
+	useEffect(() => {
 		openSocketRef.current = openSocket;
 		return () => {
 			openSocketRef.current = () => null;
@@ -566,59 +594,55 @@ export function useWorkerWebSocketSession({
 	}, [openSocket]);
 
 	useEffect(() => {
-		connectionEnabledRef.current = connectionEnabled;
-		if (typeof window === "undefined") return;
+		if (typeof window === "undefined") return () => {};
 
 		if (!connectionEnabled) {
-			connectInFlightRef.current = false;
-			connectionAttemptedRef.current = false;
-			everOpenedRef.current = false;
-			onReadyQueueRef.current = [];
-			clearRetryTimer();
-			wsRef.current?.close();
-			wsRef.current = null;
-				setHasConnectedOnce(false);
-			setSocketStatus("closed");
-			setDeployError(null);
-			return;
+			disconnectSocket();
+			return () => {};
 		}
 
 		openSocket();
-	}, [clearRetryTimer, connectionEnabled, openSocket]);
+		return () => {};
+	}, [connectionEnabled, disconnectSocket, openSocket]);
 
-	useEffect(() => {
-		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") return;
-
+	const requestInitialLogs = useCallback(() => {
 		const active = getActiveDeployment();
 		const payloadUserId =
 			active?.repoName === repoName && active?.serviceName === serviceName ? active.userID : undefined;
+		const socket = wsRef.current;
+		if (socket?.readyState === WebSocket.OPEN) {
+			socket.send(JSON.stringify({
+				type: "get_deploy_logs",
+				payload: { repoName, serviceName, userID: payloadUserId },
+			}));
+			socket.send(JSON.stringify({
+				type: "service_logs",
+				payload: { serviceName, repoName },
+			}));
+		}
+	}, [repoName, serviceName]);
 
-		openSocket(() => {
-			const socket = wsRef.current;
-			if (socket?.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({
-					type: "get_deploy_logs",
-					payload: { repoName, serviceName, userID: payloadUserId },
-				}));
-				socket.send(JSON.stringify({
-					type: "service_logs",
-					payload: { serviceName, repoName },
-				}));
-			}
-		});
-	}, [connectionEnabled, openSocket, repoName, serviceName]);
+	useEffect(() => {
+		if (!connectionEnabled || !repoName || !serviceName || typeof window === "undefined") {
+			return () => {};
+		}
+
+		openSocket(requestInitialLogs);
+		return () => {};
+	}, [connectionEnabled, openSocket, repoName, requestInitialLogs, serviceName]);
 
 	useEffect(() => {
 		return () => {
-			connectInFlightRef.current = false;
-			onReadyQueueRef.current = [];
-			clearRetryTimer();
-			wsRef.current?.close();
+			disconnectSocket();
 		};
-	}, [clearRetryTimer]);
+	}, [disconnectSocket]);
+
+	const effectiveSocketStatus: SocketStatus = connectionEnabled ? socketStatus : "closed";
+	const effectiveDeployError = connectionEnabled ? deployError : null;
+	const effectiveHasConnectedOnce = connectionEnabled ? hasConnectedOnce : false;
 
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID?: string) => {
-		deployConfigRef.current = deployConfig;
+		assignDeployConfig(deployConfig);
 		wasDeployingRef.current = true;
 		setDeployError(null);
 		setDeployStatus("running");
@@ -657,7 +681,7 @@ export function useWorkerWebSocketSession({
 		token: string,
 		userID?: string
 	) => {
-		deployConfigRef.current = deployConfig;
+		assignDeployConfig(deployConfig);
 		wasDeployingRef.current = true;
 		setDeployError(null);
 		setDeployStatus("running");
@@ -695,18 +719,19 @@ export function useWorkerWebSocketSession({
 	return {
 		steps,
 		deployLogEntries,
-		socketStatus,
+		socketStatus: effectiveSocketStatus,
 		sendDeployConfig,
 		sendRollbackRequest,
 		openSocket,
 		deployConfigRef,
+		liveDeployConfig,
 		deployStatus,
-		deployError,
-		vercelDnsStatus,
-		vercelDnsError,
+		deployError: effectiveDeployError,
+		customDnsStatus,
+		customDnsError,
 		initiateServiceLogs,
 		serviceLogs,
-		hasConnectedOnce,
+		hasConnectedOnce: effectiveHasConnectedOnce,
 		setOnDeployFinished,
 	};
 }

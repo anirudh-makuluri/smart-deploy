@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import type { DeployConfig } from "@/app/types";
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
 const mockUseSession = vi.fn();
 const mockUseWorkerWebSocket = vi.fn();
@@ -118,27 +119,13 @@ vi.mock("@/lib/graphqlClient", () => ({
 	prefillInfra: vi.fn(),
 }));
 
-const baseDeployment: DeployConfig = {
+const baseDeployment: DeployConfig = makeDeployment({
 	id: "dep-1",
 	repoName: "smart-deploy",
+	repoUrl: "https://github.com/acme/smart-deploy",
 	serviceName: "web",
-	url: "https://github.com/acme/smart-deploy",
-	branch: "main",
 	status: "running",
-	commitSha: null,
-	envVars: null,
-	liveUrl: null,
-	screenshotUrl: null,
-	firstDeployment: null,
-	lastDeployment: null,
-	revision: null,
-	cloudProvider: "aws",
-	deploymentTarget: "ec2",
-	awsRegion: "us-west-2",
-	ec2: null,
-	cloudRun: null,
-	scanResults: {},
-};
+});
 
 function renderWithQueryClient(ui: React.ReactElement) {
 	const queryClient = new QueryClient({
@@ -239,7 +226,7 @@ describe("DeployWorkspace", () => {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
 			activeServiceName: "web",
-			deployments: [{ ...baseDeployment, liveUrl: "https://web.example.com" }],
+			deployments: [{ ...baseDeployment, hostedSubdomain: "web" }],
 		};
 
 		renderWithQueryClient(<DeployWorkspace />);
@@ -265,7 +252,7 @@ describe("DeployWorkspace", () => {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
 			activeServiceName: "web",
-			deployments: [{ ...baseDeployment, liveUrl: "https://web.example.com" }],
+			deployments: [{ ...baseDeployment, hostedSubdomain: "web" }],
 		};
 
 		renderWithQueryClient(<DeployWorkspace />);
@@ -295,6 +282,7 @@ describe("DeployWorkspace", () => {
 						handler({
 							success: true,
 							deployUrl: "https://web.example.com",
+							customUrl: "https://web.smart-deploy.xyz",
 						});
 					});
 				}
@@ -316,7 +304,7 @@ describe("DeployWorkspace", () => {
 					repoName: "smart-deploy",
 					serviceName: "web",
 					status: "running",
-					liveUrl: "https://web.example.com",
+					hostedSubdomain: "web",
 				})
 			);
 		});
@@ -385,6 +373,7 @@ describe("DeployWorkspace", () => {
 							error: "Deployment verification failed. Rolled back automatically to abc1234.",
 							finalStatus: "running",
 							deployUrl: "https://restored.example.com",
+							customUrl: "https://restored.smart-deploy.xyz",
 						});
 					});
 				}
@@ -395,7 +384,7 @@ describe("DeployWorkspace", () => {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
 			activeServiceName: "web",
-			deployments: [{ ...baseDeployment, liveUrl: "https://previous.example.com" }],
+			deployments: [{ ...baseDeployment, hostedSubdomain: "previous" }],
 		};
 
 		renderWithQueryClient(<DeployWorkspace />);
@@ -406,7 +395,7 @@ describe("DeployWorkspace", () => {
 					repoName: "smart-deploy",
 					serviceName: "web",
 					status: "running",
-					liveUrl: "https://restored.example.com",
+					hostedSubdomain: "restored",
 				})
 			);
 		});
@@ -434,7 +423,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{
 				...baseDeployment,
 				status: "didnt_deploy",
-				liveUrl: "https://web.example.com",
+				hostedSubdomain: "web",
 				screenshotUrl: "https://cdn.example.com/shot.png",
 				scanResults: { dockerfiles: { Dockerfile: "FROM node:20" }, nginx_conf: "events {}" },
 			}],
@@ -464,7 +453,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{
 				...baseDeployment,
 				status: "didnt_deploy",
-				liveUrl: "https://web.example.com",
+				hostedSubdomain: "web",
 				screenshotUrl: "https://cdn.example.com/shot.png",
 			}],
 		};
@@ -496,7 +485,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{
 				...baseDeployment,
 				status: "running",
-				liveUrl: "https://web.example.com",
+				hostedSubdomain: "web",
 				screenshotUrl: "https://cdn.example.com/shot.png",
 			}],
 		};

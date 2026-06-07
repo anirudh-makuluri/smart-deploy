@@ -17,14 +17,14 @@ export type DetectedRepoCacheEntry = {
 };
 
 const sortRepos = (list: repoType[]) =>
-	[...list].sort((a, b) => {
+	list.toSorted((a, b) => {
 		const dateA = a.latest_commit?.date ? new Date(a.latest_commit.date).getTime() : 0;
 		const dateB = b.latest_commit?.date ? new Date(b.latest_commit.date).getTime() : 0;
 		return dateB - dateA;
 	});
 
 const sortDeployments = (list: DeployConfig[]) =>
-	[...list].sort((a, b) => {
+	list.toSorted((a, b) => {
 		const dateA = a.lastDeployment ? new Date(a.lastDeployment).getTime() : 0;
 		const dateB = b.lastDeployment ? new Date(b.lastDeployment).getTime() : 0;
 		return dateB - dateA;
@@ -98,7 +98,7 @@ function matchesRepoIdentifier(deployment: DeployConfig, repoIdentifier: string)
 	const target = normalizeRepoIdentifier(repoIdentifier);
 	if (!target) return false;
 
-	const deploymentUrl = normalizeRepoIdentifier(deployment.url ?? "");
+	const deploymentUrl = normalizeRepoIdentifier(deployment.repoUrl ?? "");
 	const deploymentRepoName = normalizeRepoIdentifier(deployment.repoName ?? "");
 	const deploymentUrlTail = deploymentUrl.split("/").slice(-2).join("/");
 
@@ -292,9 +292,18 @@ export const useAppData = create<AppState>((set, get) => ({
 			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existing = deployments.find(matchKey);
+		const scanResultsPartial = partial.scanResults;
+		const responseIdFromScan =
+			scanResultsPartial &&
+			typeof scanResultsPartial === "object" &&
+			!Array.isArray(scanResultsPartial) &&
+			typeof (scanResultsPartial as { response_id?: unknown }).response_id === "string"
+				? String((scanResultsPartial as { response_id: string }).response_id).trim() || null
+				: null;
 		const merged: DeployConfig = withDeployInfraDefaults({
 			...(existing ?? ({} as DeployConfig)),
 			...partial,
+			...(partial.responseId === undefined && responseIdFromScan ? { responseId: responseIdFromScan } : {}),
 		} as DeployConfig);
 
 		let updatedList: DeployConfig[];

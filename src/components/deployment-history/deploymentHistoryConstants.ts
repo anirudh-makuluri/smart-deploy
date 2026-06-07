@@ -1,0 +1,1 @@
+export const DEPLOYMENT_HISTORY_PAGE_LIMIT = 10;
