@@ -4,7 +4,7 @@ import * as React from "react";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { parseEnvVarsToDisplay, buildEnvVarsString, sanitizeSubdomain } from "@/lib/utils";
+import { sanitizeSubdomain } from "@/lib/utils";
 import { toast } from "sonner";
 import type { DeployConfig } from "@/app/types";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/lib/aws/ec2InstanceTypes";
 import { updateCustomDomain } from "@/lib/graphqlClient";
 import { useAppData } from "@/store/useAppData";
+import { useDeploymentEnvSecrets } from "@/custom-hooks/useDeploymentEnvSecrets";
 import {
 	formSchema,
 	getHostedUrlFromSubdomain,
@@ -28,11 +29,16 @@ type UseConfigTabsProps = {
 };
 
 export function useConfigTabs({ onConfigChange, deployment, branches: branchesProp }: UseConfigTabsProps) {
-	const [envEntries, setEnvEntries] = useState<{ name: string; value: string }[]>(() =>
-		parseEnvVarsToDisplay(deployment.envVars ?? "")
-	);
-
 	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
+	const envSecrets = useDeploymentEnvSecrets({
+		repoName: deployment.repoName,
+		serviceName: deployment.serviceName,
+		secretsArn: deployment.secretsArn,
+		region: deployment.region,
+		repoUrl: deployment.repoUrl,
+		branch: deployment.branch,
+	});
+
 	const [isEnvSheetOpen, setIsEnvSheetOpen] = useState(false);
 	const hostedSubdomainVerifying = false;
 	const [hostedSubdomainStatus, setHostedSubdomainStatus] = useState<{
@@ -48,7 +54,7 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 		resolver: zodResolver(formSchema),
 		defaultValues: {
 			branch: deployment.branch,
-			envVars: deployment.envVars ?? "",
+			envVars: "",
 			hostedSubdomain: savedSubdomain,
 		},
 	});
@@ -56,6 +62,11 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 	const hostedSubdomainValue = useWatch({ control: form.control, name: "hostedSubdomain" });
 	const [hostedSubdomainSaving, setHostedSubdomainSaving] = useState(false);
 	const isHostedSubdomainDirty = hostedSubdomainValue !== savedSubdomain;
+
+	const envEntryCount = React.useMemo(
+		() => envSecrets.entries.filter((entry) => entry.name.trim().length > 0).length,
+		[envSecrets.entries]
+	);
 
 	const handleSaveHostedSubdomain = async () => {
 		if (!deployment) return;
@@ -100,23 +111,6 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 		setHostedSubdomainStatus({ type: null });
 	};
 
-	const handleEnvEntriesChange = React.useCallback((entries: { name: string; value: string }[]) => {
-		setEnvEntries(entries);
-	}, []);
-
-	React.useEffect(() => {
-		const envString = buildEnvVarsString(envEntries);
-		if (envString === deployment.envVars) return undefined;
-
-		const timeout = setTimeout(() => {
-			onConfigChange({ envVars: envString });
-		}, 500);
-
-		return () => {
-			clearTimeout(timeout);
-		};
-	}, [deployment.envVars, envEntries, onConfigChange]);
-
 	const hasScanResults = !!deployment.scanResults && Object.keys(deployment.scanResults).length > 0;
 
 	const ec2InstanceOptions = React.useMemo(() => [...EC2_INSTANCE_TYPE_PRESETS], []);
@@ -135,10 +129,12 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 		form,
 		deployment,
 		deploymentCloudResources,
-		envEntries,
+		envEntries: envSecrets.entries,
+		envSecretsLoading: envSecrets.isLoading,
+		envSecretsSaving: envSecrets.isSaving,
 		isEnvSheetOpen,
 		setIsEnvSheetOpen,
-		handleEnvEntriesChange,
+		handleEnvEntriesChange: envSecrets.handleEntriesChange,
 		hostedSubdomainVerifying,
 		hostedSubdomainStatus,
 		setHostedSubdomainStatus,
@@ -150,7 +146,7 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 		ec2InstanceOptions,
 		ec2InstanceValue,
 		branchSelectOptions,
+		envEntryCount,
 		onConfigChange,
 	};
 }
-

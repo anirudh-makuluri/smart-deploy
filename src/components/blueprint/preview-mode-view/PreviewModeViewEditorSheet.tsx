@@ -32,6 +32,8 @@ type PreviewModeViewEditorSheetProps = {
 	onUpdateHostedSubdomainDraft: (draft: string, status?: HostedSubdomainStatus) => void;
 	onSaveHostedSubdomain: () => void;
 	onCancelHostedSubdomain: () => void;
+	envVarsString: string;
+	onSaveEnvVarsString: (value: string) => Promise<void>;
 };
 
 export function PreviewModeViewEditorSheet({
@@ -53,6 +55,8 @@ export function PreviewModeViewEditorSheet({
 	onUpdateHostedSubdomainDraft,
 	onSaveHostedSubdomain,
 	onCancelHostedSubdomain,
+	envVarsString,
+	onSaveEnvVarsString,
 }: PreviewModeViewEditorSheetProps) {
 	return (
 		<Sheet open={editor !== null} onOpenChange={(open) => onEditorChange(open ? editor : null)}>
@@ -91,6 +95,8 @@ export function PreviewModeViewEditorSheet({
 					onUpdateHostedSubdomainDraft={onUpdateHostedSubdomainDraft}
 					onSaveHostedSubdomain={onSaveHostedSubdomain}
 					onCancelHostedSubdomain={onCancelHostedSubdomain}
+					envVarsString={envVarsString}
+					onSaveEnvVarsString={onSaveEnvVarsString}
 				/>
 			</SheetContent>
 		</Sheet>

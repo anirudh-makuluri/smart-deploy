@@ -51,7 +51,7 @@ export default function ConfigTabs({
 				/>
 
 				<ConfigTabsEnvVarsSection
-					envEntryCount={tabs.envEntries.length}
+					envEntryCount={tabs.envEntryCount}
 					onEdit={() => tabs.setIsEnvSheetOpen(true)}
 				/>
 

@@ -8,6 +8,11 @@ import {
 import type { DeployConfig } from "../../app/types";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import config from "../../config";
+import {
+	buildEcsContainerSecrets,
+	ensureEcsExecutionRoleSecretsAccess,
+	getDeploymentEnvSecretObject,
+} from "./deploymentSecrets";
 import { getAwsClientConfig } from "./sdkClients";
 import type { EC2Result } from "./handleEC2";
 import {
@@ -172,6 +177,22 @@ export async function deployRailpackServerToEcs(params: {
 	const serviceName = awsNameChunk(`sd-${repoName}-${unitName}`, 255);
 	const family = awsNameChunk(`sd-${repoName}-${unitName}`, 200);
 
+	const secretsArn = deployConfig.secretsArn?.trim() || "";
+	let containerSecrets: { name: string; valueFrom: string }[] = [];
+	let containerEnvironment = containerEnvFromDeploy(deployConfig.envVars);
+
+	if (secretsArn) {
+		send("Loading runtime environment from Secrets Manager...", "deploy");
+		await ensureEcsExecutionRoleSecretsAccess(region);
+		const secretObject = await getDeploymentEnvSecretObject({ region, secretsArn });
+		const secretKeys = Object.keys(secretObject);
+		containerSecrets = buildEcsContainerSecrets(secretsArn, secretKeys);
+		containerEnvironment = [];
+		send(`Injecting ${containerSecrets.length} secret(s) into the ECS task definition.`, "deploy");
+	} else if (containerEnvironment.length > 0) {
+		send(`Injecting ${containerEnvironment.length} environment variable(s) into the ECS task.`, "deploy");
+	}
+
 	send(`Registering Fargate task definition (${family})...`, "deploy");
 	const registerOut = await ecs.send(
 		new RegisterTaskDefinitionCommand({
@@ -187,7 +208,8 @@ export async function deployRailpackServerToEcs(params: {
 					image: imageUri,
 					essential: true,
 					portMappings: [{ containerPort, hostPort: containerPort, protocol: "tcp" }],
-					environment: containerEnvFromDeploy(deployConfig.envVars),
+					environment: containerEnvironment,
+					...(containerSecrets.length > 0 ? { secrets: containerSecrets } : {}),
 					logConfiguration: {
 						logDriver: "awslogs",
 						options: {

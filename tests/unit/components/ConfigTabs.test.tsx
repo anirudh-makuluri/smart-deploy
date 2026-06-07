@@ -31,6 +31,17 @@ vi.mock("@/lib/aws/ec2InstanceTypes", () => ({
 	formatApproxEc2PriceCompact: vi.fn(() => "$0.0104/hr"),
 }));
 
+vi.mock("@/custom-hooks/useDeploymentEnvSecrets", () => ({
+	useDeploymentEnvSecrets: () => ({
+		entries: [{ name: "", value: "" }],
+		envVarsString: "",
+		isLoading: false,
+		isSaving: false,
+		handleEntriesChange: vi.fn(),
+		saveEnvString: vi.fn(),
+	}),
+}));
+
 describe("ConfigTabs", () => {
 	it("allows saving a custom domain for a draft deployment", async () => {
 		mockUpdateCustomDomain.mockResolvedValue({ message: "Custom domain saved" });

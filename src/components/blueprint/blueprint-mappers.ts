@@ -84,7 +84,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 	const artifactCount = isRailpackScan ? scanResults.deploy_units.length : 0;
 	const primaryService = services.find((service) => service.name === deployment.serviceName) ?? services[0];
 	const primaryDockerfile = isRailpackScan ? primaryService?.dockerfile_path : undefined;
-	const envCount = envVarCount(deployment.envVars);
+	const envCount = deployment.secretsArn?.trim() ? envVarCount(deployment.envVars) || 1 : 0;
 	const deployConfigId = "deploy-config";
 	const issues = validateBlueprint(deployment, scanResults);
 

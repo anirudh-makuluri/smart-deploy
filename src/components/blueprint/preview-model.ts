@@ -266,7 +266,7 @@ export function buildPreviewModel(params: {
 			stepId: "deploy",
 			kind: "envVars",
 			title: "Runtime env vars",
-			subtitle: safeTrim(deployment.envVars) ? "Injected into the container" : "None",
+			subtitle: safeTrim(deployment.secretsArn) ? "Stored in Secrets Manager" : "None",
 			action: "openEnvVars",
 		});
 	}

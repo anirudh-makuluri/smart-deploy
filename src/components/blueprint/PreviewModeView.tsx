@@ -52,6 +52,8 @@ export default function PreviewModeView({
 				onUpdateHostedSubdomainDraft={view.updateHostedSubdomainDraft}
 				onSaveHostedSubdomain={view.handleSaveHostedSubdomain}
 				onCancelHostedSubdomain={view.handleCancelHostedSubdomain}
+				envVarsString={view.envVarsString}
+				onSaveEnvVarsString={view.onSaveEnvVarsString}
 			/>
 		</div>
 	);

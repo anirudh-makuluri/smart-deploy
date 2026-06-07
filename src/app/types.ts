@@ -87,8 +87,8 @@ export type DeployConfig = {
 	/** Commit SHA that was deployed; null if never deployed */
 	commitSha: string | null;
 	/**
-	 * Runtime/UI only — not persisted on deployments (AWS Secrets Manager in a follow-up).
-	 * Passed through deploy pipeline until secrets_arn is wired.
+	 * Legacy session-only env string (CodeBuild build-time until phase 2).
+	 * Runtime ECS vars are stored in AWS Secrets Manager (`secretsArn`).
 	 */
 	envVars?: string | null;
 	/** User-chosen subdomain on the platform domain; globally unique when set */

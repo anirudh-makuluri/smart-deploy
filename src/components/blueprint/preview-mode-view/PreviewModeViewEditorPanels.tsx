@@ -1,3 +1,4 @@
+import * as React from "react";
 import type { DeployConfig } from "@/app/types";
 import type { SDDeployUnit } from "@/app/types";
 import type { PreviewModel } from "@/components/blueprint/preview-model";
@@ -27,6 +28,8 @@ type PreviewModeViewEditorPanelsProps = {
 	onUpdateHostedSubdomainDraft: (draft: string, status?: HostedSubdomainStatus) => void;
 	onSaveHostedSubdomain: () => void;
 	onCancelHostedSubdomain: () => void;
+	envVarsString: string;
+	onSaveEnvVarsString: (value: string) => Promise<void>;
 };
 
 export function PreviewModeViewEditorPanels({
@@ -48,7 +51,26 @@ export function PreviewModeViewEditorPanels({
 	onUpdateHostedSubdomainDraft,
 	onSaveHostedSubdomain,
 	onCancelHostedSubdomain,
+	envVarsString,
+	onSaveEnvVarsString,
 }: PreviewModeViewEditorPanelsProps) {
+	const [envDraft, setEnvDraft] = React.useState(envVarsString);
+
+	React.useEffect(() => {
+		setEnvDraft(envVarsString);
+	}, [envVarsString]);
+
+	React.useEffect(() => {
+		if (editor?.kind !== "envVars") return undefined;
+		if (envDraft === envVarsString) return undefined;
+		const timeout = setTimeout(() => {
+			void onSaveEnvVarsString(envDraft).catch(() => undefined);
+		}, 700);
+		return () => {
+			clearTimeout(timeout);
+		};
+	}, [editor?.kind, envDraft, envVarsString, onSaveEnvVarsString]);
+
 	return (
 		<div className="mt-6 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 stealth-scrollbar">
 			{editor?.kind === "branch" ? (
@@ -76,8 +98,8 @@ export function PreviewModeViewEditorPanels({
 				<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
 					<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Runtime env vars</div>
 					<Textarea
-						value={deployment.envVars ?? ""}
-						onChange={(e) => void onUpdateDeployment({ envVars: e.target.value })}
+						value={envDraft}
+						onChange={(e) => setEnvDraft(e.target.value)}
 						placeholder="KEY=value"
 						className="min-h-44 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
 					/>
