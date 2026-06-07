@@ -32,6 +32,38 @@ type PreviewModeViewEditorPanelsProps = {
 	onSaveEnvVarsString: (value: string) => Promise<void>;
 };
 
+function EnvVarsEditor({
+	envVarsString,
+	onSaveEnvVarsString,
+}: {
+	envVarsString: string;
+	onSaveEnvVarsString: (value: string) => Promise<void>;
+}) {
+	const [envDraft, setEnvDraft] = React.useState(envVarsString);
+
+	React.useEffect(() => {
+		if (envDraft === envVarsString) return undefined;
+		const timeout = setTimeout(() => {
+			void onSaveEnvVarsString(envDraft).catch(() => undefined);
+		}, 700);
+		return () => {
+			clearTimeout(timeout);
+		};
+	}, [envDraft, envVarsString, onSaveEnvVarsString]);
+
+	return (
+		<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
+			<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Runtime env vars</div>
+			<Textarea
+				value={envDraft}
+				onChange={(e) => setEnvDraft(e.target.value)}
+				placeholder="KEY=value"
+				className="min-h-44 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
+			/>
+		</div>
+	);
+}
+
 export function PreviewModeViewEditorPanels({
 	editor,
 	deployment,
@@ -54,23 +86,6 @@ export function PreviewModeViewEditorPanels({
 	envVarsString,
 	onSaveEnvVarsString,
 }: PreviewModeViewEditorPanelsProps) {
-	const [envDraft, setEnvDraft] = React.useState(envVarsString);
-
-	React.useEffect(() => {
-		setEnvDraft(envVarsString);
-	}, [envVarsString]);
-
-	React.useEffect(() => {
-		if (editor?.kind !== "envVars") return undefined;
-		if (envDraft === envVarsString) return undefined;
-		const timeout = setTimeout(() => {
-			void onSaveEnvVarsString(envDraft).catch(() => undefined);
-		}, 700);
-		return () => {
-			clearTimeout(timeout);
-		};
-	}, [editor?.kind, envDraft, envVarsString, onSaveEnvVarsString]);
-
 	return (
 		<div className="mt-6 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 stealth-scrollbar">
 			{editor?.kind === "branch" ? (
@@ -95,15 +110,11 @@ export function PreviewModeViewEditorPanels({
 			) : null}
 
 			{editor?.kind === "envVars" ? (
-				<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
-					<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Runtime env vars</div>
-					<Textarea
-						value={envDraft}
-						onChange={(e) => setEnvDraft(e.target.value)}
-						placeholder="KEY=value"
-						className="min-h-44 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
-					/>
-				</div>
+				<EnvVarsEditor
+					key={`${deployment.repoName}:${deployment.serviceName}:${envVarsString}`}
+					envVarsString={envVarsString}
+					onSaveEnvVarsString={onSaveEnvVarsString}
+				/>
 			) : null}
 
 			{editor?.kind === "compose" ? (

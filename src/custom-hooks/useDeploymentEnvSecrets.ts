@@ -37,19 +37,17 @@ export function useDeploymentEnvSecrets({
 }: UseDeploymentEnvSecretsArgs) {
 	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
 	const [entries, setEntries] = React.useState<DeploymentEnvSecretEntry[]>([]);
-	const [isLoading, setIsLoading] = React.useState(false);
 	const [isSaving, setIsSaving] = React.useState(false);
-	const entriesRef = React.useRef(entries);
-	entriesRef.current = entries;
+	const [loadedDeploymentKey, setLoadedDeploymentKey] = React.useState<string | null>(null);
 	const lastPersistedKeyRef = React.useRef<string | null>(null);
 
 	const deploymentKey = `${repoName}:${serviceName}:${secretsArn ?? ""}`;
+	const isLoading = Boolean(repoName && serviceName && loadedDeploymentKey !== deploymentKey);
 
 	React.useEffect(() => {
 		if (!repoName || !serviceName) return undefined;
 
 		let cancelled = false;
-		setIsLoading(true);
 
 		void fetchDeploymentEnvSecrets(repoName, serviceName)
 			.then((result) => {
@@ -57,15 +55,14 @@ export function useDeploymentEnvSecrets({
 				const nextEntries = result.entries.length > 0 ? result.entries : [{ name: "", value: "" }];
 				lastPersistedKeyRef.current = entriesPersistenceKey(nextEntries);
 				setEntries(nextEntries);
+				setLoadedDeploymentKey(deploymentKey);
 			})
 			.catch((error: unknown) => {
 				if (cancelled) return;
 				const message = error instanceof Error ? error.message : "Failed to load environment variables";
 				toast.error(message);
 				setEntries([{ name: "", value: "" }]);
-			})
-			.finally(() => {
-				if (!cancelled) setIsLoading(false);
+				setLoadedDeploymentKey(deploymentKey);
 			});
 
 		return () => {
@@ -111,13 +108,13 @@ export function useDeploymentEnvSecrets({
 		if (!repoName || !serviceName) return undefined;
 
 		const timeout = setTimeout(() => {
-			const nextKey = entriesPersistenceKey(entriesRef.current);
+			const nextKey = entriesPersistenceKey(entries);
 			if (nextKey === lastPersistedKeyRef.current) return;
 			if (nextKey === "[]" && !secretsArn) {
 				lastPersistedKeyRef.current = nextKey;
 				return;
 			}
-			void persistEntries(entriesRef.current).catch(() => undefined);
+			void persistEntries(entries).catch(() => undefined);
 		}, 700);
 
 		return () => {
