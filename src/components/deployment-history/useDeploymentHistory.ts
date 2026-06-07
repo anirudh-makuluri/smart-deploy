@@ -35,7 +35,11 @@ export function useDeploymentHistory({
 		};
 	}, [prefetchedData]);
 
-	const historyQuery = useQuery({
+	const {
+		data: historyPageData,
+		isLoading: isLoadingHistory,
+		error: historyQueryError,
+	} = useQuery({
 		queryKey: ["deployment-history", repoName, serviceName, page, limit],
 		enabled: Boolean(repoName && serviceName),
 		queryFn: async () => {
@@ -48,11 +52,11 @@ export function useDeploymentHistory({
 		initialData: page === 1 ? initialPageData : undefined,
 	});
 
-	const history = React.useMemo(() => historyQuery.data?.history ?? [], [historyQuery.data?.history]);
-	const total = historyQuery.data?.total ?? 0;
+	const history = React.useMemo(() => historyPageData?.history ?? [], [historyPageData?.history]);
+	const total = historyPageData?.total ?? 0;
 	const loading =
-		historyQuery.isLoading || (isPrefetching === true && page === 1 && !historyQuery.data);
-	const error = historyQuery.error instanceof Error ? historyQuery.error.message : null;
+		isLoadingHistory || (isPrefetching === true && page === 1 && !historyPageData);
+	const error = historyQueryError instanceof Error ? historyQueryError.message : null;
 	const activeEntryId = React.useMemo(
 		() =>
 			history.find((entry) =>

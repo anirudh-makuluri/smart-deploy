@@ -38,16 +38,20 @@ export function useDeploymentHistoryWithSync({
 
 	const deployRefreshBucket = deployStatus === "success" || deployStatus === "error" ? "post-deploy" : "normal";
 
-	const historyQuery = useQuery({
+	const {
+		data: historyData,
+		isLoading,
+		refetch,
+	} = useQuery({
 		queryKey: ["deployment-history-sync", repoName, serviceName, deployRefreshBucket],
 		enabled: Boolean(repoName && serviceName),
 		queryFn: fetchHistory,
 	});
 
 	return {
-		history: historyQuery.data?.history ?? [],
-		total: historyQuery.data?.total ?? 0,
-		isLoading: historyQuery.isLoading,
-		refetch: historyQuery.refetch,
+		history: historyData?.history ?? [],
+		total: historyData?.total ?? 0,
+		isLoading,
+		refetch,
 	};
 }

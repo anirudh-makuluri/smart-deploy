@@ -98,16 +98,15 @@ export default function DeploymentHistoryTable() {
 	const { logsModal, query, statusFilter, envFilter, page } = state;
 	const limit = 10;
 
-	const historyQuery = useQuery({
+	const { data: historyPageData, isLoading: loading } = useQuery({
 		queryKey: ["deployment-history-table", page, limit],
 		queryFn: async () => fetchDeploymentHistoryAllPage(page, limit),
 	});
 
-	const total = historyQuery.data?.total ?? 0;
-	const loading = historyQuery.isLoading;
+	const total = historyPageData?.total ?? 0;
 
 	const filtered = React.useMemo(() => {
-		const history = (historyQuery.data?.history ?? []) as DeploymentHistoryRow[];
+		const history = (historyPageData?.history ?? []) as DeploymentHistoryRow[];
 
 		return history.filter((row) => {
 			const matchQuery = query
@@ -123,7 +122,7 @@ export default function DeploymentHistoryTable() {
 			const matchEnv = envFilter === "all" || env === envFilter;
 			return matchQuery && matchStatus && matchEnv;
 		});
-	}, [historyQuery.data?.history, query, statusFilter, envFilter]);
+	}, [historyPageData?.history, query, statusFilter, envFilter]);
 
 	return (
 		<div className="rounded-xl border border-border bg-card/60 p-4">

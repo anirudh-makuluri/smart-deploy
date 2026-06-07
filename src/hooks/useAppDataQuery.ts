@@ -89,7 +89,7 @@ export function useAppDataQuery() {
 		}
 	}, [isPending, userID, setAppData]);
 
-	const query = useQuery({
+	const { data: appData } = useQuery({
 		queryKey: ["app-data", userID],
 		queryFn: fetchAppData,
 		enabled: !isPending && Boolean(userID),
@@ -98,10 +98,10 @@ export function useAppDataQuery() {
 
 	// Sync query result to Zustand and persist to localStorage
 	useEffect(() => {
-		if (!query.data || !userID) return;
-		setAppData(query.data.repoList, query.data.deployments, false, query.data.repoServices);
-		writeCache(userID, query.data.repoList, query.data.deployments, query.data.repoServices ?? []);
-	}, [query.data, userID, setAppData]);
+		if (!appData || !userID) return;
+		setAppData(appData.repoList, appData.deployments, false, appData.repoServices);
+		writeCache(userID, appData.repoList, appData.deployments, appData.repoServices ?? []);
+	}, [appData, userID, setAppData]);
 
 	// Clear store and cache when user logs out
 	useEffect(() => {
@@ -120,5 +120,4 @@ export function useAppDataQuery() {
 		};
 	}, []);
 
-	return query;
 }

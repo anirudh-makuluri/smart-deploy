@@ -33,14 +33,10 @@ export function DeploymentHistoryEntryItem({
 	onWhyDidItFail,
 	onRollback,
 }: DeploymentHistoryEntryItemProps) {
-	const [displaySteps, setDisplaySteps] = React.useState<DeployStep[]>(entry.steps);
+	const [fetchedSteps, setFetchedSteps] = React.useState<DeployStep[] | null>(null);
 	const [logsLoading, setLogsLoading] = React.useState(false);
 	const [logsError, setLogsError] = React.useState<string | null>(null);
-
-	React.useEffect(() => {
-		setDisplaySteps(entry.steps);
-		setLogsError(null);
-	}, [entry]);
+	const displaySteps = fetchedSteps ?? entry.steps;
 
 	React.useEffect(() => {
 		if (!entry.logRef) return;
@@ -54,7 +50,7 @@ export function DeploymentHistoryEntryItem({
 					throw new Error(data.error || "Failed to load deploy logs");
 				}
 				if (!cancelled && data.steps) {
-					setDisplaySteps(data.steps);
+					setFetchedSteps(data.steps);
 				}
 			} catch (error) {
 				if (!cancelled) {

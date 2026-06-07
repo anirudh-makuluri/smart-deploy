@@ -128,7 +128,7 @@ export function useDeployWorkspace() {
 				void fetchRepoDeployments(repoIdentifier);
 			}
 		},
-		[deployment.hostedSubdomain, deployment.repoUrl, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
+		[deployment.repoUrl, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
 	);
 
 	const effectiveBranch = React.useMemo(

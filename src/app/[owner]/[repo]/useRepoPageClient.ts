@@ -65,7 +65,11 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		);
 	}, [activeRepo, repoList, routeRepoLower, repoUrl]);
 
-	const repoQuery = useQuery({
+	const {
+		data: resolvedRepo,
+		isLoading: isResolvingRepo,
+		isError: isResolveRepoError,
+	} = useQuery({
 		queryKey: ["repo-resolve", owner, repoName],
 		enabled: !repoFromStore,
 		queryFn: async () => {
@@ -74,10 +78,10 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		},
 	});
 
-	const repo = repoFromStore ?? repoQuery.data ?? null;
+	const repo = repoFromStore ?? resolvedRepo ?? null;
 	const detectionBranch = repo?.default_branch ?? "";
-	const isLoadingRepo = !repo && repoQuery.isLoading;
-	const repoNotFound = !repo && !repoQuery.isLoading && (repoQuery.isError || repoQuery.data === null);
+	const isLoadingRepo = !repo && isResolvingRepo;
+	const repoNotFound = !repo && !isResolvingRepo && (isResolveRepoError || resolvedRepo === null);
 
 	const cachedServices = React.useMemo(() => {
 		const inMemory = getDetectedRepoCache(repoUrl, detectionBranch);
@@ -91,9 +95,9 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		if (record?.services?.length) return record.services;
 
 		return null;
-	}, [detectionBranch, getDetectedRepoCache, repoServices, repo, repoUrl]);
+	}, [detectionBranch, getDetectedRepoCache, repoServices, repoUrl]);
 
-	const storedRepoServicesQuery = useQuery({
+	const { isLoading: isLoadingStoredRepoServices } = useQuery({
 		queryKey: ["stored-repo-services"],
 		enabled: Boolean(repo) && !cachedServices && repoServices.length === 0,
 		staleTime: 60_000,
@@ -158,9 +162,9 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		]
 	);
 
-	const servicesQuery = useQuery({
+	const { isLoading: isLoadingServices, error: servicesQueryError } = useQuery({
 		queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
-		enabled: Boolean(repo) && !cachedServices && !storedRepoServicesQuery.isLoading,
+		enabled: Boolean(repo) && !cachedServices && !isLoadingStoredRepoServices,
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
@@ -225,9 +229,9 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		() => cachedServices ?? [],
 		[cachedServices]
 	);
-	const loading = !cachedServices && (storedRepoServicesQuery.isLoading || servicesQuery.isLoading);
-	const error = servicesQuery.error
-		? getErrorMessage(servicesQuery.error as Error | { message?: string } | string, "Failed to load services")
+	const loading = !cachedServices && (isLoadingStoredRepoServices || isLoadingServices);
+	const error = servicesQueryError
+		? getErrorMessage(servicesQueryError as Error | { message?: string } | string, "Failed to load services")
 		: null;
 
 	const repoDeploymentsFromStore = React.useMemo(() => {
@@ -239,9 +243,9 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			}
 			return deployment.repoName === repo.name;
 		});
-	}, [deployments, repo, repo]);
+	}, [deployments, repo, repoUrl]);
 
-	const repoDeploymentsQuery = useQuery({
+	const { data: repoDeploymentsData } = useQuery({
 		queryKey: ["repo-deployments", repo?.full_name ?? repoFullName],
 		enabled: false,
 		queryFn: async () => {
@@ -260,10 +264,10 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	}, [queryClient, repo]);
 
 	React.useEffect(() => {
-		if (!repo || repoDeploymentsQuery.data === undefined) return () => {};
-		syncRepoDeployments(repo.full_name, repoDeploymentsQuery.data);
+		if (!repo || repoDeploymentsData === undefined) return () => {};
+		syncRepoDeployments(repo.full_name, repoDeploymentsData);
 		return () => {};
-	}, [repo, repoDeploymentsQuery.data, syncRepoDeployments]);
+	}, [repo, repoDeploymentsData, syncRepoDeployments]);
 
 	const repoDeployments = repoDeploymentsFromStore;
 
