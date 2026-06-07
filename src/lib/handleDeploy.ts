@@ -29,7 +29,7 @@ import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
 import { hasUsableRailpackPlan, pickDeployUnitForBuild } from "./sdArtifactsBuildContext";
 
 // AWS imports
-import { configureAlb, resolveServices } from "./aws/handleEC2";
+import { configureAlb, resolveServices, type EC2Result } from "./aws/handleEC2";
 import { isExistingDockerUnit } from "./deployRouting";
 
 // CodeBuild + ECR imports
@@ -1606,7 +1606,7 @@ async function handleAWSCodeBuildDeploy(
 		send("⚠️ DOCKERHUB_USERNAME is set but DOCKERHUB_TOKEN is missing. Docker Hub login will be skipped.", "build");
 	}
 
-	let ec2Result: Awaited<ReturnType<typeof deployRailpackServerToEcs>>;
+	let deployResult: EC2Result;
 	let releaseArtifact: DeploymentReleaseArtifact;
 
 	if (useStaticS3) {
@@ -1640,7 +1640,7 @@ async function handleAWSCodeBuildDeploy(
 		const serviceUrls = new Map<string, string>();
 		if (unitForUrl?.name) serviceUrls.set(unitForUrl.name, publicBase);
 		else serviceUrls.set("site", publicBase);
-		ec2Result = {
+		deployResult = {
 			success: true,
 			baseUrl: publicBase,
 			serviceUrls,
@@ -1765,7 +1765,7 @@ async function handleAWSCodeBuildDeploy(
 		target = "ecs";
 		deployConfig.deploymentTarget = "ecs";
 		send("Deploying to ECS Fargate...", "deploy");
-		ec2Result = await deployRailpackServerToEcs({
+		deployResult = await deployRailpackServerToEcs({
 			deployConfig,
 			region,
 			repoName,
@@ -1792,7 +1792,7 @@ async function handleAWSCodeBuildDeploy(
 	serviceDetails.cloudResources = cloudResourcesFromDeployResult(
 		target,
 		region,
-		ec2Result,
+		deployResult,
 		target === "static_s3"
 			? {
 				bucket: config.STATIC_SITE_BUCKET?.trim(),
@@ -1801,8 +1801,8 @@ async function handleAWSCodeBuildDeploy(
 			}
 			: {
 				cluster: config.ECS_CLUSTER_NAME?.trim(),
-				service: ec2Result.instanceId?.startsWith("ecs:")
-					? ec2Result.instanceId.slice(4).split("/").pop()
+				service: deployResult.instanceId?.startsWith("ecs:")
+					? deployResult.instanceId.slice(4).split("/").pop()
 					: deployConfig.serviceName,
 			}
 	);
@@ -1817,24 +1817,24 @@ async function handleAWSCodeBuildDeploy(
 	let deployUrl: string | undefined;
 	let result: string;
 
-	if (!ec2Result.success || ec2Result.baseUrl === "") {
+	if (!deployResult.success || deployResult.baseUrl === "") {
 		send("❌ Deployment failed: Server is not responding. Check your application and try again.", "deploy");
 		result = "error";
 	} else {
-		let ec2Summary = `\nDeployment completed!\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += `\nService URLs:\n`;
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
+		let deploySummary = `\nDeployment completed!\n`;
+		deploySummary += `Instance ID: ${deployResult.instanceId}\n`;
+		deploySummary += `Public IP: ${deployResult.publicIp}\n`;
+		deploySummary += `\nService URLs:\n`;
+		for (const [name, url] of deployResult.serviceUrls.entries()) {
+			deploySummary += `  - ${name}: ${url}\n`;
 		}
-		deployUrl = ec2Result.baseUrl || ec2Result.sharedAlbDns;
+		deployUrl = deployResult.baseUrl || deployResult.sharedAlbDns;
 		result = "done";
 	}
 
 	let dnsResult: AddRoute53DnsResult | null = null;
-	const sharedAlbDns = ec2Result.sharedAlbDns?.trim() || "";
-	if (ec2Result.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
+	const sharedAlbDns = deployResult.sharedAlbDns?.trim() || "";
+	if (deployResult.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
 		send("Configuring Route 53 DNS...", "done");
 		const previousHostedUrl = getDeploymentHostedUrl(deployConfig);
 		dnsResult = await addRoute53DnsRecord(deployUrl || `https://${sharedAlbDns}`, deployConfig.serviceName, {
@@ -1850,14 +1850,14 @@ async function handleAWSCodeBuildDeploy(
 		const customHost = getDeployUrlHostname(dnsResult.customUrl);
 		if (
 			customHost &&
-			ec2Result.albListenerArn &&
-			ec2Result.targetGroupArn
+			deployResult.albListenerArn &&
+			deployResult.targetGroupArn
 		) {
 			send(`Configuring ALB host rule for ${customHost}...`, "done");
 			await ensureHostRule(
-				ec2Result.albListenerArn,
+				deployResult.albListenerArn,
 				customHost,
-				ec2Result.targetGroupArn,
+				deployResult.targetGroupArn,
 				region,
 				ws
 			);
@@ -1865,17 +1865,17 @@ async function handleAWSCodeBuildDeploy(
 		if (dnsResult.customUrl) {
 			deployUrl = dnsResult.customUrl;
 		}
-	} else if (dnsResult && ec2Result.success) {
+	} else if (dnsResult && deployResult.success) {
 		send(`⚠️ Route 53 DNS failed: ${dnsResult?.error ?? "Unknown error"}`, "done");
 	}
 
-	let finalSuccess = ec2Result.success;
+	let finalSuccess = deployResult.success;
 	let lifecycle: DeploymentLifecycleOptions | undefined;
 	const prematureDoneStep = deploySteps.find((step) => step.id === "done");
 	if (prematureDoneStep) {
 		prematureDoneStep.status = "pending";
 	}
-	if (ec2Result.success && deployUrl) {
+	if (deployResult.success && deployUrl) {
 		const verification = await verifyDeploymentReadiness({
 			deployConfig,
 			deployUrl,
@@ -1899,15 +1899,15 @@ async function handleAWSCodeBuildDeploy(
 		}
 	}
 	if (finalSuccess) {
-		let ec2Summary = "Deployment completed.\n";
-		ec2Summary += `Verified URL: ${deployUrl}\n`;
-		ec2Summary += `Instance ID: ${ec2Result.instanceId}\n`;
-		ec2Summary += `Public IP: ${ec2Result.publicIp}\n`;
-		ec2Summary += "\nService URLs:\n";
-		for (const [name, url] of ec2Result.serviceUrls.entries()) {
-			ec2Summary += `  - ${name}: ${url}\n`;
+		let deploySummary = "Deployment completed.\n";
+		deploySummary += `Verified URL: ${deployUrl}\n`;
+		deploySummary += `Instance ID: ${deployResult.instanceId}\n`;
+		deploySummary += `Public IP: ${deployResult.publicIp}\n`;
+		deploySummary += "\nService URLs:\n";
+		for (const [name, url] of deployResult.serviceUrls.entries()) {
+			deploySummary += `  - ${name}: ${url}\n`;
 		}
-		send(`SUCCESS: ${ec2Summary.trimEnd()}`, "done");
+		send(`SUCCESS: ${deploySummary.trimEnd()}`, "done");
 	}
 
 	const doneStep = deploySteps.find(s => s.id === "done");
