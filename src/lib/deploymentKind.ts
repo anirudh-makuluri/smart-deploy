@@ -1,10 +1,10 @@
 import type { DeployConfig } from "@/app/types";
 
 /** All deployments use sd-artifacts analyze (container kind). */
-export function getDeploymentKind(_deployment: Pick<DeployConfig, "kind"> | null | undefined): "container" {
+export function getDeploymentKind(_deployment: DeployConfig | null | undefined): "container" {
 	return "container";
 }
 
-export function isDirectStaticDeployment(_deployment: Pick<DeployConfig, "kind"> | null | undefined): false {
+export function isDirectStaticDeployment(_deployment: DeployConfig | null | undefined): false {
 	return false;
 }

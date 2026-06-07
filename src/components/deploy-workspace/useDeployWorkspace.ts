@@ -27,6 +27,7 @@ import {
 } from "@/app/types";
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
+import { subdomainFromHostedUrl } from "@/lib/hostedUrl";
 import {
 	canManageRuntimeDeploymentStatus,
 	isDraftDeploymentStatus,
@@ -68,19 +69,19 @@ export function useDeployWorkspace() {
 
 	const deployment = useActiveDeployment();
 
-	const hasStoredLiveUrl = React.useMemo(
-		() => Boolean(deployment.liveUrl),
-		[deployment.liveUrl]
+	const hasHostedSubdomain = React.useMemo(
+		() => Boolean(deployment.hostedSubdomain?.trim()),
+		[deployment.hostedSubdomain]
 	);
 
 	const effectiveDeploymentStatus = React.useMemo(
 		() =>
 			resolveDeploymentStatus({
 				status: deployment.status,
-				liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+				hostedSubdomain: hasHostedSubdomain ? deployment.hostedSubdomain : null,
 				screenshotUrl: deployment.screenshotUrl,
 			}),
-		[deployment.liveUrl, deployment.screenshotUrl, deployment.status, hasStoredLiveUrl]
+		[deployment.hostedSubdomain, deployment.screenshotUrl, deployment.status, hasHostedSubdomain]
 	);
 
 	const onDeployFinishedCallback = React.useCallback(
@@ -111,14 +112,15 @@ export function useDeployWorkspace() {
 			}
 
 			if (repoName && serviceName) {
+				const hostedFromDns = p.customUrl ? subdomainFromHostedUrl(p.customUrl) : null;
 				void updateDeploymentById({
 					repoName,
 					serviceName,
-					url: deployment.url || repoUrl || "",
+					repoUrl: deployment.repoUrl || repoUrl || "",
 					status: finalStatus,
 					lastDeployment: new Date().toISOString(),
-					liveUrl: finalStatus === "running" ? (url || deployment.liveUrl || null) : (deployment.liveUrl || null),
-					...(p.ec2 != null ? { ec2: p.ec2 } : {}),
+					...(finalStatus === "running" && hostedFromDns ? { hostedSubdomain: hostedFromDns } : {}),
+					...(p.cloudResources != null ? { cloudResources: p.cloudResources } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 					}),
@@ -126,7 +128,7 @@ export function useDeployWorkspace() {
 				void fetchRepoDeployments(repoIdentifier);
 			}
 		},
-		[deployment.liveUrl, deployment.url, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
+		[deployment.hostedSubdomain, deployment.repoUrl, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
 	);
 
 	const effectiveBranch = React.useMemo(
@@ -167,13 +169,13 @@ export function useDeployWorkspace() {
 		serviceName: serviceName ?? undefined,
 		screenshotUrl: deployment.screenshotUrl || undefined,
 		deploymentStatus: effectiveDeploymentStatus,
-		hasStoredLiveUrl: hasStoredLiveUrl,
+		hasStoredLiveUrl: hasHostedSubdomain,
 		onScreenshotUpdated: async (nextScreenshotUrl) => {
 			if (!repoName || !serviceName) return;
 			await updateDeploymentById({
 				repoName,
 				serviceName,
-				url: deployment.url || repoUrl || "",
+				repoUrl: deployment.repoUrl || repoUrl || "",
 				screenshotUrl: nextScreenshotUrl,
 			});
 		},
@@ -278,12 +280,12 @@ export function useDeployWorkspace() {
 			isDraft: isDraftDeploymentStatus(
 				resolveDeploymentStatus({
 					status: deployment.status,
-					liveUrl: deployment.liveUrl,
+					hostedSubdomain: deployment.hostedSubdomain,
 					screenshotUrl: deployment.screenshotUrl,
 				})
 			),
 		});
-	}, [deployment.id, deployment.repoName, deployment.serviceName, deployment.scanResults, deployment.status, deployment.liveUrl, deployment.screenshotUrl]);
+	}, [deployment.id, deployment.repoName, deployment.serviceName, deployment.scanResults, deployment.status, deployment.hostedSubdomain, deployment.screenshotUrl]);
 
 	const setActiveSection = React.useCallback((section: MenuSection) => {
 		dispatch({ type: "set_active_section", value: section });
@@ -297,7 +299,7 @@ export function useDeployWorkspace() {
 		await saveDeploymentAnalysis({
 			repoName,
 			serviceName,
-			url: deployment.url || repoUrl || "",
+			repoUrl: deployment.repoUrl || repoUrl || "",
 			branch: branchToSave,
 			commitSha: results.commit_sha ?? deployment.commitSha ?? null,
 			responseId,
@@ -307,7 +309,7 @@ export function useDeployWorkspace() {
 		await fetchRepoDeployments(repoIdentifier);
 		dispatch({ type: "set_scan_results", value: results });
 		dispatch({ type: "set_scan_mode", value: "results" });
-	}, [deployment.commitSha, deployment.url, effectiveBranch, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, session?.user]);
+	}, [deployment.commitSha, deployment.repoUrl, effectiveBranch, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, session?.user]);
 
 	const onScanComplete = React.useCallback(async (results: ScanResultsPayload, branchOverride?: string) => {
 		try {
@@ -393,8 +395,8 @@ export function useDeployWorkspace() {
 			...(commitSha && { commitSha }),
 		};
 
-		const ownerFromUrl = payload.url?.match(/github\.com[/]([^/]+)/)?.[1];
-		const repoNameFromUrl = payload.url?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
+		const ownerFromUrl = payload.repoUrl?.match(/github\.com[/]([^/]+)/)?.[1];
+		const repoNameFromUrl = payload.repoUrl?.split("/").filter(Boolean).pop()?.replace(/\.git$/, "");
 		const owner = repoOwner || ownerFromUrl;
 		const currentRepoName = repoName || repoNameFromUrl;
 
@@ -437,7 +439,7 @@ export function useDeployWorkspace() {
 		await updateDeploymentById({
 			repoName: payload.repoName,
 			serviceName: payload.serviceName,
-			url: payload.url || repoUrl || "",
+			repoUrl: payload.repoUrl || repoUrl || "",
 			branch: payload.branch,
 			commitSha: payload.commitSha,
 			status: nextDeployStatus,
@@ -511,7 +513,7 @@ export function useDeployWorkspace() {
 			await updateDeploymentById({
 				repoName: deployment.repoName,
 				serviceName: deployment.serviceName,
-				url: deployment.url || repoUrl || "",
+				repoUrl: deployment.repoUrl || repoUrl || "",
 				status: pauseResumeNextStatus,
 			});
 			toast.success(
@@ -538,13 +540,12 @@ export function useDeployWorkspace() {
 				id: `draft-${deployment.repoName}-${deployment.serviceName}`,
 				repoName: deployment.repoName,
 				serviceName: deployment.serviceName,
-				url: deployment.url,
+				repoUrl: deployment.repoUrl,
 				branch: deployment.branch,
-				kind: "container",
 				responseId: deployment.responseId ?? null,
 				commitSha: null,
 				envVars: deployment.envVars ?? null,
-				liveUrl: null,
+				hostedSubdomain: null,
 				screenshotUrl: null,
 				status: "didnt_deploy",
 				firstDeployment: null,
@@ -552,9 +553,8 @@ export function useDeployWorkspace() {
 				revision: 0,
 				cloudProvider: deployment.cloudProvider,
 				deploymentTarget: deployment.deploymentTarget,
-				awsRegion: deployment.awsRegion,
-				ec2: null,
-				cloudRun: null,
+				region: deployment.region,
+				cloudResources: null,
 				scanResults: deletedScanResults ?? deployment.scanResults ?? {},
 			} as DeployConfig);
 			await deleteDeployment(deployment.repoName, deployment.serviceName);
@@ -604,7 +604,7 @@ export function useDeployWorkspace() {
 			await updateDeploymentById({
 				repoName: deployment.repoName,
 				serviceName: deployment.serviceName,
-				url: deployment.url || repoUrl || "",
+				repoUrl: deployment.repoUrl || repoUrl || "",
 				status: transitionDeploymentStatus(effectiveDeploymentStatus, "rollback_requested"),
 			});
 			sendRollbackRequest(deployment, ui.rollbackEntry.id, githubToken, session?.user?.id);
@@ -645,7 +645,7 @@ export function useDeployWorkspace() {
 		updateDeploymentById({
 			repoName: deployment.repoName || repoName,
 			serviceName: deployment.serviceName || (serviceName ?? ""),
-			url: deployment.url || repoUrl,
+			repoUrl: deployment.repoUrl || repoUrl,
 			branch: effectiveBranch,
 			...partial,
 		});

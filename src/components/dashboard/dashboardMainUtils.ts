@@ -49,7 +49,7 @@ export function buildRepoCards(
 				normalizeDashboardRepoUrl(repo.html_url) === repoUrlNorm ||
 				repo.full_name === `${record.repo_owner}/${record.repo_name}`
 		);
-		const repoDeployments = deployments.filter((d) => normalizeDashboardRepoUrl(d.url ?? "") === repoUrlNorm);
+		const repoDeployments = deployments.filter((d) => normalizeDashboardRepoUrl(d.repoUrl ?? "") === repoUrlNorm);
 		const totalServices = record.services?.length ?? 0;
 		const activeRepoDeployments = repoDeployments.filter((d) => !isDraftDeploymentStatus(d.status));
 		const hasFailed = repoDeployments.some((d) => d.status === "failed");

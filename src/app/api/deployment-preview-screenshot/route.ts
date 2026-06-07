@@ -60,9 +60,9 @@ export async function POST(request: NextRequest) {
 			);
 		}
 
-		// Use the persisted live URL directly so preview capture follows the active deployment endpoint.
-		const liveUrl = typeof deployment.liveUrl === "string" ? deployment.liveUrl.trim() : "";
-		if (!liveUrl) {
+		const { getDeploymentDisplayUrl } = await import("@/lib/utils");
+		const displayUrl = getDeploymentDisplayUrl(deployment)?.trim() ?? "";
+		if (!displayUrl) {
 			return NextResponse.json(
 				{
 					status: "skipped",
@@ -73,11 +73,11 @@ export async function POST(request: NextRequest) {
 
 		// Capture and upload screenshot
 		console.debug(
-			`[Screenshot] Starting capture for ${repoName}/${serviceName} at ${liveUrl}`
+			`[Screenshot] Starting capture for ${repoName}/${serviceName} at ${displayUrl}`
 		);
 
 		const screenshotUrl = await captureDeploymentScreenshotAndUpload({
-			url: liveUrl,
+			url: displayUrl,
 			ownerID: userID,
 			repoName: repoName,
 			serviceName: serviceName,

@@ -1,5 +1,5 @@
-import type { CustomUrlStatus } from "@/components/blueprint/preview-mode-view/types";
-import { DOMAIN_SUFFIX, getCustomUrlFromSubdomain } from "@/components/blueprint/preview-mode-view/utils";
+import type { HostedSubdomainStatus } from "@/components/blueprint/preview-mode-view/types";
+import { DOMAIN_SUFFIX, getHostedUrlFromSubdomain } from "@/components/blueprint/preview-mode-view/utils";
 import { Alert } from "@/components/ui/alert";
 import { AlertDescription } from "@/components/ui/alert-parts";
 import { Button } from "@/components/ui/button";
@@ -8,32 +8,32 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, CheckCircle2, Globe, RotateCw } from "lucide-react";
 
 type PreviewModeViewCustomDomainEditorProps = {
-	subdomainDraft: string;
-	customUrlStatus: CustomUrlStatus;
-	customUrlVerifying: boolean;
-	customUrlSaving: boolean;
-	isCustomUrlDirty: boolean;
-	onUpdateSubdomainDraft: (draft: string, status?: CustomUrlStatus) => void;
-	onSaveCustomUrl: () => void;
-	onCancelCustomUrl: () => void;
+	hostedSubdomainDraft: string;
+	hostedSubdomainStatus: HostedSubdomainStatus;
+	hostedSubdomainVerifying: boolean;
+	hostedSubdomainSaving: boolean;
+	isHostedSubdomainDirty: boolean;
+	onUpdateHostedSubdomainDraft: (draft: string, status?: HostedSubdomainStatus) => void;
+	onSaveHostedSubdomain: () => void;
+	onCancelHostedSubdomain: () => void;
 };
 
 export function PreviewModeViewCustomDomainEditor({
-	subdomainDraft,
-	customUrlStatus,
-	customUrlVerifying,
-	customUrlSaving,
-	isCustomUrlDirty,
-	onUpdateSubdomainDraft,
-	onSaveCustomUrl,
-	onCancelCustomUrl,
+	hostedSubdomainDraft,
+	hostedSubdomainStatus,
+	hostedSubdomainVerifying,
+	hostedSubdomainSaving,
+	isHostedSubdomainDirty,
+	onUpdateHostedSubdomainDraft,
+	onSaveHostedSubdomain,
+	onCancelHostedSubdomain,
 }: PreviewModeViewCustomDomainEditorProps) {
 	return (
 		<div className="min-w-0 space-y-5 rounded-2xl border border-white/8 bg-white/[0.03] p-5">
 			<div className="space-y-1.5">
 				<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 					<Globe className="size-4 shrink-0 text-muted-foreground/70" />
-					Live URL
+					Hosted subdomain
 				</div>
 				<p className="text-[13px] leading-relaxed text-muted-foreground">
 					This becomes the public URL for your app. Only the subdomain is editable; the rest is fixed.
@@ -47,12 +47,12 @@ export function PreviewModeViewCustomDomainEditor({
 							<span className="whitespace-nowrap font-mono text-[11px] text-muted-foreground/60">https://</span>
 						</div>
 						<Input
-							value={subdomainDraft}
+							value={hostedSubdomainDraft}
 							placeholder="my-app"
-							aria-label="Subdomain"
+							aria-label="Hosted subdomain"
 							className="h-11 min-w-0 flex-1 border-0 bg-transparent px-3 text-sm font-medium text-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
 							onChange={(e) => {
-								onUpdateSubdomainDraft(e.target.value);
+								onUpdateHostedSubdomainDraft(e.target.value);
 							}}
 						/>
 						<div className="flex max-w-[55%] shrink-0 items-center gap-2 bg-white/[0.03] px-3">
@@ -63,13 +63,13 @@ export function PreviewModeViewCustomDomainEditor({
 								.{DOMAIN_SUFFIX}
 							</span>
 							<span className="flex shrink-0 items-center gap-1">
-								{customUrlVerifying ? (
+								{hostedSubdomainVerifying ? (
 									<RotateCw className="size-3.5 shrink-0 animate-spin text-primary" />
 								) : null}
-								{!customUrlVerifying && customUrlStatus.type === "success" ? (
+								{!hostedSubdomainVerifying && hostedSubdomainStatus.type === "success" ? (
 									<CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
 								) : null}
-								{!customUrlVerifying && customUrlStatus.type === "error" ? (
+								{!hostedSubdomainVerifying && hostedSubdomainStatus.type === "error" ? (
 									<AlertTriangle className="size-3.5 shrink-0 text-destructive" />
 								) : null}
 							</span>
@@ -79,22 +79,22 @@ export function PreviewModeViewCustomDomainEditor({
 				<p className="break-words font-mono text-[11px] text-muted-foreground/55">
 					Preview:{" "}
 					<span className="text-foreground/80">
-						{getCustomUrlFromSubdomain(subdomainDraft) || "—"}
+						{getHostedUrlFromSubdomain(hostedSubdomainDraft) || "—"}
 					</span>
 				</p>
 			</div>
 
-			{customUrlStatus.type && !customUrlVerifying ? (
+			{hostedSubdomainStatus.type && !hostedSubdomainVerifying ? (
 				<Alert
 					className={cn(
 						"border-none py-2.5 px-3",
-						customUrlStatus.type === "error"
+						hostedSubdomainStatus.type === "error"
 							? "bg-destructive/10 text-destructive"
 							: "bg-emerald-500/10 text-emerald-500"
 					)}
 				>
 					<AlertDescription className="text-xs font-medium leading-snug">
-						{customUrlStatus.message}
+						{hostedSubdomainStatus.message}
 					</AlertDescription>
 				</Alert>
 			) : null}
@@ -105,18 +105,18 @@ export function PreviewModeViewCustomDomainEditor({
 						type="button"
 						variant="ghost"
 						className="h-10 px-4 text-sm"
-						onClick={onCancelCustomUrl}
-						disabled={!isCustomUrlDirty || customUrlSaving}
+						onClick={onCancelHostedSubdomain}
+						disabled={!isHostedSubdomainDirty || hostedSubdomainSaving}
 					>
 						Cancel
 					</Button>
 					<Button
 						type="button"
 						className="h-10 min-w-[5.5rem] px-5 text-sm"
-						onClick={() => void onSaveCustomUrl()}
-						disabled={!isCustomUrlDirty || customUrlSaving}
+						onClick={() => void onSaveHostedSubdomain()}
+						disabled={!isHostedSubdomainDirty || hostedSubdomainSaving}
 					>
-						{customUrlSaving ? "Saving…" : "Save"}
+						{hostedSubdomainSaving ? "Saving…" : "Save"}
 					</Button>
 				</div>
 				<p className="w-full min-w-0 text-[11px] leading-relaxed text-muted-foreground/75">

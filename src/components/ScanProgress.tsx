@@ -45,9 +45,6 @@ export default function ScanProgress({
 				</div>
 				<div>
 					<h2 className="text-xl font-semibold text-foreground tracking-tight">Analysis in Progress</h2>
-					<p className="text-sm text-muted-foreground">
-						Progress follows the sd-artifacts pipeline: scan, classify, Railpack prepare, briefing, verified build, finalize
-					</p>
 				</div>
 			</div>
 
@@ -63,9 +60,6 @@ export default function ScanProgress({
 			<div className="flex items-center justify-end gap-3 mt-8 pt-6 border-t border-border/30">
 				<Button variant="outline" onClick={onCancel} className="text-muted-foreground hover:text-foreground">
 					Cancel Analysis
-				</Button>
-				<Button disabled className="bg-primary/20 text-primary-foreground opacity-50">
-					Awaiting Verification
 				</Button>
 			</div>
 		</div>

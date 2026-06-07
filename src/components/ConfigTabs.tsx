@@ -5,7 +5,6 @@ import EnvVarSheet from "@/components/EnvVarSheet";
 import type { DeployConfig } from "@/app/types";
 import { ConfigTabsBranchSection } from "@/components/config-tabs/ConfigTabsBranchSection";
 import { ConfigTabsCustomDomainSection } from "@/components/config-tabs/ConfigTabsCustomDomainSection";
-import { ConfigTabsEc2Section } from "@/components/config-tabs/ConfigTabsEc2Section";
 import { ConfigTabsEnvVarsSection } from "@/components/config-tabs/ConfigTabsEnvVarsSection";
 import { ConfigTabsProjectSourceSection } from "@/components/config-tabs/ConfigTabsProjectSourceSection";
 import { ConfigTabsScanPrompt } from "@/components/config-tabs/ConfigTabsScanPrompt";
@@ -40,22 +39,15 @@ export default function ConfigTabs({
 					onConfigChange={onConfigChange}
 				/>
 
-				<ConfigTabsEc2Section
-					deploymentEc2={tabs.deploymentEc2}
-					ec2InstanceValue={tabs.ec2InstanceValue}
-					ec2InstanceOptions={tabs.ec2InstanceOptions}
-					onConfigChange={onConfigChange}
-				/>
-
 				<ConfigTabsCustomDomainSection
 					form={tabs.form}
-					customUrlVerifying={tabs.customUrlVerifying}
-					customUrlStatus={tabs.customUrlStatus}
-					setCustomUrlStatus={tabs.setCustomUrlStatus}
-					isCustomUrlDirty={tabs.isCustomUrlDirty}
-					customUrlSaving={tabs.customUrlSaving}
-					onSave={tabs.handleSaveCustomUrl}
-					onCancel={tabs.handleCancelCustomUrl}
+					hostedSubdomainVerifying={tabs.hostedSubdomainVerifying}
+					hostedSubdomainStatus={tabs.hostedSubdomainStatus}
+					setHostedSubdomainStatus={tabs.setHostedSubdomainStatus}
+					isHostedSubdomainDirty={tabs.isHostedSubdomainDirty}
+					hostedSubdomainSaving={tabs.hostedSubdomainSaving}
+					onSave={tabs.handleSaveHostedSubdomain}
+					onCancel={tabs.handleCancelHostedSubdomain}
 				/>
 
 				<ConfigTabsEnvVarsSection

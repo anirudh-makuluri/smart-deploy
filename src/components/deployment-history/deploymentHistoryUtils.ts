@@ -33,9 +33,6 @@ export function doesEntryMatchActiveDeployment(
 	const branch = typeof snapshot.branch === "string" ? snapshot.branch : entry.branch;
 	if (branch && activeDeployment.branch && branch !== activeDeployment.branch) return false;
 
-	const kind = typeof snapshot.kind === "string" ? snapshot.kind : activeDeployment.kind;
-	if (kind && activeDeployment.kind && kind !== activeDeployment.kind) return false;
-
 	const cloudProvider = typeof snapshot.cloudProvider === "string" ? snapshot.cloudProvider : activeDeployment.cloudProvider;
 	if (cloudProvider && activeDeployment.cloudProvider && cloudProvider !== activeDeployment.cloudProvider) return false;
 
@@ -45,8 +42,8 @@ export function doesEntryMatchActiveDeployment(
 		return false;
 	}
 
-	const awsRegion = typeof snapshot.awsRegion === "string" ? snapshot.awsRegion : activeDeployment.awsRegion;
-	if (awsRegion && activeDeployment.awsRegion && awsRegion !== activeDeployment.awsRegion) return false;
+	const region = typeof snapshot.region === "string" ? snapshot.region : activeDeployment.region;
+	if (region && activeDeployment.region && region !== activeDeployment.region) return false;
 
 	return true;
 }

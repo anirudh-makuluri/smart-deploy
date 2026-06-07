@@ -115,11 +115,7 @@ export default function DeployWorkspace({
 				</aside>
 				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 					<main
-						className={
-							ui.activeSection === "blueprint"
-								? "min-h-0 flex-1 overflow-hidden"
-								: "min-h-0 flex-1 overflow-auto stealth-scrollbar"
-						}
+						className="min-h-0 flex-1 overflow-auto stealth-scrollbar"
 					>
 						<DeployWorkspaceActiveSection
 							activeSection={ui.activeSection}

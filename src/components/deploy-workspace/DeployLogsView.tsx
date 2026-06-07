@@ -16,6 +16,7 @@ type LogEntry = { timestamp?: string; message?: string };
 type CommitInfo = { sha: string; message: string; author: string; date: string };
 
 type DeployLogsViewProps = {
+	isDeploymentLive: boolean;
 	showDeployLogs: boolean;
 	deployLogEntries: LogEntry[];
 	serviceLogs: LogEntry[];
@@ -41,6 +42,7 @@ type DeployLogsViewProps = {
 };
 
 export default function DeployLogsView({
+	isDeploymentLive,
 	showDeployLogs,
 	deployLogEntries,
 	serviceLogs,
@@ -117,7 +119,7 @@ export default function DeployLogsView({
 				: deployStatus === "error"
 					? "Deployment Failed"
 					: "Awaiting Deployment"
-		: "Service Logs";
+		: isDeploymentLive ? "Live Service Logs" : "Start a new deployment";
 
 	const headerSubtitle = showDeploymentHeader
 		? deployStatus === "running"
@@ -127,7 +129,7 @@ export default function DeployLogsView({
 				: deployStatus === "error"
 					? "An error occurred during deployment"
 					: "Ready to deploy"
-		: "Historical + live service output";
+		: isDeploymentLive ? "Live service output" : "Logs will appear here once the deployment starts producing output";
 
 	return (
 		<div className="flex h-full min-h-0 flex-col gap-6">
@@ -249,34 +251,12 @@ export default function DeployLogsView({
 									</>
 								)}
 							</Button>
-							{analysisResult && (
-								<>
-									<Alert className="mt-3 border-destructive/30 bg-background/50 text-foreground text-left transition-all">
-										<AlertDescription className="text-sm pb-0 whitespace-pre-wrap leading-relaxed">
-											{analysisResult}
-										</AlertDescription>
-									</Alert>
-									{repoUrl && onStartImproveScan && (
-										<div className="mt-3 flex justify-end">
-											<Button
-												variant="outline"
-												size="sm"
-												className="border-primary/30 bg-background/50 text-foreground hover:bg-primary/20 font-semibold"
-												onClick={handleImproveScanResults}
-											>
-												<RefreshCw className="size-4 mr-2" />
-												Improve Scan Results
-											</Button>
-										</div>
-									)}
-								</>
-							)}
 						</div>
 					)}
 				</Alert>
 			)}
 
-			<div ref={logsContainerRef} className="flex min-h-0 flex-1 flex-col rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
+			<div ref={logsContainerRef} className="flex h-full flex-1 flex-col rounded-2xl border border-white/5 bg-[#0A0A0F] overflow-hidden shadow-2xl">
 			<ServiceLogs
 				key={`${repoNameForLogs ?? ""}:${serviceNameForLogs ?? ""}`}
 				{...((

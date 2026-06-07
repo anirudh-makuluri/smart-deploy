@@ -1,5 +1,5 @@
 import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
-import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { defaultRegionForDeploy } from "@/lib/deployInfraDefaults";
 import { shouldDeployStaticSiteToS3 } from "@/lib/deployRouting";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
@@ -163,7 +163,7 @@ export function buildPreviewModel(params: {
 		stepId: "auth",
 		kind: "repo",
 		title: "Repository",
-		subtitle: safeTrim(deployment.url) || "Not set",
+		subtitle: safeTrim(deployment.repoUrl) || "Not set",
 	});
 	artifacts.push({
 		id: "auth:branch",
@@ -237,7 +237,7 @@ export function buildPreviewModel(params: {
 		stepId: "setup",
 		kind: "region",
 		title: "Region",
-		subtitle: safeTrim(deployment.awsRegion) || defaultAwsRegionForDeploy(),
+		subtitle: safeTrim(deployment.region) || defaultRegionForDeploy(),
 		action: "openInfra",
 	});
 	if (isStatic) {
@@ -276,8 +276,8 @@ export function buildPreviewModel(params: {
 		id: "done:domain",
 		stepId: "done",
 		kind: "customDomain",
-		title: "Custom domain / live URL",
-		subtitle: safeTrim(deployment.liveUrl) ? safeTrim(deployment.liveUrl).replace(/^https?:\/\//, "") : "Not set",
+		title: "Hosted subdomain",
+		subtitle: safeTrim(deployment.hostedSubdomain) || "Not set",
 		action: "openCustomDomain",
 	});
 

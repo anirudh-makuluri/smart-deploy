@@ -1,7 +1,9 @@
 import Image from "next/image";
 import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, EC2Details, repoType, type SDArtifactsResponse } from "@/app/types";
+import { DeployConfig, repoType, type SDArtifactsResponse } from "@/app/types";
+import { isEcsCloudResources, isStaticS3CloudResources } from "@/lib/cloudResources";
+import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { canManageRuntimeDeploymentStatus, isLiveDeploymentStatus, resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import {
 	formatTimestamp,
@@ -125,48 +127,45 @@ export default function DeployOverview({
 	isChangingDeploymentState = false,
 	repo,
 }: DeployOverviewProps) {
-	const hasStoredLiveUrl = Boolean(deployment.liveUrl);
+	const hasHostedSubdomain = Boolean(deployment.hostedSubdomain?.trim());
 	const effectiveStatus =
 		resolveDeploymentStatus({
 			status: deployment.status,
-			liveUrl: hasStoredLiveUrl ? deployment.liveUrl : null,
+			hostedSubdomain: hasHostedSubdomain ? deployment.hostedSubdomain : null,
 			screenshotUrl: deployment.screenshotUrl,
 		});
 	const displayUrl = isLiveDeploymentStatus(effectiveStatus) ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshotUrl;
-	const customUrlRaw = deployment.liveUrl?.trim();
-	const instanceIpRaw = ((deployment.ec2 || {}) as EC2Details)?.publicIp?.trim?.();
-	const ec2Casted = (deployment.ec2 || {}) as EC2Details;
-	const instanceIdStr = ec2Casted.instanceId != null ? String(ec2Casted.instanceId) : "";
+	const hostedUrl = getDeploymentHostedUrl(deployment) ?? "";
+	const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const staticResources = isStaticS3CloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
 	const hasAnyEndpoint = Boolean(
-		customUrlRaw ||
-			instanceIpRaw ||
-			instanceIdStr.startsWith("s3:") ||
-			instanceIdStr.startsWith("ecs:")
+		hostedUrl ||
+			ecsResources?.baseUrl ||
+			staticResources?.publicBaseUrl ||
+			ecsResources?.service
 	);
 	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
-	const showEc2InstanceType =
-		!!instanceIdStr &&
-		!instanceIdStr.startsWith("ecs:") &&
-		!instanceIdStr.startsWith("s3:");
-	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || instanceIdStr.startsWith("s3:");
+	const showEc2InstanceType = false;
+	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || Boolean(staticResources);
 	const secondaryAccessLabel = isStaticS3Target
 		? "S3 location"
-		: instanceIdStr.startsWith("ecs:")
+		: ecsResources
 			? "ECS service"
-			: "Instance IP";
+			: "Infrastructure";
 	const secondaryAccessValue = isStaticS3Target
-		? instanceIdStr.replace(/^s3:/, "s3://")
-		: instanceIdStr.startsWith("ecs:")
-			? instanceIdStr
-			: instanceIpRaw;
-	const ec2TypeDisplay =
-		ec2Casted.instanceType?.trim() || DEFAULT_EC2_INSTANCE_TYPE;
+		? staticResources
+			? `s3://${staticResources.bucket}/${staticResources.keyPrefix}`
+			: undefined
+		: ecsResources
+			? `${ecsResources.cluster}/${ecsResources.service}`
+			: undefined;
+	const ec2TypeDisplay = DEFAULT_EC2_INSTANCE_TYPE;
 	const ec2PriceEstimate = showEc2InstanceType
 		? formatApproxEc2PriceCompact(ec2TypeDisplay)
 		: null;
 
-	const regionDisplay = (deployment.awsRegion || region).trim() || region;
+	const regionDisplay = (deployment.region || ecsResources?.region || staticResources?.region || region).trim() || region;
 	const canManageDeployment = canManageRuntimeDeploymentStatus(effectiveStatus);
 	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
 	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
@@ -283,7 +282,7 @@ export default function DeployOverview({
 								</div>
 								{hasAnyEndpoint ? (
 									<div className="space-y-3 border-t border-border/60 pt-3">
-										<EndpointRow label="Custom URL" value={customUrlRaw} />
+										<EndpointRow label="Hosted URL" value={hostedUrl} />
 										<EndpointRow label={secondaryAccessLabel} value={secondaryAccessValue} />
 									</div>
 								) : (

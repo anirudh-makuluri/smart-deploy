@@ -6,6 +6,7 @@ import type {
 } from "@/components/blueprint/preview-model";
 import config from "@/config.client";
 import type { Editor } from "@/components/blueprint/preview-mode-view/types";
+import { hostedUrlFromSubdomain, normalizeHostedSubdomain } from "@/lib/hostedUrl";
 
 export const DOMAIN_SUFFIX = config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz";
 
@@ -37,18 +38,12 @@ export function groupWarningsByStep(warnings: PreviewWarning[]): Record<PreviewS
 	);
 }
 
-export function getInitialSubdomain(liveUrl: string | null | undefined): string {
-	let raw = liveUrl;
-	if (!raw) return "";
-	raw = raw.replace(/^https?:\/\//, "");
-	if (raw.endsWith(`.${DOMAIN_SUFFIX}`)) {
-		return raw.slice(0, -(DOMAIN_SUFFIX.length + 1));
-	}
-	return raw.split(".")[0];
+export function savedHostedSubdomain(hostedSubdomain: string | null | undefined): string {
+	return normalizeHostedSubdomain(hostedSubdomain);
 }
 
-export function getCustomUrlFromSubdomain(subdomain: string): string {
-	return subdomain.trim() ? `https://${subdomain.trim()}.${DOMAIN_SUFFIX}` : "";
+export function getHostedUrlFromSubdomain(subdomain: string): string {
+	return hostedUrlFromSubdomain(subdomain) ?? "";
 }
 
 export function getNodeVerb(stepId: PreviewStepId, deployRoute: PreviewDeployRoute | null): string {
@@ -97,13 +92,13 @@ export function getEditorTitle(editor: Editor): string {
 	if (editor?.kind === "infra") return "Infrastructure";
 	if (editor?.kind === "envVars") return "Environment variables";
 	if (editor?.kind === "nginx") return "Nginx";
-	if (editor?.kind === "customDomain") return "Custom domain";
+	if (editor?.kind === "customDomain") return "Hosted subdomain";
 	return "Details";
 }
 
 export function getEditorDescription(editor: Editor): string {
 	if (editor?.kind === "customDomain") {
-		return "Choose a subdomain on our host, or clear it to remove the custom URL.";
+		return "Choose a subdomain on our host, or clear it to remove the hosted URL.";
 	}
 	return "Edits here update the deployment configuration or scan artifacts.";
 }

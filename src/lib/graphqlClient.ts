@@ -87,13 +87,12 @@ const APP_OVERVIEW_QUERY = `
 			deployments {
 				id
 				repoName
-				url
+				repoUrl
 				branch
-				kind
 				responseId
 				commitSha
-				envVars
-				liveUrl
+				hostedSubdomain
+				hostedUrl
 				screenshotUrl
 				serviceName
 				status
@@ -102,24 +101,9 @@ const APP_OVERVIEW_QUERY = `
 				revision
 				cloudProvider
 				deploymentTarget
-				awsRegion
-				ec2 {
-					success
-					baseUrl
-					instanceId
-					publicIp
-					vpcId
-					subnetId
-					securityGroupId
-					amiId
-					sharedAlbDns
-					instanceType
-				}
-				cloudRun {
-					serviceId
-					region
-					projectId
-				}
+				region
+				secretsArn
+				cloudResources
 				scanResults
 			}
 			repoServices {
@@ -148,13 +132,12 @@ const REPO_DEPLOYMENTS_QUERY = `
 		repoDeployments(repoName: $repoName) {
 			id
 			repoName
-			url
+			repoUrl
 			branch
-			kind
 			responseId
 			commitSha
-			envVars
-			liveUrl
+			hostedSubdomain
+			hostedUrl
 			screenshotUrl
 			serviceName
 			status
@@ -163,24 +146,9 @@ const REPO_DEPLOYMENTS_QUERY = `
 			revision
 			cloudProvider
 			deploymentTarget
-			awsRegion
-			ec2 {
-				success
-				baseUrl
-				instanceId
-				publicIp
-				vpcId
-				subnetId
-				securityGroupId
-				amiId
-				sharedAlbDns
-				instanceType
-			}
-			cloudRun {
-				serviceId
-				region
-				projectId
-			}
+			region
+			secretsArn
+			cloudResources
 			scanResults
 		}
 	}
@@ -320,7 +288,7 @@ export async function updateDeployment(config: DeployConfig): Promise<void> {
 export async function saveDeploymentAnalysis(args: {
 	repoName: string;
 	serviceName: string;
-	url?: string;
+	repoUrl?: string;
 	branch?: string;
 	commitSha?: string | null;
 	responseId?: string | null;

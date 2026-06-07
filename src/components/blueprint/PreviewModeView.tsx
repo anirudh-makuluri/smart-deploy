@@ -44,14 +44,14 @@ export default function PreviewModeView({
 				railpackPlanJson={view.railpackPlanJson}
 				regionSelectOptions={view.regionSelectOptions}
 				onUpdateDeployment={view.onUpdateDeployment}
-				subdomainDraft={view.subdomainDraft}
-				customUrlStatus={view.customUrlStatus}
-				customUrlVerifying={view.customUrlVerifying}
-				customUrlSaving={view.customUrlSaving}
-				isCustomUrlDirty={view.isCustomUrlDirty}
-				onUpdateSubdomainDraft={view.updateSubdomainDraft}
-				onSaveCustomUrl={view.handleSaveCustomUrl}
-				onCancelCustomUrl={view.handleCancelCustomUrl}
+				hostedSubdomainDraft={view.hostedSubdomainDraft}
+				hostedSubdomainStatus={view.hostedSubdomainStatus}
+				hostedSubdomainVerifying={view.hostedSubdomainVerifying}
+				hostedSubdomainSaving={view.hostedSubdomainSaving}
+				isHostedSubdomainDirty={view.isHostedSubdomainDirty}
+				onUpdateHostedSubdomainDraft={view.updateHostedSubdomainDraft}
+				onSaveHostedSubdomain={view.handleSaveHostedSubdomain}
+				onCancelHostedSubdomain={view.handleCancelHostedSubdomain}
 			/>
 		</div>
 	);

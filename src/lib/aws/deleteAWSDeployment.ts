@@ -1,4 +1,5 @@
-import { DeployConfig, EC2Details } from "../../app/types";
+import { DeployConfig } from "../../app/types";
+import { isEcsCloudResources } from "@/lib/cloudResources";
 import config from "../../config";
 import {
 	EC2Client,
@@ -166,10 +167,11 @@ async function cleanupSharedAlbForTargetGroup(targetGroupArn: string, region: st
 }
 
 async function resolveEcsTargetGroupArn(deployConfig: DeployConfig, region: string): Promise<string | null> {
-	const stored = ((deployConfig.ec2 || {}) as EC2Details).targetGroupArn?.trim();
+	const ecsResources = isEcsCloudResources(deployConfig.cloudResources) ? deployConfig.cloudResources : null;
+	const stored = ecsResources?.targetGroupArn?.trim();
 	if (stored) return stored;
 
-	const repoName = String(deployConfig.repoName || deployConfig.url.split("/").pop()?.replace(".git", "") || "app").trim();
+	const repoName = String(deployConfig.repoName || deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app").trim();
 	const serviceName = String(deployConfig.serviceName || repoName || "app").trim();
 	const candidates = [
 		awsNameChunk(`sd-${repoName}-${serviceName}-tg`, 32),
@@ -183,14 +185,13 @@ async function resolveEcsTargetGroupArn(deployConfig: DeployConfig, region: stri
 }
 
 async function deleteEcsDeployment(deployConfig: DeployConfig): Promise<void> {
-	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const ec2Details = (deployConfig.ec2 || {}) as EC2Details;
-	const parsed = parseEcsInstanceId(ec2Details.instanceId?.trim() || "");
+	const region = deployConfig.region || config.AWS_REGION || "us-west-2";
+	const ecsResources = isEcsCloudResources(deployConfig.cloudResources) ? deployConfig.cloudResources : null;
 
-	const repoName = deployConfig.repoName?.trim() || deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const repoName = deployConfig.repoName?.trim() || deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const unitName = deployConfig.serviceName?.trim() || "app";
-	const cluster = parsed?.cluster || config.ECS_CLUSTER_NAME?.trim() || "";
-	const serviceName = parsed?.serviceName || awsNameChunk(`sd-${repoName}-${unitName}`, 255);
+	const cluster = ecsResources?.cluster?.trim() || config.ECS_CLUSTER_NAME?.trim() || "";
+	const serviceName = ecsResources?.service?.trim() || awsNameChunk(`sd-${repoName}-${unitName}`, 255);
 
 	if (!cluster) {
 		console.warn("deleteEcsDeployment: no ECS cluster name found; skipping service delete");
@@ -225,8 +226,8 @@ async function deleteEcsDeployment(deployConfig: DeployConfig): Promise<void> {
  * When shared ALB is enabled, also removes target group and listener rules.
  */
 export async function deleteEC2Instance(deployConfig: DeployConfig): Promise<void> {
-	const region = deployConfig.awsRegion || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const region = deployConfig.region || config.AWS_REGION || "us-west-2";
+	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 
 	const ec2Client = new EC2Client(getClientConfig(region));
 
@@ -253,16 +254,7 @@ export async function deleteEC2Instance(deployConfig: DeployConfig): Promise<voi
 		}
 	}
 
-	const instanceId = ((deployConfig.ec2 || {}) as EC2Details)?.instanceId;
-	if (instanceId) {
-		try {
-			await ec2Client.send(new TerminateInstancesCommand({ InstanceIds: [instanceId] }));
-		} catch (err) {
-			if (!isNotFoundError(err)) throw err;
-		}
-	} else {
-		console.warn("deleteEC2Instance: no instanceId found in deployConfig.ec2; nothing to delete");
-	}
+	console.warn("deleteEC2Instance: legacy EC2 deployments are no longer supported; skipping instance terminate");
 
 	// Note: Security Groups, Key Pairs, and other resources are not automatically deleted
 }

@@ -1,10 +1,10 @@
-import { DeployConfig, DeployStep, EC2Details } from "./app/types";
+import { DeployConfig, DeployStep } from "./app/types";
+import { isEcsCloudResources } from "@/lib/cloudResources";
 import config from "./config";
 import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
 import { streamLogs } from "./gcloud-logs/streamLogs";
 import { handleDeploy, handleManualRollback } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
-import { getInitialEc2ServiceLogs, streamEc2ServiceLogs } from "./lib/aws/ec2ServiceLogs";
 import * as deployLogsStore from "./lib/deployLogsStore";
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID?: string }, ws: any) {
@@ -106,39 +106,14 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 
 	if (deployConfig?.status !== "running") return;
 
-	if (deployConfig?.ec2 && typeof deployConfig.ec2 === "object") {
-		const ec2Details = deployConfig.ec2 as EC2Details;
-		const instanceId = (ec2Details.instanceId || "").trim();
-		if (/^i-/.test(instanceId)) {
-			const region = deployConfig.awsRegion || config.AWS_REGION;
-			const logs = await getInitialEc2ServiceLogs({
-				instanceId: ec2Details.instanceId,
-				region,
-				serviceName,
-				limit: 200,
-			});
-
-			if (ws?.readyState === ws?.OPEN) {
-				ws.send(
-					JSON.stringify({
-						type: "initial_logs",
-						payload: { logs },
-					})
-				);
-			}
-
-			streamEc2ServiceLogs({
-				instanceId: deployConfig.ec2.instanceId,
-				region,
-				serviceName,
-				ws,
-			});
-			return;
+	if (isEcsCloudResources(deployConfig?.cloudResources)) {
+		if (ws?.readyState === ws?.OPEN) {
+			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 		}
+		return;
 	}
 
-	// Only stream gcloud logs for Cloud Run deployments
-	if (!serviceName || deployConfig?.deploymentTarget !== "cloud_run") {
+	if (!serviceName) {
 		if (ws?.readyState === ws?.OPEN) {
 			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 		}

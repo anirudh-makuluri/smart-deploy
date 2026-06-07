@@ -2,37 +2,13 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RepoServicesList from "@/components/RepoServicesList";
-import type { DeployConfig, DetectedServiceInfo, repoType } from "@/app/types";
+import type { DetectedServiceInfo, repoType } from "@/app/types";
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
 vi.mock("@/components/ServiceTypeIcon", () => ({
 	default: () => <div data-testid="service-icon" />,
 	ServiceTypeBadge: () => <div data-testid="service-badge" />,
 }));
-
-function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
-	return {
-		id: "dep-1",
-		repoName: "shop",
-		url: "https://github.com/acme/shop",
-		branch: "main",
-		serviceName: "web",
-		status: "running",
-		commitSha: null,
-		envVars: null,
-		liveUrl: null,
-		screenshotUrl: null,
-		firstDeployment: null,
-		lastDeployment: null,
-		revision: null,
-		cloudProvider: "aws",
-		deploymentTarget: "ec2",
-		awsRegion: "us-west-2",
-		ec2: null,
-		cloudRun: null,
-		scanResults: {},
-		...overrides,
-	} as DeployConfig;
-}
 
 const repo = {
 	name: "shop",
@@ -96,7 +72,7 @@ describe("RepoServicesList", () => {
 			/>
 		);
 
-		fireEvent.click(within(view.container).getByRole("button", { name: /@shop\/web root: \. paused/i }));
+		fireEvent.click(within(view.container).getByRole("button", { name: /shop\/web root directory paused/i }));
 
 		expect(openWorkspaceForService).toHaveBeenCalledWith(service);
 	});

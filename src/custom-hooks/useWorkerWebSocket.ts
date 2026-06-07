@@ -1,6 +1,7 @@
 import { DeployConfig, DeployStep } from "@/app/types";
 import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 import { getDeploymentDisplayUrl } from "@/lib/utils";
+import { subdomainFromHostedUrl } from "@/lib/hostedUrl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,7 +11,7 @@ export type DeployCompleteWsPayload = {
 	deploymentTarget?: string | null;
 	finalStatus?: DeployConfig["status"] | null;
 	rolledBack?: boolean;
-	ec2?: DeployConfig["ec2"];
+	cloudResources?: DeployConfig["cloudResources"];
 	error?: string;
 	customDnsAdded?: boolean;
 	customDnsError?: string | null;
@@ -450,8 +451,9 @@ export function useWorkerWebSocketSession({
 										...(typeof deploymentTarget === "string" && deploymentTarget
 											? { deploymentTarget: deploymentTarget as DeployConfig["deploymentTarget"] }
 											: {}),
-										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
-										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
+										...(completePayload.cloudResources != null
+											? { cloudResources: completePayload.cloudResources }
+											: {}),
 										status: finalStatus,
 									});
 								}
@@ -466,16 +468,17 @@ export function useWorkerWebSocketSession({
 									const deploymentTarget =
 										(completePayload.deploymentTarget as DeployConfig["deploymentTarget"] | null | undefined) ??
 										currentConfig.deploymentTarget;
+									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
+									const hostedSubdomain = customUrl ? subdomainFromHostedUrl(customUrl) : currentConfig.hostedSubdomain;
 									const updated: DeployConfig = {
 										...currentConfig,
-										...(deployUrlFromPayload != null ? { liveUrl: deployUrlFromPayload } : {}),
 										status: "running",
 										...(deploymentTarget ? { deploymentTarget } : {}),
-										...(completePayload.ec2 != null ? { ec2: completePayload.ec2 } : {}),
+										...(completePayload.cloudResources != null
+											? { cloudResources: completePayload.cloudResources }
+											: {}),
+										hostedSubdomain: hostedSubdomain ?? null,
 									};
-									const customUrl = typeof completePayload.customUrl === "string" ? completePayload.customUrl.trim() : "";
-									const displayUrl = getDeploymentDisplayUrl(updated)?.trim() ?? "";
-									updated.liveUrl = customUrl || displayUrl || deployUrlFromPayload || currentConfig.liveUrl || null;
 									assignDeployConfig(updated);
 								}
 								setSteps((prev) => prev.map((step) => (step.id === "done" ? { ...step, status: "success" } : step)));

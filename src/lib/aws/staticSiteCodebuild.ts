@@ -35,7 +35,7 @@ export async function runStaticSiteCodeBuildPipeline(params: {
 		throw new Error("Static site deploy requires STATIC_SITE_BUCKET and STATIC_SITE_PUBLIC_BASE_URL.");
 	}
 
-	const repoUrl = deployConfig.url;
+	const repoUrl = deployConfig.repoUrl;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const prefix = buildStaticSiteS3Prefix(repoName, deployConfig.serviceName).replace(/^\/+/, "");
 	const bucket = config.STATIC_SITE_BUCKET!.trim();

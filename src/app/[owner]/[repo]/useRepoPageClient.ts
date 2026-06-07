@@ -14,6 +14,7 @@ import {
 	type DetectServicesResult,
 } from "@/lib/graphqlClient";
 import { getDeploymentForService, normalizeRepoUrl } from "@/lib/utils";
+import { generateDefaultHostedSubdomain, normalizeHostedSubdomain } from "@/lib/hostedUrl";
 import config from "@/config";
 
 const normalizeRepoUrlForMatch = normalizeRepoUrl;
@@ -44,14 +45,12 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	} = useAppData();
 
 	const [catalogBusy, setCatalogBusy] = React.useState(false);
-	const [isDeleting, setIsDeleting] = React.useState(false);
 	const [mobileWorkspaceNavOpen, setMobileWorkspaceNavOpen] = React.useState(false);
 	const deploymentsLoadStartedRef = React.useRef(false);
 
 	const repoFullName = `${owner}/${repoName}`;
 	const routeRepoLower = repoFullName.toLowerCase();
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
-	const normalizedRepoUrl = normalizeRepoUrlForMatch(repoUrl);
 
 	const repoFromStore = React.useMemo(() => {
 		if (activeRepo?.full_name?.toLowerCase() === routeRepoLower) {
@@ -60,11 +59,11 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		return (
 			repoList.find((r) => {
 				const sameFullName = r.full_name.toLowerCase() === routeRepoLower;
-				const sameUrl = normalizeRepoUrlForMatch(r.html_url) === normalizedRepoUrl;
+				const sameUrl = normalizeRepoUrlForMatch(r.html_url) === repoUrl;
 				return sameFullName || sameUrl;
 			}) ?? null
 		);
-	}, [activeRepo, repoList, routeRepoLower, normalizedRepoUrl]);
+	}, [activeRepo, repoList, routeRepoLower, repoUrl]);
 
 	const repoQuery = useQuery({
 		queryKey: ["repo-resolve", owner, repoName],
@@ -87,12 +86,12 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		}
 
 		const record = repoServices.find(
-			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl && (detectionBranch ? r.branch === detectionBranch : true)
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === repoUrl && (detectionBranch ? r.branch === detectionBranch : true)
 		);
 		if (record?.services?.length) return record.services;
 
 		return null;
-	}, [detectionBranch, getDetectedRepoCache, repoServices, normalizedRepoUrl, repoUrl]);
+	}, [detectionBranch, getDetectedRepoCache, repoServices, repo, repoUrl]);
 
 	const storedRepoServicesQuery = useQuery({
 		queryKey: ["stored-repo-services"],
@@ -110,7 +109,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		if (inMemory?.services?.length !== undefined) return () => {};
 
 		const record = repoServices.find(
-			(r) => normalizeRepoUrlForMatch(r.repo_url) === normalizedRepoUrl && (detectionBranch ? r.branch === detectionBranch : true)
+			(r) => normalizeRepoUrlForMatch(r.repo_url) === repoUrl && (detectionBranch ? r.branch === detectionBranch : true)
 		);
 		if (!record?.services?.length) return () => {};
 
@@ -121,7 +120,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			packageManager: undefined,
 		});
 		return () => {};
-	}, [detectionBranch, getDetectedRepoCache, normalizedRepoUrl, repoServices, repoUrl, setDetectedRepoCache]);
+	}, [detectionBranch, getDetectedRepoCache, repo, repoServices, repoUrl, setDetectedRepoCache]);
 
 	const applyCatalogResult = React.useCallback(
 		(data: DetectServicesResult) => {
@@ -197,7 +196,8 @@ export function useRepoPageClient(owner: string, repoName: string) {
 					toast.success("Service detection refreshed");
 					return true;
 				} catch (e) {
-					toast.error(getErrorMessage(e as Error, "Failed to refresh service detection"));
+					console.error(e);
+					toast.error("Failed to refresh service detection");
 					return false;
 				} finally {
 					setCatalogBusy(false);
@@ -233,13 +233,13 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const repoDeploymentsFromStore = React.useMemo(() => {
 		if (!repo) return [];
 		return deployments.filter((deployment) => {
-			const deploymentUrl = normalizeRepoUrl(deployment.url ?? "");
+			const deploymentUrl = normalizeRepoUrl(deployment.repoUrl ?? "");
 			if (deploymentUrl) {
-				return deploymentUrl === normalizedRepoUrl;
+				return deploymentUrl === repoUrl;
 			}
 			return deployment.repoName === repo.name;
 		});
-	}, [deployments, normalizedRepoUrl, repo]);
+	}, [deployments, repo, repo]);
 
 	const repoDeploymentsQuery = useQuery({
 		queryKey: ["repo-deployments", repo?.full_name ?? repoFullName],
@@ -343,17 +343,31 @@ export function useRepoPageClient(owner: string, repoName: string) {
 				await updateDeploymentById({
 					repoName: repo.name,
 					serviceName: normalizedServiceName,
-					url: repo.html_url,
+					repoUrl: repo.html_url,
 					branch: repo.default_branch ?? "main",
-					kind: "container",
+					hostedSubdomain: generateDefaultHostedSubdomain(repo.name),
 					status: "didnt_deploy",
 					cloudProvider: "aws",
 					deploymentTarget: "ecs",
-					awsRegion: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
+					region: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
 				});
 			} catch (e) {
 				// Non-blocking: still allow the workspace to open using the local draft deployment.
 				toast.error(getErrorMessage(e as Error, "Failed to create deployment"));
+			}
+		} else if (
+			repo &&
+			existingDeployment &&
+			!normalizeHostedSubdomain(existingDeployment.hostedSubdomain)
+		) {
+			try {
+				await updateDeploymentById({
+					repoName: repo.name,
+					serviceName: normalizedServiceName,
+					hostedSubdomain: generateDefaultHostedSubdomain(repo.name),
+				});
+			} catch {
+				// Non-blocking: local draft still gets a generated subdomain via useActiveDeployment.
 			}
 		}
 
@@ -378,7 +392,6 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		repoUrl,
 		isLoadingRepo,
 		repoNotFound,
-		isDeleting,
 		activeService,
 		mobileWorkspaceNavOpen,
 		setMobileWorkspaceNavOpen,

@@ -6,13 +6,15 @@ import config from "../config";
 import {
 	DeploymentTarget,
 	DeployConfig,
-	EC2Details,
+	CloudResources,
 	DeployStep,
 	SDArtifactsResponse,
 	DeploymentHistoryEntry,
 	DeploymentReleaseArtifact,
 	EcrServiceImageRef,
 } from "../app/types";
+import { cloudResourcesFromDeployResult } from "./cloudResources";
+import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
 import { MultiServiceConfig } from "./multiServiceDetector";
 import { dbHelper } from "../db-helper";
 import { configSnapshotFromDeployConfig } from "./utils";
@@ -68,7 +70,7 @@ import {
 	deployConfigFromReleaseArtifact,
 	ecrImageRefFromArtifact,
 	hasUsableReleaseArtifact,
-	isEc2ConfigReleaseArtifact,
+	isLegacyEc2ConfigReleaseArtifact,
 	isEcrImageReleaseArtifact,
 	isStaticSiteReleaseArtifact,
 	serviceImageRefsFromArtifact,
@@ -104,8 +106,9 @@ type VerificationResult =
 function cloneDeployConfigSnapshot(config: DeployConfig): DeployConfig {
 	return {
 		...config,
-		ec2: config.ec2 ? { ...config.ec2 } : null,
-		cloudRun: config.cloudRun ? { ...config.cloudRun } : null,
+		cloudResources: config.cloudResources
+			? (JSON.parse(JSON.stringify(config.cloudResources)) as CloudResources)
+			: null,
 		scanResults:
 			config.scanResults && typeof config.scanResults === "object"
 				? JSON.parse(JSON.stringify(config.scanResults))
@@ -320,8 +323,7 @@ async function verifyDeploymentReadiness(params: {
 	deployConfig.status = verifyingStatus;
 	setStepState(deploySteps, "verify", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, verifyingStatus, {
-		...(serviceDetails?.ec2 ? { ec2: serviceDetails.ec2 } : {}),
-		...(deployUrl ? { liveUrl: deployUrl } : {}),
+		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	});
 
 	const candidates = buildVerificationCandidates(deployUrl);
@@ -540,13 +542,13 @@ async function restoreDeploymentFromHistory(params: {
 	deployConfig.status = rollbackStatus;
 	setStepState(deploySteps, "rollback", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, rollbackStatus, {
-		...(serviceDetails?.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	});
 	send(`Starting ${rollbackNoun} to ${previousLabel}...`, "rollback");
 
 	try {
-		const region = rollbackCandidate.awsRegion || config.AWS_REGION;
-		const repoName = rollbackCandidate.url.split("/").pop()?.replace(".git", "") || rollbackCandidate.repoName || "app";
+		const region = rollbackCandidate.region || config.AWS_REGION;
+		const repoName = rollbackCandidate.repoUrl.split("/").pop()?.replace(".git", "") || rollbackCandidate.repoName || "app";
 		const rollbackMultiServiceConfig = buildMultiServiceConfigFromDeployConfig(rollbackCandidate);
 		let rollbackResult;
 
@@ -571,7 +573,7 @@ async function restoreDeploymentFromHistory(params: {
 						: "Rollback could not read the static-site release config.",
 				};
 			}
-			const parsedRb = parseGithubOwnerRepo(rbConfig.url);
+			const parsedRb = parseGithubOwnerRepo(rbConfig.repoUrl);
 			const repoFullNameRb = parsedRb ? `${parsedRb.owner}/${parsedRb.repo}` : repoName;
 			const branchRb = rbConfig.branch?.trim() || rollbackCandidate.branch?.trim() || "";
 			if (!branchRb.trim()) {
@@ -642,7 +644,7 @@ async function restoreDeploymentFromHistory(params: {
 				ws: null,
 				send,
 			});
-		} else if (isEc2ConfigReleaseArtifact(releaseArtifact)) {
+		} else if (isLegacyEc2ConfigReleaseArtifact(releaseArtifact)) {
 			setStepState(deploySteps, "rollback", "error");
 			return {
 				success: false,
@@ -671,7 +673,7 @@ async function restoreDeploymentFromHistory(params: {
 			};
 		}
 
-		const failedInstanceId = serviceDetails?.ec2?.instanceId?.trim();
+		const failedInstanceId = "";
 		if (
 			isAwsEc2InstanceId(failedInstanceId) &&
 			isAwsEc2InstanceId(rollbackResult.instanceId) &&
@@ -716,22 +718,31 @@ async function restoreDeploymentFromHistory(params: {
 		}
 
 		setStepState(deploySteps, "rollback", "success");
+		const rollbackTarget: DeploymentTarget = isStaticSiteReleaseArtifact(releaseArtifact)
+			? "static_s3"
+			: "ecs";
 		const restoredConfig = cloneDeployConfigSnapshot(rollbackCandidate);
 		restoredConfig.status = transitionDeploymentStatus(rollbackStatus, "rollback_succeeded");
-		restoredConfig.liveUrl = rollbackCandidate.liveUrl;
+		restoredConfig.hostedSubdomain = rollbackCandidate.hostedSubdomain;
 		restoredConfig.screenshotUrl = rollbackCandidate.screenshotUrl;
-		restoredConfig.ec2 = {
-			success: true,
-			baseUrl: rollbackResult.baseUrl,
-			instanceId: rollbackResult.instanceId,
-			publicIp: rollbackResult.publicIp,
-			vpcId: rollbackResult.vpcId,
-			subnetId: rollbackResult.subnetId,
-			securityGroupId: rollbackResult.securityGroupId,
-			amiId: rollbackResult.amiId,
-			sharedAlbDns: rollbackResult.sharedAlbDns || rollbackCandidate.ec2?.sharedAlbDns || "",
-			instanceType: rollbackCandidate.ec2?.instanceType || serviceDetails?.ec2?.instanceType || "t3.micro",
-		};
+		restoredConfig.deploymentTarget = rollbackTarget;
+		restoredConfig.cloudResources = cloudResourcesFromDeployResult(
+			rollbackTarget,
+			region,
+			rollbackResult,
+			isStaticSiteReleaseArtifact(releaseArtifact)
+				? {
+					bucket: releaseArtifact.bucket,
+					keyPrefix: releaseArtifact.keyPrefix,
+					cloudFrontDistributionId: releaseArtifact.cloudFrontDistributionId,
+				}
+				: {
+					cluster: config.ECS_CLUSTER_NAME?.trim(),
+					service: rollbackResult.instanceId?.startsWith("ecs:")
+						? rollbackResult.instanceId.slice(4).split("/").pop()
+						: undefined,
+				}
+		);
 
 		send(`SUCCESS: ${isAutomatic ? "Automatic rollback" : "Rollback"} restored ${previousLabel}.`, "rollback");
 		return {
@@ -889,8 +900,8 @@ export async function handleManualRollback(args: {
 				? latestSuccessfulResponse.history
 				: null;
 
-		const serviceDetails: ServiceDeployDetails | null = deployConfig.ec2
-			? { ec2: deployConfig.ec2 }
+		const serviceDetails: ServiceDeployDetails | null = deployConfig.cloudResources
+			? { cloudResources: deployConfig.cloudResources }
 			: null;
 		const rollbackAttempt = await restoreDeploymentFromHistory({
 			deployConfig,
@@ -935,7 +946,13 @@ export async function handleManualRollback(args: {
 		};
 		const verification = await verifyDeploymentReadiness({
 			deployConfig: verificationConfig,
-			deployUrl: rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl || "",
+			deployUrl:
+				getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
+				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
+					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
+					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
+						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
+						: ""),
 			userID,
 			token,
 			send,
@@ -953,8 +970,10 @@ export async function handleManualRollback(args: {
 			await sendDeployComplete(
 				ws,
 				verification.success
-					? (rollbackAttempt.restoredConfig.liveUrl ?? undefined)
-					: (verification.postPersistConfig?.liveUrl ?? rollbackAttempt.restoredConfig.liveUrl ?? undefined),
+					? (getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined)
+					: (verification.postPersistConfig
+						? getDeploymentHostedUrl(verification.postPersistConfig) ?? undefined
+						: getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined),
 				false,
 				failedVerificationConfig,
 				deploySteps,
@@ -963,7 +982,9 @@ export async function handleManualRollback(args: {
 				null,
 				verification.success
 					? serviceDetails
-					: (verification.postPersistConfig?.ec2 ? { ec2: verification.postPersistConfig.ec2 } : serviceDetails),
+					: (verification.postPersistConfig?.cloudResources
+						? { cloudResources: verification.postPersistConfig.cloudResources }
+						: serviceDetails),
 				durationMs,
 				{
 					errorMessage: verification.success ? "Rollback verification failed." : verification.errorMessage,
@@ -977,13 +998,18 @@ export async function handleManualRollback(args: {
 		}
 
 		const completionConfig: DeployConfig = verificationConfig;
-		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.ec2
-			? { ec2: rollbackAttempt.restoredConfig.ec2 }
+		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.cloudResources
+			? { cloudResources: rollbackAttempt.restoredConfig.cloudResources }
 			: null;
 		const durationMs = Date.now() - deployStartTime;
 		await sendDeployComplete(
 			ws,
-			rollbackAttempt.restoredConfig.liveUrl || rollbackAttempt.restoredConfig.ec2?.baseUrl,
+			getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
+				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
+					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
+					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
+						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
+						: undefined),
 			true,
 			completionConfig,
 			deploySteps,
@@ -1009,11 +1035,11 @@ export async function handleManualRollback(args: {
 				id: `rollback-${repoName}-${serviceName}`,
 				repoName,
 				serviceName,
-				url: "",
+				repoUrl: "",
 				branch: "",
 				commitSha: null,
 				envVars: null,
-				liveUrl: null,
+				hostedSubdomain: null,
 				screenshotUrl: null,
 				status: "failed",
 				firstDeployment: null,
@@ -1021,9 +1047,8 @@ export async function handleManualRollback(args: {
 				revision: null,
 				cloudProvider: "aws",
 				deploymentTarget: "ecs",
-				awsRegion: config.AWS_REGION,
-				ec2: null,
-				cloudRun: null,
+				region: config.AWS_REGION,
+				cloudResources: null,
 				scanResults: {},
 			} as DeployConfig;
 			await sendDeployComplete(ws, undefined, false, fallbackConfig, deploySteps, userID, "ecs", null, null, durationMs, {
@@ -1124,14 +1149,14 @@ async function saveDeploymentToDB(
 
 	try {
 		// Prepare minimal deployment config for DB (omit scanResults — lifecycle updates must not re-upsert analysis)
+		const hostedFromDns = customUrl ? subdomainFromHostedUrl(customUrl) : null;
 		const minimalDeployment: DeployConfig = deployConfigForStatusPersist({
 			...deployConfig,
 			status: success
 				? transitionDeploymentStatus(deployConfig.status, "deployment_succeeded")
 				: transitionDeploymentStatus(deployConfig.status, "deployment_failed"),
-			...(deployUrl && { liveUrl: deployUrl }),
-			...(customUrl && { liveUrl: customUrl }),
-			...(serviceDetails?.ec2 && { ec2: serviceDetails.ec2 }),
+			...(hostedFromDns ? { hostedSubdomain: hostedFromDns } : {}),
+			...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 		});
 
 		// Update deployment document (creates if doesn't exist)
@@ -1154,7 +1179,7 @@ async function saveDeploymentToDB(
 
 			// Kick off screenshot generation in the background so deploy completion isn't delayed.
 			if (success) {
-				const screenshotTargetUrl = (customUrl ?? deployUrl) || "";
+				const screenshotTargetUrl = (customUrl ?? getDeploymentHostedUrl(minimalDeployment) ?? deployUrl) || "";
 				if (screenshotTargetUrl.trim()) {
 					void (async () => {
 						try {
@@ -1255,7 +1280,7 @@ function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], 
 
 /** Per-service details to persist after deploy */
 type ServiceDeployDetails = {
-	ec2?: EC2Details;
+	cloudResources?: CloudResources | null;
 };
 
 async function sendDeployComplete(
@@ -1382,13 +1407,13 @@ async function sendDeployComplete(
 		customDnsError?: string | null;
 		customUrl?: string | null;
 		error?: string | null;
-		ec2?: EC2Details;
+		cloudResources?: CloudResources | null;
 	} = {
-		deployUrl: lifecycle?.postPersistConfig?.liveUrl ?? deployUrl ?? null,
+		deployUrl: deployUrl ?? null,
 		success,
 		deploymentTarget: deploymentTarget ?? null,
 	};
-	if (serviceDetails?.ec2) payload.ec2 = serviceDetails.ec2;
+	if (serviceDetails?.cloudResources) payload.cloudResources = serviceDetails.cloudResources;
 	if (customDns) {
 		payload.customDnsAdded = customDns.success;
 		if (customDns.success) {
@@ -1440,8 +1465,8 @@ async function handleAWSCodeBuildDeploy(
 	deploySteps: DeployStep[],
 	rollbackHistoryEntry: DeploymentHistoryEntry | null,
 ): Promise<string> {
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoUrl = deployConfig.url;
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoUrl = deployConfig.repoUrl;
 	const repoName = repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const parsed = parseGithubOwnerRepo(repoUrl);
 	const repoFullName = parsed ? `${parsed.owner}/${parsed.repo}` : repoName;
@@ -1708,33 +1733,26 @@ async function handleAWSCodeBuildDeploy(
 	}
 
 	const serviceDetails: ServiceDeployDetails = {};
-	const ec2Details2 = deployConfig.ec2 || {};
-	const ec2Typed2 = (ec2Details2 && typeof ec2Details2 === "object" && "instanceType" in ec2Details2) 
-		? (ec2Details2 as EC2Details)
-		: null;
-	const instanceTypeSaved =
-		ec2Result.instanceId.startsWith("ecs:")
-			? "Fargate"
-			: ec2Result.instanceId.startsWith("s3:")
-				? "S3 / CDN"
-				: (ec2Typed2?.instanceType || "t3.micro");
-	serviceDetails.ec2 = {
-		success: ec2Result.success,
-		baseUrl: ec2Result.baseUrl,
-		instanceId: ec2Result.instanceId,
-		publicIp: ec2Result.publicIp,
-		vpcId: ec2Result.vpcId,
-		subnetId: ec2Result.subnetId,
-		securityGroupId: ec2Result.securityGroupId,
-		amiId: ec2Result.amiId,
-		sharedAlbDns: ec2Result.sharedAlbDns || "",
-		instanceType: instanceTypeSaved,
-		...(ec2Result.albListenerArn ? { albListenerArn: ec2Result.albListenerArn } : {}),
-		...(ec2Result.targetGroupArn ? { targetGroupArn: ec2Result.targetGroupArn } : {}),
-	};
+	serviceDetails.cloudResources = cloudResourcesFromDeployResult(
+		target,
+		region,
+		ec2Result,
+		target === "static_s3"
+			? {
+				bucket: config.STATIC_SITE_BUCKET?.trim(),
+				keyPrefix: buildStaticSiteS3Prefix(repoName, deployConfig.serviceName).replace(/^\/+/, ""),
+				cloudFrontDistributionId: config.STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID?.trim() || null,
+			}
+			: {
+				cluster: config.ECS_CLUSTER_NAME?.trim(),
+				service: ec2Result.instanceId?.startsWith("ecs:")
+					? ec2Result.instanceId.slice(4).split("/").pop()
+					: deployConfig.serviceName,
+			}
+	);
 	const mergedRelease = attachDeployConfigToReleaseArtifact(releaseArtifact, {
 		...deployConfig,
-		...(serviceDetails.ec2 ? { ec2: serviceDetails.ec2 } : {}),
+		...(serviceDetails.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	} as DeployConfig);
 	if (mergedRelease) {
 		releaseArtifact = mergedRelease as DeploymentReleaseArtifact;
@@ -1762,9 +1780,10 @@ async function handleAWSCodeBuildDeploy(
 	const sharedAlbDns = ec2Result.sharedAlbDns?.trim() || "";
 	if (ec2Result.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
 		send("Configuring Route 53 DNS...", "done");
+		const previousHostedUrl = getDeploymentHostedUrl(deployConfig);
 		dnsResult = await addRoute53DnsRecord(deployUrl || `https://${sharedAlbDns}`, deployConfig.serviceName, {
 			deploymentTarget: target,
-			previousCustomUrl: deployConfig.liveUrl ?? null,
+			previousCustomUrl: previousHostedUrl,
 			sharedAlbDns: sharedAlbDns || null,
 			awsRegion: region,
 		});

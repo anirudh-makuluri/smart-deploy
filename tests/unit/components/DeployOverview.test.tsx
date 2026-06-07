@@ -19,7 +19,9 @@ vi.mock("@/lib/utils", async (importOriginal) => {
 		...actual,
 		formatTimestamp: vi.fn(() => "formatted-time"),
 		formatDeploymentTargetName: vi.fn(() => "EC2"),
-		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) => deployment.liveUrl || ""),
+		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) =>
+			deployment.hostedSubdomain ? `https://${deployment.hostedSubdomain}.example.com` : ""
+		),
 		isDeploymentDisabled: vi.fn(() => false),
 	};
 });
@@ -28,11 +30,11 @@ function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
 		id: "dep-1",
 		repoName: "repo",
-		url: "https://github.com/acme/repo",
+		repoUrl: "https://github.com/acme/repo",
 		branch: "main",
 		serviceName: "web",
 		status: "running",
-		liveUrl: "https://web.example.com",
+		hostedSubdomain: "web",
 		commitSha: null,
 		envVars: null,
 		screenshotUrl: null,
@@ -40,10 +42,9 @@ function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 		lastDeployment: null,
 		revision: null,
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
-		awsRegion: "us-west-2",
-		ec2: null,
-		cloudRun: null,
+		deploymentTarget: "ecs",
+		region: "us-west-2",
+		cloudResources: null,
 		scanResults: {},
 		...overrides,
 	} as DeployConfig;
@@ -51,7 +52,7 @@ function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 
 describe("DeployOverview", () => {
 	it("falls back to didnt_deploy when running has no stored live URL", () => {
-		render(<DeployOverview deployment={makeDeployment({ liveUrl: "", screenshotUrl: "" })} />);
+		render(<DeployOverview deployment={makeDeployment({ hostedSubdomain: null, screenshotUrl: "" })} />);
 		expect(screen.getByText("didnt_deploy")).toBeInTheDocument();
 		expect(screen.getByText("No live URL yet. Deploy to generate a preview snapshot.")).toBeInTheDocument();
 	});
@@ -74,7 +75,7 @@ describe("DeployOverview", () => {
 			<DeployOverview
 				deployment={makeDeployment({
 					status: "didnt_deploy",
-					liveUrl: "https://preview.example.com",
+					hostedSubdomain: "preview",
 					screenshotUrl: null,
 				})}
 			/>
@@ -89,32 +90,28 @@ describe("DeployOverview", () => {
 		expect(within(container).getAllByAltText("Screenshot of web").length).toBeGreaterThan(0);
 	});
 
-	it("shows endpoint links for custom URL and instance IP", () => {
+	it("shows endpoint links for hosted subdomain and ECS base URL", () => {
 		render(
 			<DeployOverview
 				deployment={makeDeployment({
-					liveUrl: "https://custom.example.com",
-					ec2: {
-						success: true,
-						baseUrl: "http://8.8.8.8",
-						instanceId: "i-123",
-						publicIp: "8.8.8.8",
-						vpcId: "vpc-123",
-						subnetId: "subnet-123",
-						securityGroupId: "sg-123",
-						amiId: "ami-123",
-						sharedAlbDns: "alb.example.com",
-						instanceType: "t3.micro",
+					status: "running",
+					hostedSubdomain: "custom",
+					cloudResources: {
+						target: "ecs",
+						region: "us-west-2",
+						cluster: "default",
+						service: "web",
+						baseUrl: "https://alb.example.com",
 					},
 				})}
 			/>
 		);
 
-		expect(screen.getByRole("link", { name: /custom\.example\.com/i })).toHaveAttribute(
+		expect(screen.getByRole("link", { name: /custom\.smart-deploy\.xyz/i })).toHaveAttribute(
 			"href",
-			"https://custom.example.com"
+			"https://custom.smart-deploy.xyz"
 		);
-		expect(screen.getByRole("link", { name: /8\.8\.8\.8/i })).toHaveAttribute("href", "http://8.8.8.8");
+		expect(screen.getByText("default/web")).toBeInTheDocument();
 	});
 
 	it("shows and triggers New Preview button when callback provided", () => {

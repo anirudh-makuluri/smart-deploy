@@ -1,6 +1,8 @@
 import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
 import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
+import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
+import { isEcsCloudResources, isStaticS3CloudResources } from "@/lib/cloudResources";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
@@ -55,10 +57,8 @@ export function formatDeploymentTargetName(target: DeploymentTarget | undefined)
 	if (!target) return "Unknown";
 
 	const targetNames: Record<DeploymentTarget, string> = {
-		ec2: "AWS EC2",
 		ecs: "AWS ECS (Fargate)",
 		static_s3: "Static site (S3 / CDN)",
-		cloud_run: "Google Cloud Run",
 	};
 
 	return targetNames[target] || target;
@@ -78,13 +78,31 @@ export function sanitizeSubdomain(s: string): string {
 const deploymentDomain = () =>
 	(typeof process !== "undefined" && process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN?.trim()) || "";
 
-/** URL to show for "Visit" / "Open link". Prefers stored custom_url; else *.NEXT_PUBLIC_DEPLOYMENT_DOMAIN when set; else deployUrl. */
-export function getDeploymentDisplayUrl(d: { deployUrl?: string | null; custom_url?: string | null; service_name?: string; id?: string }): string | undefined {
-	const custom = (d.custom_url ?? "").trim();
-	if (custom) return custom;
+/** URL to show for "Visit" / "Open link". Prefers hosted subdomain URL; else cloud resource base URL. */
+export function getDeploymentDisplayUrl(
+	d: Pick<DeployConfig, "hostedSubdomain" | "cloudResources" | "serviceName" | "id"> & {
+		deployUrl?: string | null;
+		custom_url?: string | null;
+		service_name?: string;
+	}
+): string | undefined {
+	const hosted = getDeploymentHostedUrl(d);
+	if (hosted) return hosted;
+
+	const resources = d.cloudResources;
+	if (isEcsCloudResources(resources) && resources.baseUrl?.trim()) {
+		return resources.baseUrl.trim();
+	}
+	if (isStaticS3CloudResources(resources) && resources.publicBaseUrl?.trim()) {
+		return resources.publicBaseUrl.trim();
+	}
+
+	const legacyCustom = (d.custom_url ?? "").trim();
+	if (legacyCustom) return legacyCustom;
+
 	const base = deploymentDomain();
 	if (base) {
-		const sub = sanitizeSubdomain((d.service_name ?? d.id ?? "app").toString());
+		const sub = sanitizeSubdomain((d.service_name ?? d.serviceName ?? d.id ?? "app").toString());
 		return `https://${sub}.${base.replace(/^https?:\/\//, "").replace(/\/.*$/, "")}`;
 	}
 	return d.deployUrl ?? undefined;
@@ -253,7 +271,7 @@ export function getDeploymentForService(
 	const matches: DeployConfig[] = [];
 
 	for (const d of deployments) {
-		if (d.repoName !== repoName && normalizeRepoUrl(d.url) !== normalizeRepoUrl(repoUrl)) continue;
+		if (d.repoName !== repoName && normalizeRepoUrl(d.repoUrl) !== normalizeRepoUrl(repoUrl)) continue;
 
 		const dbServiceName = d.serviceName || "";
 		const isExactHit = dbServiceName.toLowerCase() === serviceName.toLowerCase();

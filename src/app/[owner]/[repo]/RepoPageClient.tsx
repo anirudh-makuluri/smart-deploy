@@ -17,7 +17,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		repoUrl,
 		isLoadingRepo,
 		repoNotFound,
-		isDeleting,
 		activeService,
 		mobileWorkspaceNavOpen,
 		setMobileWorkspaceNavOpen,
@@ -59,12 +58,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 			)}
 			{!repoNotFound && !isLoadingRepo && repo && (
 				<>
-					{isDeleting && (
-						<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-lg">
-							<span className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-							<span className="text-sm font-medium text-foreground">Deleting deployments…</span>
-						</div>
-					)}
 					<Header
 						workspaceNav={
 							activeService

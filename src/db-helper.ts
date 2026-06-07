@@ -1,6 +1,7 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { DeployConfig, DeploymentHistoryEntry, repoType, DetectedServiceInfo, RepoServicesRecord, StaticServiceType } from "./app/types";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
+import { generateDefaultHostedSubdomain, normalizeHostedSubdomain } from "./lib/hostedUrl";
 import { isDraftDeploymentStatus, normalizeDeploymentStatus, resolveDeploymentStatus } from "./lib/deploymentStatus";
 
 function hasOwnKey<T extends object>(obj: T, key: string): boolean {
@@ -158,55 +159,52 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		repo_name,
 		service_name,
 		owner_id,
-		url,
+		repo_url,
 		branch,
-		kind,
 		commit_sha,
-		env_vars,
-		live_url,
+		hosted_subdomain,
 		screenshot_url,
 		cloud_provider,
 		deployment_target,
-		aws_region,
+		region,
 		status,
 		first_deployment,
 		last_deployment,
 		revision,
 		response_id,
-		ec2,
-		cloud_run,
+		cloud_resources,
+		secrets_arn,
 		scan_results,
 	} = row;
 
 	const ownerID = String(owner_id ?? "");
+	const hostedSubdomain = toOptionalTrimmedString(hosted_subdomain);
 	const normalized = withDeployInfraDefaults({
-		id,
-		repoName: repo_name || "",
-		serviceName: service_name || "",
-		url: url || "",
-		branch: branch || "",
-		kind: (kind as DeployConfig["kind"]) || "container",
-		responseId: response_id ?? null,
-		commitSha: commit_sha ?? null,
-		envVars: env_vars ?? undefined,
-		liveUrl: live_url ?? null,
-		screenshotUrl: screenshot_url ?? null,
+		id: String(id ?? ""),
+		repoName: String(repo_name || ""),
+		serviceName: String(service_name || ""),
+		repoUrl: String(repo_url || ""),
+		branch: String(branch || "main"),
+		responseId: toOptionalTrimmedString(response_id),
+		commitSha: (commit_sha as string | null) ?? null,
+		hostedSubdomain,
+		screenshotUrl: (screenshot_url as string | null) ?? null,
 		status: resolveDeploymentStatus({
 			status: status as string | null | undefined,
-			liveUrl: (live_url as string | null | undefined) ?? null,
+			hostedSubdomain,
 			screenshotUrl: (screenshot_url as string | null | undefined) ?? null,
 		}),
-		firstDeployment: first_deployment ?? null,
-		lastDeployment: last_deployment ?? null,
-		revision: revision ?? 0,
+		firstDeployment: (first_deployment as string | null) ?? null,
+		lastDeployment: (last_deployment as string | null) ?? null,
+		revision: (revision as number | null) ?? 0,
 		cloudProvider: (cloud_provider as "aws" | "gcp") || "aws",
 		deploymentTarget: (deployment_target as DeployConfig["deploymentTarget"]) || "ecs",
-		awsRegion: aws_region || "",
-		ec2: (ec2 as Record<string, unknown>) || {},
-		cloudRun: (cloud_run as Record<string, unknown>) || {},
-		scanResults: (scan_results || {}) as Record<string, unknown>,
-	} as DeployConfig);
-	return { ...normalized, ownerID } as DeployConfig & { ownerID: string };
+		region: String(region || ""),
+		secretsArn: toOptionalTrimmedString(secrets_arn),
+		cloudResources: (cloud_resources as DeployConfig["cloudResources"]) ?? null,
+		scanResults: (scan_results || {}) as DeployConfig["scanResults"],
+	});
+	return { ...normalized, ownerID };
 }
 
 /**
@@ -214,19 +212,17 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
  */
 function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
 	const row: Record<string, unknown> = {
-		url: config.url,
+		repo_url: config.repoUrl,
 		branch: config.branch,
-		kind: config.kind,
 		commit_sha: config.commitSha,
-		env_vars: config.envVars,
-		live_url: config.liveUrl,
+		hosted_subdomain: config.hostedSubdomain,
 		screenshot_url: config.screenshotUrl,
 		cloud_provider: config.cloudProvider,
 		deployment_target: config.deploymentTarget,
-		aws_region: config.awsRegion,
+		region: config.region,
 		status: normalizeDeploymentStatus(config.status),
-		ec2: config.ec2,
-		cloud_run: config.cloudRun,
+		cloud_resources: config.cloudResources,
+		secrets_arn: config.secretsArn ?? null,
 	};
 	if (config.responseId !== undefined) {
 		row.response_id = config.responseId;
@@ -267,7 +263,7 @@ function matchesRepoIdentifier(row: Record<string, unknown>, repoIdentifier: str
 	const target = normalizeRepoIdentifier(repoIdentifier);
 	if (!target) return false;
 
-	const rowUrl = normalizeRepoIdentifier(String(row.url ?? ""));
+	const rowUrl = normalizeRepoIdentifier(String(row.repo_url ?? ""));
 	const rowRepoName = normalizeRepoIdentifier(String(row.repo_name ?? ""));
 	const rowUrlTail = rowUrl.split("/").slice(-2).join("/");
 
@@ -375,7 +371,7 @@ export const dbHelper = {
 						await upsertAnalysisResponse({
 							id: nextResponseId,
 							payload: { ...rawScanResults, response_id: nextResponseId },
-							repoUrl: String(deployConfig.url ?? existing?.url ?? ""),
+							repoUrl: String(deployConfig.repoUrl ?? existing?.repo_url ?? ""),
 							commitSha: toOptionalTrimmedString(rawScanResults.commit_sha) ?? deployConfig.commitSha ?? null,
 							serviceName,
 							packagePath: toOptionalTrimmedString(rawScanResults.package_path),
@@ -390,6 +386,10 @@ export const dbHelper = {
 				const now = new Date().toISOString();
 				const isDraft = isDraftDeploymentStatus(nextStatus);
 				// Create new deployment with provided data
+				const insertRow = deployConfigToRow(deployConfig);
+				if (!normalizeHostedSubdomain(insertRow.hosted_subdomain as string | null | undefined)) {
+					insertRow.hosted_subdomain = generateDefaultHostedSubdomain(repoName);
+				}
 				const insertPayload: Record<string, unknown> = {
 					id: crypto.randomUUID(),
 					repo_name: repoName,
@@ -398,7 +398,7 @@ export const dbHelper = {
 					first_deployment: nextStatus === "running" ? now : null,
 					last_deployment: isDraft ? null : now,
 					revision: isDraft ? 0 : 1,
-					...deployConfigToRow(deployConfig),
+					...insertRow,
 					response_id: nextResponseId,
 				};
 

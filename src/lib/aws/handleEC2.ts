@@ -2,7 +2,54 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import config from "../../config";
-import { DeployConfig, EC2Details } from "../../app/types";
+import { DeployConfig } from "../../app/types";
+import { isEcsCloudResources } from "@/lib/cloudResources";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+
+/** Runtime EC2/ECS deploy result shape used by legacy ALB helpers (not persisted on DeployConfig). */
+export type EC2Details = {
+	success: boolean;
+	baseUrl: string;
+	instanceId: string;
+	publicIp: string;
+	vpcId: string;
+	subnetId: string;
+	securityGroupId: string;
+	amiId: string;
+	sharedAlbDns: string;
+	instanceType: string;
+	albListenerArn?: string;
+	targetGroupArn?: string;
+};
+
+type LegacyDeployConfig = DeployConfig & {
+	ec2?: EC2Details | null;
+};
+
+function legacyEc2(config: DeployConfig): EC2Details | null {
+	const resources = config.cloudResources;
+	if (isEcsCloudResources(resources)) {
+		return {
+			success: true,
+			baseUrl: resources.baseUrl,
+			instanceId: `ecs:${resources.cluster}/${resources.service}`,
+			publicIp: "",
+			vpcId: resources.vpcId || "",
+			subnetId: "",
+			securityGroupId: "",
+			amiId: "ecs-fargate",
+			sharedAlbDns: resources.alb?.dnsName || "",
+			instanceType: "Fargate",
+			albListenerArn: resources.alb?.listenerArn,
+			targetGroupArn: resources.targetGroupArn,
+		};
+	}
+	return (config as LegacyDeployConfig).ec2 ?? null;
+}
+
+function legacyLiveUrl(config: DeployConfig): string | null {
+	return hostedUrlFromSubdomain(config.hostedSubdomain);
+}
 import { createWebSocketLogger } from "../websocketLogger";
 import { MultiServiceConfig } from "../multiServiceDetector";
 import {
@@ -307,7 +354,7 @@ async function ensureNetworking(
 	let subnetIds: string[];
 	let securityGroupId: string;
 
-	const ec2Casted = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Casted = (legacyEc2(deployConfig) || {}) as EC2Details;
 	if (ec2Casted?.vpcId?.trim() && ec2Casted?.subnetId?.trim() && ec2Casted?.securityGroupId?.trim()) {
 		vpcId = ec2Casted.vpcId.trim();
 		subnetIds = [ec2Casted.subnetId.trim()];
@@ -379,7 +426,7 @@ async function redeployInstance(params: {
 
 	const script = directStatic
 		? buildStaticRedeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -391,7 +438,7 @@ async function redeployInstance(params: {
 			packageManager: directStatic.packageManager,
 		})
 		: buildRedeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -423,15 +470,15 @@ async function redeployInstance(params: {
 		send("Redeploy command failed. Check logs above.", "deploy");
 		return {
 			success: false,
-			baseUrl: deployConfig.liveUrl || ((deployConfig.ec2 || {}) as EC2Details)?.baseUrl || "",
+			baseUrl: legacyLiveUrl(deployConfig) || ((legacyEc2(deployConfig) || {}) as EC2Details)?.baseUrl || "",
 			serviceUrls: new Map(),
 			instanceId: existingInstanceId,
-			publicIp: ((deployConfig.ec2 || {}) as EC2Details)?.publicIp || "",
+			publicIp: ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp || "",
 			...net, subnetId: net.subnetIds[0], amiId,
 		};
 	}
 
-	const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
+	const publicIp = ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp?.trim() || (
 		await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 	).trim();
 
@@ -474,7 +521,7 @@ async function launchNewInstance(params: {
 	const userData = directStatic
 		? generateStaticUserDataScript(nginxConf)
 		: generateUserDataScript(
-			deployConfig.url,
+			deployConfig.repoUrl,
 			deployConfig.branch?.trim() || "",
 			token,
 			envBase64,
@@ -487,7 +534,7 @@ async function launchNewInstance(params: {
 	fs.writeFileSync(tmpFile, userData, "utf8");
 	const fileUri = "file://" + path.resolve(tmpFile).replace(/\\/g, "/");
 
-	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 	let instanceId: string;
 	try {
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
@@ -534,7 +581,7 @@ async function launchNewInstance(params: {
 
 	const firstDeployScript = directStatic
 		? buildStaticFirstDeployScript({
-			repoUrl: deployConfig.url,
+			repoUrl: deployConfig.repoUrl,
 			branch: deployConfig.branch?.trim() || "",
 			token,
 			commitSha: deployConfig.commitSha ?? undefined,
@@ -598,7 +645,7 @@ export async function configureAlb(params: {
 				: "ALB HTTP listener missing."
 		);
 	}
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 
 	await allowAlbToReachService(net.securityGroupId, alb.albSgId, 80, ws);
 
@@ -986,10 +1033,10 @@ function buildServiceUrls(
 	certificateArn: string,
 ): { baseUrl: string; serviceUrls: Map<string, string> } {
 	const serviceUrls = new Map<string, string>();
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
-	const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 	let baseUrl: string;
 	if (deployConfig.serviceName) {
 		const host = customHost || buildServiceHostname(deployConfig.serviceName, deployConfig.serviceName);
@@ -1078,10 +1125,10 @@ export async function handleEC2(
 	parentSend?: SendFn,
 ): Promise<EC2Result> {
 	const send: SendFn = parentSend || createWebSocketLogger(ws);
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigMain = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2ConfigMain = (legacyEc2(deployConfig) || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigMain?.instanceId?.trim() || "";
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -1153,7 +1200,7 @@ export async function handleEC2(
 		};
 	}
 
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);
@@ -1199,10 +1246,10 @@ export async function handleEC2FromEcr(params: {
 	send: SendFn;
 }): Promise<EC2Result> {
 	const { deployConfig, imageUri, imageTag, ecrRegistry, ecrRepoName, ecrPasswordB64, serviceImageRefs, multiServiceConfig, dbConnectionString, ws, send } = params;
-	const region = deployConfig.awsRegion || config.AWS_REGION;
-	const repoName = deployConfig.url.split("/").pop()?.replace(".git", "") || "app";
+	const region = deployConfig.region || config.AWS_REGION;
+	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
 	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
-	const ec2ConfigEcr = (deployConfig.ec2 || {}) as EC2Details;
+	const ec2ConfigEcr = (legacyEc2(deployConfig) || {}) as EC2Details;
 	const existingInstanceId = ec2ConfigEcr?.instanceId?.trim();
 
 	const services = resolveServices(repoName, deployConfig, multiServiceConfig);
@@ -1271,10 +1318,10 @@ export async function handleEC2FromEcr(params: {
 
 			if (!ssmResult.success) {
 				send("❌ ECR deploy failed. Check logs above.", "deploy");
-				const ec2EcrCasted = (deployConfig.ec2 || {}) as EC2Details;
+				const ec2EcrCasted = (legacyEc2(deployConfig) || {}) as EC2Details;
 				return {
 					success: false,
-					baseUrl: deployConfig.liveUrl || ec2EcrCasted?.baseUrl || "",
+					baseUrl: legacyLiveUrl(deployConfig) || ec2EcrCasted?.baseUrl || "",
 					serviceUrls: new Map(),
 					instanceId: existingInstanceId,
 					publicIp: ec2EcrCasted?.publicIp || "",
@@ -1282,7 +1329,7 @@ export async function handleEC2FromEcr(params: {
 				};
 			}
 
-			const publicIp = ((deployConfig.ec2 || {}) as EC2Details)?.publicIp?.trim() || (
+			const publicIp = ((legacyEc2(deployConfig) || {}) as EC2Details)?.publicIp?.trim() || (
 				await runAWSCommand(["ec2", "describe-instances", "--instance-ids", existingInstanceId, "--query", "Reservations[0].Instances[0].PublicIpAddress", "--output", "text", "--region", region], ws, "deploy")
 			).trim();
 
@@ -1314,7 +1361,7 @@ export async function handleEC2FromEcr(params: {
 	const instanceName = generateResourceName(repoName, "ec2");
 	let instanceId: string;
 	try {
-		const ec2Config = (deployConfig.ec2 || {}) as EC2Details;
+		const ec2Config = (legacyEc2(deployConfig) || {}) as EC2Details;
 		const instanceType = resolveEc2InstanceType(ec2Config.instanceType);
 		send(`Launching EC2 instance: ${instanceName} (${instanceType})...`, "deploy");
 		const amiMinRootVolumeGiB = await getAmiMinimumRootVolumeGiB(amiId, region, ws);
@@ -1367,7 +1414,7 @@ export async function handleEC2FromEcr(params: {
 		return { success: false, baseUrl: "", serviceUrls: new Map(), instanceId, publicIp, vpcId: net.vpcId, subnetId: net.subnetIds[0], securityGroupId: net.securityGroupId, amiId };
 	}
 
-	const customHost = normalizeDomain(deployConfig.liveUrl ?? undefined);
+	const customHost = normalizeDomain(legacyLiveUrl(deployConfig) ?? undefined);
 	const scheme = certificateArn ? "https" : "http";
 	const customBaseUrl = customHost ? `${scheme}://${customHost}` : "";
 	let baseUrl = customBaseUrl || (detectedPort === 80 || detectedPort === 8080 ? `http://${publicIp}` : `http://${publicIp}:${detectedPort}`);

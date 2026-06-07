@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeployConfig, EcrImageReleaseArtifact } from "@/app/types";
 import {
-	buildEc2ConfigReleaseArtifact,
 	buildEcrImageReleaseArtifact,
 	deployConfigFromReleaseArtifact,
 	ecrImageRefFromArtifact,
@@ -14,22 +13,21 @@ function makeDeployConfig(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
 		id: "dep-1",
 		repoName: "shop",
-		url: "https://github.com/acme/shop",
+		repoUrl: "https://github.com/acme/shop",
 		branch: "main",
 		serviceName: "web",
 		status: "running",
 		commitSha: "abcdef123456",
 		envVars: "SECRET=old\nPUBLIC=value",
-		liveUrl: "https://web.example.com",
+		hostedSubdomain: "web",
 		screenshotUrl: null,
 		firstDeployment: null,
 		lastDeployment: null,
 		revision: 3,
 		cloudProvider: "aws",
-		deploymentTarget: "ec2",
-		awsRegion: "us-west-2",
-		ec2: null,
-		cloudRun: null,
+		deploymentTarget: "ecs",
+		region: "us-west-2",
+		cloudResources: null,
 		scanResults: {
 			response_id: "resp-1",
 			commit_sha: "abcdef123456",
@@ -73,13 +71,27 @@ describe("deployment release artifacts", () => {
 	});
 
 	it("stores deploy config artifacts without envVars", () => {
-		const artifact = buildEc2ConfigReleaseArtifact(makeDeployConfig());
-		expect(artifact.kind).toBe("ec2_config");
+		const artifact = buildEcrImageReleaseArtifact({
+			deployConfig: makeDeployConfig(),
+			region: "us-west-2",
+			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
+			ecrRepoName: "smartdeploy/shop",
+			imageTag: "abc123",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abc123",
+		});
+		expect(artifact.kind).toBe("ecr_image");
 		expect(artifact.deployConfig).not.toHaveProperty("envVars");
 	});
 
 	it("reconstructs rollback configs with current envVars only", () => {
-		const artifact = buildEc2ConfigReleaseArtifact(makeDeployConfig({ envVars: "SECRET=old" }));
+		const artifact = buildEcrImageReleaseArtifact({
+			deployConfig: makeDeployConfig({ envVars: "SECRET=old" }),
+			region: "us-west-2",
+			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
+			ecrRepoName: "smartdeploy/shop",
+			imageTag: "abc123",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abc123",
+		});
 		artifact.deployConfig.envVars = "SECRET=stale";
 
 		const rollbackConfig = deployConfigFromReleaseArtifact(

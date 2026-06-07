@@ -76,47 +76,46 @@ export const typeDefs = `
   }
 
   enum DeploymentTarget {
-    ec2
     ecs
     static_s3
-    cloud_run
   }
 
-  type TokenUsage {
-    input_tokens: Int!
-    output_tokens: Int!
-    total_tokens: Int!
+  type EcsAlbResources {
+    dnsName: String!
+    listenerArn: String
   }
 
-  type EC2Details {
-    success: Boolean!
-    baseUrl: String!
-    instanceId: String!
-    publicIp: String!
-    vpcId: String!
-    subnetId: String!
-    securityGroupId: String!
-    amiId: String!
-    sharedAlbDns: String!
-    instanceType: String!
-  }
-
-  type CloudRunDetails {
-    serviceId: String!
+  type EcsCloudResources {
+    target: String!
     region: String!
-    projectId: String!
+    cluster: String!
+    service: String!
+    baseUrl: String!
+    alb: EcsAlbResources
+    targetGroupArn: String
+    taskDefinitionArn: String
+    logGroup: String
+    vpcId: String
+  }
+
+  type StaticS3CloudResources {
+    target: String!
+    region: String!
+    bucket: String!
+    keyPrefix: String!
+    publicBaseUrl: String!
+    cloudFrontDistributionId: String
   }
 
   type Deployment {
     id: String!
     repoName: String!
-    url: String!
+    repoUrl: String!
     branch: String!
-    kind: String
     responseId: String
     commitSha: String
-    envVars: String
-    liveUrl: String
+    hostedSubdomain: String
+    hostedUrl: String
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus!
@@ -125,9 +124,9 @@ export const typeDefs = `
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
-    awsRegion: String
-    ec2: EC2Details
-    cloudRun: CloudRunDetails
+    region: String
+    secretsArn: String
+    cloudResources: JSON
     scanResults: JSON!
   }
 
@@ -290,13 +289,11 @@ export const typeDefs = `
   input DeployConfigInput {
     id: String
     repoName: String!
-    url: String
+    repoUrl: String
     branch: String
-    kind: String
     responseId: String
     commitSha: String
-    envVars: String
-    liveUrl: String
+    hostedSubdomain: String
     screenshotUrl: String
     serviceName: String!
     status: DeploymentStatus
@@ -305,9 +302,9 @@ export const typeDefs = `
     revision: Int
     cloudProvider: CloudProvider
     deploymentTarget: DeploymentTarget
-    awsRegion: String
-    ec2: JSON
-    cloudRun: JSON
+    region: String
+    secretsArn: String
+    cloudResources: JSON
     scanResults: JSON
   }
 

@@ -6,6 +6,7 @@ import {
 	DescribeServicesCommand,
 } from "@aws-sdk/client-ecs";
 import type { DeployConfig } from "../../app/types";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import config from "../../config";
 import { getAwsClientConfig } from "./sdkClients";
 import type { EC2Result } from "./handleEC2";
@@ -19,12 +20,6 @@ import {
 } from "./awsHelpers";
 
 type SendFn = (msg: string, stepId: string) => void;
-
-function hostFromLiveUrl(liveUrl: string | undefined | null): string | undefined {
-	if (!liveUrl?.trim()) return undefined;
-	const h = liveUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
-	return h || undefined;
-}
 
 function awsNameChunk(s: string, max: number): string {
 	const out = s
@@ -156,8 +151,10 @@ export async function deployRailpackServerToEcs(params: {
 	});
 
 	const serviceLabel = deployConfig.serviceName?.trim() || repoName;
+	const hostedUrl = hostedUrlFromSubdomain(deployConfig.hostedSubdomain);
+	const hostedHost = hostedUrl?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
 	const hostname =
-		buildServiceHostname(serviceLabel, hostFromLiveUrl(deployConfig.liveUrl)) ||
+		buildServiceHostname(serviceLabel, hostedHost || undefined) ||
 		buildServiceHostname(serviceLabel, undefined);
 	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
 	if (hostname) {

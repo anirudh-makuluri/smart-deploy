@@ -1,12 +1,12 @@
 import type { DeployConfig } from "@/app/types";
 import type { SDDeployUnit } from "@/app/types";
 import type { PreviewModel } from "@/components/blueprint/preview-model";
-import type { CustomUrlStatus, Editor } from "@/components/blueprint/preview-mode-view/types";
+import type { Editor, HostedSubdomainStatus } from "@/components/blueprint/preview-mode-view/types";
 import { PreviewModeViewCustomDomainEditor } from "@/components/blueprint/preview-mode-view/PreviewModeViewCustomDomainEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { defaultAwsRegionForDeploy } from "@/lib/deployInfraDefaults";
+import { defaultRegionForDeploy } from "@/lib/deployInfraDefaults";
 
 type PreviewModeViewEditorPanelsProps = {
 	editor: Editor;
@@ -19,14 +19,14 @@ type PreviewModeViewEditorPanelsProps = {
 	regionSelectOptions: Array<{ value: string; label: string }>;
 	onUpdateDeployment: (partial: Partial<DeployConfig>) => Promise<void> | void;
 	onSetEditor: (editor: Editor) => void;
-	subdomainDraft: string;
-	customUrlStatus: CustomUrlStatus;
-	customUrlVerifying: boolean;
-	customUrlSaving: boolean;
-	isCustomUrlDirty: boolean;
-	onUpdateSubdomainDraft: (draft: string, status?: CustomUrlStatus) => void;
-	onSaveCustomUrl: () => void;
-	onCancelCustomUrl: () => void;
+	hostedSubdomainDraft: string;
+	hostedSubdomainStatus: HostedSubdomainStatus;
+	hostedSubdomainVerifying: boolean;
+	hostedSubdomainSaving: boolean;
+	isHostedSubdomainDirty: boolean;
+	onUpdateHostedSubdomainDraft: (draft: string, status?: HostedSubdomainStatus) => void;
+	onSaveHostedSubdomain: () => void;
+	onCancelHostedSubdomain: () => void;
 };
 
 export function PreviewModeViewEditorPanels({
@@ -40,14 +40,14 @@ export function PreviewModeViewEditorPanels({
 	regionSelectOptions,
 	onUpdateDeployment,
 	onSetEditor,
-	subdomainDraft,
-	customUrlStatus,
-	customUrlVerifying,
-	customUrlSaving,
-	isCustomUrlDirty,
-	onUpdateSubdomainDraft,
-	onSaveCustomUrl,
-	onCancelCustomUrl,
+	hostedSubdomainDraft,
+	hostedSubdomainStatus,
+	hostedSubdomainVerifying,
+	hostedSubdomainSaving,
+	isHostedSubdomainDirty,
+	onUpdateHostedSubdomainDraft,
+	onSaveHostedSubdomain,
+	onCancelHostedSubdomain,
 }: PreviewModeViewEditorPanelsProps) {
 	return (
 		<div className="mt-6 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 stealth-scrollbar">
@@ -145,8 +145,8 @@ export function PreviewModeViewEditorPanels({
 					<div>
 						<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Region</div>
 						<Select
-							value={(deployment.awsRegion || "").trim() || defaultAwsRegionForDeploy()}
-							onValueChange={(next) => void onUpdateDeployment({ awsRegion: next })}
+							value={(deployment.region || "").trim() || defaultRegionForDeploy()}
+							onValueChange={(next) => void onUpdateDeployment({ region: next })}
 						>
 							<SelectTrigger className="h-11 rounded-xl border-white/10 bg-white/2 text-sm text-foreground">
 								<SelectValue placeholder="Select region" />
@@ -183,14 +183,14 @@ export function PreviewModeViewEditorPanels({
 
 			{editor?.kind === "customDomain" ? (
 				<PreviewModeViewCustomDomainEditor
-					subdomainDraft={subdomainDraft}
-					customUrlStatus={customUrlStatus}
-					customUrlVerifying={customUrlVerifying}
-					customUrlSaving={customUrlSaving}
-					isCustomUrlDirty={isCustomUrlDirty}
-					onUpdateSubdomainDraft={onUpdateSubdomainDraft}
-					onSaveCustomUrl={onSaveCustomUrl}
-					onCancelCustomUrl={onCancelCustomUrl}
+					hostedSubdomainDraft={hostedSubdomainDraft}
+					hostedSubdomainStatus={hostedSubdomainStatus}
+					hostedSubdomainVerifying={hostedSubdomainVerifying}
+					hostedSubdomainSaving={hostedSubdomainSaving}
+					isHostedSubdomainDirty={isHostedSubdomainDirty}
+					onUpdateHostedSubdomainDraft={onUpdateHostedSubdomainDraft}
+					onSaveHostedSubdomain={onSaveHostedSubdomain}
+					onCancelHostedSubdomain={onCancelHostedSubdomain}
 				/>
 			) : null}
 		</div>

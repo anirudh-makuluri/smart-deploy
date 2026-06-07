@@ -2,7 +2,7 @@ import type { DeployConfig } from "@/app/types";
 import type { SDDeployUnit } from "@/app/types";
 import type { PreviewModel } from "@/components/blueprint/preview-model";
 import { PreviewModeViewEditorPanels } from "@/components/blueprint/preview-mode-view/PreviewModeViewEditorPanels";
-import type { CustomUrlStatus, Editor } from "@/components/blueprint/preview-mode-view/types";
+import type { Editor, HostedSubdomainStatus } from "@/components/blueprint/preview-mode-view/types";
 import { getEditorDescription, getEditorTitle } from "@/components/blueprint/preview-mode-view/utils";
 import {
 	Sheet,
@@ -24,14 +24,14 @@ type PreviewModeViewEditorSheetProps = {
 	railpackPlanJson: string;
 	regionSelectOptions: Array<{ value: string; label: string }>;
 	onUpdateDeployment: (partial: Partial<DeployConfig>) => Promise<void> | void;
-	subdomainDraft: string;
-	customUrlStatus: CustomUrlStatus;
-	customUrlVerifying: boolean;
-	customUrlSaving: boolean;
-	isCustomUrlDirty: boolean;
-	onUpdateSubdomainDraft: (draft: string, status?: CustomUrlStatus) => void;
-	onSaveCustomUrl: () => void;
-	onCancelCustomUrl: () => void;
+	hostedSubdomainDraft: string;
+	hostedSubdomainStatus: HostedSubdomainStatus;
+	hostedSubdomainVerifying: boolean;
+	hostedSubdomainSaving: boolean;
+	isHostedSubdomainDirty: boolean;
+	onUpdateHostedSubdomainDraft: (draft: string, status?: HostedSubdomainStatus) => void;
+	onSaveHostedSubdomain: () => void;
+	onCancelHostedSubdomain: () => void;
 };
 
 export function PreviewModeViewEditorSheet({
@@ -45,14 +45,14 @@ export function PreviewModeViewEditorSheet({
 	railpackPlanJson,
 	regionSelectOptions,
 	onUpdateDeployment,
-	subdomainDraft,
-	customUrlStatus,
-	customUrlVerifying,
-	customUrlSaving,
-	isCustomUrlDirty,
-	onUpdateSubdomainDraft,
-	onSaveCustomUrl,
-	onCancelCustomUrl,
+	hostedSubdomainDraft,
+	hostedSubdomainStatus,
+	hostedSubdomainVerifying,
+	hostedSubdomainSaving,
+	isHostedSubdomainDirty,
+	onUpdateHostedSubdomainDraft,
+	onSaveHostedSubdomain,
+	onCancelHostedSubdomain,
 }: PreviewModeViewEditorSheetProps) {
 	return (
 		<Sheet open={editor !== null} onOpenChange={(open) => onEditorChange(open ? editor : null)}>
@@ -83,14 +83,14 @@ export function PreviewModeViewEditorSheet({
 					regionSelectOptions={regionSelectOptions}
 					onUpdateDeployment={onUpdateDeployment}
 					onSetEditor={onEditorChange}
-					subdomainDraft={subdomainDraft}
-					customUrlStatus={customUrlStatus}
-					customUrlVerifying={customUrlVerifying}
-					customUrlSaving={customUrlSaving}
-					isCustomUrlDirty={isCustomUrlDirty}
-					onUpdateSubdomainDraft={onUpdateSubdomainDraft}
-					onSaveCustomUrl={onSaveCustomUrl}
-					onCancelCustomUrl={onCancelCustomUrl}
+					hostedSubdomainDraft={hostedSubdomainDraft}
+					hostedSubdomainStatus={hostedSubdomainStatus}
+					hostedSubdomainVerifying={hostedSubdomainVerifying}
+					hostedSubdomainSaving={hostedSubdomainSaving}
+					isHostedSubdomainDirty={isHostedSubdomainDirty}
+					onUpdateHostedSubdomainDraft={onUpdateHostedSubdomainDraft}
+					onSaveHostedSubdomain={onSaveHostedSubdomain}
+					onCancelHostedSubdomain={onCancelHostedSubdomain}
 				/>
 			</SheetContent>
 		</Sheet>

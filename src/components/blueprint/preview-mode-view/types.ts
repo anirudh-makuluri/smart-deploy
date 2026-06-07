@@ -18,13 +18,13 @@ export type Editor =
 	| { kind: "customDomain" }
 	| null;
 
-export type CustomUrlStatus = {
+export type HostedSubdomainStatus = {
 	type: "success" | "error" | null;
 	message?: string;
 };
 
-export type CustomDomainEditorState = {
-	liveUrl: string;
+export type HostedSubdomainEditorState = {
+	hostedSubdomain: string;
 	draft: string;
-	status: CustomUrlStatus;
+	status: HostedSubdomainStatus;
 };

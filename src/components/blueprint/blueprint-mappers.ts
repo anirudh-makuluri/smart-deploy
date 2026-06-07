@@ -166,10 +166,10 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		width: NODE_WIDTH,
 		height: NODE_HEIGHT,
 		data: {
-			region: deployment.awsRegion || "",
+			region: deployment.region || "",
 			provider: deployment.cloudProvider,
 			target: deployment.deploymentTarget,
-			instanceType: deployment.ec2?.instanceType || DEFAULT_EC2_INSTANCE_TYPE,
+			instanceType: DEFAULT_EC2_INSTANCE_TYPE,
 		},
 	});
 	edges.push({
@@ -183,8 +183,8 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 	nodes.push({
 		id: "custom-domain",
 		kind: "customDomain",
-		title: deployment.liveUrl?.trim()
-			? deployment.liveUrl.replace(/^https?:\/\//, "")
+		title: deployment.hostedSubdomain?.trim()
+			? `${deployment.hostedSubdomain}.${process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN || "smart-deploy.xyz"}`
 			: "No custom domain",
 		subtitle: "Custom domain",
 		x: COLUMN_X.infrastructure,
@@ -192,7 +192,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		width: NODE_WIDTH,
 		height: NODE_HEIGHT,
 		data: {
-			url: deployment.liveUrl || "",
+			url: deployment.hostedSubdomain || "",
 		},
 	});
 
@@ -210,7 +210,7 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 		issues,
 		metrics: {
 			serviceCount: services.length,
-			publicEndpoints: deployment.liveUrl?.trim() ? 1 : 0,
+			publicEndpoints: deployment.hostedSubdomain?.trim() ? 1 : 0,
 			artifactCount,
 		},
 	};

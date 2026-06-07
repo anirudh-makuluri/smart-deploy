@@ -1,30 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DeployConfig, DeployStep } from "@/app/types";
+import type { DeployStep } from "@/app/types";
 import { classifyDeploymentFailure } from "@/lib/deploymentFailureClassification";
-
-function makeDeployConfig(): DeployConfig {
-	return {
-		id: "dep-1",
-		repoName: "shop",
-		url: "https://github.com/example/shop",
-		branch: "main",
-		commitSha: "abcdef123456",
-		envVars: null,
-		liveUrl: null,
-		screenshotUrl: null,
-		serviceName: "web",
-		status: "deploying",
-		firstDeployment: null,
-		lastDeployment: null,
-		revision: 1,
-		cloudProvider: "aws",
-		deploymentTarget: "ec2",
-		awsRegion: "us-west-2",
-		ec2: null,
-		cloudRun: null,
-		scanResults: {},
-	};
-}
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
 function makeStep(id: string, logs: string[], status: DeployStep["status"] = "pending"): DeployStep {
 	return {
@@ -38,7 +15,12 @@ function makeStep(id: string, logs: string[], status: DeployStep["status"] = "pe
 describe("classifyDeploymentFailure", () => {
 	it("classifies CodeBuild build failures deterministically", () => {
 		const failure = classifyDeploymentFailure({
-			deployConfig: makeDeployConfig(),
+			deployConfig: makeDeployment({
+				repoUrl: "https://github.com/example/shop",
+				status: "deploying",
+				commitSha: "abcdef123456",
+				revision: 1,
+			}),
 			steps: [
 				makeStep("auth", ["Assumed AWS role"], "success"),
 				makeStep(
@@ -68,7 +50,12 @@ describe("classifyDeploymentFailure", () => {
 
 	it("classifies verification failures and records rollback state", () => {
 		const failure = classifyDeploymentFailure({
-			deployConfig: makeDeployConfig(),
+			deployConfig: makeDeployment({
+				repoUrl: "https://github.com/example/shop",
+				status: "deploying",
+				commitSha: "abcdef123456",
+				revision: 1,
+			}),
 			steps: [
 				makeStep("deploy", ["Instance ready"], "success"),
 				makeStep(
@@ -99,7 +86,12 @@ describe("classifyDeploymentFailure", () => {
 
 	it("classifies rollback failures when no previous release can be restored", () => {
 		const failure = classifyDeploymentFailure({
-			deployConfig: makeDeployConfig(),
+			deployConfig: makeDeployment({
+				repoUrl: "https://github.com/example/shop",
+				status: "deploying",
+				commitSha: "abcdef123456",
+				revision: 1,
+			}),
 			steps: [
 				makeStep("verify", ["ERROR: Deployment verification failed after all retry attempts."], "error"),
 				makeStep(

@@ -18,7 +18,7 @@ import type {
 } from "@/app/types";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
 import { configSnapshotFromDeployConfig } from "@/lib/utils";
-import { isDraftDeploymentStatus } from "@/lib/deploymentStatus";
+import { isDraftDeploymentStatus, isLiveDeploymentStatus } from "@/lib/deploymentStatus";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { AlertCircle, Layers, Rocket, Search, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -191,7 +191,7 @@ export default function DeployWorkspaceActiveSection({
 						<div className="space-y-2">
 							<h2 className="text-2xl font-bold">Blueprint Your Application</h2>
 							<p className="text-muted-foreground max-w-md mx-auto">
-								SmartDeploy analyzes your repository to automatically generate Dockerfiles,
+								SmartDeploy analyzes your repository to automatically generate build plans,
 								optimize build layers, and audit security before deployment.
 							</p>
 						</div>
@@ -203,11 +203,7 @@ export default function DeployWorkspaceActiveSection({
 								</Button>
 							</div>
 						</div>
-						<div className="grid grid-cols-3 gap-4 pt-8 border-t border-border/50">
-							<div className="flex flex-col items-center gap-2">
-								<ShieldCheck className="size-5 text-emerald-500" />
-								<span className="text-xs font-medium">Security Audit</span>
-							</div>
+						<div className="grid grid-cols-2 gap-4 pt-8 border-t border-border/50">
 							<div className="flex flex-col items-center gap-2">
 								<Layers className="size-5 text-blue-500" />
 								<span className="text-xs font-medium">Auto-Layering</span>
@@ -258,6 +254,7 @@ export default function DeployWorkspaceActiveSection({
 			return (
 				<div className="w-full mx-auto p-6 flex-1 max-w-6xl min-h-0 overflow-hidden">
 					<DeployLogsView
+						isDeploymentLive={isLiveDeploymentStatus(effectiveDeploymentStatus)}
 						showDeployLogs={showDeployLogs}
 						deployLogEntries={deployLogEntries}
 						serviceLogs={serviceLogs}
@@ -268,7 +265,7 @@ export default function DeployWorkspaceActiveSection({
 						repoNameForLogs={repoName}
 						serviceNameForLogs={currentServiceName}
 						configSnapshot={configSnapshotFromDeployConfig(liveDeployConfig ?? deployment)}
-						repoUrl={deployment.url}
+						repoUrl={deployment.repoUrl}
 						commitSha={
 							(deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ??
 							deployment.commitSha ??

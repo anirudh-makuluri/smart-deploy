@@ -41,7 +41,7 @@ describe("POST /api/dns/add-record", () => {
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ liveUrl: "https://alb.example.com", serviceName: "web" }),
+				body: JSON.stringify({ deployUrl: "https://alb.example.com", serviceName: "web" }),
 			}) as any
 		);
 		expect(res.status).toBe(200);
@@ -55,7 +55,7 @@ describe("POST /api/dns/add-record", () => {
 		const res = await POST(
 			new Request("http://localhost", {
 				method: "POST",
-				body: JSON.stringify({ liveUrl: "https://alb.example.com" }),
+				body: JSON.stringify({ deployUrl: "https://alb.example.com" }),
 			}) as any
 		);
 		expect(res.status).toBe(400);

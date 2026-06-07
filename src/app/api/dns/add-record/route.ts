@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 		}
 
 		const body = await req.json();
-		const deployUrl = typeof body.liveUrl === "string" ? body.liveUrl.trim() : "";
+		const deployUrl = typeof body.deployUrl === "string" ? body.deployUrl.trim() : "";
 		const serviceName = typeof body.serviceName === "string" ? body.serviceName : "app";
 		const deploymentTarget = typeof body.deploymentTarget === "string" ? body.deploymentTarget : null;
 		const previousCustomUrl = typeof body.previousCustomUrl === "string" ? body.previousCustomUrl : null;

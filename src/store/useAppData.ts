@@ -98,7 +98,7 @@ function matchesRepoIdentifier(deployment: DeployConfig, repoIdentifier: string)
 	const target = normalizeRepoIdentifier(repoIdentifier);
 	if (!target) return false;
 
-	const deploymentUrl = normalizeRepoIdentifier(deployment.url ?? "");
+	const deploymentUrl = normalizeRepoIdentifier(deployment.repoUrl ?? "");
 	const deploymentRepoName = normalizeRepoIdentifier(deployment.repoName ?? "");
 	const deploymentUrlTail = deploymentUrl.split("/").slice(-2).join("/");
 

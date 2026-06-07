@@ -63,7 +63,7 @@ export default function SdArtifactsScanResults({
 	const hasErrors = (results.errors?.length ?? 0) > 0;
 
 	function handleImproveScanResults() {
-		if (!deployment?.url || !onStartImproveScan) return;
+		if (!deployment?.repoUrl || !onStartImproveScan) return;
 		const template = [
 			`Analyze: shape=${results.deploy_shape}, build=${results.build_status}.`,
 			`Units: ${results.deploy_units.map((u) => u.name).join(", ") || "none"}.`,
@@ -74,7 +74,7 @@ export default function SdArtifactsScanResults({
 			.join("\n");
 		const feedback = userFeedback.trim() ? `${template}\n\nAdditional feedback: ${userFeedback.trim()}` : template;
 		onStartImproveScan({
-			repoUrl: deployment.url,
+			repoUrl: deployment.repoUrl,
 			commitSha: results.commit_sha || (deployment.commitSha ?? undefined),
 			packagePath,
 			feedback,

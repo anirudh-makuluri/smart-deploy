@@ -28,6 +28,9 @@ import {
 } from "@/lib/graphql/helpers";
 import config from "@/config";
 import type { DetectedServiceInfo } from "@/app/types";
+import { subdomainFromHostedUrl, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { isEcsDeployment } from "@/lib/cloudResources";
+import { getDeploymentBaseDomain as getBaseDomain } from "@/lib/dnsUtils";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -501,10 +504,17 @@ export async function updateCustomDomain(
 			throw new Error("Unauthorized: deployment does not belong to you");
 		}
 
+		const hostedSubdomain = formattedCustomUrl ? subdomainFromHostedUrl(formattedCustomUrl) : null;
+		const previousHostedUrl =
+			hostedUrlFromSubdomain(deployment.hostedSubdomain) ??
+			(deployment.hostedSubdomain
+				? `https://${deployment.hostedSubdomain}.${getBaseDomain()}`
+				: null);
+
 		const updateResponse = await dbHelper.updateDeployments(
 			{
 				...deployment,
-				liveUrl: formattedCustomUrl ?? null,
+				hostedSubdomain,
 			},
 			userID
 		);
@@ -514,17 +524,12 @@ export async function updateCustomDomain(
 		}
 
 		let configureMessage: string | null = null;
-		const instanceId = String(
-			((deployment.ec2 || {}) as Record<string, unknown>).instanceId ?? ""
-		).trim();
-		const isEcs = instanceId.startsWith("ecs:") || deployment.deploymentTarget === "ecs";
-		if (deployment.status === "running" && formattedCustomUrl && (instanceId || isEcs)) {
-			const previousCustomUrl = deployment.liveUrl || null;
+		if (deployment.status === "running" && formattedCustomUrl && isEcsDeployment(deployment)) {
 			const updatedDeployment = {
 				...deployment,
-				liveUrl: formattedCustomUrl ?? null,
+				hostedSubdomain,
 			};
-			await configureCustomDomainForDeployment(updatedDeployment, previousCustomUrl);
+			await configureCustomDomainForDeployment(updatedDeployment, previousHostedUrl);
 			configureMessage = "ALB and Route 53 DNS updated";
 		}
 
@@ -581,8 +586,7 @@ export async function verifyDns(
 		if (repoNameTrimmed && serviceNameTrimmed) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
 			if (deploymentRes.deployment) {
-				const currentCustomUrl = deploymentRes.deployment.liveUrl || "";
-				const currentSubdomain = currentCustomUrl.replace(/^https?:\/\//, "").replace(/\..*$/, "");
+				const currentSubdomain = (deploymentRes.deployment.hostedSubdomain || "").trim();
 
 				if (currentSubdomain === sanitized) {
 					return {

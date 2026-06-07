@@ -27,7 +27,7 @@ export function validateBlueprint(
 			});
 		}
 	}
-	if (deployment.liveUrl?.trim() && scanResults.deploy_shape === "server") {
+	if (deployment.hostedSubdomain?.trim() && scanResults.deploy_shape === "server") {
 		issues.push({
 			id: "domain-server-routing",
 			severity: "info",

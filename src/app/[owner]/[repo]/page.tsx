@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import RepoPageClient from "./RepoPageClient";
 
@@ -30,7 +30,8 @@ export default async function RepoPage({ params }: PageProps) {
 	}
 
 	if (!session) {
-		notFound();
+		redirect("/auth");
+		return null;
 	}
 
 	return <RepoPageClient owner={owner} repoName={repoName} />;

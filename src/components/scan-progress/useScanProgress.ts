@@ -49,9 +49,6 @@ export function useScanProgress({
 				type: "append_log",
 				message: `[${new Date().toLocaleTimeString()}] ${msg}`,
 			});
-			window.requestAnimationFrame(() => {
-				logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-			});
 		};
 
 		const startStream = async () => {
