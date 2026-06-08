@@ -125,6 +125,12 @@ resource "aws_instance" "worker" {
     aws_region   = var.aws_region
   })
 
+  # Image updates are rolled out in-place via SSM (scripts/deploy.sh).
+  # Without this, changing worker_image in user_data replaces the EC2 instance.
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
   tags = {
     Name        = local.resource_name
     Project     = var.project_name

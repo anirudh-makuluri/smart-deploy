@@ -125,6 +125,10 @@ resource "aws_instance" "worker" {
     aws_region   = var.aws_region
   })
 
+  lifecycle {
+    ignore_changes = [user_data]
+  }
+
   tags = {
     Name        = local.resource_name
     Project     = var.project_name
