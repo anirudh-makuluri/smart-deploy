@@ -1,34 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { DeployConfig, SDArtifactsResponse, SDDeployUnit } from "@/app/types";
+import { useMemo, useState } from "react";
+import type { DeployConfig, SDArtifactsResponse } from "@/app/types";
+import { BuildConfigurationSection } from "@/components/sd-artifacts-scan-results/BuildConfigurationSection";
+import { BuildVerificationPanel } from "@/components/sd-artifacts-scan-results/BuildVerificationPanel";
+import { ImproveScanDialog } from "@/components/sd-artifacts-scan-results/ImproveScanDialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-	AlertDialog,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { AlertTriangle, CheckCircle2, Copy, RefreshCw, Rocket, RotateCcw, Save } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, RefreshCw, Rocket } from "lucide-react";
 import { toast } from "sonner";
 import { DocsMarkdown } from "@/components/public/DocsMarkdown";
-import { classifyScanWorkload, workloadProductLabel } from "@/lib/sdArtifactsWorkload";
-import {
-	applyRailpackCommandOverrides,
-	extractRailpackCommands,
-	railpackCommandOverridesDirty,
-	type RailpackCommandOverrides,
-} from "@/lib/railpackCommandOverrides";
-import {
-	BuildVerificationPanel,
-	shouldShowBuildVerificationPanel,
-} from "@/components/sd-artifacts-scan-results/BuildVerificationPanel";
-import { Input } from "./ui/input";
+import { classifyScanWorkload } from "@/lib/sdArtifactsWorkload";
+import { shouldShowBuildVerificationPanel } from "@/lib/buildVerificationLogs";
 
 type SdArtifactsScanResultsProps = {
 	results: SDArtifactsResponse;
@@ -47,103 +29,8 @@ type SdArtifactsScanResultsProps = {
 	}) => void;
 };
 
-type UnitCommandDrafts = Record<string, RailpackCommandOverrides>;
-
 function copyToClipboard(text: string) {
 	void navigator.clipboard.writeText(text).then(() => toast.success("Copied to clipboard"));
-}
-
-function draftsFromResults(results: SDArtifactsResponse): UnitCommandDrafts {
-	const drafts: UnitCommandDrafts = {};
-	for (const unit of results.deploy_units) {
-		drafts[unit.name] = extractRailpackCommands(unit.artifacts.railpack_plan);
-	}
-	return drafts;
-}
-
-function DeployUnitCommandCard({
-	unit,
-	draft,
-	baseline,
-	workloadLabel,
-	disabled,
-	onChange,
-}: {
-	unit: SDDeployUnit;
-	draft: RailpackCommandOverrides;
-	baseline: RailpackCommandOverrides;
-	workloadLabel: string;
-	disabled?: boolean;
-	onChange: (next: RailpackCommandOverrides) => void;
-}) {
-	const hasPlan = Boolean(unit.artifacts.railpack_plan);
-	const unitDirty = railpackCommandOverridesDirty(baseline, draft);
-
-	return (
-		<li className="rounded-lg border border-border/60 bg-muted/20 px-4 py-4 text-sm space-y-4">
-			<div className="flex flex-wrap items-baseline justify-between gap-2">
-				<span className="font-semibold text-foreground">{unit.name}</span>
-				<div className="flex items-center gap-2">
-					{unitDirty ? (
-						<span className="text-[10px] uppercase tracking-wide text-amber-600">Unsaved changes</span>
-					) : null}
-					<span className="text-[10px] uppercase tracking-wide text-primary">{workloadLabel}</span>
-				</div>
-			</div>
-			<p className="font-mono text-xs text-muted-foreground">
-				{unit.root == "." ? "root" : unit.root} | {unit.provider}
-				{unit.framework ? ` | ${unit.framework}` : ""} | port {unit.port}
-			</p>
-
-			{hasPlan ? (
-				<div className="grid gap-4">
-					<div className="flex flex-row items-center justify-start gap-2">
-						<Label htmlFor={`${unit.name}-install`} className="text-xs w-48 whitespace-nowrap uppercase tracking-wide text-muted-foreground">
-							Install command
-						</Label>
-						<Input
-							id={`${unit.name}-install`}
-							value={draft.installCmd}
-							onChange={(e) => onChange({ ...draft, installCmd: e.target.value })}
-							disabled={disabled}
-							placeholder="e.g. npm ci, pip install -r requirements.txt (clear to remove the install shell step)"
-							className="font-mono  text-xs"
-						/>
-					</div>
-					<div className="flex flex-row items-center justify-start gap-2">
-						<Label htmlFor={`${unit.name}-build`} className="text-xs w-48 whitespace-nowrap uppercase tracking-wide text-muted-foreground">
-							Build command
-						</Label>
-						<Input
-							id={`${unit.name}-build`}
-							value={draft.buildCmd}
-							onChange={(e) => onChange({ ...draft, buildCmd: e.target.value })}
-							disabled={disabled}
-							placeholder="e.g. npm run build (leave empty if no separate build step)"
-							className="font-mono  text-xs"
-						/>
-					</div>
-					<div className="flex flex-row items-center justify-start gap-2">
-						<Label htmlFor={`${unit.name}-start`} className="text-xs w-48 whitespace-nowrap uppercase tracking-wide text-muted-foreground">
-							Start command
-						</Label>
-						<Input
-							id={`${unit.name}-start`}
-							value={draft.startCmd}
-							onChange={(e) => onChange({ ...draft, startCmd: e.target.value })}
-							disabled={disabled}
-							placeholder="e.g. npm run start, python app.py"
-							className="font-mono  text-xs"
-						/>
-					</div>
-				</div>
-			) : (
-				<p className="text-xs text-muted-foreground">
-					No Railpack plan for this unit — use an existing Dockerfile or re-run analysis.
-				</p>
-			)}
-		</li>
-	);
 }
 
 export default function SdArtifactsScanResults({
@@ -157,16 +44,6 @@ export default function SdArtifactsScanResults({
 	onStartImproveScan,
 }: SdArtifactsScanResultsProps) {
 	const [improveDialogOpen, setImproveDialogOpen] = useState(false);
-	const [userFeedback, setUserFeedback] = useState("");
-	const [drafts, setDrafts] = useState<UnitCommandDrafts>(() => draftsFromResults(results));
-	const [baseline, setBaseline] = useState<UnitCommandDrafts>(() => draftsFromResults(results));
-	const [saving, setSaving] = useState(false);
-
-	useEffect(() => {
-		const next = draftsFromResults(results);
-		setDrafts(next);
-		setBaseline(next);
-	}, [results]);
 
 	const workload = useMemo(() => classifyScanWorkload(results), [results]);
 	const fullPayloadJson = useMemo(() => {
@@ -179,80 +56,6 @@ export default function SdArtifactsScanResults({
 
 	const buildOk = results.build_status === "passed" || results.build_status === "partial";
 	const hasErrors = (results.errors?.length ?? 0) > 0;
-	const anyDirty = useMemo(
-		() =>
-			results.deploy_units.some((unit) => {
-				const draft = drafts[unit.name];
-				const base = baseline[unit.name];
-				if (!draft || !base) return false;
-				return railpackCommandOverridesDirty(base, draft);
-			}),
-		[baseline, drafts, results.deploy_units],
-	);
-
-	const updateUnitDraft = useCallback((unitName: string, next: RailpackCommandOverrides) => {
-		setDrafts((prev) => ({ ...prev, [unitName]: next }));
-	}, []);
-
-	const handleResetCommands = useCallback(() => {
-		setDrafts({ ...baseline });
-		toast.message("Build commands reset");
-	}, [baseline]);
-
-	const handleSaveCommands = useCallback(async () => {
-		if (!onUpdateResults || !anyDirty) return;
-
-		const nextResults: SDArtifactsResponse = {
-			...results,
-			deploy_units: results.deploy_units.map((unit) => {
-				const draft = drafts[unit.name];
-				const plan = unit.artifacts.railpack_plan;
-				if (!draft || !plan) return unit;
-
-				return {
-					...unit,
-					artifacts: {
-						...unit.artifacts,
-						railpack_plan: applyRailpackCommandOverrides(plan, draft),
-					},
-				};
-			}),
-		};
-
-		setSaving(true);
-		try {
-			await onUpdateResults(nextResults);
-			setBaseline({ ...drafts });
-			toast.success("Build commands saved");
-		} catch (err) {
-			console.error("Failed to save build commands:", err);
-			toast.error(err instanceof Error ? err.message : "Failed to save build commands");
-		} finally {
-			setSaving(false);
-		}
-	}, [anyDirty, drafts, onUpdateResults, results]);
-
-	function handleImproveScanResults() {
-		if (!deployment?.repoUrl || !onStartImproveScan) return;
-		const template = [
-			`Analyze: shape=${results.deploy_shape}, build=${results.build_status}.`,
-			`Units: ${results.deploy_units.map((u) => u.name).join(", ") || "none"}.`,
-			results.deploy_briefing ? `Briefing excerpt: ${results.deploy_briefing.slice(0, 400)}` : "",
-			"Please improve the Railpack plan or build outcome.",
-		]
-			.filter(Boolean)
-			.join("\n");
-		const feedback = userFeedback.trim() ? `${template}\n\nAdditional feedback: ${userFeedback.trim()}` : template;
-		onStartImproveScan({
-			repoUrl: deployment.repoUrl,
-			commitSha: results.commit_sha || (deployment.commitSha ?? undefined),
-			packagePath,
-			feedback,
-			failedArtifactScope: "general",
-		});
-		setImproveDialogOpen(false);
-		setUserFeedback("");
-	}
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -263,11 +66,11 @@ export default function SdArtifactsScanResults({
 							<CheckCircle2 className="size-3" />
 							Analysis complete
 						</span>
-						{scanTime != null && scanTime > 0 && (
+						{scanTime != null && scanTime > 0 ? (
 							<span className="text-[10px] text-muted-foreground font-mono">
 								{Math.round(scanTime / 1000)}s
 							</span>
-						)}
+						) : null}
 					</div>
 					<h2 className="text-3xl font-bold tracking-tight text-foreground">Build Analysis</h2>
 					<p className="text-sm text-muted-foreground mt-1">
@@ -280,12 +83,12 @@ export default function SdArtifactsScanResults({
 					<Button variant="ghost" onClick={onCancel} className="text-muted-foreground">
 						Reject
 					</Button>
-					{onStartImproveScan && (
+					{onStartImproveScan ? (
 						<Button variant="outline" onClick={() => setImproveDialogOpen(true)} className="gap-2">
 							<RefreshCw className="size-4" />
 							Improve
 						</Button>
-					)}
+					) : null}
 					<Button onClick={onStartDeployment} disabled={!buildOk} className="gap-2 font-semibold">
 						<Rocket className="size-4" />
 						Deploy
@@ -314,7 +117,7 @@ export default function SdArtifactsScanResults({
 				</div>
 			</div>
 
-			{hasErrors && (
+			{hasErrors ? (
 				<div className="mb-6 flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
 					<AlertTriangle className="size-5 shrink-0 text-amber-600" />
 					<ul className="list-disc list-inside space-y-1 text-amber-950 dark:text-amber-100">
@@ -323,71 +126,14 @@ export default function SdArtifactsScanResults({
 						))}
 					</ul>
 				</div>
-			)}
+			) : null}
 
-			{anyDirty && buildOk && (
-				<div className="mb-6 flex gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-950 dark:text-amber-100">
-					<AlertTriangle className="size-5 shrink-0 text-amber-600" />
-					<p>
-						Build commands were changed locally. Save before deploying — sd-artifacts verification may no longer
-						match the edited plan.
-					</p>
-				</div>
-			)}
-
-			<div className="mb-6 rounded-xl border border-border bg-card p-5">
-				<div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-					<div>
-						<p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Build configuration</p>
-						<p className="mt-1 text-sm text-muted-foreground">
-							Edit install, build, and start commands applied to the Railpack plan at deploy time.
-						</p>
-					</div>
-					{onUpdateResults ? (
-						<div className="flex flex-wrap items-center gap-2">
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								className="gap-2"
-								disabled={!anyDirty || saving}
-								onClick={handleResetCommands}
-							>
-								<RotateCcw className="size-3.5" />
-								Reset
-							</Button>
-							<Button
-								type="button"
-								size="sm"
-								className="gap-2"
-								disabled={!anyDirty || saving}
-								onClick={() => void handleSaveCommands()}
-							>
-								<Save className="size-3.5" />
-								{saving ? "Saving…" : "Save commands"}
-							</Button>
-						</div>
-					) : null}
-				</div>
-				<ul className="space-y-4">
-					{results.deploy_units.map((unit) => {
-						const draft = drafts[unit.name] ?? extractRailpackCommands(unit.artifacts.railpack_plan);
-						const base = baseline[unit.name] ?? draft;
-						const workloadUnit = workload?.units.find((u) => u.name === unit.name);
-						return (
-							<DeployUnitCommandCard
-								key={unit.name}
-								unit={unit}
-								draft={draft}
-								baseline={base}
-								workloadLabel={workloadUnit ? workloadProductLabel(workloadUnit.product) : unit.type}
-								disabled={!onUpdateResults || saving}
-								onChange={(next) => updateUnitDraft(unit.name, next)}
-							/>
-						);
-					})}
-				</ul>
-			</div>
+			<BuildConfigurationSection
+				results={results}
+				workload={workload}
+				buildOk={buildOk}
+				onUpdateResults={onUpdateResults}
+			/>
 
 			{shouldShowBuildVerificationPanel(results) ? (
 				<BuildVerificationPanel
@@ -400,13 +146,13 @@ export default function SdArtifactsScanResults({
 				/>
 			) : null}
 
-			{results.deploy_briefing?.trim() && (
+			{results.deploy_briefing?.trim() ? (
 				<div className="mb-6 rounded-xl border border-border bg-card p-5">
-					<div className="max-h-[32rem] overflow-auto pr-1">
+					<div className="max-h-128 overflow-auto pr-1">
 						<DocsMarkdown source={results.deploy_briefing} />
 					</div>
 				</div>
-			)}
+			) : null}
 
 			<details className="rounded-xl border border-border bg-card">
 				<summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -427,34 +173,20 @@ export default function SdArtifactsScanResults({
 					</Button>
 				</summary>
 				<div className="border-t border-border p-4">
-					<pre className="text-[11px] whitespace-pre-wrap break-words max-h-[28rem] overflow-auto font-mono text-muted-foreground">
+					<pre className="text-[11px] whitespace-pre-wrap wrap-break-word max-h-112 overflow-auto font-mono text-muted-foreground">
 						{fullPayloadJson}
 					</pre>
 				</div>
 			</details>
 
-			<AlertDialog open={improveDialogOpen} onOpenChange={setImproveDialogOpen}>
-				<AlertDialogContent>
-					<AlertDialogHeader>
-						<AlertDialogTitle>Improve scan results</AlertDialogTitle>
-						<AlertDialogDescription>
-							Send feedback to sd-artifacts to refine the Railpack plan and build outcome.
-						</AlertDialogDescription>
-					</AlertDialogHeader>
-					<Textarea
-						placeholder="e.g. Pin Node 20, fix monorepo filter, add health check..."
-						value={userFeedback}
-						onChange={(e) => setUserFeedback(e.target.value)}
-						className="min-h-24"
-					/>
-					<AlertDialogFooter>
-						<AlertDialogCancel>Cancel</AlertDialogCancel>
-						<Button onClick={handleImproveScanResults} disabled={!onStartImproveScan}>
-							Send feedback
-						</Button>
-					</AlertDialogFooter>
-				</AlertDialogContent>
-			</AlertDialog>
+			<ImproveScanDialog
+				open={improveDialogOpen}
+				onOpenChange={setImproveDialogOpen}
+				results={results}
+				deployment={deployment}
+				packagePath={packagePath}
+				onStartImproveScan={onStartImproveScan}
+			/>
 		</div>
 	);
 }

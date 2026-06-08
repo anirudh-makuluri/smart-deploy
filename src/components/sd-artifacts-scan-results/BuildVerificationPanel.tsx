@@ -2,12 +2,7 @@
 
 import { useMemo, useState } from "react";
 import ServiceLogs from "@/components/ServiceLogs";
-import type {
-	SDAnalyzeBuildStatus,
-	SDArtifactsResponse,
-	SDBuildVerification,
-	SDRepairAttempt,
-} from "@/app/types";
+import type { SDAnalyzeBuildStatus, SDBuildVerification, SDRepairAttempt } from "@/app/types";
 import {
 	collectBuildLogSources,
 	formatBuildVerificationDuration,
@@ -195,16 +190,5 @@ export function BuildVerificationPanel({
 				)}
 			</div>
 		</div>
-	);
-}
-
-export function shouldShowBuildVerificationPanel(results: SDArtifactsResponse): boolean {
-	return Boolean(
-		results.build_verification ||
-			(results.repair_history?.length ?? 0) > 0 ||
-			results.build_status === "passed" ||
-			results.build_status === "failed" ||
-			results.build_status === "skipped" ||
-			results.build_status === "partial",
 	);
 }

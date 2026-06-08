@@ -1,4 +1,9 @@
-import type { SDAnalyzeBuildStatus, SDBuildVerification, SDRepairAttempt } from "@/app/types";
+import type {
+	SDAnalyzeBuildStatus,
+	SDArtifactsResponse,
+	SDBuildVerification,
+	SDRepairAttempt,
+} from "@/app/types";
 import type { LogEntry } from "@/components/service-logs/types";
 
 export type BuildVerificationUiStatus = "passed" | "failed" | "skipped" | "unknown";
@@ -76,4 +81,15 @@ export function formatBuildVerificationDuration(seconds?: number): string | null
 	const mins = Math.floor(seconds / 60);
 	const secs = Math.round(seconds % 60);
 	return `${mins}m ${secs}s`;
+}
+
+export function shouldShowBuildVerificationPanel(results: SDArtifactsResponse): boolean {
+	return Boolean(
+		results.build_verification ||
+			(results.repair_history?.length ?? 0) > 0 ||
+			results.build_status === "passed" ||
+			results.build_status === "failed" ||
+			results.build_status === "skipped" ||
+			results.build_status === "partial",
+	);
 }
