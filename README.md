@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-   <strong>Smart Deploy</strong> is a transparent deployment platform for solo developers.
+   <strong>Smart Deploy</strong> is a preview-driven deployment platform for solo developers.
 </p>
 
 <p align="center">
@@ -17,18 +17,20 @@
 </p>
 
 <p align="center">
-   It sits between a PaaS and raw cloud infrastructure. You can write your own deploy files or generate them, inspect the deployment in a blueprint view, review how Docker, `docker-compose.yml`, and Nginx will be used, and then deploy with confidence.
+   Scan a repo, review a live blueprint of what will run, edit infrastructure files in context, and deploy only after the plan makes sense.
 </p>
 
-<p align="center"><em>Deploy like a PaaS. Understand it like the cloud.</em></p>
+<p align="center"><em>Preview the deploy. Then ship it.</em></p>
 
 ## Highlights
 
 | What you get | Why it matters |
 |--------------|----------------|
-| Blueprint-first deploy flow | Inspect the deployment path before anything runs |
-| Bring-your-own infra files | Use a Dockerfile, `docker-compose.yml`, and Nginx config you already trust |
-| AWS and GCP support | Keep the workflow grounded in real cloud primitives |
+| Preview-first workflow | See services, routing, and artifacts before anything runs |
+| Blueprint view | One place to understand build steps, containers, and traffic flow |
+| Inspectable deploy plan | Deploy units, build steps, cloud targets, and routing stay visible before you ship |
+| Multi-target deploys | Containers on AWS ECS, static sites on S3 + CloudFront, and GCP paths |
+| Live deploy feedback | Stream logs, track run history, and watch health status update in place |
 
 ## Table of Contents
 
@@ -36,274 +38,146 @@
 - [The problem](#the-problem)
 - [What Smart Deploy does](#what-smart-deploy-does)
 - [Workflow](#workflow)
-- [Core experience](#core-experience)
+- [Deploy targets](#deploy-targets)
+- [Blueprint & preview](#blueprint--preview)
 - [Architecture overview](#architecture-overview)
 - [Tech stack](#tech-stack)
-- [Quick start](#quick-start)
-- [Production notes](#production-notes)
-- [Access control](#access-control)
-- [Environment variables reference](#environment-variables-reference)
-- [Repo guides](#repo-guides)
-- [Scripts](#scripts)
+<!-- - [Local development](#local-development)
+- [Documentation](#documentation) -->
 - [License](#license)
 
 ## The problem
 
-Most deployment tools force an uncomfortable tradeoff:
+Most deployment tools ask you to commit before you can see the plan.
 
-- A PaaS is easy to use, but it hides too much of the real deploy.
-- Raw cloud infrastructure gives full control, but it exposes too much surface area at once.
-- Solo developers and small teams often need something in the middle.
+- A PaaS moves fast, but the real deploy path stays hidden until something breaks.
+- Raw cloud tooling gives control, but dumps the whole surface area on you at once.
+- Solo developers need a middle path: ship quickly without flying blind.
 
-Smart Deploy is built for that middle ground. The goal is not to hide infrastructure. The goal is to make it understandable enough that you can ship and learn at the same time.
+Smart Deploy is built around preview. You should know what will run, how traffic will flow, and which cloud resources are involved before you press deploy.
 
 ## What Smart Deploy does
 
-- Lets you bring your own Dockerfile, `docker-compose.yml`, and Nginx config, or generate a starting point from the repo
-- Shows a blueprint view before deploy so you can inspect the deployment path
-- Explains how each generated or existing infrastructure file is used in the deploy
-- Keeps logs, health, status, and preview output connected to the same deployment workflow
-- Supports AWS and GCP deployment paths while keeping the deploy surface grounded in real infrastructure concepts
+- **Scans your repository** to detect services, frameworks, and deploy shape
+- **Analyzes deploy shape** — single or multi-service, static site, Railpack build, or existing Docker image
+- **Renders a preview pipeline** — branch, build units, CodeBuild output, ECS or S3 target, ALB routing, and domain
+- **Lets you edit in preview mode** — branch, region, env vars, secrets, and hosted subdomain before deploy
+- **Deploys to real cloud primitives** — CodeBuild, ECR, ECS Fargate, ALB, Route 53, S3, CloudFront, and GCP — with logs and history tied to the same workflow
+- **Tracks deployment health** with background reconciliation so status reflects what is actually reachable
+- **Stores per-deployment secrets** in AWS Secrets Manager for ECS workloads
 
 ## Workflow
 
 Smart Deploy is organized around three steps:
 
-1. Define it
-   Write or generate the infrastructure files for your app.
-2. Preview it
-   Inspect the blueprint view and review the deployment path before anything runs.
-3. Deploy it
-   Start the deploy once the plan makes sense, then follow logs, health, and preview output.
+1. **Scan & define** — Connect a repo and run Smart Analysis to resolve deploy units and target shape.
+2. **Preview** — Open the blueprint, review the deployment path, and adjust config before anything runs.
+3. **Deploy** — Start the deploy when the preview looks right, then follow live logs, run history, and health updates.
 
-## Core experience
+```mermaid
+flowchart LR
+  A[Repo scan] --> B[Blueprint preview]
+  B --> C{Plan looks right?}
+  C -->|Edit| B
+  C -->|Yes| D[Deploy]
+  D --> E[Logs & health]
+```
 
-### Where it fits
+## Deploy targets
 
-Smart Deploy targets the gap between convenience and control:
+| Target | Best for | What Smart Deploy provisions |
+|--------|----------|------------------------------|
+| **ECS Fargate** | Server apps, Railpack builds, existing Docker images | CodeBuild → ECR → Fargate task behind a shared ALB |
+| **Static sites** | SPAs and static builds | CodeBuild → S3, optional CloudFront invalidation |
+| **EC2** | Traditional container-on-VM deploys | EC2 instance, security groups, ALB routing |
+| **GCP Cloud Run** | Container workloads on Google Cloud | Cloud Run service from scanned or supplied config |
 
-- A PaaS is easy to use, but it hides too much of the real deploy.
-- Raw cloud infrastructure gives full control, but it exposes too much surface at once.
-- Smart Deploy sits in the middle: ship from a guided workflow without losing sight of containers, compose, and routing.
+Custom deployment URLs use Route 53 subdomains (for example `myapp.yourdomain.com`) with wildcard ALB routing on AWS. See [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md).
 
-### Blueprint view
+## Blueprint & preview
 
-The blueprint view is the center of the product. It exists to answer one question before deploy:
+The blueprint is the center of the product. It answers one question before deploy:
 
-What exactly is going to happen to this app?
+**What exactly is going to happen to this app?**
 
-It shows:
+The preview walks through the full pipeline before anything runs:
 
-- which services will run
-- how containers are built and started
-- how services connect
-- how traffic is routed
-- which generated artifacts are part of the deploy
+- **Auth & resolve ref** — repo, branch, and commit
+- **Build** — deploy units, build contexts, and CodeBuild output (ECR images or S3 artifacts)
+- **Setup** — region, Fargate networking, or CloudFront bucket
+- **Deploy** — runtime env vars (Secrets Manager on ECS), ALB host rules, cache invalidation
+- **Done** — hosted subdomain and public URL
 
-### Generated infrastructure review
-
-Smart Deploy treats infrastructure files as first-class product output, not hidden implementation details.
-
-- `Dockerfile` shows how images are built
-- `docker-compose.yml` shows how services run together
-- `nginx.conf` shows how requests are routed
-
-The product makes these files visible so the deployment stays inspectable.
+Each step surfaces the artifacts involved — Railpack plans, Docker build units, ECS prerequisites, and domain routing — so the deploy path stays inspectable. You can adjust branch, region, env vars, and subdomain from the same preview surface without losing context.
 
 ## Architecture overview
 
 | Component | Role |
 |-----------|------|
-| Next.js app | Auth, dashboard UI, API routes, and deploy orchestration |
-| WebSocket worker | Long-running deploy jobs, log streaming, and worker health endpoints |
-| Supabase | User access control, repo metadata, and deployment records |
-| SD Artifacts backend | Scan, feedback, artifact, and cache flows used by the app |
+| Next.js app | Auth, dashboard UI, GraphQL/REST APIs, deploy orchestration |
+| WebSocket worker | Long-running deploy jobs, log streaming, health reconciliation |
+| Supabase | Users, repo metadata, deployment records, and run history |
+| SD Artifacts backend | Repo scan, artifact generation, feedback, and cache |
+| AWS / GCP APIs | CodeBuild, ECR, ECS, ALB, Route 53, Secrets Manager, S3, CloudFront, Cloud Run |
 
-The Next.js app hosts sign-in, the repository and dashboard UI, API routes, and the orchestration that drives deploys end to end.
+<!-- The app drives the preview and orchestration layer. The worker executes deploy pipelines and streams progress back to the UI. Terraform stacks under [`infra/`](infra/) provision shared platform prerequisites (ECS cluster, static-site bucket, worker host). -->
 
 ## Tech stack
 
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- shadcn/ui
-- Supabase
-- Better Auth
-- GraphQL + REST API routes
-- WebSocket worker for long-running deploy operations
-- AWS SDK and GCP integrations
-- Vitest and Playwright
+- Next.js 16, React 19, TypeScript
+- Tailwind CSS 4, shadcn/ui
+- Better Auth, Supabase
+- GraphQL (Yoga) + REST API routes
+- WebSocket worker for deploy execution
+- AWS SDK, GCP client libraries
+- Vitest, Playwright
 
-## Quick start
-
-### 1. Clone the repo
+<!-- ## Local development
 
 ```bash
 git clone https://github.com/anirudh-makuluri/smart-deploy.git
 cd smart-deploy
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
 ```
 
-### 3. Set up Supabase
+Setup requires Supabase, auth credentials, and a running WebSocket worker. See the guides below — especially [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) and [docs/BETTER_AUTH.md](docs/BETTER_AUTH.md).
 
-Create a Supabase project and run [`supabase/schema.sql`](supabase/schema.sql).
-
-Detailed guide:
-
-- [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
-
-### 4. Configure environment variables
+Sign-in is allowlist-based. Add your email to `approved_users` before signing in locally.
 
 ```bash
-cp .env.example .env
+npm run start-all   # app + worker
+# or: npm run dev && npm run ws
 ```
 
-Minimum variables for local access:
+Open `http://localhost:3000`.
 
-| Variable | Notes |
-|----------|-------|
-| `GITHUB_ID`, `GITHUB_SECRET` | GitHub OAuth app credentials |
-| `BETTER_AUTH_SECRET` | Shared by the app and WebSocket worker |
-| `BETTER_AUTH_URL` | Usually `http://localhost:3000` locally |
-| `DATABASE_URL` | Supabase Postgres connection string (server-only) |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Supabase credentials |
-| `NEXT_PUBLIC_WS_URL` | Usually `ws://localhost:4001` locally |
-| `NEXT_PUBLIC_POSTHOG_HOST` | Optional. Defaults to the same-origin `/ph` proxy route to reduce adblock noise |
+For AWS or GCP deploy paths from a local instance, configure cloud credentials per [docs/AWS_SETUP.md](docs/AWS_SETUP.md) and [docs/GCP_SETUP.md](docs/GCP_SETUP.md).
 
-Variables needed for scan and artifact flows:
+## Documentation
 
-| Variable | Notes |
-|----------|-------|
-| `SD_API_BASE_URL` | Base URL for the SD Artifacts backend |
-| `SD_API_BEARER_TOKEN` | Bearer token for that backend |
-| `GEMINI_API_KEY` | Needed if you use the current Gemini-backed generation flow |
+**Getting started**
 
-Variables needed for AWS deploys:
+- [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md) — database and schema
+- [docs/BETTER_AUTH.md](docs/BETTER_AUTH.md) — authentication
+- [docs/FAQ.md](docs/FAQ.md) — common questions
 
-| Variable | Notes |
-|----------|-------|
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | IAM credentials |
-| `AWS_REGION` | AWS region for deploy operations |
+**Deploying apps**
 
-### 5. Approve a user
+- [docs/AWS_SETUP.md](docs/AWS_SETUP.md) — IAM, CodeBuild, ECS, static sites
+- [docs/GCP_SETUP.md](docs/GCP_SETUP.md) — Cloud Run setup
+- [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md) — Route 53 and deployment URLs
+- [docs/MULTI_SERVICE_DETECTION.md](docs/MULTI_SERVICE_DETECTION.md) — how repos are scanned
+- [infra/README.md](infra/README.md) — Terraform stacks for platform prerequisites
 
-Sign-in is allowlist-based. Add your email to `approved_users` before signing in.
+**Operations & debugging**
 
-```sql
-insert into public.approved_users (email, name)
-values ('you@example.com', 'Your Name')
-on conflict (email)
-do update set name = excluded.name;
-```
-
-Unapproved sign-in attempts are stored in `waiting_list`.
-
-### 6. Start the app and worker
-
-```bash
-npm run start-all
-```
-
-Or run them separately:
-
-```bash
-npm run dev
-npm run ws
-```
-
-Then open `http://localhost:3000`.
-
-## Production notes
-
-### Docker Compose
-
-```bash
-cp .env.example .env
-docker compose up --build -d
-```
-
-The default Compose setup starts:
-
-- `app` on port `3000`
-- `websocket` on port `4001`
-
-### Split deployment
-
-One supported setup is:
-
-- deploy the Next.js app to Vercel
-- deploy the WebSocket worker to Render with `Dockerfile.websocket`
-- set `NEXT_PUBLIC_WS_URL` to the worker URL
-- set `WS_ALLOWED_ORIGINS` on the worker
-- keep `BETTER_AUTH_SECRET` identical in both services
-- PostHog browser traffic goes through `/ph` by default; only override `NEXT_PUBLIC_POSTHOG_HOST` if you need a different proxy target
-
-The browser no longer falls back to the app host in production, so `NEXT_PUBLIC_WS_URL` must be set to the actual worker endpoint.
-
-Health endpoints:
-
-- `/health` for infrastructure liveness
-- `/healthz` for authenticated app-aware checks
-
-## Access control
-
-- Allowed users are stored in `approved_users`
-- Rejected sign-in attempts are stored in `waiting_list`
-- Browser access to the worker uses short-lived signed WebSocket tokens
-- `WS_ALLOWED_ORIGINS` can further restrict which frontends can connect to the worker
-
-## Environment variables reference
-
-| Category | Variables |
-|----------|-----------|
-| Auth | `GITHUB_ID`, `GITHUB_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` |
-| Database | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` |
-| Internal APIs | `SD_API_BASE_URL`, `SD_API_BEARER_TOKEN` |
-| WebSocket | `NEXT_PUBLIC_WS_URL`, `WS_ALLOWED_ORIGINS`, `WS_PORT` |
-| Generation | `GEMINI_API_KEY`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `BEDROCK_MODEL_ID` |
-| AWS | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `EC2_ACM_CERTIFICATE_ARN`, `USE_CODEBUILD`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` |
-| AWS Bedrock | `AWS_BEDROCK_ACCESS_KEY_ID`, `AWS_BEDROCK_SECRET_ACCESS_KEY` |
-| GCP | `GCP_PROJECT_ID`, `GCP_SERVICE_ACCOUNT_KEY` |
-| Domains | `NEXT_PUBLIC_DEPLOYMENT_DOMAIN`, `ROUTE53_HOSTED_ZONE_ID`, `ROUTE53_USE_WILDCARD` |
-| Misc | `ENVIRONMENT`, `NODE_MAX_OLD_SPACE_SIZE`, `DEPLOYMENT_SCREENSHOT_BUCKET` |
-
-See [`.env.example`](.env.example) for the full template.
-
-## Repo guides
-
-- [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)
-- [docs/AWS_SETUP.md](docs/AWS_SETUP.md)
-- [docs/GCP_SETUP.md](docs/GCP_SETUP.md)
-- [docs/CUSTOM_DOMAINS.md](docs/CUSTOM_DOMAINS.md)
-- [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-- [docs/FAQ.md](docs/FAQ.md)
-- [docs/MULTI_SERVICE_DETECTION.md](docs/MULTI_SERVICE_DETECTION.md)
-
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start the Next.js dev server |
-| `npm run build` | Build the app |
-| `npm start` | Start the built app |
-| `npm run ws` | Start the WebSocket worker in development |
-| `npm run ws:build` | Build the worker into `dist/` |
-| `npm run ws:start` | Start the compiled worker |
-| `npm run start-all` | Run app and worker together |
-| `npm test` | Run unit tests |
-| `npm run test:e2e` | Run Playwright tests |
+- [docs/ERROR_CATALOG.md](docs/ERROR_CATALOG.md) -->
 
 ## License
 
-SmartDeploy is licensed under the Apache License 2.0. See [LICENSE](./LICENSE).
+Smart Deploy is licensed under the Apache License 2.0. See [LICENSE](./LICENSE).
 
-SmartDeploy was created and is maintained by Anirudh Raghavendra Makuluri.
+Smart Deploy was created and is maintained by Anirudh Raghavendra Makuluri.
 
-Forks and derivative projects should preserve the required license and attribution notices, and should not imply that they are the official SmartDeploy project unless explicitly authorized.
+Forks and derivative projects should preserve the required license and attribution notices, and should not imply that they are the official Smart Deploy project unless explicitly authorized.

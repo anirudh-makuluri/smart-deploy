@@ -79,11 +79,6 @@ The script will prompt for your **domain** and **email**, then:
 
 After SSL is set up, update `.env`:
 
-```
-NEXTAUTH_URL=https://yourdomain.com
-NEXT_PUBLIC_WS_URL=wss://yourdomain.com/ws
-```
-
 Then restart:
 
 ```bash
