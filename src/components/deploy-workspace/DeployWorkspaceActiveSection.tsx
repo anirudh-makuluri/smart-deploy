@@ -178,6 +178,7 @@ export default function DeployWorkspaceActiveSection({
 							onStartDeployment={onStartDeployment}
 							onCancel={onRejectScan}
 							onStartImproveScan={onStartImproveScan}
+							onUpdateResults={onPersistScanResults}
 						/>
 					</div>
 				);

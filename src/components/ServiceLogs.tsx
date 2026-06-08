@@ -68,7 +68,7 @@ export default function ServiceLogs({
 				/>
 
 				<ScrollArea
-					className={`${scrollable ? "min-h-0 flex-1 overflow-hidden" : "h-auto"} w-full rounded-md border border-border bg-card`}
+					className={`${scrollable ? "overflow-y-auto h-[500px]" : "h-auto"} w-full rounded-md border border-border bg-card`}
 					data-logs-scroll
 				>
 					<div className="min-w-full font-mono text-sm text-muted-foreground">
