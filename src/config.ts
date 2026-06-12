@@ -62,7 +62,6 @@ const config = {
 
 	// Waiting list gate: set to "false" to allow authenticated users through without approved-user checks.
 	WAITING_LIST_ENABLED: (process.env.WAITING_LIST_ENABLED ?? "true").toLowerCase() !== "false",
-
 	// When false, global deploy metrics are hidden (landing strip + GET /api/metrics/public). Per-user metrics still work.
 	PUBLIC_DEPLOY_METRICS_ENABLED:
 		(process.env.PUBLIC_DEPLOY_METRICS_ENABLED ?? "true").toLowerCase() !== "false",
