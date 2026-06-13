@@ -239,6 +239,141 @@ button {
 
 .landing-hero-bg {
   background: var(--background);
+  position: relative;
+}
+
+.landing-hero-grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at 50% 50%, black 20%, transparent 70%);
+  pointer-events: none;
+}
+
+.landing-hero-orb-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 600px;
+  pointer-events: none;
+}
+
+.landing-hero-orb {
+  position: absolute;
+  inset: 25%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%,
+    color-mix(in srgb, var(--primary) 30%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 10%, transparent) 40%,
+    transparent 70%
+  );
+  filter: blur(40px);
+  animation: landing-orb-breathe 8s ease-in-out infinite;
+}
+
+.landing-hero-orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.landing-hero-orb-ring-1 {
+  inset: 15%;
+  animation: landing-orb-ring-pulse 6s ease-in-out infinite;
+}
+
+.landing-hero-orb-ring-2 {
+  inset: 5%;
+  animation: landing-orb-ring-pulse 6s ease-in-out infinite 2s;
+  opacity: 0.6;
+}
+
+.landing-hero-orb-ring-3 {
+  inset: -5%;
+  animation: landing-orb-ring-pulse 6s ease-in-out infinite 4s;
+  opacity: 0.3;
+}
+
+.landing-hero-typed-text {
+  background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 70%, white));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.landing-hero-cursor {
+  display: inline-block;
+  width: 3px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--primary);
+  border-radius: 2px;
+  animation: landing-cursor-blink 1s step-end infinite;
+}
+
+.landing-stats-strip {
+  position: relative;
+  overflow: hidden;
+  border-radius: 2rem;
+  padding: 2.5rem 2rem;
+  background:
+    radial-gradient(ellipse at 30% 20%, color-mix(in srgb, var(--primary) 8%, transparent) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 80%, color-mix(in srgb, var(--chart-3) 6%, transparent) 0%, transparent 50%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card) 90%, transparent), color-mix(in srgb, var(--background) 95%, transparent));
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.landing-stats-strip-track {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--border) 14%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 14%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at center, black 10%, transparent 80%);
+  opacity: 0.5;
+}
+
+.landing-stat-card {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  padding: 1.5rem 1rem;
+  border-radius: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  backdrop-filter: blur(12px);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.landing-stat-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+  box-shadow: 0 0 40px -10px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+.landing-stat-glow {
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 50%;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  filter: blur(24px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.landing-stat-card:hover .landing-stat-glow {
+  opacity: 1;
 }
 
 .landing-blueprint-frame {
@@ -431,6 +566,33 @@ button {
   }
 }
 
+@keyframes landing-orb-breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes landing-orb-ring-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.8;
+  }
+}
+
+@keyframes landing-cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
 @keyframes landing-wave {
   0%,
   100% {
@@ -573,7 +735,10 @@ button {
     .landing-hero-wave,
     .landing-blueprint-dot-wrap,
     .landing-blueprint-dot,
-    .landing-blueprint-node::after {
+    .landing-blueprint-node::after,
+    .landing-hero-orb,
+    .landing-hero-orb-ring,
+    .landing-hero-cursor {
       animation: none;
     }
   }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { LandingExperience } from "@/components/landing/LandingExperience";
-import { getGlobalDeployMetricsForPublic } from "@/lib/metrics/deployMetrics";
+import { getLandingPublicStats } from "@/lib/metrics/landingStats";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -35,12 +35,12 @@ export default async function Home() {
 	if (session) {
 		redirect("/home");
 	}
-	const publicMetrics = await getGlobalDeployMetricsForPublic();
+	const publicStats = await getLandingPublicStats();
 
 	return (
 		<>
 			<script type="application/ld+json">{JSON.stringify(webApplicationJsonLd)}</script>
-			<LandingExperience isSignedIn={Boolean(session)} publicMetrics={publicMetrics} />
+			<LandingExperience isSignedIn={Boolean(session)} publicStats={publicStats} />
 		</>
 	);
 }
