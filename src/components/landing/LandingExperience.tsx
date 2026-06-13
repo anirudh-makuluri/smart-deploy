@@ -6,12 +6,7 @@ import Image from "next/image";
 import { LazyMotion, domAnimation, m, useReducedMotion } from "framer-motion";
 import {
 	ArrowRight,
-	Boxes,
 	CloudCog,
-	FolderGit2,
-	Hammer,
-	Monitor,
-	Route as RouteIcon,
 	ShieldCheck,
 	Sparkles,
 	type LucideIcon,
@@ -21,11 +16,11 @@ import { ScrollytellingSection } from "@/components/landing/ScrollytellingSectio
 import { PublicBottomNav, type MobileNavLink } from "@/components/public/PublicBottomNav";
 import { PublicPageFooterContent } from "@/components/public/PublicPageFooterContent";
 import { Button } from "@/components/ui/button";
-import type { DeployMetricsSummary } from "@/lib/metrics/deployMetricsCore";
+import type { LandingPublicStats } from "@/lib/metrics/landingStats";
 
 type LandingExperienceProps = {
 	isSignedIn: boolean;
-	publicMetrics: DeployMetricsSummary | null;
+	publicStats: LandingPublicStats | null;
 };
 
 type WhyCard = {
@@ -34,18 +29,6 @@ type WhyCard = {
 	proof: string;
 	icon: LucideIcon;
 };
-
-type HeroNodeShape = "repo" | "services" | "build" | "route" | "preview";
-
-type HeroNode = {
-	id: string;
-	label: string;
-	shape: HeroNodeShape;
-};
-
-const HERO_BLUEPRINT_LOOP_MS = 7600;
-const HERO_BLUEPRINT_TRAVEL_START = 0.14;
-const HERO_BLUEPRINT_TRAVEL_END = 0.84;
 
 const whyCards: WhyCard[] = [
 	{
@@ -72,50 +55,17 @@ const landingMobileNavLinks: MobileNavLink[] = [
 	{ href: "#flow", label: "Flow" },
 	{ href: "#why-smartdeploy", label: "Why" },
 	{ href: "#cloud", label: "Cloud" },
-	{ href: "#stats", label: "Stats" },
 ];
 
 const supportedJsFrameworks = [
-	"React",
-	"Next.js",
-	"Vue",
-	"Nuxt",
-	"Angular",
-	"Svelte",
-	"SvelteKit",
-	"Remix",
-	"Astro",
-	"Gatsby",
-	"Express",
-	"NestJS",
-	"Fastify",
-	"Hono",
-	"Koa",
+	"React", "Next.js", "Vue", "Nuxt", "Angular", "Svelte", "SvelteKit",
+	"Remix", "Astro", "Gatsby", "Express", "NestJS", "Fastify", "Hono", "Koa",
 ];
 
 const supportedPythonFrameworks = [
-	"Django",
-	"Flask",
-	"FastAPI",
-	"Starlette",
-	"Sanic",
-	"Falcon",
-	"Tornado",
-	"Pyramid",
-	"Bottle",
-	"CherryPy",
-	"Streamlit",
-	"Dash",
-	"Gradio",
+	"Django", "Flask", "FastAPI", "Starlette", "Sanic", "Falcon",
+	"Tornado", "Pyramid", "Bottle", "CherryPy", "Streamlit", "Dash", "Gradio",
 ];
-
-const HERO_BLUEPRINT_ICON_MAP: Record<HeroNodeShape, LucideIcon> = {
-	repo: FolderGit2,
-	services: Boxes,
-	build: Hammer,
-	route: RouteIcon,
-	preview: Monitor,
-};
 
 const CLOUD_PROVIDERS = [
 	{ name: "AWS", logo: "/logos/aws.svg" },
@@ -123,136 +73,132 @@ const CLOUD_PROVIDERS = [
 ] as const;
 
 const SUPPORTED_FRAMEWORK_GROUPS = [
-	{
-		id: "js",
-		title: "JavaScript / TypeScript",
-		frameworks: supportedJsFrameworks,
-	},
-	{
-		id: "python",
-		title: "Python",
-		frameworks: supportedPythonFrameworks,
-	},
+	{ id: "js", title: "JavaScript / TypeScript", frameworks: supportedJsFrameworks },
+	{ id: "python", title: "Python", frameworks: supportedPythonFrameworks },
 ] as const;
-
-const PUBLIC_METRICS_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("en-US", {
-	dateStyle: "medium",
-	timeStyle: "short",
-	timeZone: "UTC",
-});
 
 const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
 
-const heroNodes: HeroNode[] = [
-	{ id: "repo", label: "Repo", shape: "repo" },
-	{ id: "services", label: "Services", shape: "services" },
-	{ id: "build", label: "Build", shape: "build" },
-	{ id: "route", label: "Route", shape: "route" },
-	{ id: "preview", label: "Live", shape: "preview" },
-];
+const TYPED_WORDS = ["Next.js app", "Flask API", "monorepo", "microservice", "side project"];
+const TYPING_SPEED_MS = 80;
+const PAUSE_MS = 2200;
+const DELETE_SPEED_MS = 40;
 
-function heroNodeArrivalSeconds(index: number, count: number): string {
-	if (count <= 1) {
-		return `${(HERO_BLUEPRINT_LOOP_MS * HERO_BLUEPRINT_TRAVEL_START) / 1000}s`;
-	}
+function useTypedText(words: string[]) {
+	const [display, setDisplay] = React.useState("");
+	const [wordIndex, setWordIndex] = React.useState(0);
+	const [isDeleting, setIsDeleting] = React.useState(false);
 
-	const progress = index / (count - 1);
-	const timing =
-		HERO_BLUEPRINT_TRAVEL_START + (HERO_BLUEPRINT_TRAVEL_END - HERO_BLUEPRINT_TRAVEL_START) * progress;
-	return `${(HERO_BLUEPRINT_LOOP_MS * timing) / 1000}s`;
+	React.useEffect(() => {
+		const current = words[wordIndex];
+		let timeout: ReturnType<typeof setTimeout>;
+
+		if (!isDeleting && display === current) {
+			timeout = setTimeout(() => setIsDeleting(true), PAUSE_MS);
+		} else if (isDeleting && display === "") {
+			setIsDeleting(false);
+			setWordIndex((prev) => (prev + 1) % words.length);
+		} else if (isDeleting) {
+			timeout = setTimeout(() => setDisplay((prev) => prev.slice(0, -1)), DELETE_SPEED_MS);
+		} else {
+			timeout = setTimeout(
+				() => setDisplay((prev) => current.slice(0, prev.length + 1)),
+				TYPING_SPEED_MS
+			);
+		}
+
+		return () => clearTimeout(timeout);
+	}, [display, isDeleting, wordIndex, words]);
+
+	return display;
 }
 
-function formatDurationMs(ms: number | null): string {
-	if (ms === null) return "--";
-	if (ms < 1000) return `${ms} ms`;
-	const s = ms / 1000;
-	if (s < 60) return s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
-	const m = Math.floor(s / 60);
-	const sec = Math.round(s % 60);
-	return `${m}m ${sec}s`;
-}
-
-function HeroBlueprintGlyph({ shape }: { shape: HeroNodeShape }) {
-	const Icon = HERO_BLUEPRINT_ICON_MAP[shape];
-	const frameClass =
-		shape === "preview"
-			? "border-primary/36 bg-primary/16 text-primary"
-			: "border-white/20 bg-white/[0.08] text-white/86";
-
+function HeroOrb() {
 	return (
-		<div className={`flex h-8 w-8 items-center justify-center rounded-xl border ${frameClass}`}>
-			<Icon className="h-4 w-4" strokeWidth={1.8} />
+		<div className="landing-hero-orb-container" aria-hidden>
+			<div className="landing-hero-orb" />
+			<div className="landing-hero-orb-ring landing-hero-orb-ring-1" />
+			<div className="landing-hero-orb-ring landing-hero-orb-ring-2" />
+			<div className="landing-hero-orb-ring landing-hero-orb-ring-3" />
 		</div>
 	);
 }
 
-function HeroBlueprintCanvas() {
-	const prefersReducedMotion = useReducedMotion();
+function HeroSection({
+	primaryHref,
+	primaryCopy,
+	prefersReducedMotion,
+}: {
+	primaryHref: string;
+	primaryCopy: string;
+	prefersReducedMotion: boolean | null;
+}) {
+	const typedText = useTypedText(TYPED_WORDS);
 
 	return (
-		<m.div
-			initial={prefersReducedMotion ? false : { opacity: 0, y: 22 }}
-			animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-			transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.14 }}
-			className="landing-blueprint-frame relative overflow-hidden rounded-[2rem] bg-[#0a1020]"
-			style={
-				{
-					"--resolve-duration": `${HERO_BLUEPRINT_LOOP_MS}ms`,
-				} as React.CSSProperties
-			}
-		>
-			<div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0))]" />
-			<div className="pointer-events-none absolute inset-0 landing-blueprint-grid opacity-50" aria-hidden />
-			<div className="relative">
-				<div className="flex items-center justify-between gap-3 border-b border-white/6 px-4 py-3 sm:px-5">
-					<div className="min-w-0">
-						<p className="truncate text-[10px] font-semibold uppercase tracking-[0.24em] text-white/42 sm:text-[11px]">
-							acme/platform
-						</p>
-						<p className="mt-1 text-sm text-white/72">main</p>
-					</div>
-					<div
-						className="landing-blueprint-status rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#5f9cff]"
-						aria-live="polite"
+		<section className="landing-hero-bg relative overflow-hidden px-6 sm:px-8 lg:px-10">
+			<HeroOrb />
+			<div className="landing-hero-grid-bg" aria-hidden />
+			<div className="relative z-10 mx-auto flex min-h-[calc(92svh-4.5rem)] w-full max-w-5xl flex-col items-center justify-center py-14 text-center sm:py-16 lg:min-h-[calc(88svh-4.5rem)] lg:py-20">
+				<m.div
+					initial={prefersReducedMotion ? false : { opacity: 0, y: 32 }}
+					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+					transition={prefersReducedMotion ? undefined : { duration: 0.7, ease: "easeOut" }}
+				>
+					<p className="mb-5 inline-block rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium tracking-wide text-white/60">
+						Scan &middot; Preview &middot; Deploy &middot; Recover
+					</p>
+				</m.div>
+
+				<m.h1
+					initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
+					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+					transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.08 }}
+					className="max-w-4xl text-5xl font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-6xl lg:text-7xl"
+				>
+					Deploy your{" "}
+					<span className="relative inline-block min-w-[3ch] text-left">
+						<span className="landing-hero-typed-text">{typedText}</span>
+						<span className="landing-hero-cursor" />
+					</span>
+					<br />
+					<span className="bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">
+						without the black box.
+					</span>
+				</m.h1>
+
+				<m.p
+					initial={prefersReducedMotion ? false : { opacity: 0, y: 20 }}
+					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+					transition={prefersReducedMotion ? undefined : { duration: 0.55, ease: "easeOut", delay: 0.16 }}
+					className="mt-7 max-w-xl text-lg leading-8 text-white/55 sm:text-xl"
+				>
+					AI scans your repo, generates deploy artifacts, shows you the full blueprint, and ships it — with recovery built in.
+				</m.p>
+
+				<m.div
+					initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
+					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+					transition={prefersReducedMotion ? undefined : { duration: 0.5, ease: "easeOut", delay: 0.24 }}
+					className="mt-10 flex flex-wrap items-center justify-center gap-3"
+				>
+					<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.55)]">
+						<Link href={primaryHref}>
+							{primaryCopy}
+							<ArrowRight className="size-4" />
+						</Link>
+					</Button>
+					<Button
+						asChild
+						size="lg"
+						variant="outline"
+						className="border-white/16 bg-white/[0.03] text-white hover:bg-white/[0.08] hover:text-white"
 					>
-						Blueprint ready
-					</div>
-				</div>
-
-				<div className="px-4 pb-6 pt-7 sm:px-5 sm:pb-7 sm:pt-9">
-					<div className="relative">
-						<div className="landing-blueprint-track absolute left-4 right-4 top-[1.35rem] h-px sm:left-6 sm:right-6" />
-						{!prefersReducedMotion ? (
-							<div className="landing-blueprint-dot-wrap absolute left-4 right-4 top-[1rem] sm:left-6 sm:right-6" aria-hidden>
-								<div className="landing-blueprint-dot" />
-							</div>
-						) : null}
-
-						<div className="grid grid-cols-[repeat(5,minmax(0,1fr))] items-start gap-2 sm:gap-3">
-							{heroNodes.map((node, index) => (
-								<div key={node.id} className="flex min-w-0 flex-col items-center text-center">
-									<div
-										className="landing-blueprint-node flex h-11 w-11 items-center justify-center rounded-[1.4rem] border border-white/7 bg-white/[0.02] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:h-[3.25rem] sm:w-[3.25rem]"
-										style={
-											prefersReducedMotion
-												? undefined
-												: ({
-														"--resolve-delay": heroNodeArrivalSeconds(index, heroNodes.length),
-													} as React.CSSProperties)
-										}
-									>
-										<HeroBlueprintGlyph shape={node.shape} />
-									</div>
-									<p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/66 sm:text-[11px]">
-										{node.label}
-									</p>
-								</div>
-							))}
-						</div>
-					</div>
-				</div>
+						<a href="#flow">See the Flow</a>
+					</Button>
+				</m.div>
 			</div>
-		</m.div>
+		</section>
 	);
 }
 
@@ -352,44 +298,74 @@ function SupportedFrameworks() {
 	);
 }
 
-function StatsBoard({ metrics }: { metrics: DeployMetricsSummary | null }) {
-	const successRate =
-		metrics?.successRatePercent === null || metrics?.successRatePercent === undefined
-			? "--"
-			: `${metrics.successRatePercent}%`;
-	const totalCount = metrics?.totalCount ?? 0;
-	const median = formatDurationMs(metrics?.medianDurationMs ?? null);
-	const p95 = formatDurationMs(metrics?.p95DurationMs ?? null);
-	const updatedAt = metrics
-		? `${PUBLIC_METRICS_TIMESTAMP_FORMATTER.format(new Date(metrics.computedAt))} UTC`
-		: "Telemetry appears after the first deployment";
+function AnimatedCounter({ value, label, suffix = "" }: { value: number; label: string; suffix?: string }) {
+	const [displayed, setDisplayed] = React.useState(0);
+	const ref = React.useRef<HTMLDivElement>(null);
+	const hasAnimated = React.useRef(false);
+
+	React.useEffect(() => {
+		if (!ref.current || hasAnimated.current) return;
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				if (!entry.isIntersecting || hasAnimated.current) return;
+				hasAnimated.current = true;
+				observer.disconnect();
+
+				const duration = 1600;
+				const start = performance.now();
+				const animate = (now: number) => {
+					const elapsed = now - start;
+					const progress = Math.min(elapsed / duration, 1);
+					const eased = 1 - Math.pow(1 - progress, 3);
+					setDisplayed(Math.round(eased * value));
+					if (progress < 1) requestAnimationFrame(animate);
+				};
+				requestAnimationFrame(animate);
+			},
+			{ threshold: 0.3 }
+		);
+		observer.observe(ref.current);
+		return () => observer.disconnect();
+	}, [value]);
 
 	return (
-		<div className="landing-panel landing-shell relative overflow-hidden p-5 sm:p-6">
-			<div className="landing-grid-overlay absolute inset-0 opacity-20" aria-hidden />
-			<div className="relative z-10">
-				<p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Public deployment stats</p>
-				<p className="mt-1 text-xs text-muted-foreground">{updatedAt}</p>
-				<div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-					<div className="rounded-xl border border-border/60 bg-background/70 p-3">
-						<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Deployments</p>
-						<p className="mt-2 font-mono text-lg font-semibold text-foreground">{totalCount}</p>
-					</div>
-					<div className="rounded-xl border border-border/60 bg-background/70 p-3">
-						<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Success</p>
-						<p className="mt-2 font-mono text-lg font-semibold text-foreground">{successRate}</p>
-					</div>
-					<div className="rounded-xl border border-border/60 bg-background/70 p-3">
-						<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Median</p>
-						<p className="mt-2 font-mono text-lg font-semibold text-foreground">{median}</p>
-					</div>
-					<div className="rounded-xl border border-border/60 bg-background/70 p-3">
-						<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">P95</p>
-						<p className="mt-2 font-mono text-lg font-semibold text-foreground">{p95}</p>
-					</div>
-				</div>
-			</div>
+		<div ref={ref} className="landing-stat-card group">
+			<div className="landing-stat-glow" aria-hidden />
+			<p className="relative z-10 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+				{displayed.toLocaleString()}{suffix}
+			</p>
+			<p className="relative z-10 mt-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+				{label}
+			</p>
 		</div>
+	);
+}
+
+function LivePulseStats({ stats }: { stats: LandingPublicStats }) {
+	const prefersReducedMotion = useReducedMotion();
+	const items = [
+		{ value: stats.totalDeployments, label: "Deployments shipped", suffix: "" },
+		{ value: stats.totalAnalyses, label: "AI analyses run", suffix: "" },
+		{ value: stats.totalArtifacts, label: "Artifacts generated", suffix: "" },
+	].filter((item) => item.value > 0);
+
+	if (items.length === 0) return null;
+
+	return (
+		<m.div
+			initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
+			whileInView={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
+			viewport={{ once: true, amount: 0.2 }}
+			transition={prefersReducedMotion ? undefined : { duration: 0.5, ease: "easeOut" }}
+			className="landing-stats-strip"
+		>
+			<div className="landing-stats-strip-track" aria-hidden />
+			<div className="relative z-10 grid w-full gap-4 sm:grid-cols-3">
+				{items.map((item, i) => (
+					<AnimatedCounter key={i} value={item.value} label={item.label} suffix={item.suffix} />
+				))}
+			</div>
+		</m.div>
 	);
 }
 
@@ -416,9 +392,9 @@ function FinalCTA({ primaryHref, primaryCopy }: { primaryHref: string; primaryCo
 	);
 }
 
-export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperienceProps) {
+export function LandingExperience({ isSignedIn, publicStats }: LandingExperienceProps) {
 	const primaryHref = isSignedIn ? "/home" : "/auth";
-	const primaryCopy = isSignedIn ? "Open Dashboard" : "Open Smart Deploy";
+	const primaryCopy = isSignedIn ? "Open Dashboard" : "Get Started Free";
 	const prefersReducedMotion = useReducedMotion();
 
 	React.useEffect(() => {
@@ -451,7 +427,6 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 						<a href="#flow" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Flow</a>
 						<a href="#why-smartdeploy" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Why</a>
 						<a href="#cloud" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Cloud</a>
-						<a href="#stats" className="rounded-md transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">Stats</a>
 					</nav>
 					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
 						<Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
@@ -477,56 +452,11 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 			</header>
 
 			<main>
-				<section className="landing-hero-bg relative overflow-hidden px-6 sm:px-8 lg:px-10">
-					<div className="relative z-10 mx-auto grid min-h-[calc(92svh-4.5rem)] w-full max-w-7xl items-start gap-12 py-14 sm:py-16 lg:min-h-[calc(88svh-4.5rem)] lg:grid-cols-[minmax(0,0.84fr)_minmax(0,1.16fr)] lg:gap-10 lg:py-20">
-						<div className="max-w-2xl pt-4 lg:pt-12">
-							<m.h1
-								initial={prefersReducedMotion ? false : { opacity: 0, y: 24 }}
-								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-								transition={prefersReducedMotion ? undefined : { duration: 0.55, ease: "easeOut" }}
-								className="max-w-xl text-5xl font-semibold leading-[0.93] tracking-[-0.045em] text-white sm:text-6xl lg:text-[5.4rem]"
-							>
-								<span className="block">Deploy anything.</span>
-								<span className="mt-1.5 block">Inspect everything.</span>
-							</m.h1>
-							<m.p
-								initial={prefersReducedMotion ? false : { opacity: 0, y: 18 }}
-								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-								transition={prefersReducedMotion ? undefined : { duration: 0.52, ease: "easeOut", delay: 0.08 }}
-								className="mt-7 max-w-[24rem] text-lg leading-8 text-white/72 sm:text-[1.3rem]"
-							>
-								See the deploy path before release.
-							</m.p>
-							<m.div
-								initial={prefersReducedMotion ? false : { opacity: 0, y: 16 }}
-								animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
-								transition={prefersReducedMotion ? undefined : { duration: 0.48, ease: "easeOut", delay: 0.16 }}
-								className="mt-11 flex flex-wrap items-center gap-3"
-							>
-								<Button asChild size="lg" className="gap-2 shadow-[0_18px_40px_-24px_rgba(59,130,246,0.55)]">
-									<Link href={primaryHref}>
-										{primaryCopy}
-										<ArrowRight className="size-4" />
-									</Link>
-								</Button>
-								<Button
-									asChild
-									size="lg"
-									variant="outline"
-									className="border-white/16 bg-white/[0.03] text-white hover:bg-white/[0.08] hover:text-white"
-								>
-									<a href="#flow">See How It Works</a>
-								</Button>
-							</m.div>
-						</div>
-
-						<div className="relative pt-2 lg:pt-16">
-							<div className="mx-auto w-full max-w-[44rem] lg:ml-auto">
-								<HeroBlueprintCanvas />
-							</div>
-						</div>
-					</div>
-				</section>
+				<HeroSection
+					primaryHref={primaryHref}
+					primaryCopy={primaryCopy}
+					prefersReducedMotion={prefersReducedMotion}
+				/>
 
 				<ScrollytellingSection />
 
@@ -553,21 +483,19 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 						<div className="mt-12">
 							<CloudProviders />
 						</div>
-					</div>
-				</section>
-
-				<section id="stats" className={`border-t border-border/60 px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
-					<div className="mx-auto max-w-7xl">
-						<SectionIntro
-							eyebrow="Public Metrics"
-							title="Track deployment performance transparently"
-							description="Deployment count, success rate, and latency distributions are surfaced directly on the landing page."
-						/>
-						<div className="mt-10">
-							<StatsBoard metrics={publicMetrics} />
+						<div className="mt-12">
+							<SupportedFrameworks />
 						</div>
 					</div>
 				</section>
+
+				{publicStats ? (
+					<section className={`border-t border-border/60 px-6 py-20 lg:px-10 ${sectionAnchorClass}`}>
+						<div className="mx-auto max-w-5xl">
+							<LivePulseStats stats={publicStats} />
+						</div>
+					</section>
+				) : null}
 
 				<section className="border-t border-border/60 bg-muted/20 px-6 py-20 lg:px-10">
 					<div className="mx-auto max-w-7xl">
@@ -582,4 +510,3 @@ export function LandingExperience({ isSignedIn, publicMetrics }: LandingExperien
 		</LazyMotion>
 	);
 }
-
