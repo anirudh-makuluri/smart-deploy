@@ -181,7 +181,7 @@ function StepItem({
 function OverviewMock() {
 	return (
 		<div className="space-y-3">
-			<div className="relative overflow-hidden rounded-xl border border-primary/25 bg-primary/[0.06] p-3">
+			<div className="relative overflow-hidden rounded-xl border border-primary/25 bg-primary/6 p-3">
 				<div className="pointer-events-none absolute -right-8 -top-8 size-24 rounded-full bg-primary/20 blur-2xl" aria-hidden />
 				<div className="relative flex items-start justify-between gap-3">
 					<div className="flex items-start gap-2.5">
@@ -532,7 +532,7 @@ function FlowUI({
 	return (
 		<div
 			className={`landing-panel landing-shell mx-auto w-full rounded-2xl border border-border/70 bg-card/85 shadow-sm ${
-				isCompact ? "max-w-none p-3 sm:p-4" : "max-w-[46rem] p-4 sm:p-5"
+				isCompact ? "max-w-none p-3 sm:p-4" : "max-w-184 p-4 sm:p-5"
 			}`}
 		>
 			<div className="rounded-xl border border-border/65 bg-background/70 p-3">
@@ -573,7 +573,7 @@ function FlowUI({
 				</div>
 			</div>
 
-			<div className={`mt-4 ${isCompact ? "min-h-0" : "min-[420px]:min-h-[22rem] sm:min-h-[24rem] lg:min-h-[25.5rem]"}`}>
+			<div className={`mt-4 ${isCompact ? "min-h-0" : "min-[420px]:min-h-88 sm:min-h-96 lg:min-h-102"}`}>
 				<AnimatePresence mode="wait">
 					<m.div
 						key={activeStep}

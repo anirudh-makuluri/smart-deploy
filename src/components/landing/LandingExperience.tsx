@@ -145,7 +145,7 @@ function HeroSection({
 					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 					transition={prefersReducedMotion ? undefined : { duration: 0.7, ease: "easeOut" }}
 				>
-					<p className="mb-5 inline-block rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium tracking-wide text-white/60">
+					<p className="mb-5 inline-block rounded-full border border-white/10 bg-white/4 px-4 py-1.5 text-xs font-medium tracking-wide text-white/60">
 						Scan &middot; Preview &middot; Deploy &middot; Recover
 					</p>
 				</m.div>
@@ -162,7 +162,7 @@ function HeroSection({
 						<span className="landing-hero-cursor" />
 					</span>
 					<br />
-					<span className="bg-gradient-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">
+					<span className="bg-linear-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">
 						without the black box.
 					</span>
 				</m.h1>
@@ -192,7 +192,7 @@ function HeroSection({
 						asChild
 						size="lg"
 						variant="outline"
-						className="border-white/16 bg-white/[0.03] text-white hover:bg-white/[0.08] hover:text-white"
+						className="border-white/16 bg-white/3 text-white hover:bg-white/8 hover:text-white"
 					>
 						<a href="#flow">See the Flow</a>
 					</Button>
