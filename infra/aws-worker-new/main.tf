@@ -148,10 +148,10 @@ resource "aws_instance" "worker" {
   key_name = var.key_name != "" ? var.key_name : null
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    worker_port       = var.worker_port
-    worker_image      = var.worker_image
-    aws_region        = var.aws_region
-    worker_secret_arn = local.worker_secret_arn
+    worker_port        = var.worker_port
+    worker_image       = var.worker_image
+    aws_region         = var.aws_region
+    worker_secret_arn  = local.worker_secret_arn
     worker_server_name = local.worker_domain != "" ? local.worker_domain : "_"
   })
 
@@ -178,20 +178,3 @@ resource "aws_eip" "worker" {
   }
 }
 
-data "aws_route53_zone" "selected" {
-  count        = var.domain_name != "" ? 1 : 0
-  name         = var.domain_name
-  private_zone = false
-}
-
-resource "aws_route53_record" "worker" {
-  count   = var.domain_name != "" ? 1 : 0
-  zone_id = data.aws_route53_zone.selected[0].zone_id
-  name    = local.worker_domain
-  type    = "A"
-  ttl     = 300
-
-  records = [
-    var.assign_eip ? aws_eip.worker[0].public_ip : aws_instance.worker.public_ip
-  ]
-}

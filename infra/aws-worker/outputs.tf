@@ -9,8 +9,8 @@ output "instance_public_ip" {
 }
 
 output "worker_dns_record" {
-  description = "Worker DNS record if Route53 domain is configured"
-  value       = var.domain_name != "" ? aws_route53_record.worker[0].fqdn : ""
+  description = "Worker hostname to point at the instance manually if a domain is configured"
+  value       = var.domain_name != "" ? "${var.worker_subdomain}.${var.domain_name}" : ""
 }
 
 output "worker_origin_example" {

@@ -7,7 +7,6 @@ What it creates:
 - Security group (80 public, 22 restricted by `ssh_cidr`)
 - IAM role and instance profile with SSM + ECR read access
 - Optional Elastic IP
-- Optional public Route53 A record
 - User data bootstrap that runs your worker container behind Nginx websocket proxying
 
 ## 1) Fill Variables
@@ -16,7 +15,7 @@ What it creates:
 2. Set at least:
    - `ssh_cidr`
    - `worker_image`
-   - `domain_name` and `worker_subdomain` (if using Route53)
+   - `domain_name` and `worker_subdomain` (if you want the stack to output the intended hostname for manual DNS)
    - `worker_secret_arn` if you want the worker runtime env to come from AWS Secrets Manager
 
 3. Preferred: store worker runtime env in AWS Secrets Manager as one JSON object and set `worker_secret_arn`.
@@ -48,6 +47,8 @@ terraform apply
 
 After apply, use output `worker_origin_example` for app env:
 - `NEXT_PUBLIC_WS_URL`
+
+If you use a custom hostname such as `ws.smart-deploy.xyz`, create or update the DNS record outside this stack.
 
 ## 4) TLS/HTTPS
 
