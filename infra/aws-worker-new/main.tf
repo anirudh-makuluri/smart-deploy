@@ -17,8 +17,10 @@ data "aws_subnets" "selected" {
 locals {
   selected_subnet_id = var.public_subnet_id != "" ? var.public_subnet_id : tolist(data.aws_subnets.selected.ids)[0]
 
-  resource_name = "${var.project_name}-${var.environment}-worker"
-  worker_domain = var.domain_name != "" ? "${var.worker_subdomain}.${var.domain_name}" : ""
+  resource_name             = "${var.project_name}-${var.environment}-worker"
+  worker_domain             = var.domain_name != "" ? "${var.worker_subdomain}.${var.domain_name}" : ""
+  worker_secret_arn         = trimspace(var.worker_secret_arn)
+  worker_secret_kms_key_arn = trimspace(var.worker_secret_kms_key_arn)
 }
 
 data "aws_ami" "amazon_linux_2023" {
@@ -104,6 +106,32 @@ resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy" "worker_secrets" {
+  count = local.worker_secret_arn != "" ? 1 : 0
+  name  = "${local.resource_name}-worker-secrets"
+  role  = aws_iam_role.worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [
+        {
+          Effect   = "Allow"
+          Action   = ["secretsmanager:GetSecretValue"]
+          Resource = local.worker_secret_arn
+        }
+      ],
+      local.worker_secret_kms_key_arn != "" ? [
+        {
+          Effect   = "Allow"
+          Action   = ["kms:Decrypt"]
+          Resource = local.worker_secret_kms_key_arn
+        }
+      ] : []
+    )
+  })
+}
+
 resource "aws_iam_instance_profile" "worker" {
   name = "${local.resource_name}-instance-profile"
   role = aws_iam_role.worker.name
@@ -120,9 +148,11 @@ resource "aws_instance" "worker" {
   key_name = var.key_name != "" ? var.key_name : null
 
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    worker_port  = var.worker_port
-    worker_image = var.worker_image
-    aws_region   = var.aws_region
+    worker_port       = var.worker_port
+    worker_image      = var.worker_image
+    aws_region        = var.aws_region
+    worker_secret_arn = local.worker_secret_arn
+    worker_server_name = local.worker_domain != "" ? local.worker_domain : "_"
   })
 
   lifecycle {

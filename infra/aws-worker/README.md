@@ -17,10 +17,14 @@ What it creates:
    - `ssh_cidr`
    - `worker_image`
    - `domain_name` and `worker_subdomain` (if using Route53)
+   - `worker_secret_arn` if you want the worker runtime env to come from AWS Secrets Manager
 
-3. Ensure `/opt/smart-deploy/.env` exists on the worker host before starting the service.
-   - The worker container reads this env file directly via `--env-file`.
+3. Preferred: store worker runtime env in AWS Secrets Manager as one JSON object and set `worker_secret_arn`.
+   - The instance role will read that secret at startup and write a transient env file for Docker.
+   - Secret keys become env var names inside the worker container.
    - Include the full runtime env your worker needs (for example `BETTER_AUTH_SECRET`, `WS_ALLOWED_ORIGINS`, cloud credentials, and DB vars).
+4. Fallback: if `worker_secret_arn` is empty, ensure `/opt/smart-deploy/.env` exists on the worker host before starting the service.
+   - The worker will continue using that local file when no secret ARN is configured.
 
 ## 2) Apply
 
@@ -65,3 +69,4 @@ Use [infra/aws-worker-new](../aws-worker-new) when you want to create a brand-ne
 - Keep DB managed separately (Supabase/RDS).
 - For low traffic (about 5 users), `t3.small` is usually enough when Docker builds happen in CodeBuild.
 - Start with deployment concurrency of 1.
+- If your secret uses a customer-managed KMS key, also set `worker_secret_kms_key_arn` so the instance role can decrypt it.

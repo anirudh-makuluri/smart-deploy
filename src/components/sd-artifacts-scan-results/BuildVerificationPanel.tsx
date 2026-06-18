@@ -9,6 +9,7 @@ import {
 	parseBuildLogExcerpt,
 	resolveBuildVerificationUiStatus,
 } from "@/lib/buildVerificationLogs";
+import { normalizeRailpackFrontendTag } from "@/lib/sdArtifactsBuildContext";
 import { AlertTriangle, CheckCircle2, Clock, Hammer, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -94,6 +95,7 @@ export function BuildVerificationPanel({
 	const attempts = buildVerification?.attempts;
 	const backend = buildVerification?.backend?.trim();
 	const message = buildVerification?.message?.trim();
+	const railpackTag = normalizeRailpackFrontendTag(railpackVersion);
 	const showPanel = Boolean(message || logSources.length > 0 || buildVerification);
 
 	if (!showPanel) return null;
@@ -142,7 +144,7 @@ export function BuildVerificationPanel({
 						) : null}
 						{railpackVersion ? (
 							<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-mono text-muted-foreground">
-								{railpackVersion.replace(/^railpack version\s*/i, "v")}
+								{railpackTag ?? railpackVersion}
 							</span>
 						) : null}
 					</div>

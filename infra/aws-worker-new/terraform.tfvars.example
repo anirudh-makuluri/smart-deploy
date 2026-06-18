@@ -24,3 +24,6 @@ allowed_origins = [
 
 worker_port     = 4001
 worker_image    = "328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:2026-04-17-1"
+worker_secret_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:smartdeploy/worker/prod-AbCdEf"
+# Optional when the secret uses a customer-managed KMS key.
+worker_secret_kms_key_arn = ""

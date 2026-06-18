@@ -1,9 +1,24 @@
 import type { SDArtifactsResponse, SDDeployUnit, SDRailpackPlan, SDRemoteBuild } from "../app/types";
 
+export function normalizeRailpackFrontendTag(railpackVersion: string | null | undefined): string | null {
+	const raw = (railpackVersion || "").trim();
+	if (!raw) return null;
+
+	if (/^latest(?:-[a-z0-9._-]+)?$/i.test(raw)) {
+		return raw.toLowerCase();
+	}
+
+	const semverMatch = raw.match(/\bv?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)\b/i);
+	if (semverMatch?.[1]) {
+		return `v${semverMatch[1]}`;
+	}
+
+	return null;
+}
+
 /** BUILDKIT_SYNTAX image for Railpack (pin via `railpack_version` on analyze payload). */
 export function railpackFrontendBuildkitSyntax(railpackVersion: string | null | undefined): string {
-	const v = (railpackVersion || "").trim();
-	const tag = v ? (v.startsWith("v") ? v : `v${v}`) : "latest";
+	const tag = normalizeRailpackFrontendTag(railpackVersion) ?? "latest";
 	return `ghcr.io/railwayapp/railpack-frontend:${tag}`;
 }
 

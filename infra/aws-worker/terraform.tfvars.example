@@ -24,3 +24,6 @@ allowed_origins = [
 
 worker_port     = 4001
 worker_image    = "ghcr.io/replace-me/smart-deploy-worker:latest"
+worker_secret_arn = ""
+# Optional when the secret uses a customer-managed KMS key.
+worker_secret_kms_key_arn = ""

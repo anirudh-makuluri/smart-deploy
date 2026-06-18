@@ -17,3 +17,8 @@ output "worker_origin_example" {
   description = "Example websocket origin to set as NEXT_PUBLIC_WS_URL"
   value       = var.domain_name != "" ? "wss://${var.worker_subdomain}.${var.domain_name}" : ""
 }
+
+output "worker_secret_arn" {
+  description = "Secrets Manager ARN used for the worker runtime env, if configured"
+  value       = trimspace(var.worker_secret_arn)
+}
