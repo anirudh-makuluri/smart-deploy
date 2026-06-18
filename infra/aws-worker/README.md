@@ -7,7 +7,6 @@ What it creates:
 - Security group (80 public, 22 restricted by `ssh_cidr`)
 - IAM role and instance profile with SSM + ECR read access
 - Optional Elastic IP
-- Optional public Route53 A record
 - User data bootstrap that runs your worker container behind Nginx websocket proxying
 
 ## 1) Fill Variables
@@ -16,11 +15,15 @@ What it creates:
 2. Set at least:
    - `ssh_cidr`
    - `worker_image`
-   - `domain_name` and `worker_subdomain` (if using Route53)
+   - `domain_name` and `worker_subdomain` (if you want the stack to output the intended hostname for manual DNS)
+   - `worker_secret_arn` if you want the worker runtime env to come from AWS Secrets Manager
 
-3. Ensure `/opt/smart-deploy/.env` exists on the worker host before starting the service.
-   - The worker container reads this env file directly via `--env-file`.
+3. Preferred: store worker runtime env in AWS Secrets Manager as one JSON object and set `worker_secret_arn`.
+   - The instance role will read that secret at startup and write a transient env file for Docker.
+   - Secret keys become env var names inside the worker container.
    - Include the full runtime env your worker needs (for example `BETTER_AUTH_SECRET`, `WS_ALLOWED_ORIGINS`, cloud credentials, and DB vars).
+4. Fallback: if `worker_secret_arn` is empty, ensure `/opt/smart-deploy/.env` exists on the worker host before starting the service.
+   - The worker will continue using that local file when no secret ARN is configured.
 
 ## 2) Apply
 
@@ -45,6 +48,8 @@ terraform apply
 After apply, use output `worker_origin_example` for app env:
 - `NEXT_PUBLIC_WS_URL`
 
+If you use a custom hostname such as `ws.smart-deploy.xyz`, create or update the DNS record outside this stack.
+
 ## 4) TLS/HTTPS
 
 This stack configures Nginx reverse proxying on port 80 by default.
@@ -65,3 +70,4 @@ Use [infra/aws-worker-new](../aws-worker-new) when you want to create a brand-ne
 - Keep DB managed separately (Supabase/RDS).
 - For low traffic (about 5 users), `t3.small` is usually enough when Docker builds happen in CodeBuild.
 - Start with deployment concurrency of 1.
+- If your secret uses a customer-managed KMS key, also set `worker_secret_kms_key_arn` so the instance role can decrypt it.

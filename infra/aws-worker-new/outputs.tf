@@ -9,11 +9,16 @@ output "instance_public_ip" {
 }
 
 output "worker_dns_record" {
-  description = "Worker DNS record if Route53 domain is configured"
-  value       = var.domain_name != "" ? aws_route53_record.worker[0].fqdn : ""
+  description = "Worker hostname to point at the instance manually if a domain is configured"
+  value       = var.domain_name != "" ? "${var.worker_subdomain}.${var.domain_name}" : ""
 }
 
 output "worker_origin_example" {
   description = "Example websocket origin to set as NEXT_PUBLIC_WS_URL"
   value       = var.domain_name != "" ? "wss://${var.worker_subdomain}.${var.domain_name}" : ""
+}
+
+output "worker_secret_arn" {
+  description = "Secrets Manager ARN used for the worker runtime env, if configured"
+  value       = trimspace(var.worker_secret_arn)
 }

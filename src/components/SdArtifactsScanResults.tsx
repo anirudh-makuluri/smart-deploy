@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { DocsMarkdown } from "@/components/public/DocsMarkdown";
 import { classifyScanWorkload } from "@/lib/sdArtifactsWorkload";
 import { shouldShowBuildVerificationPanel } from "@/lib/buildVerificationLogs";
+import { normalizeRailpackFrontendTag } from "@/lib/sdArtifactsBuildContext";
 
 type SdArtifactsScanResultsProps = {
 	results: SDArtifactsResponse;
@@ -56,6 +57,7 @@ export default function SdArtifactsScanResults({
 
 	const buildOk = results.build_status === "passed" || results.build_status === "partial";
 	const hasErrors = (results.errors?.length ?? 0) > 0;
+	const railpackTag = normalizeRailpackFrontendTag(results.railpack_version);
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -109,7 +111,7 @@ export default function SdArtifactsScanResults({
 				</div>
 				<div className="rounded-xl border border-border bg-card p-4">
 					<p className="text-[11px] uppercase tracking-wider text-muted-foreground">Railpack</p>
-					<p className="mt-1 font-mono text-sm">{results.railpack_version ?? "—"}</p>
+					<p className="mt-1 font-mono text-sm">{railpackTag ?? results.railpack_version ?? "—"}</p>
 				</div>
 				<div className="rounded-xl border border-border bg-card p-4">
 					<p className="text-[11px] uppercase tracking-wider text-muted-foreground">Commit</p>

@@ -81,3 +81,15 @@ variable "worker_image" {
   type        = string
   default     = "328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:latest"
 }
+
+variable "worker_secret_arn" {
+  description = "Optional Secrets Manager secret ARN containing worker env vars as a JSON object"
+  type        = string
+  default     = ""
+}
+
+variable "worker_secret_kms_key_arn" {
+  description = "Optional customer-managed KMS key ARN used to decrypt worker_secret_arn"
+  type        = string
+  default     = ""
+}
