@@ -11,7 +11,6 @@ import {
 	SDArtifactsResponse,
 	DeploymentHistoryEntry,
 	DeploymentReleaseArtifact,
-	EcrServiceImageRef,
 } from "../app/types";
 import { cloudResourcesFromDeployResult } from "./cloudResources";
 import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
@@ -27,7 +26,11 @@ import {
 import { uploadDeployRunLogs } from "./aws/deployRunLogs";
 import { captureDeploymentScreenshotAndUpload } from "./deploymentScreenshot";
 import { isSdArtifactsAnalyzeScan } from "./scanResultNormalization";
-import { hasUsableRailpackPlan, pickDeployUnitForBuild } from "./sdArtifactsBuildContext";
+import {
+	hasUsableRailpackPlan,
+	pickDeployUnitForBuild,
+	resolveSdArtifactsPrebuiltImage,
+} from "./sdArtifactsBuildContext";
 
 // AWS imports
 import { configureAlb, resolveServices, type EC2Result } from "./aws/handleEC2";
@@ -38,9 +41,9 @@ import {
 	getAwsAccountId,
 	getEcrRegistry,
 	getEcrImageUri,
+	buildScopedEcrRepoName,
 	ensureEcrRepository,
 	ensureEc2EcrPullPolicy,
-	getEcrAuthToken,
 	ecrImageTagExists,
 	describeEcrImageByTag,
 } from "./aws/ecrHelpers";
@@ -130,6 +133,14 @@ function imageRefFromUriAndDigest(imageUri: string, imageDigest?: string | null)
 	return `${base}@${imageDigest}`;
 }
 
+function parseRegistryFromImageUri(imageUri: string): string | null {
+	const trimmed = imageUri.trim();
+	if (!trimmed) return null;
+	const slash = trimmed.indexOf("/");
+	if (slash <= 0) return null;
+	return trimmed.slice(0, slash);
+}
+
 async function describeImageRefWithFallback(params: {
 	region: string;
 	ecrRegistry: string;
@@ -151,42 +162,6 @@ async function describeImageRefWithFallback(params: {
 		params.send(`Warning: could not read ECR digest for ${label}; rollback will use tag ref. ${message}`, "build");
 		return { imageUri, imageDigest: null };
 	}
-}
-
-async function buildEcrServiceImageRefs(params: {
-	region: string;
-	ecrRegistry: string;
-	ecrRepoName: string;
-	imageTag: string;
-	services: Array<{ name: string }>;
-	send: (msg: string, stepId: string) => void;
-}): Promise<EcrServiceImageRef[]> {
-	const refs: EcrServiceImageRef[] = await Promise.all(
-		params.services.flatMap((service) => {
-			const serviceName = service.name?.trim();
-			if (!serviceName) return [];
-			const repoName = `${params.ecrRepoName}-${serviceName}`;
-			return [
-				(async () => {
-					const image = await describeImageRefWithFallback({
-						region: params.region,
-						ecrRegistry: params.ecrRegistry,
-						ecrRepoName: repoName,
-						imageTag: params.imageTag,
-						serviceName,
-						send: params.send,
-					});
-					return {
-						serviceName,
-						ecrRepoName: repoName,
-						imageUri: image.imageUri,
-						imageDigest: image.imageDigest ?? null,
-					};
-				})(),
-			];
-		})
-	);
-	return refs;
 }
 
 function buildMultiServiceConfigFromDeployConfig(deployConfig: DeployConfig): MultiServiceConfig {
@@ -1613,34 +1588,44 @@ async function handleAWSCodeBuildDeploy(
 		});
 	} else {
 		const ecrRegistry = getEcrRegistry(accountId, region);
-		const ecrRepoName = `smartdeploy/${repoName}`;
-		const ecrAuth = await getEcrAuthToken(region);
-		const ecrPasswordB64 = Buffer.from(ecrAuth.password, "utf8").toString("base64");
-
-		const units = scanResultsTyped?.deploy_units || [];
-		const hasCompose = units.length > 1;
-		const repoNames = new Set<string>();
-		repoNames.add(ecrRepoName);
-		if (hasCompose) {
-			for (const unit of units) {
-				const name = (unit.name || "").trim();
-				if (name) repoNames.add(`${ecrRepoName}-${name}`);
-			}
-		}
-		send("Preparing ECR repositories...", "build");
-		await Promise.all([...repoNames].map((repo) => ensureEcrRepository(repo, region, send)));
-		await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
+		const ecrRepoName = buildScopedEcrRepoName(repoName, scanResultsTyped?.package_path);
+		const prebuiltImage =
+			useRailpackBuild && scanResultsForCodebuild
+				? resolveSdArtifactsPrebuiltImage({
+					scan: scanResultsForCodebuild,
+					repoName,
+					preferredServiceName: deployConfig.serviceName,
+				})
+				: null;
+		let releaseEcrRegistry = ecrRegistry;
+		let releaseEcrRepoName = ecrRepoName;
+		let releaseImageTag = imageTag;
+		let resolvedImageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
+		let resolvedImageDigest: string | null = null;
+		if (prebuiltImage) {
+			releaseEcrRegistry = parseRegistryFromImageUri(prebuiltImage.imageUri || "") || ecrRegistry;
+			releaseEcrRepoName = prebuiltImage.ecrRepoName;
+			releaseImageTag = prebuiltImage.imageTag;
+			resolvedImageUri = prebuiltImage.imageUri
+				? imageRefFromUriAndDigest(prebuiltImage.imageUri, prebuiltImage.imageDigest)
+				: getEcrImageUri(accountId, region, prebuiltImage.ecrRepoName, prebuiltImage.imageTag);
+			resolvedImageDigest = prebuiltImage.imageDigest;
+			send(
+				`Using prebuilt image from analyze/stream for ${prebuiltImage.unit.name}; skipping CodeBuild rebuild (${resolvedImageUri}).`,
+				"build"
+			);
+		} else {
+			send("Preparing ECR repositories...", "build");
+			await ensureEcrRepository(ecrRepoName, region, send);
+			await ensureEc2EcrPullPolicy("smartdeploy-ec2-ssm-role", region);
 
 		const hasCommit = Boolean(commitSha);
-		let allTagsExist = hasCommit;
+		let imageTagExists = hasCommit;
 		if (hasCommit) {
-			const tagChecks = await Promise.all(
-				[...repoNames].map((repo) => ecrImageTagExists(region, repo, imageTag))
-			);
-			allTagsExist = tagChecks.every(Boolean);
+			imageTagExists = await ecrImageTagExists(region, ecrRepoName, imageTag);
 		}
 
-		if (!hasCommit || !allTagsExist) {
+		if (!hasCommit || !imageTagExists) {
 			const roleArn = await ensureCodeBuildRole(region, send);
 			const projectName = await ensureCodeBuildProject(region, roleArn, send);
 
@@ -1693,25 +1678,17 @@ async function handleAWSCodeBuildDeploy(
 			send(`CodeBuild skipped: image ${imageTag} already exists in ECR.`, "build");
 		}
 
-		const imageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
-		const primaryImage = await describeImageRefWithFallback({
-			region,
-			ecrRegistry,
-			ecrRepoName,
-			imageTag,
-			send,
-		});
-		const serviceImages = hasCompose
-			? await buildEcrServiceImageRefs({
+			const primaryImage = await describeImageRefWithFallback({
 				region,
 				ecrRegistry,
 				ecrRepoName,
 				imageTag,
-				services: units.map((u) => ({ name: u.name })),
 				send,
-			})
-			: [];
-		send(`Image ready: ${primaryImage.imageUri || imageUri}`, "build");
+			});
+			resolvedImageUri = primaryImage.imageUri || resolvedImageUri;
+			resolvedImageDigest = primaryImage.imageDigest ?? null;
+		}
+		send(`Image ready: ${resolvedImageUri}`, "build");
 
 		target = "ecs";
 		deployConfig.deploymentTarget = "ecs";
@@ -1720,7 +1697,7 @@ async function handleAWSCodeBuildDeploy(
 			deployConfig,
 			region,
 			repoName,
-			imageUri: primaryImage.imageUri || imageUri,
+			imageUri: resolvedImageUri,
 			containerPort: railpackUnit?.port || 3000,
 			unitName: railpackUnit?.name || "app",
 			ws,
@@ -1730,12 +1707,12 @@ async function handleAWSCodeBuildDeploy(
 		releaseArtifact = buildEcrImageReleaseArtifact({
 			deployConfig,
 			region,
-			ecrRegistry,
-			ecrRepoName,
-			imageTag,
-			imageUri: primaryImage.imageUri || imageUri,
-			imageDigest: primaryImage.imageDigest ?? null,
-			serviceImages,
+			ecrRegistry: releaseEcrRegistry,
+			ecrRepoName: releaseEcrRepoName,
+			imageTag: releaseImageTag,
+			imageUri: resolvedImageUri,
+			imageDigest: resolvedImageDigest,
+			serviceImages: [],
 		});
 	}
 
