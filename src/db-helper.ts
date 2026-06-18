@@ -212,21 +212,28 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 /**
  * Transform DeployConfig (camelCase) to database row (snake_case)
  */
-function deployConfigToRow(config: DeployConfig): Record<string, unknown> {
-	const row: Record<string, unknown> = {
-		repo_url: config.repoUrl,
-		branch: config.branch,
-		commit_sha: config.commitSha,
-		hosted_subdomain: config.hostedSubdomain,
-		screenshot_url: config.screenshotUrl,
-		cloud_provider: config.cloudProvider,
-		deployment_target: config.deploymentTarget,
-		region: config.region,
-		status: normalizeDeploymentStatus(config.status),
-		cloud_resources: config.cloudResources,
-		secrets_arn: config.secretsArn ?? null,
-	};
-	if (config.responseId !== undefined) {
+function deployConfigToRow(
+	config: Partial<DeployConfig> & Record<string, unknown>,
+	options?: {
+		includeStatus?: boolean;
+		resolvedStatus?: DeployConfig["status"];
+	}
+): Record<string, unknown> {
+	const row: Record<string, unknown> = {};
+	if (hasOwnKey(config, "repoUrl")) row.repo_url = config.repoUrl;
+	if (hasOwnKey(config, "branch")) row.branch = config.branch;
+	if (hasOwnKey(config, "commitSha")) row.commit_sha = config.commitSha;
+	if (hasOwnKey(config, "hostedSubdomain")) row.hosted_subdomain = config.hostedSubdomain;
+	if (hasOwnKey(config, "screenshotUrl")) row.screenshot_url = config.screenshotUrl;
+	if (hasOwnKey(config, "cloudProvider")) row.cloud_provider = config.cloudProvider;
+	if (hasOwnKey(config, "deploymentTarget")) row.deployment_target = config.deploymentTarget;
+	if (hasOwnKey(config, "region")) row.region = config.region;
+	if (options?.includeStatus) {
+		row.status = normalizeDeploymentStatus(options.resolvedStatus ?? (config.status as string | null | undefined));
+	}
+	if (hasOwnKey(config, "cloudResources")) row.cloud_resources = config.cloudResources;
+	if (hasOwnKey(config, "secretsArn")) row.secrets_arn = config.secretsArn ?? null;
+	if (hasOwnKey(config, "responseId")) {
 		row.response_id = config.responseId;
 	}
 	return row;
@@ -368,16 +375,19 @@ export const dbHelper = {
 		try {
 			const { repoName, serviceName } = deployConfig;
 			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
-			const nextStatus = normalizeDeploymentStatus(deployConfig.status);
 
 			const supabase = getSupabaseServer();
 			const configRecord = deployConfig as unknown as Record<string, unknown>;
+			const hasStatusInput = hasOwnKey(configRecord, "status");
+			const explicitStatus = hasStatusInput
+				? normalizeDeploymentStatus(configRecord.status as string | null | undefined)
+				: null;
 			const hasScanResultsInput = hasOwnKey(configRecord, "scanResults");
 			const rawScanResultsInput = configRecord.scanResults;
 			const rawScanResults = hasScanResultsInput ? normalizeScanResults(configRecord.scanResults) : null;
 			const explicitResponseId = toOptionalTrimmedString(configRecord.responseId);
 
-			if (nextStatus === "stopped") {
+			if (explicitStatus === "stopped") {
 				await supabase.from("deployments").delete()
 					.eq("repo_name", repoName)
 					.eq("service_name", serviceName);
@@ -396,6 +406,7 @@ export const dbHelper = {
 
 			if (fetchError) return { error: fetchError.message };
 			const currentStatus = normalizeDeploymentStatus(existing?.status as string | null | undefined);
+			const nextStatus = explicitStatus ?? currentStatus ?? "didnt_deploy";
 
 			let nextResponseId: string | null = explicitResponseId ?? toOptionalTrimmedString(existing?.response_id);
 			if (hasScanResultsInput) {
@@ -435,7 +446,10 @@ export const dbHelper = {
 				const now = new Date().toISOString();
 				const isDraft = isDraftDeploymentStatus(nextStatus);
 				// Create new deployment with provided data
-				const insertRow = deployConfigToRow(deployConfig);
+				const insertRow = deployConfigToRow(configRecord, {
+					includeStatus: true,
+					resolvedStatus: nextStatus,
+				});
 				if (!normalizeHostedSubdomain(insertRow.hosted_subdomain as string | null | undefined)) {
 					insertRow.hosted_subdomain = generateDefaultHostedSubdomain(repoName);
 				}
@@ -463,7 +477,10 @@ export const dbHelper = {
 				!inProgressStatuses.has(currentStatus);
 			const updatePayload: Record<string, unknown> = {
 				revision: isAttemptStart ? (existing.revision ?? 0) + 1 : (existing.revision ?? 0),
-				...deployConfigToRow(deployConfig),
+				...deployConfigToRow(configRecord, {
+					includeStatus: hasStatusInput,
+					resolvedStatus: nextStatus,
+				}),
 			};
 			if (hasScanResultsInput || explicitResponseId) {
 				updatePayload.response_id = nextResponseId;

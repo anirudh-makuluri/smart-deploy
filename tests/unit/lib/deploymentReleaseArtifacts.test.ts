@@ -51,6 +51,7 @@ function makeDeployConfig(overrides: Partial<DeployConfig> = {}): DeployConfig {
 					},
 				},
 			],
+			remote_builds: {},
 			build_verification: {},
 			repair_history: [],
 			pipeline_trace: [],
@@ -75,9 +76,9 @@ describe("deployment release artifacts", () => {
 			deployConfig: makeDeployConfig(),
 			region: "us-west-2",
 			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
-			ecrRepoName: "smartdeploy/shop",
+			ecrRepoName: "sd/shop",
 			imageTag: "abc123",
-			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abc123",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop:abc123",
 		});
 		expect(artifact.kind).toBe("ecr_image");
 		expect(artifact.deployConfig).not.toHaveProperty("envVars");
@@ -88,9 +89,9 @@ describe("deployment release artifacts", () => {
 			deployConfig: makeDeployConfig({ envVars: "SECRET=old" }),
 			region: "us-west-2",
 			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
-			ecrRepoName: "smartdeploy/shop",
+			ecrRepoName: "sd/shop",
 			imageTag: "abc123",
-			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abc123",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop:abc123",
 		});
 		artifact.deployConfig.envVars = "SECRET=stale";
 
@@ -108,20 +109,20 @@ describe("deployment release artifacts", () => {
 			deployConfig: makeDeployConfig(),
 			region: "us-west-2",
 			ecrRegistry: "123.dkr.ecr.us-west-2.amazonaws.com",
-			ecrRepoName: "smartdeploy/shop",
+			ecrRepoName: "sd/shop",
 			imageTag: "abcdef",
-			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abcdef",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop:abcdef",
 			imageDigest: "sha256:111",
 			serviceImages: [{
 				serviceName: "api",
-				ecrRepoName: "smartdeploy/shop-api",
-				imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-api:abcdef",
+				ecrRepoName: "sd/shop/api",
+				imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop/api:abcdef",
 				imageDigest: "sha256:222",
 			}],
 		}) satisfies EcrImageReleaseArtifact;
 
-		expect(ecrImageRefFromArtifact(artifact)).toBe("123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop@sha256:111");
-		expect(serviceImageRefsFromArtifact(artifact)[0].imageUri).toBe("123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop-api@sha256:222");
+		expect(ecrImageRefFromArtifact(artifact)).toBe("123.dkr.ecr.us-west-2.amazonaws.com/sd/shop@sha256:111");
+		expect(serviceImageRefsFromArtifact(artifact)[0].imageUri).toBe("123.dkr.ecr.us-west-2.amazonaws.com/sd/shop/api@sha256:222");
 		expect(artifact.deployConfig).not.toHaveProperty("envVars");
 	});
 });

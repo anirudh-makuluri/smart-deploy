@@ -54,9 +54,9 @@ describe("DeploymentHistory", () => {
 					deploymentTarget: "ecs",
 					region: "us-west-2",
 					ecrRegistry: "123456789012.dkr.ecr.us-west-2.amazonaws.com",
-					ecrRepoName: "smartdeploy/smart-deploy",
+					ecrRepoName: "sd/smart-deploy",
 					imageTag: "abcdef",
-					imageUri: "123456789012.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/smart-deploy:abcdef",
+					imageUri: "123456789012.dkr.ecr.us-west-2.amazonaws.com/sd/smart-deploy:abcdef",
 					commitSha: "abcdef123456",
 					branch: "main",
 					deployConfig: {
@@ -87,9 +87,9 @@ describe("DeploymentHistory", () => {
 					deploymentTarget: "ecs",
 					region: "us-west-2",
 					ecrRegistry: "123456789012.dkr.ecr.us-west-2.amazonaws.com",
-					ecrRepoName: "smartdeploy/smart-deploy",
+					ecrRepoName: "sd/smart-deploy",
 					imageTag: "123456",
-					imageUri: "123456789012.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/smart-deploy:123456",
+					imageUri: "123456789012.dkr.ecr.us-west-2.amazonaws.com/sd/smart-deploy:123456",
 					commitSha: "1234567890ab",
 					branch: "main",
 					deployConfig: {

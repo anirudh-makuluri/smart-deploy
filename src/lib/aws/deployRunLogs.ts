@@ -1,4 +1,3 @@
-import { PutObjectCommand, GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import config from "@/config";
 import type { DeployStep } from "@/app/types";
 import { getAwsClientConfig } from "@/lib/aws/sdkClients";
@@ -19,6 +18,11 @@ export type DeployStepSummary = {
 };
 
 const LOG_TAIL_MAX_LINES = 20;
+
+async function createS3Client(region: string) {
+	const { S3Client } = await import("@aws-sdk/client-s3");
+	return new S3Client(getAwsClientConfig(region));
+}
 
 export function deployRunLogsS3Key(userId: string, runId: string): string {
 	return `deploy-runs/${userId}/${runId}/logs.jsonl`;
@@ -81,7 +85,8 @@ export async function uploadDeployRunLogs(args: {
 	const body = stepsToJsonl(args.steps);
 	const key = deployRunLogsS3Key(args.userId, args.runId);
 	const region = args.region?.trim() || config.AWS_REGION;
-	const client = new S3Client(getAwsClientConfig(region));
+	const client = await createS3Client(region);
+	const { PutObjectCommand } = await import("@aws-sdk/client-s3");
 
 	await client.send(
 		new PutObjectCommand({
@@ -107,7 +112,8 @@ export async function fetchDeployRunLogsFromS3(args: {
 	if (!bucket || !args.logRef?.trim()) return [];
 
 	const region = args.region?.trim() || config.AWS_REGION;
-	const client = new S3Client(getAwsClientConfig(region));
+	const client = await createS3Client(region);
+	const { GetObjectCommand } = await import("@aws-sdk/client-s3");
 	const out = await client.send(
 		new GetObjectCommand({
 			Bucket: bucket,

@@ -23,6 +23,28 @@ export function getEcrRegistry(accountId: string, region: string): string {
 	return `${accountId}.dkr.ecr.${region}.amazonaws.com`;
 }
 
+function sanitizeEcrRepositoryPath(value: string): string {
+	return value
+		.replace(/\\/g, "/")
+		.split("/")
+		.map((segment) => segment.trim().toLowerCase())
+		.filter((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+		.map((segment) =>
+			segment
+				.replace(/[^a-z0-9._-]+/g, "-")
+				.replace(/-+/g, "-")
+				.replace(/^[-._]+|[-._]+$/g, "")
+		)
+		.filter(Boolean)
+		.join("/");
+}
+
+export function buildScopedEcrRepoName(repoName: string, packagePath?: string | null): string {
+	const repoPath = sanitizeEcrRepositoryPath(repoName) || "app";
+	const scopedPackagePath = sanitizeEcrRepositoryPath(packagePath ?? "");
+	return scopedPackagePath ? `sd/${repoPath}/${scopedPackagePath}` : `sd/${repoPath}`;
+}
+
 export function getEcrImageUri(
 	accountId: string,
 	region: string,

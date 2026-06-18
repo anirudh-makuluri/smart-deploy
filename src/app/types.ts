@@ -287,6 +287,25 @@ export type SDDeployShape =
 	| "multi"
 	| "existing_docker";
 
+export type SDRemoteBuild = {
+	provider?: string;
+	backend?: string;
+	status?: string;
+	project_name?: string | null;
+	build_id?: string | null;
+	logs_url?: string | null;
+	source_s3_uri?: string | null;
+	result_s3_uri?: string | null;
+	unit_name: string;
+	unit_root: string;
+	ecr_repository?: string | null;
+	image_tag?: string | null;
+	image_uri?: string | null;
+	image_digest?: string | null;
+	failure_reason?: string | null;
+	log_excerpt?: string | null;
+};
+
 export type SDRailpackPlan = {
 	steps?: Array<{ name: string; commands?: Array<{ cmd: string }> }>;
 	deploy?: {
@@ -306,6 +325,7 @@ export type SDDeployUnit = {
 		railpack_plan: SDRailpackPlan | null;
 		railpack_json: Record<string, unknown> | null;
 	};
+	remote_build?: SDRemoteBuild | null;
 };
 
 export type SDBuildVerification = {
@@ -340,6 +360,7 @@ export type SDArtifactsResponse = {
 	workflow_version: string | null;
 	deploy_briefing: string;
 	deploy_units: SDDeployUnit[];
+	remote_builds: Record<string, SDRemoteBuild>;
 	build_verification: SDBuildVerification;
 	repair_history: SDRepairAttempt[];
 	pipeline_trace: Array<Record<string, unknown>>;

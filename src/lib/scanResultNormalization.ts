@@ -5,6 +5,7 @@ import type {
 	SDDeployShape,
 	SDDeployUnit,
 	SDRailpackPlan,
+	SDRemoteBuild,
 	SDRepairAttempt,
 } from "@/app/types";
 
@@ -45,6 +46,38 @@ function parseRailpackPlan(value: unknown): SDRailpackPlan | null {
 	return value as SDRailpackPlan;
 }
 
+function parseRemoteBuild(value: unknown): SDRemoteBuild | null {
+	if (!value || typeof value !== "object") return null;
+	const raw = value as Record<string, unknown>;
+	const unit_name = typeof raw.unit_name === "string" ? raw.unit_name.trim() : "";
+	const unit_root = typeof raw.unit_root === "string" ? raw.unit_root : ".";
+	return {
+		provider: typeof raw.provider === "string" ? raw.provider : undefined,
+		backend: typeof raw.backend === "string" ? raw.backend : undefined,
+		status: typeof raw.status === "string" ? raw.status : undefined,
+		project_name:
+			raw.project_name === null || typeof raw.project_name === "string" ? raw.project_name : undefined,
+		build_id: raw.build_id === null || typeof raw.build_id === "string" ? raw.build_id : undefined,
+		logs_url: raw.logs_url === null || typeof raw.logs_url === "string" ? raw.logs_url : undefined,
+		source_s3_uri:
+			raw.source_s3_uri === null || typeof raw.source_s3_uri === "string" ? raw.source_s3_uri : undefined,
+		result_s3_uri:
+			raw.result_s3_uri === null || typeof raw.result_s3_uri === "string" ? raw.result_s3_uri : undefined,
+		unit_name,
+		unit_root,
+		ecr_repository:
+			raw.ecr_repository === null || typeof raw.ecr_repository === "string" ? raw.ecr_repository : undefined,
+		image_tag: raw.image_tag === null || typeof raw.image_tag === "string" ? raw.image_tag : undefined,
+		image_uri: raw.image_uri === null || typeof raw.image_uri === "string" ? raw.image_uri : undefined,
+		image_digest:
+			raw.image_digest === null || typeof raw.image_digest === "string" ? raw.image_digest : undefined,
+		failure_reason:
+			raw.failure_reason === null || typeof raw.failure_reason === "string" ? raw.failure_reason : undefined,
+		log_excerpt:
+			raw.log_excerpt === null || typeof raw.log_excerpt === "string" ? raw.log_excerpt : undefined,
+	};
+}
+
 function parseDeployUnit(raw: Record<string, unknown>): SDDeployUnit | null {
 	const name = typeof raw.name === "string" ? raw.name.trim() : "";
 	if (!name) return null;
@@ -76,7 +109,21 @@ function parseDeployUnit(raw: Record<string, unknown>): SDDeployUnit | null {
 		framework,
 		port,
 		artifacts: { railpack_plan, railpack_json },
+		remote_build: parseRemoteBuild(raw.remote_build),
 	};
+}
+
+function parseRemoteBuilds(value: unknown): Record<string, SDRemoteBuild> {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+	const out: Record<string, SDRemoteBuild> = {};
+	for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+		const remoteBuild = parseRemoteBuild(rawValue);
+		if (!remoteBuild) continue;
+		const normalizedKey = key.trim();
+		if (!normalizedKey) continue;
+		out[normalizedKey] = remoteBuild;
+	}
+	return out;
 }
 
 function parseBuildVerification(value: unknown): SDBuildVerification {
@@ -150,6 +197,7 @@ function normalizeSdAnalyzePayload(p: Record<string, unknown>): SDArtifactsRespo
 			p.workflow_version === null || typeof p.workflow_version === "string" ? p.workflow_version : null,
 		deploy_briefing: typeof p.deploy_briefing === "string" ? p.deploy_briefing : "",
 		deploy_units,
+		remote_builds: parseRemoteBuilds(p.remote_builds),
 		build_verification: parseBuildVerification(p.build_verification),
 		repair_history: parseRepairHistory(p.repair_history),
 		pipeline_trace,

@@ -14,7 +14,7 @@ describe("deployment run row mapping", () => {
 			log_tail: [{ ts: "2026-06-01T00:05:00.000Z", step_id: "deploy", message: "OK" }],
 			release_artifact: {
 				kind: "ecr_image",
-				imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abcdef",
+				imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop:abcdef",
 			},
 			commit_sha: "abcdef123456",
 			commit_message: null,
@@ -34,7 +34,7 @@ describe("deployment run row mapping", () => {
 
 		expect(entry.releaseArtifact).toEqual({
 			kind: "ecr_image",
-			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/smartdeploy/shop:abcdef",
+			imageUri: "123.dkr.ecr.us-west-2.amazonaws.com/sd/shop:abcdef",
 		});
 		expect(entry.configSnapshot).toEqual({});
 		expect(entry.commitSha).toBe("abcdef123456");
