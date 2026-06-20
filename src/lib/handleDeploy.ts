@@ -356,7 +356,7 @@ async function verifyDeploymentReadiness(params: {
 	rollbackHistoryEntry?: DeploymentHistoryEntry | null;
 	serviceDetails?: ServiceDeployDetails | null;
 }): Promise<VerificationResult> {
-	const { deployConfig, deployUrl, customUrl, userID, token, send, deploySteps, rollbackHistoryEntry, serviceDetails } = params;
+	const { deployConfig, deployUrl, customUrl, userID, send, deploySteps, serviceDetails } = params;
 	const verifyingStatus = transitionDeploymentStatus(deployConfig.status, "verification_requested");
 	deployConfig.status = verifyingStatus;
 	setStepState(deploySteps, "verify", "in_progress");
@@ -383,27 +383,9 @@ async function verifyDeploymentReadiness(params: {
 			send,
 			serviceDetails: serviceDetails ?? null,
 		});
-		const rollbackResult = await attemptAutomaticRollback({
-			deployConfig,
-			rollbackHistoryEntry: rollbackHistoryEntry ?? null,
-			serviceDetails: serviceDetails ?? null,
-			userID,
-			token,
-			send,
-			deploySteps,
-		});
-
-		if (rollbackResult.success) {
-			return {
-				success: false,
-				errorMessage: rollbackResult.message,
-				postPersistConfig: rollbackResult.restoredConfig,
-			};
-		}
-
 		return {
 			success: false,
-			errorMessage: rollbackResult.message,
+			errorMessage: "Deployment verification failed after all retry attempts.",
 		};
 	}
 
@@ -494,27 +476,9 @@ async function verifyDeploymentReadiness(params: {
 				send,
 				serviceDetails: serviceDetails ?? null,
 			});
-			const rollbackResult = await attemptAutomaticRollback({
-				deployConfig,
-				rollbackHistoryEntry: rollbackHistoryEntry ?? null,
-				serviceDetails: serviceDetails ?? null,
-				userID,
-				token,
-				send,
-				deploySteps,
-			});
-
-			if (rollbackResult.success) {
-				return {
-					success: false,
-					errorMessage: `Deployment verification failed for ${target.label}. ${rollbackResult.message}`,
-					postPersistConfig: rollbackResult.restoredConfig,
-				};
-			}
-
 			return {
 				success: false,
-				errorMessage: `Deployment verification failed for ${target.label}. ${rollbackResult.message}`,
+				errorMessage: `Deployment verification failed for ${target.label}.`,
 			};
 		}
 	}
@@ -526,27 +490,9 @@ async function verifyDeploymentReadiness(params: {
 		send,
 		serviceDetails: serviceDetails ?? null,
 	});
-	const rollbackResult = await attemptAutomaticRollback({
-		deployConfig,
-		rollbackHistoryEntry: rollbackHistoryEntry ?? null,
-		serviceDetails: serviceDetails ?? null,
-		userID,
-		token,
-		send,
-		deploySteps,
-	});
-
-	if (rollbackResult.success) {
-		return {
-			success: false,
-			errorMessage: rollbackResult.message,
-			postPersistConfig: rollbackResult.restoredConfig,
-		};
-	}
-
 	return {
 		success: false,
-		errorMessage: rollbackResult.message,
+		errorMessage: "Deployment verification failed after all retry attempts.",
 	};
 }
 
