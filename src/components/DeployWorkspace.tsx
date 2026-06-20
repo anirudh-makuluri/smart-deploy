@@ -50,6 +50,7 @@ export default function DeployWorkspace({
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,
 		serviceLogs,
@@ -155,6 +156,7 @@ export default function DeployWorkspace({
 							serviceLogs={serviceLogs}
 							effectiveDeployStatus={effectiveDeployStatus}
 							deployError={deployError}
+							latestDeploymentRunId={latestDeploymentRunId}
 							deployingCommitInfo={ui.deployingCommitInfo}
 							steps={steps}
 							liveDeployConfig={liveDeployConfig}

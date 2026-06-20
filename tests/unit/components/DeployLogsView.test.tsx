@@ -38,21 +38,23 @@ describe("DeployLogsView", () => {
 				serviceLogs={[]}
 				deployStatus="error"
 				deployError="Build failed"
+				deploymentRunId="run-123"
 				steps={baseSteps}
-				configSnapshot={{ region: "us-west-2" }}
 			/>
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: /Explain root cause/i }));
 
 		await waitFor(() => {
-			expect(screen.getByText("Root cause analysis")).toBeInTheDocument();
+			expect(
+				screen.getByText("The deploy failed because DATABASE_URL was missing.")
+			).toBeInTheDocument();
 		});
-		expect(screen.getByText("The deploy failed because DATABASE_URL was missing.")).toBeInTheDocument();
 		expect(global.fetch).toHaveBeenCalledWith(
 			"/api/llm/analyze-failure",
 			expect.objectContaining({
 				method: "POST",
+				body: JSON.stringify({ runId: "run-123" }),
 			})
 		);
 	});
@@ -71,8 +73,8 @@ describe("DeployLogsView", () => {
 				serviceLogs={[]}
 				deployStatus="error"
 				deployError="Build failed"
+				deploymentRunId="run-123"
 				steps={baseSteps}
-				configSnapshot={{ region: "us-west-2" }}
 			/>
 		);
 

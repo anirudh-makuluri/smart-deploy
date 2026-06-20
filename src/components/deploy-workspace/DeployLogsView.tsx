@@ -31,9 +31,9 @@ type DeployLogsViewProps = {
 	serviceLogs: LogEntry[];
 	deployStatus: DeployStatus;
 	deployError?: string | null;
+	deploymentRunId?: string | null;
 	deployingCommitInfo?: CommitInfo | null;
 	steps?: DeployStep[];
-	configSnapshot?: any;
 	repoUrl?: string;
 	commitSha?: string;
 	packagePath?: string;
@@ -57,9 +57,9 @@ export default function DeployLogsView({
 	serviceLogs,
 	deployStatus,
 	deployError,
+	deploymentRunId,
 	deployingCommitInfo,
 	steps,
-	configSnapshot,
 	repoUrl,
 	commitSha,
 	packagePath,
@@ -72,14 +72,17 @@ export default function DeployLogsView({
 	const [analysisResult, setAnalysisResult] = React.useState<string | null>(null);
 
 	const handleWhyDidItFail = async () => {
-		if (!steps || !configSnapshot) return;
+		if (!deploymentRunId) {
+			setAnalysisResult("This deployment run is still syncing. Please retry in a moment.");
+			return;
+		}
 		setAnalyzing(true);
 		setAnalysisResult(null);
 		try {
 			const res = await fetch("/api/llm/analyze-failure", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ steps, configSnapshot }),
+				body: JSON.stringify({ runId: deploymentRunId }),
 			});
 			const data = (await res.json().catch(() => ({}))) as {
 				response?: string;
@@ -261,7 +264,7 @@ export default function DeployLogsView({
 							{deployError}
 						</AlertDescription>
 					</div>
-					{steps && configSnapshot && (
+					{steps && (
 						<div className="mt-2 space-y-3">
 							<div className="text-right">
 								<Button
