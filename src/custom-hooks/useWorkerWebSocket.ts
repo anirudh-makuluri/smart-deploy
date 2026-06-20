@@ -43,7 +43,9 @@ const defaultSteps: DeployStep[] = [
 	{ id: "clone", label: "Cloning repository", logs: [], status: "pending" },
 	{ id: "setup", label: "Setup", logs: [], status: "pending" },
 	{ id: "docker", label: "Build", logs: [], status: "pending" },
+	{ id: "publish", label: "Publish", logs: [], status: "pending" },
 	{ id: "deploy", label: "Deploy", logs: [], status: "pending" },
+	{ id: "rollout", label: "ECS rollout", logs: [], status: "pending" },
 	{ id: "verify", label: "Verify", logs: [], status: "pending" },
 	{ id: "done", label: "Done", logs: [], status: "pending" },
 ];
@@ -61,8 +63,12 @@ function getFallbackStepLabel(stepId: string): string {
 		case "build":
 		case "docker":
 			return "Build";
+		case "publish":
+			return "Publish";
 		case "deploy":
 			return "Deploy";
+		case "rollout":
+			return "ECS rollout";
 		case "verify":
 			return "Verify";
 		case "rollback":
@@ -86,6 +92,15 @@ function isErrorStepMessage(msg: string): boolean {
 
 function normalizeDeploySteps(steps: { id: string; label: string }[]): { id: string; label: string }[] {
 	const next = [...steps];
+	const hasDeploy = next.some((step) => step.id === "deploy");
+	const deployIndex = next.findIndex((step) => step.id === "deploy");
+	const hasPublish = next.some((step) => step.id === "publish");
+	if (hasDeploy && !hasPublish) {
+		next.splice(deployIndex >= 0 ? deployIndex : next.length, 0, {
+			id: "publish",
+			label: "Publish image",
+		});
+	}
 	const hasVerify = next.some((step) => step.id === "verify");
 	const doneIndex = next.findIndex((step) => step.id === "done");
 	if (!hasVerify) {
@@ -256,7 +271,11 @@ export function useWorkerWebSocketSession({
 		onDeployFinishedRef.current = handler;
 	}, []);
 
-	const processServiceLogs = useCallback((logs: ServiceLogEntry[]) => {
+	const replaceServiceLogs = useCallback((logs: ServiceLogEntry[]) => {
+		setServiceLogs(logs);
+	}, []);
+
+	const appendServiceLogs = useCallback((logs: ServiceLogEntry[]) => {
 		setServiceLogs((prev) => [...prev, ...logs]);
 	}, []);
 
@@ -368,11 +387,11 @@ export function useWorkerWebSocketSession({
 							break;
 						}
 						case "initial_logs":
-							processServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
+							replaceServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
 							break;
 						case "stream_logs": {
 							const log = (payload as { log?: ServiceLogEntry } | undefined)?.log;
-							processServiceLogs(log ? [log] : []);
+							appendServiceLogs(log ? [log] : []);
 							break;
 						}
 						case "deploy_logs":
@@ -495,6 +514,7 @@ export function useWorkerWebSocketSession({
 							}
 
 							onDeployFinishedRef.current?.(completePayload);
+							initiateServiceLogs();
 							break;
 						}
 						default:
@@ -556,7 +576,7 @@ export function useWorkerWebSocketSession({
 		})();
 
 		return null;
-	}, [announceActiveDeployments, assignDeployConfig, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, processServiceLogs]);
+	}, [announceActiveDeployments, appendServiceLogs, assignDeployConfig, clearRetryTimer, deployLogs, flushOnReadyQueue, initiateServiceLogs, replaceServiceLogs]);
 
 	const openSocket = useCallback((onReady?: () => void) => {
 		const existing = wsRef.current;
@@ -648,6 +668,7 @@ export function useWorkerWebSocketSession({
 		setDeployStatus("running");
 		setSteps([...defaultSteps]);
 		setDeployLogEntries([]);
+		setServiceLogs([]);
 
 		if (typeof window !== "undefined") {
 			try {
@@ -687,6 +708,7 @@ export function useWorkerWebSocketSession({
 		setDeployStatus("running");
 		setSteps([...defaultSteps]);
 		setDeployLogEntries([]);
+		setServiceLogs([]);
 
 		if (typeof window !== "undefined") {
 			try {

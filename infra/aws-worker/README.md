@@ -61,6 +61,10 @@ Without TLS, use `ws://...`.
 
 This directory already has Terraform state for the live worker. Use it when you want to update the existing EC2 instance, ECR image, or security group settings without creating a separate deployment.
 
+Helpful script entry points from the repo root:
+- `./scripts/deploy.sh` builds and pushes the worker image, runs `terraform plan/apply`, then rolls the instance in place through SSM.
+- `./scripts/update.sh` builds and pushes the worker image, then replaces the image on the existing instance and restarts the worker through SSM without running `terraform apply`.
+
 ## 6) Fresh Instance
 
 Use [infra/aws-worker-new](../aws-worker-new) when you want to create a brand-new worker instance with a separate Terraform state.

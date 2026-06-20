@@ -651,6 +651,11 @@ export function useDeployWorkspace() {
 		});
 	}, [deployment, effectiveBranch, repoName, repoUrl, serviceName, updateDeploymentById]);
 
+	const latestDeploymentRunId = React.useMemo(
+		() => deploymentHistory?.[0]?.id ?? null,
+		[deploymentHistory]
+	);
+
 	const missingService = !activeRepo || !serviceName;
 	const repoNotFound = !isLoading && !activeRepo;
 	const repoRecord = (activeRepo ?? null) as repoType | null;
@@ -679,6 +684,7 @@ export function useDeployWorkspace() {
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,
 		serviceLogs,

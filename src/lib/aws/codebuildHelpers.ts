@@ -26,6 +26,41 @@ type SendFn = (msg: string, stepId: string) => void;
 const CODEBUILD_PROJECT_NAME = "smartdeploy-builder";
 const CODEBUILD_ROLE_NAME = "smartdeploy-codebuild-role";
 const LOG_GROUP = `/aws/codebuild/${CODEBUILD_PROJECT_NAME}`;
+const PHASE_BUILD_START = "SMARTDEPLOY_PHASE:build:start";
+const PHASE_BUILD_END = "SMARTDEPLOY_PHASE:build:end";
+const PHASE_PUBLISH_START = "SMARTDEPLOY_PHASE:publish:start";
+const PHASE_PUBLISH_END = "SMARTDEPLOY_PHASE:publish:end";
+const PUBLISH_SIGNAL_RE =
+	/\b(docker push|pushing|pushed|exporting to image|exporting manifest|exporting layers|manifest|layer already exists|digest: sha256:|preparing|waiting|mounted from|pushing manifest list)\b/i;
+
+function routeCodeBuildLogMessage(
+	message: string,
+	currentStep: "build" | "publish"
+): { nextStep: "build" | "publish"; line?: string; stepId?: "build" | "publish" } {
+	const trimmed = message.trimEnd();
+	if (!trimmed) {
+		return { nextStep: currentStep };
+	}
+	if (trimmed === PHASE_BUILD_START) {
+		return { nextStep: "build" };
+	}
+	if (trimmed === PHASE_BUILD_END) {
+		return { nextStep: "publish" };
+	}
+	if (trimmed === PHASE_PUBLISH_START) {
+		return { nextStep: "publish" };
+	}
+	if (trimmed === PHASE_PUBLISH_END) {
+		return { nextStep: "publish" };
+	}
+
+	const stepId = PUBLISH_SIGNAL_RE.test(trimmed) ? "publish" : currentStep;
+	return {
+		nextStep: stepId,
+		line: trimmed,
+		stepId,
+	};
+}
 
 // ─── IAM Role ─────────────────────────────────────────────────────────────
 
@@ -229,11 +264,17 @@ function buildRailpackEcrBuildspec(params: {
 	const buildkitArg = JSON.stringify(syntax);
 	const imageArg = JSON.stringify(fullUri);
 	const buildCmds = [
+		`echo ${JSON.stringify(PHASE_BUILD_START)}`,
 		'echo "Building image with Railpack (buildx)..."',
 		"docker buildx create --use 2>/dev/null || docker buildx inspect --bootstrap 2>/dev/null || true",
 		`docker buildx build --provenance=false --sbom=false --build-arg BUILDKIT_SYNTAX=${buildkitArg} -f /tmp/railpack-plan.json -t ${imageArg} --push .`,
+		`echo ${JSON.stringify(PHASE_BUILD_END)}`,
 	];
-	const postBuildCmds = ['echo "Railpack image push complete."'];
+	const postBuildCmds = [
+		`echo ${JSON.stringify(PHASE_PUBLISH_START)}`,
+		'echo "Railpack image push complete."',
+		`echo ${JSON.stringify(PHASE_PUBLISH_END)}`,
+	];
 	const SP = 6;
 	const lines = [
 		"version: 0.2",
@@ -286,9 +327,13 @@ function buildExistingDockerEcrBuildspec(params: {
 	}
 
 	const buildCmds = [
+		`echo ${JSON.stringify(PHASE_BUILD_START)}`,
 		`echo Building Docker image from ${dockerfile}...`,
 		`docker build -f ${JSON.stringify(dockerfile)} -t ${JSON.stringify(fullUri)} .`,
+		`echo ${JSON.stringify(PHASE_BUILD_END)}`,
+		`echo ${JSON.stringify(PHASE_PUBLISH_START)}`,
 		`docker push ${JSON.stringify(fullUri)}`,
+		`echo ${JSON.stringify(PHASE_PUBLISH_END)}`,
 	];
 	const postBuildCmds = ['echo "Docker image push complete."'];
 	const SP = 6;
@@ -410,7 +455,16 @@ export async function waitForBuildAndStreamLogs(params: {
 	let nextToken: string | undefined;
 	let logStreamAvailable = false;
 	let sentLogLocation = false;
+	let currentStep: "build" | "publish" = "build";
 	const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "FAULT", "STOPPED", "TIMED_OUT"]);
+
+	const emitCodeBuildLine = (rawMessage: string) => {
+		const routed = routeCodeBuildLogMessage(rawMessage, currentStep);
+		currentStep = routed.nextStep;
+		if (routed.line && routed.stepId) {
+			send(routed.line, routed.stepId);
+		}
+	};
 
 	while (true) {
 		await new Promise((r) => setTimeout(r, 500));
@@ -425,7 +479,7 @@ export async function waitForBuildAndStreamLogs(params: {
 				}));
 				logStreamAvailable = true;
 				for (const event of resp.events || []) {
-					if (event.message?.trim()) send(event.message.trimEnd(), "build");
+					if (event.message?.trim()) emitCodeBuildLine(event.message);
 				}
 				nextToken = resp.nextForwardToken;
 			} catch {
@@ -439,7 +493,7 @@ export async function waitForBuildAndStreamLogs(params: {
 					...(nextToken ? { nextToken } : { startFromHead: true }),
 				}));
 				for (const event of resp.events || []) {
-					if (event.message?.trim()) send(event.message.trimEnd(), "build");
+					if (event.message?.trim()) emitCodeBuildLine(event.message);
 				}
 				if (resp.nextForwardToken && resp.nextForwardToken !== nextToken) {
 					nextToken = resp.nextForwardToken;
@@ -479,7 +533,7 @@ export async function waitForBuildAndStreamLogs(params: {
 							...(nextToken ? { nextToken } : {}),
 						}));
 						for (const event of finalResp.events || []) {
-							if (event.message?.trim()) send(event.message.trimEnd(), "build");
+							if (event.message?.trim()) emitCodeBuildLine(event.message);
 						}
 					} catch { /* OK */ }
 				}
@@ -498,3 +552,124 @@ export async function waitForBuildAndStreamLogs(params: {
 		}
 	}
 }
+
+export async function waitForBuildAndStreamLogsPhased(params: {
+	buildId: string;
+	region: string;
+	send: SendFn;
+}): Promise<{ success: boolean }> {
+	const { buildId, region, send } = params;
+	const cb = new CodeBuildClient(getAwsClientConfig(region));
+	const cwl = new CloudWatchLogsClient(getAwsClientConfig(region));
+
+	let logGroupName: string | undefined = LOG_GROUP;
+	let logStreamName: string | undefined;
+	let nextToken: string | undefined;
+	let logStreamAvailable = false;
+	let sentLogLocation = false;
+	let currentStep: "build" | "publish" = "build";
+	const terminalStatuses = new Set(["SUCCEEDED", "FAILED", "FAULT", "STOPPED", "TIMED_OUT"]);
+
+	const emitCodeBuildLine = (rawMessage: string) => {
+		const routed = routeCodeBuildLogMessage(rawMessage, currentStep);
+		currentStep = routed.nextStep;
+		if (routed.line && routed.stepId) {
+			send(routed.line, routed.stepId);
+		}
+	};
+
+	while (true) {
+		await new Promise((r) => setTimeout(r, 500));
+
+		if (!logStreamAvailable && logStreamName && logGroupName) {
+			try {
+				const resp = await cwl.send(
+					new GetLogEventsCommand({
+						logGroupName,
+						logStreamName,
+						startFromHead: true,
+					})
+				);
+				logStreamAvailable = true;
+				for (const event of resp.events || []) {
+					if (event.message?.trim()) emitCodeBuildLine(event.message);
+				}
+				nextToken = resp.nextForwardToken;
+			} catch {
+				// Log stream not ready yet
+			}
+		} else if (logStreamName && logGroupName) {
+			try {
+				const resp = await cwl.send(
+					new GetLogEventsCommand({
+						logGroupName,
+						logStreamName,
+						...(nextToken ? { nextToken } : { startFromHead: true }),
+					})
+				);
+				for (const event of resp.events || []) {
+					if (event.message?.trim()) emitCodeBuildLine(event.message);
+				}
+				if (resp.nextForwardToken && resp.nextForwardToken !== nextToken) {
+					nextToken = resp.nextForwardToken;
+				}
+			} catch {
+				// Transient error, retry next iteration
+			}
+		}
+
+		try {
+			const buildResp = await cb.send(new BatchGetBuildsCommand({ ids: [buildId] }));
+			const build = buildResp.builds?.[0];
+			if (!build) continue;
+
+			const buildLogs = build.logs;
+			if (!logStreamName && buildLogs?.streamName) logStreamName = buildLogs.streamName;
+			if (buildLogs?.groupName) logGroupName = buildLogs.groupName;
+			if (!sentLogLocation && (buildLogs?.deepLink || buildLogs?.groupName || buildLogs?.streamName)) {
+				const parts: string[] = [];
+				if (buildLogs?.groupName) parts.push(`group=${buildLogs.groupName}`);
+				if (buildLogs?.streamName) parts.push(`stream=${buildLogs.streamName}`);
+				if (buildLogs?.deepLink) parts.push(`link=${buildLogs.deepLink}`);
+				send(`CodeBuild logs: ${parts.join(" | ")}`, "build");
+				sentLogLocation = true;
+			}
+
+			const status = build.buildStatus;
+			if (status && terminalStatuses.has(status)) {
+				if (logStreamAvailable && logStreamName && logGroupName) {
+					try {
+						const finalResp = await cwl.send(
+							new GetLogEventsCommand({
+								logGroupName,
+								logStreamName,
+								...(nextToken ? { nextToken } : {}),
+							})
+						);
+						for (const event of finalResp.events || []) {
+							if (event.message?.trim()) emitCodeBuildLine(event.message);
+						}
+					} catch {
+						// ignore final drain errors
+					}
+				}
+
+				const success = status === "SUCCEEDED";
+				if (!success) {
+					const lastPhase = build.phases?.slice(-1)[0];
+					send(`ERROR: CodeBuild ${status}: ${lastPhase?.phaseStatus || "See logs above"}`, currentStep);
+				} else {
+					send("SUCCESS: Container image build completed", "build");
+					send("SUCCESS: Image published to ECR", "publish");
+				}
+				return { success };
+			}
+		} catch {
+			// Transient error
+		}
+	}
+}
+
+export const __testing = {
+	routeCodeBuildLogMessage,
+};

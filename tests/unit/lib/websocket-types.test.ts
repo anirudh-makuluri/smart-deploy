@@ -6,6 +6,9 @@ const createEntryMock = vi.fn();
 const updateStepsMock = vi.fn();
 const broadcastLogMock = vi.fn();
 const setStatusMock = vi.fn();
+const getDeploymentMock = vi.fn();
+const getEcsServiceLogsMock = vi.fn();
+const getInitialLogsMock = vi.fn();
 
 vi.mock("@/lib/handleDeploy", () => ({
 	handleDeploy: (...args: unknown[]) => handleDeployMock(...args),
@@ -17,6 +20,20 @@ vi.mock("@/lib/deployLogsStore", () => ({
 	updateSteps: (...args: unknown[]) => updateStepsMock(...args),
 	broadcastLog: (...args: unknown[]) => broadcastLogMock(...args),
 	setStatus: (...args: unknown[]) => setStatusMock(...args),
+}));
+
+vi.mock("@/db-helper", () => ({
+	dbHelper: {
+		getDeployment: (...args: unknown[]) => getDeploymentMock(...args),
+	},
+}));
+
+vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
+	getEcsServiceLogs: (...args: unknown[]) => getEcsServiceLogsMock(...args),
+}));
+
+vi.mock("@/gcloud-logs/getInitialLogs", () => ({
+	getInitialLogs: (...args: unknown[]) => getInitialLogsMock(...args),
 }));
 
 describe("websocket-types deploy", () => {
@@ -99,4 +116,65 @@ describe("websocket-types deploy", () => {
 
 		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "error", "Rollback failed");
 	}, 10000);
+
+	it("returns ECS logs even when the stored deployment status is failed", async () => {
+		getDeploymentMock.mockResolvedValue({
+			deployment: {
+				status: "failed",
+				cloudResources: {
+					target: "ecs",
+					region: "us-west-2",
+					cluster: "cluster-1",
+					service: "svc-1",
+					baseUrl: "https://svc.example.com",
+					logGroup: "/ecs/smartdeploy-railpack",
+				},
+			},
+		});
+		getEcsServiceLogsMock.mockResolvedValue([{ message: "GLIBC_2.38 not found" }]);
+
+		const { serviceLogs } = await import("@/websocket-types");
+		const ws = {
+			OPEN: 1,
+			readyState: 1,
+			send: vi.fn(),
+		};
+
+		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
+
+		expect(getEcsServiceLogsMock).toHaveBeenCalledWith({
+			ecs: expect.objectContaining({
+				target: "ecs",
+				service: "svc-1",
+			}),
+			limit: 50,
+		});
+		expect(ws.send).toHaveBeenCalledWith(
+			JSON.stringify({
+				type: "initial_logs",
+				payload: { logs: [{ message: "GLIBC_2.38 not found" }] },
+			})
+		);
+	});
+
+	it("does not fetch legacy service logs for non-running deployments", async () => {
+		getDeploymentMock.mockResolvedValue({
+			deployment: {
+				status: "failed",
+				cloudResources: null,
+			},
+		});
+
+		const { serviceLogs } = await import("@/websocket-types");
+		const ws = {
+			OPEN: 1,
+			readyState: 1,
+			send: vi.fn(),
+		};
+
+		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
+
+		expect(getInitialLogsMock).not.toHaveBeenCalled();
+		expect(ws.send).not.toHaveBeenCalled();
+	});
 });

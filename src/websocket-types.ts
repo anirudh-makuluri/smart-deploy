@@ -105,8 +105,6 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		}
 	}
 
-	if (deployConfig?.status !== "running") return;
-
 	if (isEcsCloudResources(deployConfig?.cloudResources)) {
 		const logs = await getEcsServiceLogs({
 			ecs: deployConfig.cloudResources,
@@ -117,6 +115,8 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		}
 		return;
 	}
+
+	if (deployConfig?.status !== "running") return;
 
 	if (!serviceName) {
 		if (ws?.readyState === ws?.OPEN) {

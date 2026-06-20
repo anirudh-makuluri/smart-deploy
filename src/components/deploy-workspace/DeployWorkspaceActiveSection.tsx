@@ -17,7 +17,6 @@ import type {
 	SDArtifactsResponse,
 } from "@/app/types";
 import { branchNamesFromRepo } from "@/lib/repoBranch";
-import { configSnapshotFromDeployConfig } from "@/lib/utils";
 import { isDraftDeploymentStatus, isLiveDeploymentStatus } from "@/lib/deploymentStatus";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import { AlertCircle, Layers, Rocket, Search, ShieldCheck } from "lucide-react";
@@ -60,6 +59,7 @@ type DeployWorkspaceActiveSectionProps = {
 	serviceLogs: Array<{ timestamp?: string; message?: string }>;
 	effectiveDeployStatus: DeployStatus;
 	deployError: string | null;
+	latestDeploymentRunId?: string | null;
 	deployingCommitInfo: { sha: string; message: string; author: string; date: string } | null;
 	steps: DeployStep[];
 	liveDeployConfig: DeployConfig | null;
@@ -115,6 +115,7 @@ export default function DeployWorkspaceActiveSection({
 	serviceLogs,
 	effectiveDeployStatus,
 	deployError,
+	latestDeploymentRunId,
 	deployingCommitInfo,
 	steps,
 	liveDeployConfig,
@@ -261,11 +262,11 @@ export default function DeployWorkspaceActiveSection({
 						serviceLogs={serviceLogs}
 						deployStatus={effectiveDeployStatus}
 						deployError={deployError}
+						deploymentRunId={latestDeploymentRunId}
 						deployingCommitInfo={deployingCommitInfo}
 						steps={steps}
 						repoNameForLogs={repoName}
 						serviceNameForLogs={currentServiceName}
-						configSnapshot={configSnapshotFromDeployConfig(liveDeployConfig ?? deployment)}
 						repoUrl={deployment.repoUrl}
 						commitSha={
 							(deployment.scanResults as { commit_sha?: string } | null)?.commit_sha ??

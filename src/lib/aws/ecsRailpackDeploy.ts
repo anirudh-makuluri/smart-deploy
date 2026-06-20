@@ -4,6 +4,10 @@ import {
 	CreateServiceCommand,
 	UpdateServiceCommand,
 	DescribeServicesCommand,
+	ListTasksCommand,
+	DescribeTasksCommand,
+	type Service,
+	type Task,
 } from "@aws-sdk/client-ecs";
 import type { DeployConfig } from "../../app/types";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
@@ -23,8 +27,10 @@ import {
 	ensureTargetGroup,
 	runAWSCommand,
 } from "./awsHelpers";
+import { getEcsServiceLogs } from "./ecsCloudWatchLogs";
 
 type SendFn = (msg: string, stepId: string) => void;
+type EcsRolloutResult = { success: true } | { success: false; message: string };
 
 function awsNameChunk(s: string, max: number): string {
 	const out = s
@@ -57,6 +63,238 @@ function containerEnvFromDeploy(envVars?: string | null): { name: string; value:
 		if (name) out.push({ name, value });
 	}
 	return out.slice(0, 50);
+}
+
+function shortArn(arn?: string): string {
+	if (!arn) return "unknown";
+	const parts = arn.split("/");
+	return parts[parts.length - 1] || arn;
+}
+
+function trimReason(reason?: string | null, max = 220): string | null {
+	const trimmed = reason?.trim();
+	if (!trimmed) return null;
+	return trimmed.length > max ? `${trimmed.slice(0, max - 3)}...` : trimmed;
+}
+
+function pickPrimaryDeployment(service: Service | undefined, taskDefinitionArn: string) {
+	const deployments = service?.deployments ?? [];
+	return (
+		deployments.find((deployment) => deployment.taskDefinition === taskDefinitionArn) ??
+		deployments.find((deployment) => deployment.status === "PRIMARY") ??
+		null
+	);
+}
+
+function buildServiceRolloutSummary(service: Service | undefined, taskDefinitionArn: string): string {
+	if (!service) return "ECS rollout: service details unavailable.";
+	const desired = service.desiredCount ?? 0;
+	const running = service.runningCount ?? 0;
+	const pending = service.pendingCount ?? 0;
+	const primary = pickPrimaryDeployment(service, taskDefinitionArn);
+	const rolloutState = primary?.rolloutState ?? "UNKNOWN";
+	const rolloutReason = trimReason(primary?.rolloutStateReason);
+	return [
+		`ECS rollout status: desired=${desired} running=${running} pending=${pending} state=${rolloutState}`,
+		...(rolloutReason ? [`reason=${rolloutReason}`] : []),
+	].join(" | ");
+}
+
+function buildTaskFingerprint(task: Task): string {
+	const containerState = (task.containers ?? [])
+		.map((container) =>
+			[
+				container.name ?? "app",
+				container.lastStatus ?? "UNKNOWN",
+				container.healthStatus ?? "UNKNOWN",
+				container.exitCode != null ? `exit=${container.exitCode}` : "",
+				trimReason(container.reason) ?? "",
+			]
+				.filter(Boolean)
+				.join(":")
+		)
+		.join("|");
+	return [
+		task.lastStatus ?? "UNKNOWN",
+		task.desiredStatus ?? "UNKNOWN",
+		task.healthStatus ?? "UNKNOWN",
+		task.stopCode ?? "",
+		trimReason(task.stoppedReason) ?? "",
+		containerState,
+	].join("|");
+}
+
+function buildTaskTransitionLines(task: Task): string[] {
+	const taskId = shortArn(task.taskArn);
+	const lines = [
+		`[task ${taskId}] desired=${task.desiredStatus ?? "UNKNOWN"} last=${task.lastStatus ?? "UNKNOWN"} health=${task.healthStatus ?? "UNKNOWN"}`,
+	];
+	const stopReason = trimReason(task.stoppedReason);
+	if (stopReason) {
+		lines.push(`[task ${taskId}] stoppedReason=${stopReason}`);
+	}
+	for (const container of task.containers ?? []) {
+		const containerReason = trimReason(container.reason);
+		const details = [
+			`[task ${taskId}] container=${container.name ?? "app"}`,
+			`last=${container.lastStatus ?? "UNKNOWN"}`,
+			container.healthStatus ? `health=${container.healthStatus}` : "",
+			container.exitCode != null ? `exit=${container.exitCode}` : "",
+			containerReason ? `reason=${containerReason}` : "",
+		]
+			.filter(Boolean)
+			.join(" ");
+		lines.push(details);
+	}
+	return lines;
+}
+
+function isServiceRolloutComplete(service: Service | undefined, taskDefinitionArn: string): boolean {
+	if (!service) return false;
+	const desired = service.desiredCount ?? 0;
+	if (desired <= 0) return false;
+	const primary = pickPrimaryDeployment(service, taskDefinitionArn);
+	if (!primary) return false;
+	if (primary.taskDefinition !== taskDefinitionArn) return false;
+	if (primary.rolloutState && primary.rolloutState !== "COMPLETED") return false;
+	return (service.runningCount ?? 0) >= desired && (service.pendingCount ?? 0) === 0;
+}
+
+export async function waitForEcsServiceRollout(params: {
+	region: string;
+	cluster: string;
+	serviceName: string;
+	taskDefinitionArn: string;
+	logGroup: string;
+	send: SendFn;
+	timeoutMs?: number;
+	pollMs?: number;
+}): Promise<EcsRolloutResult> {
+	const ecs = new ECSClient(getAwsClientConfig(params.region));
+	const timeoutMs = params.timeoutMs ?? 4 * 60_000;
+	const pollMs = params.pollMs ?? 8_000;
+	const deadlineAt = Date.now() + timeoutMs;
+	const rolloutStartedAt = Date.now() - 15_000;
+	const seenEvents = new Set<string>();
+	const seenTaskStates = new Map<string, string>();
+	const seenLogs = new Set<string>();
+	let lastSummary = "";
+
+	params.send(`Waiting for ECS rollout to stabilize for ${params.serviceName}...`, "rollout");
+
+	while (Date.now() < deadlineAt) {
+		const serviceResponse = await ecs.send(
+			new DescribeServicesCommand({
+				cluster: params.cluster,
+				services: [params.serviceName],
+			})
+		);
+		const service = serviceResponse.services?.[0];
+		if (!service) {
+			const message = `ECS rollout could not find service ${params.cluster}/${params.serviceName}.`;
+			params.send(`ERROR: ${message}`, "rollout");
+			return { success: false, message };
+		}
+
+		for (const event of [...(service.events ?? [])].reverse()) {
+			const key = `${event.createdAt?.toISOString?.() ?? ""}|${event.message ?? ""}`;
+			if (!event.message || seenEvents.has(key)) continue;
+			seenEvents.add(key);
+			const timePrefix = event.createdAt ? `[${new Date(event.createdAt).toISOString()}] ` : "";
+			params.send(`[service] ${timePrefix}${event.message}`.trim(), "rollout");
+		}
+
+		const summary = buildServiceRolloutSummary(service, params.taskDefinitionArn);
+		if (summary !== lastSummary) {
+			lastSummary = summary;
+			params.send(summary, "rollout");
+		}
+
+		const taskArnSet = new Set<string>();
+		for (const desiredStatus of ["RUNNING", "STOPPED"] as const) {
+			const listed = await ecs.send(
+				new ListTasksCommand({
+					cluster: params.cluster,
+					serviceName: params.serviceName,
+					desiredStatus,
+					maxResults: 10,
+				})
+			);
+			for (const taskArn of listed.taskArns ?? []) {
+				taskArnSet.add(taskArn);
+			}
+		}
+
+		const taskArns = [...taskArnSet];
+		let tasks: Task[] = [];
+		if (taskArns.length > 0) {
+			const described = await ecs.send(
+				new DescribeTasksCommand({
+					cluster: params.cluster,
+					tasks: taskArns,
+				})
+			);
+			tasks = described.tasks ?? [];
+			for (const task of tasks) {
+				const fingerprint = buildTaskFingerprint(task);
+				const taskArn = task.taskArn ?? "";
+				if (seenTaskStates.get(taskArn) === fingerprint) continue;
+				seenTaskStates.set(taskArn, fingerprint);
+				for (const line of buildTaskTransitionLines(task)) {
+					params.send(line, "rollout");
+				}
+			}
+		}
+
+		try {
+			const logs = await getEcsServiceLogs({
+				ecs: {
+					target: "ecs",
+					region: params.region,
+					cluster: params.cluster,
+					service: params.serviceName,
+					baseUrl: "",
+					logGroup: params.logGroup,
+				},
+				limit: 120,
+				startTimeMs: rolloutStartedAt,
+			});
+			for (const entry of logs) {
+				const message = entry.message?.trim();
+				if (!message) continue;
+				const key = `${entry.timestamp ?? ""}|${message}`;
+				if (seenLogs.has(key)) continue;
+				seenLogs.add(key);
+				const timePrefix = entry.timestamp ? `[${entry.timestamp}] ` : "";
+				params.send(`[app] ${timePrefix}${message}`.trim(), "rollout");
+			}
+		} catch {
+			// CloudWatch streams can lag behind task creation; rollout should continue.
+		}
+
+		const primary = pickPrimaryDeployment(service, params.taskDefinitionArn);
+		if (primary?.rolloutState === "FAILED") {
+			const message =
+				trimReason(primary.rolloutStateReason) ||
+				`ECS reported rollout failure for ${params.serviceName}.`;
+			params.send(`ERROR: ECS rollout failed: ${message}`, "rollout");
+			return { success: false, message };
+		}
+
+		if (isServiceRolloutComplete(service, params.taskDefinitionArn)) {
+			params.send(
+				`SUCCESS: ECS rollout completed for ${params.cluster}/${params.serviceName}.`,
+				"rollout"
+			);
+			return { success: true };
+		}
+
+		await new Promise((resolve) => setTimeout(resolve, pollMs));
+	}
+
+	const message = `ECS rollout timed out before ${params.cluster}/${params.serviceName} became stable.`;
+	params.send(`ERROR: ${message}`, "rollout");
+	return { success: false, message };
 }
 
 export function ecsRailpackFromEcrConfigured(): boolean {
@@ -292,5 +530,14 @@ export async function deployRailpackServerToEcs(params: {
 		sharedAlbDns: alb.dnsName,
 		albListenerArn: listenerArn,
 		targetGroupArn: tgArn,
+		taskDefinitionArn: taskDefinition,
 	};
 }
+
+export const __testing = {
+	pickPrimaryDeployment,
+	buildServiceRolloutSummary,
+	buildTaskFingerprint,
+	buildTaskTransitionLines,
+	isServiceRolloutComplete,
+};

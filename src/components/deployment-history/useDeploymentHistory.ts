@@ -71,20 +71,20 @@ export function useDeploymentHistory({
 			const res = await fetch("/api/llm/analyze-failure", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					steps: entry.steps,
-					configSnapshot: entry.configSnapshot,
-				}),
+				body: JSON.stringify({ runId: entry.id }),
 			});
-			const data = await res.json();
-			if (data.response) {
-				setAnalysisByEntryId((prev) => ({ ...prev, [entry.id]: data.response }));
-			} else {
-				setAnalysisByEntryId((prev) => ({
-					...prev,
-					[entry.id]: data.error || data.details || "Analysis failed.",
-				}));
+			const data = (await res.json().catch(() => ({}))) as {
+				response?: string;
+				error?: string;
+				details?: string;
+			};
+			if (!res.ok) {
+				throw new Error(data.error || data.details || "Analysis failed.");
 			}
+			setAnalysisByEntryId((prev) => ({
+				...prev,
+				[entry.id]: data.response || data.error || data.details || "Analysis failed.",
+			}));
 		} catch (err) {
 			setAnalysisByEntryId((prev) => ({
 				...prev,
