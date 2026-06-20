@@ -35,9 +35,7 @@ export async function POST(req: Request) {
 		);
 	}
 
-	let analysisContext:
-		| { entry: DeploymentHistoryEntry; steps: DeployStep[] }
-		| { error: string; status: number };
+	let analysisContext: { entry?: DeploymentHistoryEntry; steps?: DeployStep[], error?: string, status?: number};
 	try {
 		analysisContext = await fetchDeploymentRunAnalysisContext(runId, session.user.id);
 	} catch (error) {
@@ -46,7 +44,7 @@ export async function POST(req: Request) {
 			{ status: 500 }
 		);
 	}
-	if (analysisContext.error) {
+	if (analysisContext.error || !analysisContext.entry || !analysisContext.steps) {
 		return NextResponse.json({ error: analysisContext.error }, { status: analysisContext.status });
 	}
 
@@ -113,8 +111,7 @@ async function fetchDeploymentRunAnalysisContext(
 	runId: string,
 	userId: string
 ): Promise<
-	| { entry: DeploymentHistoryEntry; steps: DeployStep[] }
-	| { error: string; status: number }
+	{ entry?: DeploymentHistoryEntry | undefined; steps?: DeployStep[], error?: string, status?: number}
 > {
 	const entryResponse = await dbHelper.getDeploymentHistoryEntryById(runId, userId);
 	if (entryResponse.error) {
