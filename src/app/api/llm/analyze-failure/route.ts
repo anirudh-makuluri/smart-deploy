@@ -114,29 +114,34 @@ function buildHeuristicFailureAnalysis(
 }
 
 export function prioritizeDiagnosticsLogs(steps: DeployStep[]): DeployStep[] {
-	const DIAG_START = "diagnostics:docker_logs:start";
-	const DIAG_END = "diagnostics:docker_logs:end";
+	const diagnosticBlocks = [
+		{ start: "diagnostics:ecs_service:start", end: "diagnostics:ecs_service:end" },
+		{ start: "diagnostics:ecs_logs:start", end: "diagnostics:ecs_logs:end" },
+		{ start: "diagnostics:docker_logs:start", end: "diagnostics:docker_logs:end" },
+	];
 
 	let latestStepIndex = -1;
 	let latestStartIndex = -1;
 	let latestEndIndex = -1;
 
-	for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-		const logs = steps[stepIndex]?.logs || [];
-		for (let i = 0; i < logs.length; i++) {
-			const logLine = logs[i];
-			if (typeof logLine !== "string" || !logLine.includes(DIAG_START)) continue;
-			let endIndex = -1;
-			for (let j = i + 1; j < logs.length; j++) {
-				const endLine = logs[j];
-				if (typeof endLine === "string" && endLine.includes(DIAG_END)) {
-					endIndex = j;
-					break;
+	for (const block of diagnosticBlocks) {
+		for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+			const logs = steps[stepIndex]?.logs || [];
+			for (let i = 0; i < logs.length; i++) {
+				const logLine = logs[i];
+				if (typeof logLine !== "string" || !logLine.includes(block.start)) continue;
+				let endIndex = -1;
+				for (let j = i + 1; j < logs.length; j++) {
+					const endLine = logs[j];
+					if (typeof endLine === "string" && endLine.includes(block.end)) {
+						endIndex = j;
+						break;
+					}
 				}
+				latestStepIndex = stepIndex;
+				latestStartIndex = i;
+				latestEndIndex = endIndex;
 			}
-			latestStepIndex = stepIndex;
-			latestStartIndex = i;
-			latestEndIndex = endIndex;
 		}
 	}
 
@@ -148,13 +153,13 @@ export function prioritizeDiagnosticsLogs(steps: DeployStep[]): DeployStep[] {
 	const sourceStep = ordered[latestStepIndex];
 	const sourceLogs = sourceStep?.logs || [];
 	const endExclusive = latestEndIndex >= latestStartIndex ? latestEndIndex + 1 : sourceLogs.length;
-	const dockerDiagBlock = sourceLogs.slice(latestStartIndex, endExclusive);
-	if (dockerDiagBlock.length === 0) return steps;
+	const diagnosticBlock = sourceLogs.slice(latestStartIndex, endExclusive);
+	if (diagnosticBlock.length === 0) return steps;
 
 	const withoutBlock = sourceLogs.filter((line, idx) => idx < latestStartIndex || idx >= endExclusive);
 	const rebuiltStep: DeployStep = {
 		...sourceStep,
-		logs: [...dockerDiagBlock, ...withoutBlock],
+		logs: [...diagnosticBlock, ...withoutBlock],
 	};
 
 	ordered.splice(latestStepIndex, 1);

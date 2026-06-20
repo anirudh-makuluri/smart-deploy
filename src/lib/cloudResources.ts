@@ -100,6 +100,7 @@ export function cloudResourcesFromDeployResult(
 		albDnsName: result.sharedAlbDns,
 		albListenerArn: result.albListenerArn,
 		targetGroupArn: result.targetGroupArn,
+		taskDefinitionArn: result.taskDefinitionArn,
 		logGroup: config.ECS_LOG_GROUP?.trim() || undefined,
 		vpcId: result.vpcId || undefined,
 	});

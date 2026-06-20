@@ -12,7 +12,7 @@ import {
 	DeploymentHistoryEntry,
 	DeploymentReleaseArtifact,
 } from "../app/types";
-import { cloudResourcesFromDeployResult } from "./cloudResources";
+import { cloudResourcesFromDeployResult, isEcsCloudResources } from "./cloudResources";
 import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
 import { buildVerificationCandidates, fetchWithTimeout } from "./deploymentHealthProbe";
 import { MultiServiceConfig } from "./multiServiceDetector";
@@ -47,8 +47,19 @@ import {
 	ecrImageTagExists,
 	describeEcrImageByTag,
 } from "./aws/ecrHelpers";
-import { ensureCodeBuildRole, ensureCodeBuildProject, generateBuildspec, startBuild, waitForBuildAndStreamLogs } from "./aws/codebuildHelpers";
-import { deployRailpackServerToEcs, ecsRailpackFromEcrConfigured } from "./aws/ecsRailpackDeploy";
+import { collectEcsFailureDiagnostics } from "./aws/ecsCloudWatchLogs";
+import {
+	ensureCodeBuildRole,
+	ensureCodeBuildProject,
+	generateBuildspec,
+	startBuild,
+	waitForBuildAndStreamLogsPhased,
+} from "./aws/codebuildHelpers";
+import {
+	deployRailpackServerToEcs,
+	ecsRailpackFromEcrConfigured,
+	waitForEcsServiceRollout,
+} from "./aws/ecsRailpackDeploy";
 import {
 	buildStaticSiteS3Prefix,
 	runStaticSiteCodeBuildPipeline,
@@ -111,6 +122,11 @@ type VerificationResult =
 		errorMessage: string;
 		postPersistConfig?: DeployConfig | null;
 	};
+
+type VerificationTarget = {
+	label: string;
+	url: string;
+};
 
 function cloneDeployConfigSnapshot(config: DeployConfig): DeployConfig {
 	return {
@@ -239,9 +255,100 @@ function shouldForceVerificationFailure(deployConfig: DeployConfig): boolean {
 	return candidates.includes(target);
 }
 
+async function emitEcsVerificationDiagnostics(params: {
+	deployConfig: DeployConfig;
+	send: (msg: string, stepId: string) => void;
+	serviceDetails?: ServiceDeployDetails | null;
+}): Promise<void> {
+	const ecsResources = isEcsCloudResources(params.serviceDetails?.cloudResources)
+		? params.serviceDetails.cloudResources
+		: isEcsCloudResources(params.deployConfig.cloudResources)
+			? params.deployConfig.cloudResources
+			: null;
+
+	if (!ecsResources) return;
+
+	const logGroup = ecsResources.logGroup?.trim() || config.ECS_LOG_GROUP?.trim() || "(unknown)";
+	params.send(
+		`diagnostics:ecs_service:start cluster=${ecsResources.cluster} service=${ecsResources.service}`,
+		"verify"
+	);
+
+	const diagnostics = await collectEcsFailureDiagnostics({
+		ecs: ecsResources,
+		eventLimit: 5,
+		logLimit: 80,
+		relevantLogLimit: 12,
+	});
+
+	if (diagnostics.serviceEventsError) {
+		params.send(
+			`[ecs] failed to read ECS service events: ${diagnostics.serviceEventsError}`,
+			"verify"
+		);
+	} else if (diagnostics.serviceEvents.length > 0) {
+		for (const event of diagnostics.serviceEvents) {
+			const timePrefix = event.createdAt ? `[${event.createdAt}] ` : "";
+			params.send(`[ecs:event] ${timePrefix}${event.message ?? ""}`.trim(), "verify");
+		}
+	} else {
+		params.send("[ecs:event] no recent ECS service events were returned.", "verify");
+	}
+
+	params.send(
+		`diagnostics:ecs_logs:start logGroup=${logGroup} service=${ecsResources.service}`,
+		"verify"
+	);
+
+	if (diagnostics.serviceLogsError) {
+		params.send(
+			`[ecs:log] failed to read CloudWatch logs from ${logGroup}: ${diagnostics.serviceLogsError}`,
+			"verify"
+		);
+	} else if (diagnostics.relevantLogs.length > 0) {
+		params.send(
+			`[ecs:log] showing ${diagnostics.relevantLogs.length} high-signal line(s) from ${logGroup}.`,
+			"verify"
+		);
+		for (const entry of diagnostics.relevantLogs) {
+			const timePrefix = entry.timestamp ? `[${entry.timestamp}] ` : "";
+			params.send(`[ecs:log] ${timePrefix}${entry.message ?? ""}`.trim(), "verify");
+		}
+	} else if (diagnostics.recentLogs.length > 0) {
+		params.send(
+			`[ecs:log] ${diagnostics.recentLogs.length} CloudWatch line(s) found in ${logGroup}, but none matched the high-signal filter.`,
+			"verify"
+		);
+	} else {
+		params.send(`[ecs:log] no recent CloudWatch log lines found in ${logGroup}.`, "verify");
+	}
+
+	params.send("diagnostics:ecs_logs:end", "verify");
+	params.send("diagnostics:ecs_service:end", "verify");
+}
+
+function buildVerificationTargets(baseUrl?: string | null, customUrl?: string | null): VerificationTarget[] {
+	const seen = new Set<string>();
+	const targets: VerificationTarget[] = [];
+
+	const addTarget = (label: string, url?: string | null) => {
+		const trimmed = url?.trim();
+		if (!trimmed) return;
+		if (seen.has(trimmed)) return;
+		seen.add(trimmed);
+		targets.push({ label, url: trimmed });
+	};
+
+	addTarget("base URL", baseUrl);
+	addTarget("custom URL", customUrl);
+
+	return targets;
+}
+
 async function verifyDeploymentReadiness(params: {
 	deployConfig: DeployConfig;
 	deployUrl: string;
+	customUrl?: string | null;
 	userID?: string;
 	token?: string;
 	send: (msg: string, stepId: string) => void;
@@ -249,7 +356,7 @@ async function verifyDeploymentReadiness(params: {
 	rollbackHistoryEntry?: DeploymentHistoryEntry | null;
 	serviceDetails?: ServiceDeployDetails | null;
 }): Promise<VerificationResult> {
-	const { deployConfig, deployUrl, userID, token, send, deploySteps, rollbackHistoryEntry, serviceDetails } = params;
+	const { deployConfig, deployUrl, customUrl, userID, token, send, deploySteps, rollbackHistoryEntry, serviceDetails } = params;
 	const verifyingStatus = transitionDeploymentStatus(deployConfig.status, "verification_requested");
 	deployConfig.status = verifyingStatus;
 	setStepState(deploySteps, "verify", "in_progress");
@@ -257,8 +364,8 @@ async function verifyDeploymentReadiness(params: {
 		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 	});
 
-	const candidates = buildVerificationCandidates(deployUrl);
-	if (candidates.length === 0) {
+	const targets = buildVerificationTargets(deployUrl, customUrl);
+	if (targets.length === 0) {
 		setStepState(deploySteps, "verify", "error");
 		send("ERROR: Deployment verification could not start because no reachable URL was available.", "verify");
 		return {
@@ -271,6 +378,11 @@ async function verifyDeploymentReadiness(params: {
 		setStepState(deploySteps, "verify", "error");
 		send("Verification test hook enabled. Forcing verification failure for this deployment.", "verify");
 		send("ERROR: Deployment verification failed after all retry attempts.", "verify");
+		await emitEcsVerificationDiagnostics({
+			deployConfig,
+			send,
+			serviceDetails: serviceDetails ?? null,
+		});
 		const rollbackResult = await attemptAutomaticRollback({
 			deployConfig,
 			rollbackHistoryEntry: rollbackHistoryEntry ?? null,
@@ -299,65 +411,121 @@ async function verifyDeploymentReadiness(params: {
 	const requestTimeoutMs = 8_000;
 	const roundDelayMs = 20_000;
 	const verificationDeadlineMs = 300_000;
-	const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
-	for (let round = 1; round <= maxRounds; round += 1) {
-		const remainingBudgetMs = verificationDeadlineAt - Date.now();
-		if (remainingBudgetMs <= 0) {
-			send("Verification deadline reached before a healthy response was observed.", "verify");
-			break;
+	for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
+		const target = targets[targetIndex]!;
+		const candidates = buildVerificationCandidates(target.url);
+		if (candidates.length === 0) {
+			continue;
 		}
 
-		send(`Verification round ${round}/${maxRounds}: probing ${candidates.length} URL(s).`, "verify");
-		const roundController = new AbortController();
-		let roundResolved = false;
-		const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
-		const probes = candidates.map(async (candidate) => {
-			send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
-			try {
-				const response = await fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal);
-				if (response.status < 500) {
-					return {
-						candidate,
-						statusCode: response.status,
-					};
-				}
-				send(`Verification received HTTP ${response.status} at ${candidate}`, "verify");
-				throw new Error(`HTTP ${response.status}`);
-			} catch (error) {
-				if (roundResolved && roundController.signal.aborted) {
+		send(
+			`Starting verification for ${target.label} (${targetIndex + 1}/${targets.length}): ${target.url}`,
+			"verify"
+		);
+
+		const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
+		let targetVerified = false;
+		for (let round = 1; round <= maxRounds; round += 1) {
+			const remainingBudgetMs = verificationDeadlineAt - Date.now();
+			if (remainingBudgetMs <= 0) {
+				send(`Verification deadline reached before ${target.label} became healthy.`, "verify");
+				break;
+			}
+
+			send(`Verification round ${round}/${maxRounds} for ${target.label}.`, "verify");
+			const roundController = new AbortController();
+			let roundResolved = false;
+			const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
+			const probes = candidates.map(async (candidate) => {
+				send(`Verification attempt ${round}/${maxRounds} for ${target.label}: ${candidate}`, "verify");
+				try {
+					const response = await fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal);
+					if (response.status < 500) {
+						return {
+							candidate,
+							statusCode: response.status,
+						};
+					}
+					throw new Error(`HTTP ${response.status}`);
+				} catch (error) {
+					if (roundResolved && roundController.signal.aborted) {
+						throw error;
+					}
 					throw error;
 				}
-				const message = error instanceof Error ? error.message : String(error);
-				send(`Verification request failed at ${candidate}: ${message}`, "verify");
-				throw error;
-			}
-		});
+			});
 
-		try {
-			const verified = await Promise.any(probes);
-			roundResolved = true;
-			roundController.abort();
-			send(`SUCCESS: Verification passed with HTTP ${verified.statusCode} at ${verified.candidate}`, "verify");
-			setStepState(deploySteps, "verify", "success");
-			return {
-				success: true,
-				verifiedUrl: verified.candidate,
-				statusCode: verified.statusCode,
-			};
-		} catch {
-			roundController.abort();
+			try {
+				const verified = await Promise.any(probes);
+				roundResolved = true;
+				roundController.abort();
+				send(
+					`SUCCESS: Verification passed for ${target.label} with HTTP ${verified.statusCode} at ${verified.candidate}`,
+					"verify"
+				);
+				targetVerified = true;
+				if (targetIndex === targets.length - 1) {
+					setStepState(deploySteps, "verify", "success");
+					return {
+						success: true,
+						verifiedUrl: verified.candidate,
+						statusCode: verified.statusCode,
+					};
+				}
+				break;
+			} catch {
+				roundController.abort();
+			}
+
+			if (round < maxRounds) {
+				const delayMs = Math.min(roundDelayMs, Math.max(0, verificationDeadlineAt - Date.now()));
+				if (delayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, delayMs));
+				}
+			}
 		}
 
-		if (round < maxRounds) {
-			const delayMs = Math.min(roundDelayMs, Math.max(0, verificationDeadlineAt - Date.now()));
-			if (delayMs > 0) {
-				await new Promise((resolve) => setTimeout(resolve, delayMs));
+		if (!targetVerified) {
+			setStepState(deploySteps, "verify", "error");
+			send(`ERROR: Deployment verification failed for ${target.label}.`, "verify");
+			send("ERROR: Deployment verification failed after all retry attempts.", "verify");
+			await emitEcsVerificationDiagnostics({
+				deployConfig,
+				send,
+				serviceDetails: serviceDetails ?? null,
+			});
+			const rollbackResult = await attemptAutomaticRollback({
+				deployConfig,
+				rollbackHistoryEntry: rollbackHistoryEntry ?? null,
+				serviceDetails: serviceDetails ?? null,
+				userID,
+				token,
+				send,
+				deploySteps,
+			});
+
+			if (rollbackResult.success) {
+				return {
+					success: false,
+					errorMessage: `Deployment verification failed for ${target.label}. ${rollbackResult.message}`,
+					postPersistConfig: rollbackResult.restoredConfig,
+				};
 			}
+
+			return {
+				success: false,
+				errorMessage: `Deployment verification failed for ${target.label}. ${rollbackResult.message}`,
+			};
 		}
 	}
 
 	setStepState(deploySteps, "verify", "error");
 	send("ERROR: Deployment verification failed after all retry attempts.", "verify");
+	await emitEcsVerificationDiagnostics({
+		deployConfig,
+		send,
+		serviceDetails: serviceDetails ?? null,
+	});
 	const rollbackResult = await attemptAutomaticRollback({
 		deployConfig,
 		rollbackHistoryEntry: rollbackHistoryEntry ?? null,
@@ -922,12 +1090,12 @@ export async function handleManualRollback(args: {
 		const verification = await verifyDeploymentReadiness({
 			deployConfig: verificationConfig,
 			deployUrl:
-				getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
-				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
+				rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
 					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
 					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
 						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
-						: ""),
+						: getDeploymentHostedUrl(rollbackAttempt.restoredConfig) || "",
+			customUrl: getDeploymentHostedUrl(rollbackAttempt.restoredConfig),
 			userID,
 			token,
 			send,
@@ -1036,6 +1204,7 @@ export async function handleManualRollback(args: {
 
 export const __testing = {
 	buildVerificationCandidates,
+	buildVerificationTargets,
 	shouldForceVerificationFailure,
 	verifyDeploymentReadiness,
 	attemptAutomaticRollback,
@@ -1084,9 +1253,40 @@ const MANUAL_ROLLBACK_STEPS = [
 	{ id: "done", label: "Done" },
 ];
 
-function sendDeploySteps(ws: any, steps: { id: string; label: string }[]) {
+function getTransportDeploySteps(
+	steps: { id: string; label: string }[],
+	preset?: string
+): { id: string; label: string }[] {
+	if (preset !== "ecs-codebuild") {
+		return steps;
+	}
+
+	const next = [...steps];
+	const deployIndex = next.findIndex((step) => step.id === "deploy");
+	if (!next.some((step) => step.id === "publish")) {
+		next.splice(deployIndex >= 0 ? deployIndex : next.length, 0, {
+			id: "publish",
+			label: "Publish image to ECR",
+		});
+	}
+	const doneIndex = next.findIndex((step) => step.id === "done");
+	const insertAt = doneIndex >= 0 ? doneIndex : next.length;
+	if (!next.some((step) => step.id === "rollout")) {
+		next.splice(insertAt, 0, { id: "rollout", label: "ECS rollout" });
+	}
+	if (!next.some((step) => step.id === "verify")) {
+		const doneAfterRolloutIndex = next.findIndex((step) => step.id === "done");
+		next.splice(doneAfterRolloutIndex >= 0 ? doneAfterRolloutIndex : next.length, 0, {
+			id: "verify",
+			label: "Verify deployment",
+		});
+	}
+	return next;
+}
+
+function sendDeploySteps(ws: any, steps: { id: string; label: string }[], preset?: string) {
 	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps } }));
+		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps: getTransportDeploySteps(steps, preset) } }));
 	}
 }
 
@@ -1473,7 +1673,7 @@ async function handleAWSCodeBuildDeploy(
 	deployConfig.deploymentTarget = target;
 
 	const deployStepsKey = useStaticS3 ? "static-s3-codebuild" : "ecs-codebuild";
-	sendDeploySteps(ws, AWS_DEPLOY_STEPS[deployStepsKey]);
+	sendDeploySteps(ws, AWS_DEPLOY_STEPS[deployStepsKey], deployStepsKey);
 
 	// ── Auth: verify AWS credentials via SDK ──
 	send("Authenticating with AWS...", "auth");
@@ -1669,7 +1869,7 @@ async function handleAWSCodeBuildDeploy(
 				send,
 			});
 
-			const buildResult = await waitForBuildAndStreamLogs({ buildId, region, send });
+			const buildResult = await waitForBuildAndStreamLogsPhased({ buildId, region, send });
 			if (!buildResult.success) {
 				send("❌ Docker image build failed. Check build logs above.", "build");
 				throw new Error("CodeBuild failed: Docker image build did not succeed");
@@ -1703,6 +1903,32 @@ async function handleAWSCodeBuildDeploy(
 			ws,
 			send,
 		});
+
+		const ecsInstanceRef = deployResult.instanceId?.startsWith("ecs:")
+			? deployResult.instanceId.slice(4)
+			: "";
+		const rolloutParts = ecsInstanceRef.split("/");
+		const rolloutCluster = rolloutParts[0]?.trim() || config.ECS_CLUSTER_NAME?.trim() || "";
+		const rolloutServiceName = rolloutParts[1]?.trim() || "";
+		const rolloutTaskDefinitionArn = deployResult.taskDefinitionArn?.trim() || "";
+		if (rolloutCluster && rolloutServiceName && rolloutTaskDefinitionArn) {
+			const rolloutResult = await waitForEcsServiceRollout({
+				region,
+				cluster: rolloutCluster,
+				serviceName: rolloutServiceName,
+				taskDefinitionArn: rolloutTaskDefinitionArn,
+				logGroup: config.ECS_LOG_GROUP?.trim() || "/ecs/smartdeploy-railpack",
+				send,
+			});
+			if (!rolloutResult.success) {
+				throw new Error(`ECS rollout failed: ${rolloutResult.message}`);
+			}
+		} else {
+			send(
+				"OK: ECS rollout watcher skipped because task metadata was unavailable; continuing to verification.",
+				"rollout"
+			);
+		}
 
 		releaseArtifact = buildEcrImageReleaseArtifact({
 			deployConfig,
@@ -1762,6 +1988,7 @@ async function handleAWSCodeBuildDeploy(
 
 	let dnsResult: AddRoute53DnsResult | null = null;
 	const sharedAlbDns = deployResult.sharedAlbDns?.trim() || "";
+	const baseVerifyUrl = deployUrl;
 	if (deployResult.success && deployConfig.serviceName?.trim() && (sharedAlbDns || deployUrl)) {
 		send("Configuring Route 53 DNS...", "done");
 		const previousHostedUrl = getDeploymentHostedUrl(deployConfig);
@@ -1806,7 +2033,8 @@ async function handleAWSCodeBuildDeploy(
 	if (deployResult.success && deployUrl) {
 		const verification = await verifyDeploymentReadiness({
 			deployConfig,
-			deployUrl,
+			deployUrl: baseVerifyUrl || deployUrl,
+			customUrl: dnsResult?.success ? dnsResult.customUrl : null,
 			userID,
 			token,
 			send,

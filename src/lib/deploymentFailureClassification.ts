@@ -122,8 +122,10 @@ function inferStageFromStepId(stepId: string | null | undefined): DeploymentFail
 		case "auth":
 		case "database":
 		case "build":
+		case "publish":
 		case "setup":
 		case "deploy":
+		case "rollout":
 		case "verify":
 		case "rollback":
 		case "done":

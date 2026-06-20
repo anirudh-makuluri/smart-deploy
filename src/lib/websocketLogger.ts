@@ -34,8 +34,12 @@ function getFallbackStepLabel(stepId: string): string {
 		case "build":
 		case "docker":
 			return "Build";
+		case "publish":
+			return "Publish";
 		case "deploy":
 			return "Deploy";
+		case "rollout":
+			return "ECS rollout";
 		case "verify":
 			return "Verify";
 		case "rollback":
