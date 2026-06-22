@@ -15,8 +15,6 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 	const {
 		repo,
 		repoUrl,
-		isLoadingRepo,
-		repoNotFound,
 		activeService,
 		mobileWorkspaceNavOpen,
 		setMobileWorkspaceNavOpen,
@@ -30,17 +28,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 
 	return (
 		<div className={`dot-grid-bg flex flex-col text-foreground ${activeService ? "h-svh overflow-hidden" : "min-h-svh"}`}>
-			{isLoadingRepo && (
-				<div className="flex-1 flex items-center justify-center">
-					<div className="text-center space-y-4">
-						<div className="inline-block">
-							<div className="size-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
-						</div>
-						<p className="text-muted-foreground">Loading repository…</p>
-					</div>
-				</div>
-			)}
-			{repoNotFound && !isLoadingRepo && (
+			{!repo && (
 				<div className="flex-1 flex items-center justify-center">
 					<div className="text-center space-y-4">
 						<h1 className="text-3xl font-bold">Repository Not Found</h1>
@@ -56,7 +44,7 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					</div>
 				</div>
 			)}
-			{!repoNotFound && !isLoadingRepo && repo && (
+			{repo && (
 				<>
 					<Header
 						workspaceNav={

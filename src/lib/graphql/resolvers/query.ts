@@ -9,7 +9,6 @@ import { dbHelper } from "@/db-helper";
 import { ensureUserAndRepos } from "@/lib/sessionHelpers";
 import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { resolveDeploymentStatus } from "@/lib/deploymentStatus";
-import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { isEcsCloudResources } from "@/lib/cloudResources";
@@ -40,8 +39,8 @@ export async function appOverview(_: unknown, __: unknown, ctx: GraphQLContext) 
 		const deploymentsPromise = withTiming("appOverview.getUserDeployments", async () =>
 			dbHelper.getUserDeployments(userID)
 		);
-		const servicesPromise = withTiming("appOverview.getUserRepoServices", async () =>
-			dbHelper.getUserRepoServices(userID)
+		const servicesPromise = withTiming("appOverview.getUserRepoRecords", async () =>
+			dbHelper.getUserRepoRecords(userID)
 		);
 
 		const [{ repoList }, deploymentsRes, servicesRes] = await Promise.all([
@@ -58,7 +57,7 @@ export async function appOverview(_: unknown, __: unknown, ctx: GraphQLContext) 
 		return {
 			repoList: sortAndLimitRepos(repoList),
 			deployments: (deploymentsRes.deployments ?? []).map(transformDeployment),
-			repoServices: servicesRes.records ?? [],
+			repoRecords: servicesRes.records ?? [],
 		};
 	});
 }
@@ -81,16 +80,14 @@ export async function repoDeployments(
 }
 
 /**
- * Query.repoServices
- * Returns detected services for all user repos
+ * Query.repoRecords
+ * Returns detected records for all user repos
  */
-export async function repoServices(_: unknown, __: unknown, ctx: GraphQLContext) {
-	return withTiming("repoServices", async () => {
-		const userID = requireUser(ctx);
-		const response = await dbHelper.getUserRepoServices(userID);
-		if (response.error) throw new Error(String(response.error));
-		return response.records ?? [];
-	});
+export async function repoRecords(_: unknown, __: unknown, ctx: GraphQLContext) {
+	const userID = requireUser(ctx);
+	const response = await dbHelper.getUserRepoRecords(userID);
+	if (response.error) throw new Error(String(response.error));
+	return response.records ?? [];
 }
 
 /**

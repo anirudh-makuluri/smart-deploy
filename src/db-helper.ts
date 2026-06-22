@@ -1,5 +1,5 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
-import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoServicesRecord, StaticServiceType } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoRecord, StaticServiceType } from "./app/types";
 import type { DeployLogLine, DeployStepSummary } from "./lib/aws/deployRunLogs";
 import { deployStepsFromLogLines } from "./lib/aws/deployRunLogs";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
@@ -1077,7 +1077,7 @@ export const dbHelper = {
 	getRepoServicesByUrl: async function (
 		userID: string,
 		repoUrl: string
-	): Promise<{ error?: string; record?: RepoServicesRecord | null }> {
+	): Promise<{ error?: string; record?: RepoRecord | null }> {
 		try {
 			const normalizedUrl = repoUrl.replace(/\.git$/, "").trim();
 			if (!userID || !normalizedUrl) return { error: "userID and repo_url are required" };
@@ -1093,7 +1093,7 @@ export const dbHelper = {
 			if (error) return { error: error.message };
 			if (!data) return { record: null };
 			const row = data as Record<string, unknown>;
-			const record: RepoServicesRecord = {
+			const record: RepoRecord = {
 				repo_url: row.repo_url as string,
 				branch: row.branch as string,
 				repo_owner: row.repo_owner as string,
@@ -1110,7 +1110,7 @@ export const dbHelper = {
 	},
 
 	/** Get all stored repo services for a user. */
-	getUserRepoServices: async function (userID: string): Promise<{ error?: string; records?: RepoServicesRecord[] }> {
+	getUserRepoRecords: async function (userID: string): Promise<{ error?: string; records?: RepoRecord[] }> {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: rows, error } = await supabase
@@ -1120,7 +1120,7 @@ export const dbHelper = {
 				.order("updated_at", { ascending: false });
 
 			if (error) return { error: error.message };
-			const records: RepoServicesRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
+			const records: RepoRecord[] = (rows || []).map((r: Record<string, unknown>) => ({
 			repo_url: r.repo_url as string,
 			branch: r.branch as string,
 			repo_owner: r.repo_owner as string,

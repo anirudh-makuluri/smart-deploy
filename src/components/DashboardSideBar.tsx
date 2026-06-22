@@ -6,10 +6,11 @@ import { useAppData } from "@/store/useAppData";
 import { isLiveDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
 import { cn } from "@/lib/utils";
 import { authClient } from "@/lib/auth-client";
+import { DashboardMainProps } from "./DashboardMain";
 
 type DashboardSideBarProps = {
-	activeView: "overview" | "deployments" | "repositories";
-	onViewChange: (view: "overview" | "deployments" | "repositories") => void;
+	activeView: DashboardMainProps['activeView'];
+	onViewChange: (view: DashboardMainProps['activeView']) => void;
 	/** Narrow icon rail (desktop only; mobile sheet always expanded). */
 	collapsed?: boolean;
 	/** When set (desktop rail only), shows the same collapse control row as `DeployWorkspaceMenu`. */
@@ -99,12 +100,12 @@ export default function DashboardSideBar({
 					</button>
 					<button
 						type="button"
-						onClick={() => onViewChange("deployments")}
+						onClick={() => onViewChange("history")}
 						title="History"
 						className={cn(
 							navButtonBase,
 							collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
-							activeView === "deployments"
+							activeView === "history"
 								? "border-primary/40 bg-primary/10 text-primary"
 								: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
 						)}

@@ -13,8 +13,6 @@ import {
 } from "@/lib/utils";
 import { resolveWorkspaceBranch } from "@/lib/repoBranch";
 import DeployOptions from "@/components/DeployOptions";
-import { DEFAULT_EC2_INSTANCE_TYPE, formatApproxEc2PriceCompact } from "@/lib/aws/ec2InstanceTypes";
-import WorkloadInsightCard from "@/components/deploy-workspace/WorkloadInsightCard";
 
 type DeployOverviewProps = {
 	deployment: DeployConfig;
@@ -78,16 +76,12 @@ function EndpointRow({ label, value }: { label: string; value: string | undefine
 function DeploymentTargetSummary({
 	deployDisabled,
 	deploymentTarget,
-	showEc2InstanceType,
-	ec2TypeDisplay,
 }: {
 	deployDisabled: boolean;
 	deploymentTarget: DeployConfig["deploymentTarget"];
-	showEc2InstanceType: boolean;
-	ec2TypeDisplay: string;
 }) {
 	const showService = !deployDisabled;
-	if (!showService && !showEc2InstanceType) return null;
+	if (!showService) return null;
 
 	return (
 		<div className="rounded-xl border border-border bg-card p-4">
@@ -99,12 +93,6 @@ function DeploymentTargetSummary({
 						<dd className="mt-0.5 font-medium text-foreground">
 							{deploymentTarget ? formatDeploymentTargetName(deploymentTarget) : "Pending"}
 						</dd>
-					</div>
-				)}
-				{showEc2InstanceType && (
-					<div>
-						<dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Instance type</dt>
-						<dd className="mt-0.5 font-mono text-xs text-foreground">{ec2TypeDisplay}</dd>
 					</div>
 				)}
 			</dl>
@@ -160,10 +148,6 @@ export default function DeployOverview({
 		: ecsResources
 			? `${ecsResources.cluster}/${ecsResources.service}`
 			: undefined;
-	const ec2TypeDisplay = DEFAULT_EC2_INSTANCE_TYPE;
-	const ec2PriceEstimate = showEc2InstanceType
-		? formatApproxEc2PriceCompact(ec2TypeDisplay)
-		: null;
 
 	const regionDisplay = (deployment.region || ecsResources?.region || staticResources?.region || region).trim() || region;
 	const canManageDeployment = canManageRuntimeDeploymentStatus(effectiveStatus);
@@ -267,14 +251,6 @@ export default function DeployOverview({
 
 					<div className="rounded-xl border border-border bg-card">
 						<div className="grid grid-cols-1 divide-y divide-border text-sm text-muted-foreground">
-							{ec2PriceEstimate && (
-								<div className="flex items-center justify-between px-4 py-3">
-									<span>On-demand estimate (Linux, {regionDisplay})</span>
-										<span className="text-right text-xs text-muted-foreground max-w-56">
-										{ec2PriceEstimate}
-									</span>
-								</div>
-							)}
 							<div className="space-y-3 px-4 py-3">
 								<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									<Link2 className="size-3.5 opacity-70" aria-hidden />
@@ -350,8 +326,6 @@ export default function DeployOverview({
 					<DeploymentTargetSummary
 						deployDisabled={deployDisabled}
 						deploymentTarget={deployment.deploymentTarget}
-						showEc2InstanceType={showEc2InstanceType}
-						ec2TypeDisplay={ec2TypeDisplay}
 					/>
 					<div className="rounded-xl border border-border bg-card p-4">
 						<p className="text-xs uppercase tracking-wider text-muted-foreground">Last Deployment</p>

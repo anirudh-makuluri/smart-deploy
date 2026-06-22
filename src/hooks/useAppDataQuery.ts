@@ -3,75 +3,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useAppData } from "@/store/useAppData";
-import type { DeployConfig, repoType, RepoServicesRecord } from "@/app/types";
-import { benchmarkAppOverview, fetchAppOverview } from "@/lib/graphqlClient";
+import { fetchAppOverview, fetchRepoRecords } from "@/lib/graphqlClient";
 import { authClient } from "@/lib/auth-client";
-
-const CACHE_KEY = "smart-deploy-app-data";
-const CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-declare global {
-	interface Window {
-		smartDeployBenchmarkAppOverview?: (runs?: number) => Promise<unknown>;
-	}
-}
-
-type CachedAppData = {
-	userID: string;
-	repoList: repoType[];
-	deployments: DeployConfig[];
-	repoServices?: RepoServicesRecord[];
-	timestamp: number;
-};
-
-function readCache(userID: string): { repoList: repoType[]; deployments: DeployConfig[]; repoServices: RepoServicesRecord[] } | null {
-	if (typeof window === "undefined") return null;
-	try {
-		const raw = localStorage.getItem(CACHE_KEY);
-		if (!raw) return null;
-		const data: CachedAppData = JSON.parse(raw);
-		if (data.userID !== userID) return null;
-		if (Date.now() - data.timestamp > CACHE_MAX_AGE_MS) return null;
-		return { repoList: data.repoList ?? [], deployments: data.deployments ?? [], repoServices: data.repoServices ?? [] };
-	} catch {
-		return null;
-	}
-}
-
-function writeCache(userID: string, repoList: repoType[], deployments: DeployConfig[], repoServices: RepoServicesRecord[] = []) {
-	if (typeof window === "undefined") return;
-	try {
-		localStorage.setItem(
-			CACHE_KEY,
-			JSON.stringify({ userID, repoList, deployments, repoServices, timestamp: Date.now() } satisfies CachedAppData)
-		);
-	} catch {
-		// ignore quota / private mode
-	}
-}
-
-function clearCache() {
-	if (typeof window === "undefined") return;
-	try {
-		localStorage.removeItem(CACHE_KEY);
-	} catch {
-		// ignore
-	}
-}
-
-async function fetchAppData(): Promise<{ repoList: repoType[]; deployments: DeployConfig[]; repoServices: RepoServicesRecord[] }> {
-	const { repoList, deployments, repoServices } = await fetchAppOverview();
-	return { repoList, deployments, repoServices };
-}
 
 /**
  * Fetches app data in the background and syncs it to the Zustand store.
- * On refresh, rehydrates from localStorage first (same user, cache under 7 days) so you don't see a loading state.
  */
 export function useAppDataQuery() {
 	const { data: session, isPending } = authClient.useSession();
 	const userID = session?.user?.id;
-	const { setAppData, unAuthenticated } = useAppData();
+	const { setAppData, unAuthenticated, setRepoRecords } = useAppData();
 	const hasRehydrated = useRef(false);
 
 	// Allow cache rehydration again whenever the signed-in user id changes (e.g. switch account / provider).
@@ -79,45 +20,37 @@ export function useAppDataQuery() {
 		hasRehydrated.current = false;
 	}, [userID]);
 
-	// Rehydrate from cache as soon as we have an authenticated user (before query runs)
 	useEffect(() => {
 		if (isPending || !userID || hasRehydrated.current) return;
 		hasRehydrated.current = true;
-		const cached = readCache(userID);
-		if (cached) {
-			setAppData(cached.repoList, cached.deployments, false, cached.repoServices);
-		}
 	}, [isPending, userID, setAppData]);
 
-	const { data: appData } = useQuery({
-		queryKey: ["app-data", userID],
-		queryFn: fetchAppData,
+	const { error: errorRepoRecords } = useQuery({
+		queryKey: ["repo-records", userID],
+		queryFn: async () => {
+			const repoRecords = await fetchRepoRecords();
+			setRepoRecords(repoRecords);
+			return repoRecords
+		},
 		enabled: !isPending && Boolean(userID),
-		staleTime: 60 * 1000,
+		staleTime: 60_000,
 	});
 
-	// Sync query result to Zustand and persist to localStorage
-	useEffect(() => {
-		if (!appData || !userID) return;
-		setAppData(appData.repoList, appData.deployments, false, appData.repoServices);
-		writeCache(userID, appData.repoList, appData.deployments, appData.repoServices ?? []);
-	}, [appData, userID, setAppData]);
+	const { error: errorAppData } = useQuery({
+		queryKey: ["app-data", userID],
+		queryFn: async () => {
+			const { repoList, deployments, repoRecords } = await fetchAppOverview();
+			setAppData(repoList, deployments, repoRecords)
+			return repoList
+		},
+		staleTime: 60_000
+	})
 
 	// Clear store and cache when user logs out
 	useEffect(() => {
 		if (!isPending && !userID) {
 			hasRehydrated.current = false;
 			unAuthenticated();
-			clearCache();
 		}
 	}, [isPending, unAuthenticated, userID]);
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		window.smartDeployBenchmarkAppOverview = benchmarkAppOverview;
-		return () => {
-			delete window.smartDeployBenchmarkAppOverview;
-		};
-	}, []);
-
 }

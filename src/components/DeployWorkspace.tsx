@@ -56,7 +56,6 @@ export default function DeployWorkspace({
 		serviceLogs,
 		effectiveDeployStatus,
 		deployError,
-		steps,
 		liveDeployConfig,
 		isRefreshingPreview,
 		pauseResumeDialogTitle,
@@ -78,7 +77,6 @@ export default function DeployWorkspace({
 		handleConfirmRejectScan,
 		handleDeleteDeployment,
 		handlePauseResumeDeployment,
-		handleRollbackDeployment,
 	} = workspace;
 
 	const deployAction = (
@@ -158,7 +156,6 @@ export default function DeployWorkspace({
 							deployError={deployError}
 							latestDeploymentRunId={latestDeploymentRunId}
 							deployingCommitInfo={ui.deployingCommitInfo}
-							steps={steps}
 							liveDeployConfig={liveDeployConfig}
 							isDeploying={ui.isDeploying}
 							isRefreshingPreview={isRefreshingPreview}
@@ -217,7 +214,7 @@ export default function DeployWorkspace({
 				effectiveDeploymentStatus={effectiveDeploymentStatus}
 				showRollbackConfirm={ui.showRollbackConfirm}
 				onRollbackConfirmOpenChange={(open) => dispatch({ type: "set_show_rollback_confirm", value: open })}
-				onConfirmRollbackDeployment={() => void handleRollbackDeployment()}
+				onConfirmRollbackDeployment={() => {}} //TODO: REMOVE THIS FUNC
 				rollbackCommitSha={ui.rollbackEntry?.commitSha}
 			/>
 		</div>

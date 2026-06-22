@@ -231,7 +231,7 @@ export type DetectedServiceInfo = {
 };
 
 /** Stored record per user+repo for detected services metadata. */
-export type RepoServicesRecord = {
+export type RepoRecord = {
 	repo_url: string;
 	branch: string;
 	repo_owner: string;

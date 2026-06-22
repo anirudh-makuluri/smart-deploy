@@ -1,6 +1,6 @@
 import { countDeployedServicesForRepo } from "@/lib/utils";
 import { isDraftDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
-import type { DeployConfig, repoType, RepoServicesRecord } from "@/app/types";
+import type { DeployConfig, repoType, RepoRecord } from "@/app/types";
 
 export function normalizeDashboardRepoUrl(url: string): string {
 	return url?.replace(/\.git$/, "").toLowerCase().trim();
@@ -36,11 +36,11 @@ export type RepoCard = {
 };
 
 export function buildRepoCards(
-	repoServices: RepoServicesRecord[],
+	repoRecords: RepoRecord[],
 	repoList: repoType[],
 	deployments: DeployConfig[]
 ): RepoCard[] {
-	return repoServices.flatMap((record) => {
+	return repoRecords.flatMap((record) => {
 		if ((record.services?.length ?? 0) === 0) return [];
 
 		const repoUrlNorm = normalizeDashboardRepoUrl(record.repo_url);

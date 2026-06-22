@@ -269,7 +269,7 @@ type DetectedService {
 ---
 
 ### 4. RepoServices
-**Source**: `RepoServicesRecord` type  
+**Source**: `RepoRecord` type  
 **Database**: `repo_services` table  
 **Used in**: Query.appOverview, Query.repoServices
 

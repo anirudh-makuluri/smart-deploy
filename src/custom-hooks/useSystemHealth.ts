@@ -57,12 +57,10 @@ async function fetchSystemHealth(): Promise<SystemHealthState> {
 	};
 }
 
-export function useSystemHealth(pollMs: number = 30000): SystemHealthState {
+export function useSystemHealth(): SystemHealthState {
 	const { data } = useQuery({
 		queryKey: ["system-health"],
-		queryFn: fetchSystemHealth,
-		refetchInterval: pollMs,
-		staleTime: Math.max(1000, pollMs - 1000),
+		queryFn: fetchSystemHealth
 	});
 
 	return data ?? DEFAULT_STATE;

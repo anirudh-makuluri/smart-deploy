@@ -170,16 +170,16 @@ export default function RepoServicesList({
 									<ServiceTypeIcon deployMode={svc.deployMode} serviceType={svc.serviceType} />
 									<div className="min-w-0 flex-1">
 										<div className="font-semibold text-foreground truncate">
-											{repoName}/{svc.name}
+											{svc.name}
 										</div>
 									</div>
 								</div>
 								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
 									{svc.path === "." ? "Root directory" : svc.path}
 								</div>
-								<div className="mt-2">
+								{/* <div className="mt-2">
 									<ServiceTypeBadge deployMode={svc.deployMode} serviceType={svc.serviceType} />
-								</div>
+								</div> */}
 								<div className="mt-3 flex flex-col gap-2">
 									<div className="flex items-center gap-2">
 										{isDraft && (

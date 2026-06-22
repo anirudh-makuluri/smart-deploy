@@ -1,10 +1,10 @@
-import { DeployConfig, repoType, RepoServicesRecord, DetectedServiceInfo } from '@/app/types';
+import { DeployConfig, repoType, RepoRecord, DetectedServiceInfo } from '@/app/types';
 import { withDeployInfraDefaults } from '@/lib/deployInfraDefaults';
 import { create } from 'zustand';
 import {
 	fetchAppOverview,
 	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
-	fetchRepoServices,
+	fetchRepoRecords,
 	refreshRepos,
 	updateDeployment as graphQLUpdateDeployment,
 } from '@/lib/graphqlClient';
@@ -34,16 +34,20 @@ type AppState = {
 	repoList: repoType[];
 	deployments: DeployConfig[];
 	activeRepo: repoType | null;
+	activeServiceName: string | null;
+	/** The Repo Record that's used right now */
+	activeRepoRecord: RepoRecord | null;
 	/** Detected services per repo (from detect-services, persisted in DB). */
-	repoServices: RepoServicesRecord[];
+	repoRecords: RepoRecord[];
 	/** In-memory cache of detect-services result per repo URL (avoids refetch on every visit). */
 	detectedRepoCache: Record<string, DetectedRepoCacheEntry>;
 	isLoading: boolean;
 	/** Set after first successful fetch so we don't refetch on every mount/navigation. */
 	hasFetched: boolean;
+	setRepoRecords: (records: RepoRecord[]) => void;
 	unAuthenticated: () => void;
 	/** Hydrate store (e.g. from TanStack Query). Use when showing UI immediately and loading in background. */
-	setAppData: (repoList: repoType[], deployments: DeployConfig[], isLoading?: boolean, repoServices?: RepoServicesRecord[]) => void;
+	setAppData: (repoList: repoType[], deployments: DeployConfig[], repoRecords?: RepoRecord[]) => void;
 	/** Load repos + deployments + repo services (runs once when authenticated; skips if already fetched). */
 	fetchAll: () => Promise<void>;
 	/** Force refetch from server (e.g. after long time or explicit "Refresh" action). */
@@ -57,20 +61,15 @@ type AppState = {
 	/** Merge fetched deployments into the local store without writing back to the server. */
 	mergeDeployments: (deployments: DeployConfig[]) => void;
 	/** Merge fetched repo service records into the local store without replacing unrelated repos. */
-	mergeRepoServices: (records: RepoServicesRecord[]) => void;
-	/** Refetch repo services only (e.g. after visiting a repo page that ran detect-services). */
-	refetchRepoServices: () => Promise<void>;
+	mergeRepoRecords: (records: RepoRecord[]) => void;
 	/** Get cached detect-services result for a repo + branch. */
-	getDetectedRepoCache: (repoUrl: string, branch?: string) => DetectedRepoCacheEntry | undefined;
-	/** Set cached detect-services result for a repo. */
-	setDetectedRepoCache: (repoUrl: string, branch: string | undefined, data: DetectedRepoCacheEntry) => void;
 	updateDeploymentById: (deployment: Partial<DeployConfig> & { repoName: string; serviceName: string }) => Promise<void>;
 	removeDeployment: (repoName: string, serviceName: string) => void;
 	/** Remove multiple deployments in one update (e.g. after bulk delete). */
 	removeDeployments: (keys: { repoName: string; serviceName: string }[]) => void;
 	refreshRepoList: () => Promise<{ status: 'success' | 'error'; message: string }>;
-	activeServiceName: string | null;
-	setActiveRepo: (repo: repoType | null) => void;
+	setActiveRepo: (repo : repoType | null) => void;
+	setActiveRepoRecord: (repoRecord: RepoRecord | null) => void,
 	setActiveServiceName: (name: string | null) => void;
 };
 
@@ -123,22 +122,22 @@ function mergeDeploymentLists(existing: DeployConfig[], incoming: DeployConfig[]
 	return sortDeployments(Array.from(merged.values()).map(withDeployInfraDefaults));
 }
 
-function repoServicesKey(record: Pick<RepoServicesRecord, "repo_url" | "branch">): string {
+function repoRecordsKey(record: Pick<RepoRecord, "repo_url" | "branch">): string {
 	return repoBranchCacheKey(record.repo_url, record.branch);
 }
 
-function mergeRepoServicesLists(
-	existing: RepoServicesRecord[],
-	incoming: RepoServicesRecord[]
-): RepoServicesRecord[] {
-	const merged = new Map<string, RepoServicesRecord>();
+function mergeRepoRecordsLists(
+	existing: RepoRecord[],
+	incoming: RepoRecord[]
+): RepoRecord[] {
+	const merged = new Map<string, RepoRecord>();
 
 	for (const record of existing) {
-		merged.set(repoServicesKey(record), record);
+		merged.set(repoRecordsKey(record), record);
 	}
 
 	for (const record of incoming) {
-		merged.set(repoServicesKey(record), record);
+		merged.set(repoRecordsKey(record), record);
 	}
 
 	return Array.from(merged.values());
@@ -148,7 +147,8 @@ export const useAppData = create<AppState>((set, get) => ({
 	repoList: [],
 	deployments: [],
 	activeRepo: null,
-	repoServices: [],
+	activeRepoRecord: null,
+	repoRecords: [],
 	detectedRepoCache: {},
 	isLoading: true,
 	hasFetched: false,
@@ -158,13 +158,16 @@ export const useAppData = create<AppState>((set, get) => ({
 		set({ isLoading: false, hasFetched: false });
 	},
 
-	setAppData: (repoList, deployments, isLoading = false, repoServicesPayload = []) => {
+	setRepoRecords: (records) => {
+		set({ repoRecords: records });
+	},
+
+	setAppData: (repoList, deployments, repoRecordsPayload = []) => {
 		set({
 			repoList: sortRepos(repoList),
 			deployments: mergeDeploymentLists([], deployments),
-			repoServices: mergeRepoServicesLists([], repoServicesPayload),
-			isLoading,
-			hasFetched: !isLoading,
+			repoRecords: mergeRepoRecordsLists([], repoRecordsPayload),
+			hasFetched: true,
 		});
 	},
 
@@ -173,11 +176,11 @@ export const useAppData = create<AppState>((set, get) => ({
 		if (hasFetched) return; // Already have data; avoid refetching on every navigation
 		set({ isLoading: true });
 		try {
-			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			const { repoList, deployments, repoRecords } = await fetchAppOverview();
 			set({
 				repoList: sortRepos(repoList),
 				deployments: mergeDeploymentLists([], deployments),
-				repoServices: mergeRepoServicesLists([], repoServices ?? []),
+				repoRecords: mergeRepoRecordsLists([], repoRecords ?? []),
 				isLoading: false,
 				hasFetched: true,
 			});
@@ -190,11 +193,11 @@ export const useAppData = create<AppState>((set, get) => ({
 	refetchAll: async () => {
 		set({ isLoading: true });
 		try {
-			const { repoList, deployments, repoServices } = await fetchAppOverview();
+			const { repoList, deployments, repoRecords } = await fetchAppOverview();
 			set({
 				repoList: sortRepos(repoList),
 				deployments: mergeDeploymentLists([], deployments),
-				repoServices: mergeRepoServicesLists([], repoServices ?? []),
+				repoRecords: mergeRepoRecordsLists([], repoRecords ?? []),
 				isLoading: false,
 				hasFetched: true,
 			});
@@ -244,32 +247,9 @@ export const useAppData = create<AppState>((set, get) => ({
 		}));
 	},
 
-	mergeRepoServices: (incomingRecords) => {
+	mergeRepoRecords: (incomingRecords) => {
 		set((state) => ({
-			repoServices: mergeRepoServicesLists(state.repoServices, incomingRecords),
-		}));
-	},
-
-	refetchRepoServices: async () => {
-		try {
-			const services = await fetchRepoServices();
-			set((state) => ({
-				repoServices: mergeRepoServicesLists(state.repoServices, services ?? []),
-			}));
-		} catch (err) {
-			console.error('Refetch repo services failed', err);
-		}
-	},
-
-	getDetectedRepoCache: (repoUrl: string, branch?: string) => {
-		const key = repoBranchCacheKey(repoUrl, branch);
-		return get().detectedRepoCache[key];
-	},
-
-	setDetectedRepoCache: (repoUrl: string, branch: string | undefined, data: DetectedRepoCacheEntry) => {
-		const key = repoBranchCacheKey(repoUrl, branch);
-		set((state) => ({
-			detectedRepoCache: { ...state.detectedRepoCache, [key]: data },
+			repoRecords: mergeRepoRecordsLists(state.repoRecords, incomingRecords),
 		}));
 	},
 
@@ -287,34 +267,22 @@ export const useAppData = create<AppState>((set, get) => ({
 			return;
 		}
 
-		const deployments = get().deployments;
+		const updatedList = get().deployments;
 		const matchKey = (dep: DeployConfig) =>
 			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
-		const existing = deployments.find(matchKey);
-		const scanResultsPartial = partial.scanResults;
-		const responseIdFromScan =
-			scanResultsPartial &&
-			typeof scanResultsPartial === "object" &&
-			!Array.isArray(scanResultsPartial) &&
-			typeof (scanResultsPartial as { response_id?: unknown }).response_id === "string"
-				? String((scanResultsPartial as { response_id: string }).response_id).trim() || null
-				: null;
+		const existingIndex = updatedList.findIndex(matchKey);
+		let existing : DeployConfig | {} = {}
+		if(existingIndex != -1) {
+			existing = updatedList[existingIndex]
+		}
+
 		const merged: DeployConfig = withDeployInfraDefaults({
-			...(existing ?? ({} as DeployConfig)),
+			...existing,
 			...partial,
-			...(partial.responseId === undefined && responseIdFromScan ? { responseId: responseIdFromScan } : {}),
 		} as DeployConfig);
 
-		let updatedList: DeployConfig[];
-		if (merged.status === 'stopped') {
-			updatedList = deployments.filter((dep) => !matchKey(dep));
-		} else {
-			const exists = Boolean(existing);
-			updatedList = exists
-				? deployments.map((dep) => (matchKey(dep) ? merged : dep))
-				: [...deployments, merged];
-		}
+		updatedList[existingIndex] = merged;
 
 		set({ deployments: mergeDeploymentLists([], updatedList) });
 	},
@@ -347,6 +315,7 @@ export const useAppData = create<AppState>((set, get) => ({
 		}
 	},
 	setActiveRepo: (repo) => set({ activeRepo: repo }),
+	setActiveRepoRecord: (repoRecord) => set({ activeRepoRecord: repoRecord }),
 	setActiveServiceName: (name) => set({ activeServiceName: name }),
 }));
 

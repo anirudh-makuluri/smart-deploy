@@ -17,24 +17,24 @@ const organizationJsonLd = {
 export const metadata: Metadata = {
 	metadataBase: new URL("https://smart-deploy.xyz"),
 	title: {
-		default: "Smart Deploy | Preview your deployment blueprint (Docker, Compose, Nginx)",
+		default: "Smart Deploy | Preview your deployment blueprint",
 		template: "%s | Smart Deploy",
 	},
 	description:
-		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+		"Deploy without the black box. Generate build plans, preview routing and services as a blueprint, then ship with confidence.",
 	openGraph: {
 		type: "website",
 		siteName: "Smart Deploy",
-		title: "Smart Deploy | Preview your deployment blueprint (Docker, Compose, Nginx)",
+		title: "Smart Deploy | Preview your deployment blueprint",
 		description:
-			"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+			"Deploy without the black box. Generate build plans, preview routing and services as a blueprint, then ship with confidence.",
 		url: "https://smart-deploy.xyz/",
 	},
 	twitter: {
 		card: "summary_large_image",
-		title: "Smart Deploy | Preview your deployment blueprint (Docker, Compose, Nginx)",
+		title: "Smart Deploy | Preview your deployment blueprint",
 		description:
-			"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+			"Deploy without the black box. Generate build plans, preview routing and services as a blueprint, then ship with confidence.",
 	},
 	icons: {
 		icon: "/icon.svg",

@@ -2,7 +2,7 @@ import type {
 	DeployConfig,
 	DeploymentHistoryEntry,
 	DetectedServiceInfo,
-	RepoServicesRecord,
+	RepoRecord,
 	ScanResultsPayload,
 	SDArtifactsResponse,
 	repoType,
@@ -106,7 +106,7 @@ const APP_OVERVIEW_QUERY = `
 				cloudResources
 				scanResults
 			}
-			repoServices {
+			repoRecords {
 				repo_url
 				branch
 				repo_owner
@@ -154,9 +154,30 @@ const REPO_DEPLOYMENTS_QUERY = `
 	}
 `;
 
-const REPO_SERVICES_QUERY = `
-	query RepoServices {
-		repoServices {
+const REPO_RECORD_QUERY = `
+	query RepoRecord {
+		repo_url
+		branch
+		repo_owner
+		repo_name
+		is_monorepo
+		updated_at
+		services {
+			name
+			path
+			language
+			framework
+			port
+			deployMode
+			serviceType
+		}
+	}
+
+`
+
+const REPO_RECORDS_QUERY = `
+	query RepoRecords {
+		repoRecords {
 			repo_url
 			branch
 			repo_owner
@@ -225,7 +246,7 @@ const REFRESH_REPOS_MUTATION = `
 export type AppOverviewData = {
 	repoList: repoType[];
 	deployments: DeployConfig[];
-	repoServices: RepoServicesRecord[];
+	repoRecords: RepoRecord[];
 };
 
 export type DeploymentHistoryPage = {
@@ -240,44 +261,19 @@ export async function fetchAppOverview(): Promise<AppOverviewData> {
 	return data.appOverview;
 }
 
-export async function benchmarkAppOverview(runs = 5): Promise<AppOverviewBenchmarkResult> {
-	const graphql: BenchmarkSample[] = [];
-
-	for (let index = 0; index < runs; index += 1) {
-		const graphqlStart = performance.now();
-		const graphqlResult = await fetchAppOverview();
-		graphql.push({
-			label: "graphql",
-			durationMs: Math.round(performance.now() - graphqlStart),
-			responseSizeBytes: getResponseSize(graphqlResult),
-		});
-
-	}
-
-	const result = {
-		graphql,
-		graphqlAverageMs: average(graphql),
-	};
-
-	console.table({
-		graphql: {
-			averageMs: result.graphqlAverageMs,
-			lastResponseBytes: graphql.at(-1)?.responseSizeBytes ?? 0,
-			runs: graphql.length,
-		},
-	});
-
-	return result;
-}
-
 export async function fetchRepoDeployments(repoName: string): Promise<DeployConfig[]> {
 	const data = await graphQLRequest<{ repoDeployments: DeployConfig[] }>(REPO_DEPLOYMENTS_QUERY, { repoName });
 	return data.repoDeployments;
 }
 
-export async function fetchRepoServices(): Promise<RepoServicesRecord[]> {
-	const data = await graphQLRequest<{ repoServices: RepoServicesRecord[] }>(REPO_SERVICES_QUERY);
-	return data.repoServices;
+export async function fetchRepoRecord(owner: string, repoName: string): Promise<RepoRecord> {
+	const data = await graphQLRequest<{ repoRecord: RepoRecord }>(REPO_RECORD_QUERY, { owner, repoName });
+	return data.repoRecord;
+}
+
+export async function fetchRepoRecords(): Promise<RepoRecord[]> {
+	const data = await graphQLRequest<{ repoRecords: RepoRecord[] }>(REPO_RECORDS_QUERY);
+	return data.repoRecords;
 }
 
 export async function updateDeployment(config: DeployConfig): Promise<void> {

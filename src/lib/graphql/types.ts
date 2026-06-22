@@ -144,7 +144,7 @@ export const typeDefs = `
     serviceType: String
   }
 
-  type RepoServices {
+  type RepoRecords {
     repo_url: String!
     branch: String!
     repo_owner: String!
@@ -221,7 +221,7 @@ export const typeDefs = `
   type AppOverviewResult {
     repoList: [Repository!]!
     deployments: [Deployment!]!
-    repoServices: [RepoServices!]!
+    repoRecords: [RepoRecords!]!
   }
 
   type DetectServicesResult {
@@ -331,8 +331,8 @@ export const typeDefs = `
     # Deployments for a specific repo
     repoDeployments(repoName: String!): [Deployment!]!
 
-    # Detected services for all user repos
-    repoServices: [RepoServices!]!
+    # Detected records for all user repos
+    repoRecords: [RepoRecords!]!
 
     # Resolve a repo by owner and name
     resolveRepo(owner: String!, repo: String!): Repository

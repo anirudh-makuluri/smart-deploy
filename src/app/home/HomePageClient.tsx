@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import DashboardMain from "@/components/DashboardMain";
+import DashboardMain, { DashboardMainProps } from "@/components/DashboardMain";
 import DashboardSideBar from "@/components/DashboardSideBar";
 import Header from "@/components/Header";
 import { useAppDataQuery } from "@/hooks/useAppDataQuery";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 export default function HomePageClient() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
-	const [activeView, setActiveView] = React.useState<"overview" | "deployments" | "repositories">("overview");
+	const [activeView, setActiveView] = React.useState<DashboardMainProps['activeView']>("overview");
 	const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 	const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
 

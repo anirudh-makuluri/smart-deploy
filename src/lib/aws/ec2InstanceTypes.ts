@@ -42,13 +42,6 @@ export function getApproxEc2OnDemandPricing(instanceType: string): ApproxEc2OnDe
 	};
 }
 
-/** Short label for dropdowns (e.g. "~$0.010/hr · ~$8/mo"). */
-export function formatApproxEc2PriceCompact(instanceType: string): string | null {
-	const p = getApproxEc2OnDemandPricing(instanceType);
-	if (!p) return null;
-	return `~$${p.hourlyUsd.toFixed(3)}/hr · ~$${Math.round(p.monthlyUsd)}/mo`;
-}
-
 /** Curated x86 types. AMI selection uses x86_64; avoid Graviton (e.g. c7g) here. */
 export const EC2_INSTANCE_TYPE_PRESETS = [
 	"t3.micro",

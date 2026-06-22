@@ -9,7 +9,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { requireAdminSession } from "@/lib/admin";
 import { getSupabaseServer } from "@/lib/supabaseServer";
-import { buildWebSocketHealthUrl } from "@/lib/wsUrls";
 
 type ServiceStatus = {
 	name: string;
@@ -90,7 +89,7 @@ async function checkWorker(): Promise<ServiceStatus> {
 	}
 
 	try {
-		const response = await fetch(buildWebSocketHealthUrl(wsUrl, "/health"), { cache: "no-store" });
+		const response = await fetch(`${wsUrl}/health`, { cache: "no-store" });
 		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		const payload = (await response.json()) as { ok?: boolean; service?: string };
 		return {

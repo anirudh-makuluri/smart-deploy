@@ -61,7 +61,6 @@ type DeployWorkspaceActiveSectionProps = {
 	deployError: string | null;
 	latestDeploymentRunId?: string | null;
 	deployingCommitInfo: { sha: string; message: string; author: string; date: string } | null;
-	steps: DeployStep[];
 	liveDeployConfig: DeployConfig | null;
 	isDeploying: boolean;
 	isRefreshingPreview: boolean;
@@ -117,7 +116,6 @@ export default function DeployWorkspaceActiveSection({
 	deployError,
 	latestDeploymentRunId,
 	deployingCommitInfo,
-	steps,
 	liveDeployConfig,
 	isDeploying,
 	isRefreshingPreview,
@@ -264,7 +262,6 @@ export default function DeployWorkspaceActiveSection({
 						deployError={deployError}
 						deploymentRunId={latestDeploymentRunId}
 						deployingCommitInfo={deployingCommitInfo}
-						steps={steps}
 						repoNameForLogs={repoName}
 						serviceNameForLogs={currentServiceName}
 						repoUrl={deployment.repoUrl}

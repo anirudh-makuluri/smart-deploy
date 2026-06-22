@@ -29,10 +29,3 @@ function normalizeHealthPath(pathname: string, healthPath: "/health" | "/healthz
 
 	return trimmedPath;
 }
-
-export function buildWebSocketHealthUrl(wsUrl: string, healthPath: "/health" | "/healthz") {
-	const url = new URL(toHttpUrl(wsUrl));
-	url.pathname = normalizeHealthPath(url.pathname, healthPath);
-	url.search = "";
-	return url.toString();
-}

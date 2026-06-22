@@ -6,18 +6,19 @@ import { useAppData } from "@/store/useAppData";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { toast } from "sonner";
 import {
-	resolveRepo,
 	detectRepoServices,
-	fetchRepoServices,
+	fetchRepoRecords,
 	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
 	addRepoServiceRoot,
 	type DetectServicesResult,
+	resolveRepo,
+	fetchRepoRecord,
 } from "@/lib/graphqlClient";
-import { getDeploymentForService, normalizeRepoUrl } from "@/lib/utils";
+import { getDeploymentForService } from "@/lib/utils";
 import { generateDefaultHostedSubdomain, normalizeHostedSubdomain } from "@/lib/hostedUrl";
 import config from "@/config";
+import { createDefaultDeployment } from "@/custom-hooks/useActiveDeployment";
 
-const normalizeRepoUrlForMatch = normalizeRepoUrl;
 
 function getErrorMessage(error: Error | { message?: string } | string | null | undefined, fallback: string): string {
 	if (!error) return fallback;
@@ -30,18 +31,16 @@ function getErrorMessage(error: Error | { message?: string } | string | null | u
 export function useRepoPageClient(owner: string, repoName: string) {
 	const queryClient = useQueryClient();
 	const {
-		repoList,
-		activeRepo,
+		activeRepo : repo,
+		activeRepoRecord: repoRecord,
+		activeServiceName: serviceName,
 		deployments,
-		repoServices,
-		getDetectedRepoCache,
-		setDetectedRepoCache,
-		mergeRepoServices,
-		syncRepoDeployments,
+		mergeRepoRecords,
+		mergeDeployments,
 		updateDeploymentById,
-		activeServiceName: storeActiveService,
 		setActiveServiceName,
 		setActiveRepo,
+		setActiveRepoRecord
 	} = useAppData();
 
 	const [catalogBusy, setCatalogBusy] = React.useState(false);
@@ -49,122 +48,41 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const deploymentsLoadStartedRef = React.useRef(false);
 
 	const repoFullName = `${owner}/${repoName}`;
-	const routeRepoLower = repoFullName.toLowerCase();
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 
-	const repoFromStore = React.useMemo(() => {
-		if (activeRepo?.full_name?.toLowerCase() === routeRepoLower) {
-			return activeRepo;
-		}
-		return (
-			repoList.find((r) => {
-				const sameFullName = r.full_name.toLowerCase() === routeRepoLower;
-				const sameUrl = normalizeRepoUrlForMatch(r.html_url) === repoUrl;
-				return sameFullName || sameUrl;
-			}) ?? null
-		);
-	}, [activeRepo, repoList, routeRepoLower, repoUrl]);
-
-	const {
-		data: resolvedRepo,
-		isLoading: isResolvingRepo,
-		isError: isResolveRepoError,
-	} = useQuery({
-		queryKey: ["repo-resolve", owner, repoName],
-		enabled: !repoFromStore,
-		queryFn: async () => {
-			const resolved = await resolveRepo(owner, repoName);
-			return resolved ?? null;
-		},
-	});
-
-	const repo = repoFromStore ?? resolvedRepo ?? null;
-	const detectionBranch = repo?.default_branch ?? "";
-	const isLoadingRepo = !repo && isResolvingRepo;
-	const repoNotFound = !repo && !isResolvingRepo && (isResolveRepoError || resolvedRepo === null);
-
-	const cachedServices = React.useMemo(() => {
-		const inMemory = getDetectedRepoCache(repoUrl, detectionBranch);
-		if (inMemory?.services?.length !== undefined) {
-			return inMemory.services;
-		}
-
-		const record = repoServices.find(
-			(r) => normalizeRepoUrlForMatch(r.repo_url) === repoUrl && (detectionBranch ? r.branch === detectionBranch : true)
-		);
-		if (record?.services?.length) return record.services;
-
-		return null;
-	}, [detectionBranch, getDetectedRepoCache, repoServices, repoUrl]);
-
-	const { isLoading: isLoadingStoredRepoServices } = useQuery({
-		queryKey: ["stored-repo-services"],
-		enabled: Boolean(repo) && !cachedServices && repoServices.length === 0,
-		staleTime: 60_000,
-		queryFn: async () => {
-			const records = await fetchRepoServices();
-			mergeRepoServices(records ?? []);
-			return records ?? [];
-		},
-	});
+	const services = React.useMemo(() => { return repoRecord?.services || [] }, [repoRecord]);
+	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments]);
 
 	React.useEffect(() => {
-		const inMemory = getDetectedRepoCache(repoUrl, detectionBranch);
-		if (inMemory?.services?.length !== undefined) return () => {};
+		return () => {
+			setActiveServiceName(null);
+			setActiveRepo(null);
+		};
+	}, [setActiveRepo, setActiveServiceName]);
+	
+	const { isLoading : isLoadingRepo } = useQuery({
+		queryKey: [`${owner}/${repoName}`],
+		enabled: !repo,
+		staleTime: 60_000,
+		queryFn: async () => {
+			const resolved = await resolveRepo(owner, repoName);
+			setActiveRepo(resolved);
+		}
+	})
 
-		const record = repoServices.find(
-			(r) => normalizeRepoUrlForMatch(r.repo_url) === repoUrl && (detectionBranch ? r.branch === detectionBranch : true)
-		);
-		if (!record?.services?.length) return () => {};
-
-		setDetectedRepoCache(repoUrl, detectionBranch, {
-			services: record.services,
-			isMonorepo: record.is_monorepo ?? false,
-			isMultiService: record.services.length > 1,
-			packageManager: undefined,
-		});
-		return () => {};
-	}, [detectionBranch, getDetectedRepoCache, repo, repoServices, repoUrl, setDetectedRepoCache]);
-
-	const applyCatalogResult = React.useCallback(
-		(data: DetectServicesResult) => {
-			const list = data.services ?? [];
-			setDetectedRepoCache(repoUrl, repo?.default_branch, {
-				services: list,
-				isMonorepo: data.isMonorepo ?? false,
-				isMultiService: data.isMultiService ?? list.length > 1,
-				packageManager: data.packageManager ?? undefined,
-			});
-			mergeRepoServices([
-				{
-					repo_url: repoUrl,
-					branch: repo?.default_branch ?? "",
-					repo_owner: owner,
-					repo_name: repoName,
-					is_monorepo: data.isMonorepo ?? false,
-					updated_at: new Date().toISOString(),
-					services: list,
-				},
-			]);
-			void queryClient.invalidateQueries({
-				queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
-			});
+	const { isLoading: isLoadingRepoRecord } = useQuery({
+		queryKey: [`${owner}/${repoName}`, "repo-record"],
+		enabled: !repoRecord,
+		staleTime: 60_000,
+		queryFn: async () => {
+			const record = await fetchRepoRecord(owner, repoName);
+			setActiveRepoRecord(record);			
 		},
-		[
-			repoUrl,
-			setDetectedRepoCache,
-			mergeRepoServices,
-			queryClient,
-			repo,
-			owner,
-			repoName,
-			repoFullName,
-		]
-	);
+	});
 
-	const { isLoading: isLoadingServices, error: servicesQueryError } = useQuery({
-		queryKey: ["repo-services", repo?.full_name ?? repoFullName, repo?.default_branch ?? ""],
-		enabled: Boolean(repo) && !cachedServices && !isLoadingStoredRepoServices,
+	const { isLoading: isLoadingServices, error: errorServices } = useQuery({
+		queryKey: [`${owner}/${repoName}`, "repo-services"],
+		enabled: repoRecord?.services.length == 0,
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
@@ -177,16 +95,50 @@ export function useRepoPageClient(owner: string, repoName: string) {
 				updated_at: new Date().toISOString(),
 				services: list,
 			};
-			setDetectedRepoCache(repoUrl, repo?.default_branch, {
-				services: list,
-				isMonorepo: data.isMonorepo ?? false,
-				isMultiService: data.isMultiService ?? false,
-				packageManager: data.packageManager ?? undefined,
-			});
-			mergeRepoServices([nextRecord]);
+
+			mergeRepoRecords([nextRecord]);
 			return nextRecord;
 		},
 	});
+
+	const { isLoading: isLoadingDeployments } = useQuery({
+		queryKey: [`${owner}/${repoName}`, "repo-deployments"],
+		enabled: repoDeployments.length == 0,
+		queryFn: async () => {
+			if (!repo) return [];
+			const newDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
+			mergeDeployments(newDeployments);
+		},
+	});
+
+	const applyCatalogResult = React.useCallback(
+		(data: DetectServicesResult) => {
+			const list = data.services ?? [];
+			mergeRepoRecords([
+				{
+					repo_url: repoUrl,
+					branch: repo?.default_branch ?? "",
+					repo_owner: owner,
+					repo_name: repoName,
+					is_monorepo: data.isMonorepo ?? false,
+					updated_at: new Date().toISOString(),
+					services: list,
+				},
+			]);
+			void queryClient.invalidateQueries({
+				queryKey: [`${owner}/${repoName}`, "repo-services"],
+			});
+		},
+		[
+			repoUrl,
+			mergeRepoRecords,
+			queryClient,
+			repo,
+			owner,
+			repoName,
+			repoFullName,
+		]
+	);
 
 	const catalogActions = React.useMemo(
 		() => ({
@@ -195,7 +147,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 				if (!repo) return false;
 				setCatalogBusy(true);
 				try {
-					const data = await detectRepoServices(repoUrl, repo.default_branch ?? "");
+					const data = await detectRepoServices(repoUrl, repo.default_branch);
 					applyCatalogResult(data);
 					toast.success("Service detection refreshed");
 					return true;
@@ -210,7 +162,8 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			onAddService: async (rootPath: string, displayName?: string) => {
 				setCatalogBusy(true);
 				try {
-					const data = await addRepoServiceRoot(repoUrl, repo?.default_branch, rootPath, displayName);
+					if(!repo) throw new Error("Repo not found");
+					const data = await addRepoServiceRoot(repoUrl, repo.default_branch, rootPath, displayName);
 					applyCatalogResult(data);
 					toast.success("Service added");
 					return true;
@@ -225,177 +178,39 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		[catalogBusy, repoUrl, repo, applyCatalogResult]
 	);
 
-	const services = React.useMemo(
-		() => cachedServices ?? [],
-		[cachedServices]
-	);
-	const loading = !cachedServices && (isLoadingStoredRepoServices || isLoadingServices);
-	const error = servicesQueryError
-		? getErrorMessage(servicesQueryError as Error | { message?: string } | string, "Failed to load services")
+	const loading = (isLoadingRepoRecord || isLoadingServices);
+	const error = errorServices
+		? getErrorMessage(errorServices as Error | { message?: string } | string, "Failed to load services")
 		: null;
 
-	const repoDeploymentsFromStore = React.useMemo(() => {
-		if (!repo) return [];
-		return deployments.filter((deployment) => {
-			const deploymentUrl = normalizeRepoUrl(deployment.repoUrl ?? "");
-			if (deploymentUrl) {
-				return deploymentUrl === repoUrl;
-			}
-			return deployment.repoName === repo.name;
-		});
-	}, [deployments, repo, repoUrl]);
-
-	const { data: repoDeploymentsData } = useQuery({
-		queryKey: ["repo-deployments", repo?.full_name ?? repoFullName],
-		enabled: false,
-		queryFn: async () => {
-			if (!repo) return [];
-			return fetchRepoDeploymentsGraphql(repo.full_name);
-		},
-	});
-
-	const startDeploymentsLoad = React.useCallback(() => {
-		if (!repo || deploymentsLoadStartedRef.current) return;
-		deploymentsLoadStartedRef.current = true;
-		void queryClient.fetchQuery({
-			queryKey: ["repo-deployments", repo.full_name],
-			queryFn: async () => fetchRepoDeploymentsGraphql(repo.full_name),
-		});
-	}, [queryClient, repo]);
-
-	React.useEffect(() => {
-		if (!repo || repoDeploymentsData === undefined) return () => {};
-		syncRepoDeployments(repo.full_name, repoDeploymentsData);
-		return () => {};
-	}, [repo, repoDeploymentsData, syncRepoDeployments]);
-
-	const repoDeployments = repoDeploymentsFromStore;
-
 	const activeService = React.useMemo<DetectedServiceInfo | null>(() => {
-		if (activeRepo?.full_name?.toLowerCase() !== routeRepoLower) return null;
-		if (!storeActiveService) return null;
-		// "Deploy all on one instance" sets activeServiceName to "."; that row is not in detected services.
-		if (storeActiveService === "." && services.length > 0) {
+		if (!serviceName) return null;
+		if (serviceName === "." && services.length > 0) {
 			return { name: ".", path: ".", language: "unknown", deployMode: "container" };
 		}
-		return services.find((svc: DetectedServiceInfo) => svc.name === storeActiveService) ?? null;
-	}, [activeRepo, routeRepoLower, services, storeActiveService]);
+		return services.find((svc: DetectedServiceInfo) => svc.name === serviceName) ?? null;
+	}, [repo, services, serviceName]);
 
-	const scheduleLazyDeploymentFetch = React.useCallback(() => {
-		if (!repo || deploymentsLoadStartedRef.current) return;
-		if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-			const idleWindow = window as Window & {
-				requestIdleCallback?: (callback: () => void) => number;
-			};
-			idleWindow.requestIdleCallback?.(() => {
-				startDeploymentsLoad();
-			});
-			return;
-		}
-		setTimeout(() => {
-			startDeploymentsLoad();
-		}, 0);
-	}, [repo, startDeploymentsLoad]);
-
-	React.useEffect(() => {
-		scheduleLazyDeploymentFetch();
-	}, [scheduleLazyDeploymentFetch]);
-
-	React.useEffect(() => {
-		if (!repo) return () => {};
-		if (activeRepo?.full_name?.toLowerCase() !== repo.full_name.toLowerCase()) {
-			setActiveRepo(repo as repoType);
-		}
-		startDeploymentsLoad();
-		return () => {};
-	}, [activeRepo, repo, setActiveRepo, startDeploymentsLoad]);
-
-	React.useEffect(() => {
-		setActiveServiceName(null);
-	}, [routeRepoLower, setActiveServiceName]);
-
-	React.useEffect(() => {
-		return () => {
-			setActiveServiceName(null);
-			setActiveRepo(null);
-		};
-	}, [setActiveRepo, setActiveServiceName]);
 
 	const openWorkspaceForService = React.useCallback(async (svc: DetectedServiceInfo) => {
-		const normalizedServiceName =
-			svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
+		const normalizedServiceName = svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
+		const existingDeployment = repoDeployments.find(dep => dep.serviceName == normalizedServiceName);
 
-		let deploymentsForRepo = repoDeployments;
-		if (repo && repoDeployments.length === 0) {
-			try {
-				const fetchedDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
-				syncRepoDeployments(repo.full_name, fetchedDeployments);
-				deploymentsForRepo = fetchedDeployments;
-			} catch {
-				// Non-blocking: we can still open the workspace using local state.
-			}
+		if(!repo) {
+			toast.error("An error occured. Refresh the page and try again.")
+			return
 		}
 
-		// Ensure a deployment row exists before entering DeployWorkspace.
-		// (useActiveDeployment can synthesize a draft locally, but we want an immediate persisted record.)
-		const existingDeployment = repo
-			? getDeploymentForService(deploymentsForRepo, repo.html_url, normalizedServiceName, repo.name)
-			: null;
-
-		if (repo && !existingDeployment) {
-			try {
-				await updateDeploymentById({
-					repoName: repo.name,
-					serviceName: normalizedServiceName,
-					repoUrl: repo.html_url,
-					branch: repo.default_branch ?? "main",
-					hostedSubdomain: generateDefaultHostedSubdomain(repo.name),
-					status: "didnt_deploy",
-					cloudProvider: "aws",
-					deploymentTarget: "ecs",
-					region: process.env.NEXT_PUBLIC_AWS_REGION || config.AWS_REGION || "us-west-2",
-				});
-			} catch (e) {
-				// Non-blocking: still allow the workspace to open using the local draft deployment.
-				toast.error(getErrorMessage(e as Error, "Failed to create deployment"));
-			}
-		} else if (
-			repo &&
-			existingDeployment &&
-			!normalizeHostedSubdomain(existingDeployment.hostedSubdomain)
-		) {
-			try {
-				await updateDeploymentById({
-					repoName: repo.name,
-					serviceName: normalizedServiceName,
-					hostedSubdomain: generateDefaultHostedSubdomain(repo.name),
-				});
-			} catch {
-				// Non-blocking: local draft still gets a generated subdomain via useActiveDeployment.
-			}
+		if(!existingDeployment) {
+			const newDeployment = createDefaultDeployment(repoName, normalizedServiceName, repoUrl, repo.default_branch)
+			updateDeploymentById(newDeployment);
 		}
-
-		if (repo) {
-			setActiveRepo(repo as repoType);
-		}
-		startDeploymentsLoad();
 		setActiveServiceName(normalizedServiceName);
-	}, [
-		repo,
-		repoDeployments,
-		services,
-		setActiveRepo,
-		setActiveServiceName,
-		startDeploymentsLoad,
-		syncRepoDeployments,
-		updateDeploymentById,
-	]);
+	}, [ repo, repoDeployments, services, setActiveRepo, setActiveServiceName ]);
 
 	return {
 		repo,
 		repoUrl,
-		isLoadingRepo,
-		repoNotFound,
 		activeService,
 		mobileWorkspaceNavOpen,
 		setMobileWorkspaceNavOpen,

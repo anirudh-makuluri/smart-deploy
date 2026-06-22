@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { DeployConfig, RepoServicesRecord } from "@/app/types";
+import type { DeployConfig, RepoRecord } from "@/app/types";
 import { countDeployedServicesForRepo, getDeploymentForService } from "@/lib/utils";
 
-function makeRepoRecord(overrides: Partial<RepoServicesRecord> = {}): RepoServicesRecord {
+function makeRepoRecord(overrides: Partial<RepoRecord> = {}): RepoRecord {
 	return {
 		repo_url: "https://github.com/acme/shop",
 		branch: "main",

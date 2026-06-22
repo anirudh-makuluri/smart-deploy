@@ -53,8 +53,7 @@ export function useDeployWorkspace() {
 	const serviceName = useAppData((s) => s.activeServiceName);
 	const isLoading = useAppData((s) => s.isLoading);
 	const fetchRepoDeployments = useAppData((s) => s.fetchRepoDeployments);
-	const getDetectedRepoCache = useAppData((s) => s.getDetectedRepoCache);
-	const repoServices = useAppData((s) => s.repoServices);
+	const repoRecords = useAppData((s) => s.repoRecords);
 	const { data: session } = authClient.useSession();
 	const posthog = usePostHog();
 	const repoName = activeRepo?.name ?? "";
@@ -87,32 +86,23 @@ export function useDeployWorkspace() {
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			dispatch({ type: "set_deploying", value: false });
-			const finalStatus =
-				typeof p.finalStatus === "string" && p.finalStatus
-					? p.finalStatus
-					: (p.success ? "running" : "failed");
-			const url = p.customUrl || p.deployUrl;
+			const finalStatus = p.finalStatus;
+			//TODO: REPLACE WITH THE CONFIG DOMAIN
+			const url = `https://${p.hosted_subdomain}.smart-deploy.xyz`;
 			if (p.success) {
-				if (p.rolledBack) {
-					toast.success("Rollback successful", {
-						description: url ? `Restored release at ${url}` : "The previous release is now running.",
-						duration: 8000,
-					});
-				} else {
-					toast.success("Deployment successful", {
-						description: url ? `Live at ${url}` : "Your application is now running.",
-						duration: 8000,
-					});
-				}
+				toast.success("Deployment successful", {
+					description: url ? `Live at ${url}` : "Your application is now running.",
+					duration: 8000,
+				});
 			} else {
-				toast.error(p.rolledBack ? "Rollback failed" : "Deployment failed", {
+				toast.error("Deployment failed", {
 					description: p.error || "Check the deploy logs for details.",
 					duration: 10000,
 				});
 			}
 
 			if (repoName && serviceName) {
-				const hostedFromDns = p.customUrl ? subdomainFromHostedUrl(p.customUrl) : null;
+				const hostedFromDns = p.hosted_subdomain
 				void updateDeploymentById({
 					repoName,
 					serviceName,
@@ -136,7 +126,7 @@ export function useDeployWorkspace() {
 		[deployment.branch, defaultBranch]
 	);
 
-	const { steps, sendDeployConfig, sendRollbackRequest, deployConfigRef, liveDeployConfig, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
+	const { sendDeployConfig, liveDeployConfig, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } =
 		useWorkerWebSocket();
 
 	React.useEffect(() => {
@@ -201,16 +191,15 @@ export function useDeployWorkspace() {
 			const svc = list?.find((s) => s.name === serviceName);
 			return repoRelativeServicePath(svc?.path);
 		};
-		const cached = fromList(getDetectedRepoCache(repoUrl, defaultBranch)?.services);
-		if (cached) return cached;
+
 		const norm = normalizeRepoUrl(repoUrl);
-		const record = repoServices.find(
+		const record = repoRecords.find(
 			(r) =>
 				normalizeRepoUrl(r.repo_url) === norm &&
 				(defaultBranch ? r.branch === defaultBranch : true)
 		);
 		return fromList(record?.services);
-	}, [defaultBranch, repoUrl, serviceName, getDetectedRepoCache, repoServices]);
+	}, [defaultBranch, repoUrl, serviceName, repoRecords]);
 
 	const effectiveScanResults = React.useMemo(
 		() => (ui.scanResults || deployment.scanResults || null),
@@ -580,45 +569,6 @@ export function useDeployWorkspace() {
 		dispatch({ type: "set_show_rollback_confirm", value: true });
 	}, []);
 
-	const handleRollbackDeployment = React.useCallback(async () => {
-		if (!deployment.repoName || !deployment.serviceName || !ui.rollbackEntry || ui.isChangingDeploymentState || deploymentInProgress) return;
-
-		dispatch({ type: "set_changing_deployment_state", value: true });
-		try {
-			let githubToken: string | null = null;
-			try {
-				const res = await fetch("/api/github/access-token", { method: "GET" });
-				if (res.ok) {
-					const payload = (await res.json()) as { token?: string };
-					githubToken = typeof payload.token === "string" && payload.token.trim() ? payload.token.trim() : null;
-				}
-			} catch {
-				// ignore; handled below
-			}
-
-			if (!githubToken) {
-				toast.error("GitHub is not connected. Sign in with GitHub to rollback.");
-				return;
-			}
-
-			await updateDeploymentById({
-				repoName: deployment.repoName,
-				serviceName: deployment.serviceName,
-				repoUrl: deployment.repoUrl || repoUrl || "",
-				status: transitionDeploymentStatus(effectiveDeploymentStatus, "rollback_requested"),
-			});
-			sendRollbackRequest(deployment, ui.rollbackEntry.id, githubToken, session?.user?.id);
-			setActiveSection("logs");
-			dispatch({ type: "set_show_rollback_confirm", value: false });
-			dispatch({ type: "set_rollback_entry", value: null });
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to start rollback";
-			toast.error(message);
-		} finally {
-			dispatch({ type: "set_changing_deployment_state", value: false });
-		}
-	}, [deployment, deploymentInProgress, effectiveDeploymentStatus, repoUrl, sendRollbackRequest, session, setActiveSection, ui.isChangingDeploymentState, ui.rollbackEntry, updateDeploymentById]);
-
 	const handleScanProgressComplete = React.useCallback((data: SDArtifactsResponse) => {
 		dispatch({ type: "set_scan_duration", value: Date.now() - scanStartTimeRef.current });
 		dispatch({ type: "set_scan_results", value: data });
@@ -690,8 +640,6 @@ export function useDeployWorkspace() {
 		serviceLogs,
 		effectiveDeployStatus,
 		deployError,
-		steps,
-		deployConfigRef,
 		liveDeployConfig,
 		isRefreshingPreview,
 		pauseResumeDialogTitle,
@@ -713,7 +661,6 @@ export function useDeployWorkspace() {
 		handleConfirmRejectScan,
 		handleDeleteDeployment,
 		handlePauseResumeDeployment,
-		handleRollbackDeployment,
 	};
 }
 

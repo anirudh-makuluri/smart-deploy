@@ -139,7 +139,7 @@ export default function DashboardRepositoriesView({
 							<div className="flex items-center gap-3 min-w-0">
 								<LanguageIcon language={repo.language} />
 								<div className="min-w-0">
-									<p className="font-semibold text-foreground truncate">{repo.full_name}</p>
+									<p className="font-semibold text-foreground truncate">{repo.name}</p>
 									{repo.latest_commit ? (
 										<p className="text-sm text-muted-foreground truncate mt-1">{repo.latest_commit.message}</p>
 									) : null}

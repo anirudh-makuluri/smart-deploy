@@ -54,7 +54,7 @@ async function getSnapshotFromHistory(repoName: string, serviceName: string, use
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.0.1"
+const version = "0.0.2"
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 type AuthenticatedSocket = WebSocket & {
@@ -198,33 +198,6 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 				case "service_logs":
 					serviceLogs(response.payload, ws);
 					break;
-				case "get_deploy_logs": {
-					const { repoName, serviceName } = response.payload ?? {};
-					const userID = ws.authUserID;
-					if (!repoName || !serviceName) {
-						if (ws?.readyState === 1) {
-							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "repoName and serviceName required", time: new Date().toISOString() } }));
-						}
-						break;
-					}
-					let snapshot = deployLogsStore.getSnapshot(userID, repoName, serviceName);
-					if (!snapshot) {
-						snapshot = await getSnapshotFromHistory(repoName, serviceName, userID);
-					}
-					const time = new Date().toISOString();
-					if (snapshot) {
-						if (ws?.readyState === 1) {
-							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { ...snapshot, time } }));
-						}
-						deployLogsStore.addSubscriber(userID, repoName, serviceName, ws);
-					} else if (ws?.readyState === 1) {
-						ws.send(JSON.stringify({
-							type: "deploy_logs_snapshot",
-							payload: { steps: [], status: "not-started", error: null, time },
-						}));
-					}
-					break;
-				}
 				default:
 					break;
 			}
