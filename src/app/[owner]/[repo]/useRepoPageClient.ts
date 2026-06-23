@@ -204,7 +204,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 
 		if(!existingDeployment) {
 			const newDeployment = createDefaultDeployment(repoName, normalizedServiceName, repoUrl, repo.default_branch)
-			updateDeploymentById(newDeployment);
+			await updateDeploymentById(newDeployment);
 		}
 		setActiveServiceName(normalizedServiceName);
 	}, [repo, repoDeployments, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);

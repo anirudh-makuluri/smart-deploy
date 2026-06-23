@@ -24,6 +24,10 @@ export type AppOverviewBenchmarkResult = {
 	graphqlAverageMs: number;
 };
 
+function hasOwnKey<T extends object>(obj: T, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 async function graphQLRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
 	const res = await fetch("/api/graphql", {
 		method: "POST",
@@ -277,8 +281,43 @@ export async function fetchRepoRecords(): Promise<RepoRecord[]> {
 	return data.repoRecords;
 }
 
+function toDeployConfigInput(config: DeployConfig): Record<string, unknown> {
+	const input: Record<string, unknown> = {
+		repoName: config.repoName,
+		serviceName: config.serviceName,
+	};
+
+	const optionalKeys: Array<keyof DeployConfig> = [
+		"id",
+		"repoUrl",
+		"branch",
+		"responseId",
+		"commitSha",
+		"hostedSubdomain",
+		"screenshotUrl",
+		"status",
+		"firstDeployment",
+		"lastDeployment",
+		"revision",
+		"cloudProvider",
+		"deploymentTarget",
+		"region",
+		"secretsArn",
+		"cloudResources",
+		"scanResults",
+	];
+
+	for (const key of optionalKeys) {
+		if (hasOwnKey(config, key)) {
+			input[key] = config[key];
+		}
+	}
+
+	return input;
+}
+
 export async function updateDeployment(config: DeployConfig): Promise<void> {
-	await graphQLRequest(UPDATE_DEPLOYMENT_MUTATION, { config });
+	await graphQLRequest(UPDATE_DEPLOYMENT_MUTATION, { config: toDeployConfigInput(config) });
 }
 
 /** Persist sd-artifacts analyze output (analysis_responses + deployments.response_id). */
