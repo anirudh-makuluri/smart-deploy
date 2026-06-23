@@ -272,19 +272,19 @@ export const useAppData = create<AppState>((set, get) => ({
 			dep.repoName === partial.repoName && dep.serviceName === partial.serviceName;
 
 		const existingIndex = updatedList.findIndex(matchKey);
-		let existing : DeployConfig | {} = {}
-		if(existingIndex != -1) {
-			existing = updatedList[existingIndex]
-		}
+		const existing = existingIndex !== -1 ? updatedList[existingIndex] : {};
 
 		const merged: DeployConfig = withDeployInfraDefaults({
 			...existing,
 			...partial,
 		} as DeployConfig);
 
-		updatedList[existingIndex] = merged;
+		const nextDeployments =
+			existingIndex === -1
+				? [...updatedList, merged]
+				: updatedList.map((deployment, index) => (index === existingIndex ? merged : deployment));
 
-		set({ deployments: mergeDeploymentLists([], updatedList) });
+		set({ deployments: mergeDeploymentLists([], nextDeployments) });
 	},
 
 	removeDeployment: (repoName: string, serviceName: string) => {

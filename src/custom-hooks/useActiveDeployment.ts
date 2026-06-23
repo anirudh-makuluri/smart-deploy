@@ -1,4 +1,4 @@
-import { DeployConfig, DetectedServiceInfo } from "@/app/types";
+import { DeployConfig, repoType } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import config from "@/config";
 import { getDeploymentForService } from "@/lib/utils";
@@ -34,15 +34,13 @@ export function createDefaultDeployment(
 	});
 }
 
-export function useActiveDeployment(): DeployConfig {
-	const activeRepo = useAppData((s) => s.activeRepo);
-	const activeServiceName = useAppData((s) => s.activeServiceName);
-	const deployments = useAppData((s) => s.deployments);
-
-	if (!activeRepo || !activeServiceName) {
-		return createDefaultDeployment("", "", "", "");
-	}
-
+export function resolveActiveDeployment(args: {
+	activeRepo: repoType | null;
+	activeServiceName: string | null;
+	deployments: DeployConfig[];
+}): DeployConfig | null {
+	const { activeRepo, activeServiceName, deployments } = args;
+	if (!activeRepo || !activeServiceName) return null;
 	const found = getDeploymentForService(
 		deployments,
 		activeRepo.html_url,
@@ -50,12 +48,23 @@ export function useActiveDeployment(): DeployConfig {
 		activeRepo.name
 	);
 
-	if (found) return withDeployInfraDefaults(found);
+	return found ? withDeployInfraDefaults(found) : null;
+}
 
-	return createDefaultDeployment(
-		activeRepo.name,
+export function useActiveDeployment(): DeployConfig {
+	const activeRepo = useAppData((s) => s.activeRepo);
+	const activeServiceName = useAppData((s) => s.activeServiceName);
+	const deployments = useAppData((s) => s.deployments);
+
+	const deployment = resolveActiveDeployment({
+		activeRepo,
 		activeServiceName,
-		activeRepo.html_url,
-		activeRepo.default_branch
-	);
+		deployments,
+	});
+
+	if (!deployment) {
+		throw new Error("useActiveDeployment requires an active repo, service name, and deployment");
+	}
+
+	return deployment;
 }

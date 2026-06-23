@@ -9,6 +9,7 @@ export type DeployCompleteWsPayload = {
 	deploymentTarget: DeploymentTarget;
 	finalStatus: DeployConfig["status"];
 	cloudResources: CloudResources;
+	rolledBack: boolean; //TODO: REMOVE THIS
 	error?: string;
 };
 
@@ -42,6 +43,24 @@ function getWebSocketCloseMessage(event: CloseEvent) {
 	}
 
 	return `Worker connection closed (code ${event.code || "unknown"}).`;
+}
+
+export function getWebSocketUrl(): string {
+	return process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4001";
+}
+
+export function getWebSocketHealthUrl(): string {
+	const wsUrl = new URL(getWebSocketUrl());
+	wsUrl.protocol = wsUrl.protocol === "wss:" ? "https:" : "http:";
+	wsUrl.pathname = "/health";
+	wsUrl.search = "";
+	return wsUrl.toString();
+}
+
+export function getAuthenticatedWebSocketHealthUrl(authToken: string): string {
+	const wsUrl = new URL(getWebSocketUrl());
+	wsUrl.searchParams.set("auth", authToken);
+	return wsUrl.toString();
 }
 
 export async function fetchWebSocketAuthToken(): Promise<string> {
@@ -132,10 +151,8 @@ export function useWorkerWebSocketSession({
 		setSocketStatus("connecting");
 		void (async () => {
 			try {
-				const wsBaseUrl = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4001"
 				const authToken = await fetchWebSocketAuthToken();
-				const wsUrl = new URL(wsBaseUrl);
-				wsUrl.searchParams.set("auth", authToken);
+				const wsUrl = new URL(getAuthenticatedWebSocketHealthUrl(authToken));
 
 				const ws = new WebSocket(wsUrl);
 				wsRef.current = ws;

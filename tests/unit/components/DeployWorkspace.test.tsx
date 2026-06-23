@@ -17,9 +17,10 @@ const getDetectedRepoCache = vi.fn(() => undefined);
 const setDetectedRepoCache = vi.fn();
 const setActiveRepo = vi.fn();
 const setActiveServiceName = vi.fn();
+const removeDeployment = vi.fn();
 const mockSendDeployConfig = vi.fn();
-const mockSendRollbackRequest = vi.fn();
 const mockControlDeployment = vi.fn();
+const mockDeleteDeployment = vi.fn();
 const mockFetchLatestCommit = vi.fn();
 
 let appState: Record<string, unknown> = {};
@@ -38,9 +39,13 @@ vi.mock("sonner", () => ({
 	},
 }));
 
-vi.mock("@/store/useAppData", () => ({
-	useAppData: (selector: (state: Record<string, unknown>) => unknown) => selector(appState),
-}));
+vi.mock("@/store/useAppData", () => {
+	const useAppDataMock = (selector: (state: Record<string, unknown>) => unknown) => selector(appState);
+	(useAppDataMock as typeof useAppDataMock & { getState: () => Record<string, unknown> }).getState = () => appState;
+	return {
+		useAppData: useAppDataMock,
+	};
+});
 
 vi.mock("@/components/WorkerWebSocketProvider", () => ({
 	useWorkerWebSocket: () => mockUseWorkerWebSocket(),
@@ -75,11 +80,20 @@ vi.mock("@/components/deploy-workspace/DeployWorkspaceMenu", () => ({
 	),
 }));
 vi.mock("@/components/deploy-workspace/DeployOverview", () => ({
-	default: ({ onPauseResumeDeployment, onRedeploy }: { onPauseResumeDeployment?: () => void; onRedeploy?: () => void }) => (
+	default: ({
+		onPauseResumeDeployment,
+		onRedeploy,
+		onDeleteDeployment,
+	}: {
+		onPauseResumeDeployment?: () => void;
+		onRedeploy?: () => void;
+		onDeleteDeployment?: () => void;
+	}) => (
 		<div>
 			<div>DeployOverview</div>
 			<button type="button" onClick={onPauseResumeDeployment}>PauseResume</button>
 			<button type="button" onClick={() => onRedeploy?.()}>Redeploy</button>
+			<button type="button" onClick={() => onDeleteDeployment?.()}>DeleteDeployment</button>
 		</div>
 	),
 }));
@@ -114,7 +128,7 @@ vi.mock("@/components/ConfirmDialog", () => ({
 
 vi.mock("@/lib/graphqlClient", () => ({
 	controlDeployment: (...args: unknown[]) => mockControlDeployment(...args),
-	deleteDeployment: vi.fn(),
+	deleteDeployment: (...args: unknown[]) => mockDeleteDeployment(...args),
 	fetchLatestCommit: (...args: unknown[]) => mockFetchLatestCommit(...args),
 	prefillInfra: vi.fn(),
 }));
@@ -151,7 +165,6 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: mockSendDeployConfig,
-			sendRollbackRequest: mockSendRollbackRequest,
 			deployConfigRef: { current: null },
 			deployStatus: "not-started",
 			deployError: null,
@@ -161,6 +174,16 @@ describe("DeployWorkspace", () => {
 		});
 		mockFetchLatestCommit.mockResolvedValue(null);
 		mockControlDeployment.mockResolvedValue({ ok: true });
+		mockDeleteDeployment.mockResolvedValue(undefined);
+		removeDeployment.mockImplementation((repoName: string, serviceName: string) => {
+			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
+			appState = {
+				...appState,
+				deployments: deployments.filter(
+					(dep) => dep.repoName !== repoName || dep.serviceName !== serviceName
+				),
+			};
+		});
 		updateDeploymentById.mockImplementation(async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
 			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
 			const next = deployments.find(
@@ -187,6 +210,8 @@ describe("DeployWorkspace", () => {
 			setDetectedRepoCache,
 			setActiveRepo,
 			setActiveServiceName,
+			removeDeployment,
+			repoRecords: [],
 			repoServices: [],
 		};
 		global.fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -270,7 +295,6 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),
-			sendRollbackRequest: vi.fn(),
 			deployConfigRef: { current: null },
 			deployStatus: "success",
 			deployError: null,
@@ -281,8 +305,7 @@ describe("DeployWorkspace", () => {
 					queueMicrotask(() => {
 						handler({
 							success: true,
-							deployUrl: "https://web.example.com",
-							customUrl: "https://web.smart-deploy.xyz",
+							hosted_subdomain: "web",
 						});
 					});
 				}
@@ -315,7 +338,6 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: vi.fn(),
-			sendRollbackRequest: vi.fn(),
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Build failed",
@@ -359,7 +381,6 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: mockSendDeployConfig,
-			sendRollbackRequest: mockSendRollbackRequest,
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Verification failed",
@@ -372,8 +393,7 @@ describe("DeployWorkspace", () => {
 							success: false,
 							error: "Deployment verification failed. Rolled back automatically to abc1234.",
 							finalStatus: "running",
-							deployUrl: "https://restored.example.com",
-							customUrl: "https://restored.smart-deploy.xyz",
+							hosted_subdomain: "restored",
 						});
 					});
 				}
@@ -500,18 +520,52 @@ describe("DeployWorkspace", () => {
 				expect.objectContaining({
 					repoName: "smart-deploy",
 					serviceName: "web",
-					status: "rolling_back",
+					status: "deploying",
+					commitSha: "abcdef123456",
 				})
 			);
 		});
-		expect(mockSendRollbackRequest).toHaveBeenCalledWith(
+		expect(mockSendDeployConfig).toHaveBeenCalledWith(
 			expect.objectContaining({
 				repoName: "smart-deploy",
 				serviceName: "web",
+				commitSha: "abcdef123456",
+				status: "deploying",
 			}),
-			"hist-1",
 			"gh-token",
 			"u-1"
 		);
+	});
+
+	it("restores a draft with a generated hosted subdomain after delete", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{
+				...baseDeployment,
+				hostedSubdomain: "current-subdomain",
+				scanResults: { dockerfiles: { Dockerfile: "FROM node:20" }, nginx_conf: "events {}" },
+			}],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+
+		fireEvent.click(within(view.container).getByText("DeleteDeployment"));
+		fireEvent.click(screen.getByRole("button", { name: "Delete Deployment" }));
+
+		await waitFor(() => {
+			expect(mockDeleteDeployment).toHaveBeenCalledWith("smart-deploy", "web");
+		});
+		await waitFor(() => {
+			expect(updateDeploymentById).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "didnt_deploy",
+					hostedSubdomain: expect.stringMatching(/^smart-deploy[a-z0-9]{5}$/),
+				})
+			);
+		});
 	});
 });

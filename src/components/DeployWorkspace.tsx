@@ -6,6 +6,7 @@ import DeployWorkspaceDeployButton from "@/components/deploy-workspace/DeployWor
 import DeployWorkspaceDialogs from "@/components/deploy-workspace/DeployWorkspaceDialogs";
 import { useDeployWorkspace } from "@/components/deploy-workspace/useDeployWorkspace";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useAppData } from "@/store/useAppData";
 
 export type DeployWorkspaceProps = {
 	mobileNavOpen?: boolean;
@@ -24,11 +25,14 @@ export default function DeployWorkspace({
 	mobileNavOpen = false,
 	onMobileNavOpenChange,
 }: DeployWorkspaceProps = {}) {
-	const workspace = useDeployWorkspace();
+	const activeRepo = useAppData((s) => s.activeRepo);
+	const activeServiceName = useAppData((s) => s.activeServiceName);
 
-	if (workspace.missingService || workspace.repoNotFound) {
+	if (!activeRepo || !activeServiceName) {
 		return <ServiceNotFound />;
 	}
+
+	const workspace = useDeployWorkspace();
 
 	const {
 		ui,
@@ -77,6 +81,7 @@ export default function DeployWorkspace({
 		handleConfirmRejectScan,
 		handleDeleteDeployment,
 		handlePauseResumeDeployment,
+		handleConfirmRollbackDeployment,
 	} = workspace;
 
 	const deployAction = (
@@ -214,7 +219,7 @@ export default function DeployWorkspace({
 				effectiveDeploymentStatus={effectiveDeploymentStatus}
 				showRollbackConfirm={ui.showRollbackConfirm}
 				onRollbackConfirmOpenChange={(open) => dispatch({ type: "set_show_rollback_confirm", value: open })}
-				onConfirmRollbackDeployment={() => {}} //TODO: REMOVE THIS FUNC
+				onConfirmRollbackDeployment={() => void handleConfirmRollbackDeployment()}
 				rollbackCommitSha={ui.rollbackEntry?.commitSha}
 			/>
 		</div>

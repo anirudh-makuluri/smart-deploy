@@ -14,8 +14,6 @@ import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace, Gi
 import { detectMultiService, discoverServiceCatalog, sanitizeFolderServiceId } from "@/lib/multiServiceDetector";
 import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
-import { getSubnetIds } from "@/lib/aws/awsHelpers";
-import { configureAlb } from "@/lib/aws/handleEC2";
 import { lookupRoute53Subdomain } from "@/lib/route53Dns";
 import { getDeploymentBaseDomain, sanitizeSubdomain } from "@/lib/dnsUtils";
 import {
@@ -26,9 +24,8 @@ import {
 	configureCustomDomainForDeployment,
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
-import config from "@/config";
 import type { DetectedServiceInfo } from "@/app/types";
-import { subdomainFromHostedUrl, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { subdomainFromHostedUrl, hostedSubdomainOrDefault, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { isEcsDeployment } from "@/lib/cloudResources";
 import { getDeploymentBaseDomain as getBaseDomain } from "@/lib/dnsUtils";
 import fs from "fs";
@@ -504,7 +501,9 @@ export async function updateCustomDomain(
 			throw new Error("Unauthorized: deployment does not belong to you");
 		}
 
-		const hostedSubdomain = formattedCustomUrl ? subdomainFromHostedUrl(formattedCustomUrl) : null;
+		const hostedSubdomain = formattedCustomUrl
+			? subdomainFromHostedUrl(formattedCustomUrl)
+			: hostedSubdomainOrDefault(repoNameTrimmed, deployment.hostedSubdomain);
 		const previousHostedUrl =
 			hostedUrlFromSubdomain(deployment.hostedSubdomain) ??
 			(deployment.hostedSubdomain

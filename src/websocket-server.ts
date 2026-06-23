@@ -3,7 +3,7 @@ dotenv.config();
 
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
-import { deploy, rollback, serviceLogs } from "./websocket-types";
+import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { dbHelper } from "./db-helper";
 import { getSupabaseServer } from "./lib/supabaseServer";
@@ -118,11 +118,29 @@ const server = http.createServer((req, res) => {
 });
 const wss = new WebSocketServer({ server });
 
-function sendDeployComplete(ws: any, success: boolean, error?: string) {
+function sendDeployComplete(ws: any, success: boolean, hostedSubdomain: string, error?: string) {
 	if (ws?.readyState === 1) {
+		const payload: Record<string, unknown> = {
+			success,
+			time: new Date().toISOString(),
+			hosted_subdomain: hostedSubdomain,
+		};
+		if (error) payload.error = error;
 		ws.send(JSON.stringify({
 			type: "deploy_complete",
-			payload: { success, deployUrl: null, error: error ?? null, time: new Date().toISOString() },
+			payload,
+		}));
+	}
+}
+
+function sendSocketError(ws: any, error?: string) {
+	if (ws?.readyState === 1) {
+		ws.send(JSON.stringify({
+			type: "worker_error",
+			payload: {
+				error: error ?? "Request failed",
+				time: new Date().toISOString(),
+			},
 		}));
 	}
 }
@@ -181,18 +199,13 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 						}, ws);
 					} catch (err: any) {
 						console.error("Deploy error:", err);
-						sendDeployComplete(ws, false, err?.message ?? "Deployment failed");
-					}
-					break;
-				case "rollback":
-					try {
-						await rollback({
-							...response.payload,
-							userID: ws.authUserID,
-						}, ws);
-					} catch (err: any) {
-						console.error("Rollback error:", err);
-						sendDeployComplete(ws, false, err?.message ?? "Rollback failed");
+						const hostedSubdomain = response.payload.hostedSubdomain
+						sendDeployComplete(
+							ws,
+							false,
+							hostedSubdomain,
+							err?.message ?? "Deployment failed"
+						);
 					}
 					break;
 				case "service_logs":
@@ -202,8 +215,7 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 					break;
 			}
 		} catch (err: any) {
-			// JSON parse error or other sync error: send structured deploy_complete so client can show it
-			sendDeployComplete(ws, false, err?.message ?? "Request failed");
+			sendSocketError(ws, err?.message ?? "Request failed");
 		}
 	});
 

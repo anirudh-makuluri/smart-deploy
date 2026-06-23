@@ -15,7 +15,7 @@ import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
-import { useActiveDeployment } from "@/custom-hooks/useActiveDeployment";
+import { useActiveDeployment, createDefaultDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
 import {
 	DeployConfig,
@@ -27,7 +27,7 @@ import {
 } from "@/app/types";
 import { withDeployInfraDefaults } from "@/lib/deployInfraDefaults";
 import { isDeploymentDisabled, normalizeRepoUrl } from "@/lib/utils";
-import { subdomainFromHostedUrl } from "@/lib/hostedUrl";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import {
 	canManageRuntimeDeploymentStatus,
 	isDraftDeploymentStatus,
@@ -86,9 +86,9 @@ export function useDeployWorkspace() {
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			dispatch({ type: "set_deploying", value: false });
-			const finalStatus = p.finalStatus;
-			//TODO: REPLACE WITH THE CONFIG DOMAIN
-			const url = `https://${p.hosted_subdomain}.smart-deploy.xyz`;
+			const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
+			const hostedSubdomain = p.hosted_subdomain?.trim() || null;
+			const url = hostedUrlFromSubdomain(hostedSubdomain);
 			if (p.success) {
 				toast.success("Deployment successful", {
 					description: url ? `Live at ${url}` : "Your application is now running.",
@@ -102,14 +102,13 @@ export function useDeployWorkspace() {
 			}
 
 			if (repoName && serviceName) {
-				const hostedFromDns = p.hosted_subdomain
 				void updateDeploymentById({
 					repoName,
 					serviceName,
 					repoUrl: deployment.repoUrl || repoUrl || "",
 					status: finalStatus,
 					lastDeployment: new Date().toISOString(),
-					...(finalStatus === "running" && hostedFromDns ? { hostedSubdomain: hostedFromDns } : {}),
+					...(finalStatus === "running" && hostedSubdomain ? { hostedSubdomain } : {}),
 					...(p.cloudResources != null ? { cloudResources: p.cloudResources } : {}),
 					...(p.deploymentTarget && {
 						deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
@@ -519,6 +518,19 @@ export function useDeployWorkspace() {
 		}
 	}, [canPauseResumeDeployment, deployment, pauseResumeAction, pauseResumeNextStatus, repoUrl, ui.isChangingDeploymentState, updateDeploymentById]);
 
+	const handleConfirmRollbackDeployment = React.useCallback(async () => {
+		const rollbackCommitSha = ui.rollbackEntry?.commitSha?.trim();
+		if (!rollbackCommitSha) {
+			toast.error("Cannot redeploy the selected release because its commit SHA is missing.");
+			return;
+		}
+		dispatch({ type: "set_show_rollback_confirm", value: false });
+		await handleDeploy(rollbackCommitSha);
+	}, [
+		handleDeploy,
+		ui.rollbackEntry?.commitSha,
+	]);
+
 	const handleDeleteDeployment = React.useCallback(async () => {
 		if (!deployment.repoName || !deployment.serviceName || ui.isChangingDeploymentState) return;
 
@@ -526,24 +538,18 @@ export function useDeployWorkspace() {
 		try {
 			const deletedScanResults = effectiveScanResults;
 			const draftDeployment = withDeployInfraDefaults({
-				id: `draft-${deployment.repoName}-${deployment.serviceName}`,
-				repoName: deployment.repoName,
-				serviceName: deployment.serviceName,
-				repoUrl: deployment.repoUrl,
-				branch: deployment.branch,
+				...createDefaultDeployment(
+					deployment.repoName,
+					deployment.serviceName,
+					deployment.repoUrl,
+					deployment.branch
+				),
 				responseId: deployment.responseId ?? null,
-				commitSha: null,
 				envVars: deployment.envVars ?? null,
-				hostedSubdomain: null,
-				screenshotUrl: null,
-				status: "didnt_deploy",
-				firstDeployment: null,
-				lastDeployment: null,
 				revision: 0,
 				cloudProvider: deployment.cloudProvider,
 				deploymentTarget: deployment.deploymentTarget,
 				region: deployment.region,
-				cloudResources: null,
 				scanResults: deletedScanResults ?? deployment.scanResults ?? {},
 			} as DeployConfig);
 			await deleteDeployment(deployment.repoName, deployment.serviceName);
@@ -661,6 +667,7 @@ export function useDeployWorkspace() {
 		handleConfirmRejectScan,
 		handleDeleteDeployment,
 		handlePauseResumeDeployment,
+		handleConfirmRollbackDeployment,
 	};
 }
 

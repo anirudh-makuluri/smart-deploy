@@ -14,20 +14,18 @@ export function useHeaderSystemHealth(): HeaderSystemHealth {
 	const artifactsHealth = useSystemHealth();
 
 	return React.useMemo((): HeaderSystemHealth => {
-		const workerOnline = workerWs.hasConnectedOnce || workerWs.socketStatus === "open";
+		const workerOnline = workerWs.socketStatus === "open";
 		const wsRow: SystemHealthService = {
 			name: "WebSocket server",
 			status: workerOnline ? "healthy" : "unavailable",
 			message:
 				workerWs.socketStatus === "open"
 					? "Connected to deploy worker"
-					: workerWs.hasConnectedOnce
-						? "Deploy worker connected"
-						: workerWs.socketStatus === "connecting"
-							? "Connecting to deploy worker…"
-							: workerWs.socketStatus === "closed"
-								? "Disconnected from deploy worker"
-								: "Deploy worker unreachable",
+					: workerWs.socketStatus === "connecting"
+						? "Connecting to deploy worker..."
+						: workerWs.socketStatus === "closed"
+							? "Disconnected from deploy worker"
+							: "Deploy worker unreachable",
 		};
 
 		const services: SystemHealthService[] = [wsRow, ...artifactsHealth.services];
@@ -48,7 +46,7 @@ export function useHeaderSystemHealth(): HeaderSystemHealth {
 		}
 
 		return { status: "degraded", message: "One or more services need attention", services };
-	}, [workerWs.hasConnectedOnce, workerWs.socketStatus, artifactsHealth]);
+	}, [workerWs.socketStatus, artifactsHealth]);
 }
 
 export function systemHealthStatusClass(status: SystemHealthStatus): string {
