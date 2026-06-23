@@ -80,6 +80,46 @@ export async function repoDeployments(
 }
 
 /**
+ * Query.repoRecord
+ * Returns a single detected record for a user repo
+ */
+export async function repoRecord(
+	_: unknown,
+	{ owner, repo }: { owner: string; repo: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("repoRecord", async () => {
+		const userID = requireUser(ctx);
+		const ownerTrimmed = String(owner ?? "").trim();
+		const repoTrimmed = String(repo ?? "").trim();
+
+		if (!ownerTrimmed || !repoTrimmed) {
+			throw new Error("Owner and repo are required");
+		}
+
+		const repoUrl = `https://github.com/${ownerTrimmed}/${repoTrimmed}`.replace(/\.git$/i, "");
+		const directResponse = await dbHelper.getRepoServicesByUrl(userID, repoUrl);
+		if (directResponse.error) throw new Error(String(directResponse.error));
+		if (directResponse.record) return directResponse.record;
+
+		// Fall back to a case-insensitive owner/repo match in case the URL casing differs.
+		const allRecordsResponse = await dbHelper.getUserRepoRecords(userID);
+		if (allRecordsResponse.error) throw new Error(String(allRecordsResponse.error));
+
+		const ownerLower = ownerTrimmed.toLowerCase();
+		const repoLower = repoTrimmed.toLowerCase();
+
+		return (
+			allRecordsResponse.records?.find(
+				(record) =>
+					record.repo_owner.toLowerCase() === ownerLower &&
+					record.repo_name.toLowerCase() === repoLower
+			) ?? null
+		);
+	});
+}
+
+/**
  * Query.repoRecords
  * Returns detected records for all user repos
  */

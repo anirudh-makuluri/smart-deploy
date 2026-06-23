@@ -7,7 +7,6 @@ import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { toast } from "sonner";
 import {
 	detectRepoServices,
-	fetchRepoRecords,
 	fetchRepoDeployments as fetchRepoDeploymentsGraphql,
 	addRepoServiceRoot,
 	type DetectServicesResult,
@@ -45,13 +44,11 @@ export function useRepoPageClient(owner: string, repoName: string) {
 
 	const [catalogBusy, setCatalogBusy] = React.useState(false);
 	const [mobileWorkspaceNavOpen, setMobileWorkspaceNavOpen] = React.useState(false);
-	const deploymentsLoadStartedRef = React.useRef(false);
 
-	const repoFullName = `${owner}/${repoName}`;
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
 
 	const services = React.useMemo(() => { return repoRecord?.services || [] }, [repoRecord]);
-	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments]);
+	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments, repoUrl]);
 
 	React.useEffect(() => {
 		return () => {
@@ -61,12 +58,13 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	}, [setActiveRepo, setActiveServiceName]);
 	
 	const { isLoading : isLoadingRepo } = useQuery({
-		queryKey: [`${owner}/${repoName}`],
+		queryKey: [`${owner}/${repoName}`, "repo"],
 		enabled: !repo,
 		staleTime: 60_000,
 		queryFn: async () => {
 			const resolved = await resolveRepo(owner, repoName);
 			setActiveRepo(resolved);
+			return resolved;
 		}
 	})
 
@@ -76,13 +74,14 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		staleTime: 60_000,
 		queryFn: async () => {
 			const record = await fetchRepoRecord(owner, repoName);
-			setActiveRepoRecord(record);			
+			setActiveRepoRecord(record);
+			return record;
 		},
 	});
 
 	const { isLoading: isLoadingServices, error: errorServices } = useQuery({
 		queryKey: [`${owner}/${repoName}`, "repo-services"],
-		enabled: repoRecord?.services.length == 0,
+		enabled: !isLoadingRepoRecord && (!repoRecord || repoRecord.services.length === 0),
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
@@ -97,6 +96,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			};
 
 			mergeRepoRecords([nextRecord]);
+			setActiveRepoRecord(nextRecord);
 			return nextRecord;
 		},
 	});
@@ -108,23 +108,24 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			if (!repo) return [];
 			const newDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
 			mergeDeployments(newDeployments);
+			return newDeployments
 		},
 	});
 
 	const applyCatalogResult = React.useCallback(
 		(data: DetectServicesResult) => {
 			const list = data.services ?? [];
-			mergeRepoRecords([
-				{
-					repo_url: repoUrl,
-					branch: repo?.default_branch ?? "",
-					repo_owner: owner,
-					repo_name: repoName,
-					is_monorepo: data.isMonorepo ?? false,
-					updated_at: new Date().toISOString(),
-					services: list,
-				},
-			]);
+			const nextRecord = {
+				repo_url: repoUrl,
+				branch: repo?.default_branch ?? "",
+				repo_owner: owner,
+				repo_name: repoName,
+				is_monorepo: data.isMonorepo ?? false,
+				updated_at: new Date().toISOString(),
+				services: list,
+			};
+			mergeRepoRecords([nextRecord]);
+			setActiveRepoRecord(nextRecord);
 			void queryClient.invalidateQueries({
 				queryKey: [`${owner}/${repoName}`, "repo-services"],
 			});
@@ -136,7 +137,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			repo,
 			owner,
 			repoName,
-			repoFullName,
+			setActiveRepoRecord,
 		]
 	);
 
@@ -178,7 +179,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		[catalogBusy, repoUrl, repo, applyCatalogResult]
 	);
 
-	const loading = (isLoadingRepoRecord || isLoadingServices);
+	const loading = (isLoadingRepoRecord || isLoadingServices || isLoadingRepo || isLoadingDeployments);
 	const error = errorServices
 		? getErrorMessage(errorServices as Error | { message?: string } | string, "Failed to load services")
 		: null;
@@ -189,7 +190,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			return { name: ".", path: ".", language: "unknown", deployMode: "container" };
 		}
 		return services.find((svc: DetectedServiceInfo) => svc.name === serviceName) ?? null;
-	}, [repo, services, serviceName]);
+	}, [services, serviceName]);
 
 
 	const openWorkspaceForService = React.useCallback(async (svc: DetectedServiceInfo) => {
@@ -206,8 +207,9 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			updateDeploymentById(newDeployment);
 		}
 		setActiveServiceName(normalizedServiceName);
-	}, [ repo, repoDeployments, services, setActiveRepo, setActiveServiceName ]);
-
+	}, [repo, repoDeployments, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);
+	
+	
 	return {
 		repo,
 		repoUrl,

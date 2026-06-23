@@ -331,6 +331,9 @@ export const typeDefs = `
     # Deployments for a specific repo
     repoDeployments(repoName: String!): [Deployment!]!
 
+    # Detected record for one repo
+    repoRecord(owner: String!, repo: String!): RepoRecords
+
     # Detected records for all user repos
     repoRecords: [RepoRecords!]!
 

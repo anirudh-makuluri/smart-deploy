@@ -155,25 +155,26 @@ const REPO_DEPLOYMENTS_QUERY = `
 `;
 
 const REPO_RECORD_QUERY = `
-	query RepoRecord {
-		repo_url
-		branch
-		repo_owner
-		repo_name
-		is_monorepo
-		updated_at
-		services {
-			name
-			path
-			language
-			framework
-			port
-			deployMode
-			serviceType
+	query RepoRecord($owner: String!, $repo: String!) {
+		repoRecord(owner: $owner, repo: $repo) {
+			repo_url
+			branch
+			repo_owner
+			repo_name
+			is_monorepo
+			updated_at
+			services {
+				name
+				path
+				language
+				framework
+				port
+				deployMode
+				serviceType
+			}
 		}
 	}
-
-`
+`;
 
 const REPO_RECORDS_QUERY = `
 	query RepoRecords {
@@ -266,8 +267,8 @@ export async function fetchRepoDeployments(repoName: string): Promise<DeployConf
 	return data.repoDeployments;
 }
 
-export async function fetchRepoRecord(owner: string, repoName: string): Promise<RepoRecord> {
-	const data = await graphQLRequest<{ repoRecord: RepoRecord }>(REPO_RECORD_QUERY, { owner, repoName });
+export async function fetchRepoRecord(owner: string, repoName: string): Promise<RepoRecord | null> {
+	const data = await graphQLRequest<{ repoRecord: RepoRecord | null }>(REPO_RECORD_QUERY, { owner, repo: repoName });
 	return data.repoRecord;
 }
 
