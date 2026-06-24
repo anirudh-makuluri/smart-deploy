@@ -75,6 +75,14 @@ When uncertain:
 
 ---
 
+## Important Code Terminology
+
+- Refer `src/app/types.ts` to know the variables in each type.
+- `RepoRecord` : This variable contains basic info of a repo and the services that were detected.
+- `repoType` : Contains the data which was retrieved from the GitHub api.
+- `DeployConfig` : The entire deployment data including the scan results. This should be the source of truth for a deployment.
+
+
 ## Code Style
 
 ### TypeScript
@@ -82,6 +90,8 @@ When uncertain:
 * Enable strict typing.
 * Avoid `any`.
 * Prefer explicit interfaces.
+* All the types must be capitalized.
+* Avoid `?`
 
 ### General
 

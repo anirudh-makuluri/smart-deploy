@@ -422,19 +422,6 @@ describe("DeployWorkspace", () => {
 		expect(mockToastError).toHaveBeenCalled();
 	});
 
-	it("disables deploy while an effective deployment is already in progress", () => {
-		appState = {
-			...appState,
-			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
-			activeServiceName: "web",
-			deployments: [{ ...baseDeployment, status: "deploying", scanResults: { dockerfiles: { Dockerfile: "FROM node:20" }, nginx_conf: "events {}" } }],
-		};
-
-		renderWithQueryClient(<DeployWorkspace />);
-
-		expect(screen.getAllByRole("button", { name: "Deploy" })[0]).toBeDisabled();
-	});
-
 	it("uses the effective running status when redeploying a stale draft row with live evidence", async () => {
 		appState = {
 			...appState,

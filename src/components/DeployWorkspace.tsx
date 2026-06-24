@@ -10,8 +10,8 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useAppData } from "@/store/useAppData";
 
 export type DeployWorkspaceProps = {
-	mobileNavOpen?: boolean;
-	onMobileNavOpenChange?: (open: boolean) => void;
+	mobileNavOpen: boolean;
+	onMobileNavOpenChange: (open: boolean) => void;
 };
 
 function ServiceNotFound() {
@@ -25,7 +25,7 @@ function ServiceNotFound() {
 function DeployWorkspaceContent({
 	mobileNavOpen = false,
 	onMobileNavOpenChange,
-}: DeployWorkspaceProps = {}) {
+}: DeployWorkspaceProps) {
 	const workspace = useDeployWorkspace();
 
 	const {
@@ -92,11 +92,6 @@ function DeployWorkspaceContent({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-background/30 text-foreground dot-grid-bg">
-			<div className="border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-10 transition-all">
-				<div className="mx-auto flex max-w-6xl items-center justify-end px-6 py-4 md:justify-end">
-					<div className="w-full max-w-[164px] md:hidden">{deployAction}</div>
-				</div>
-			</div>
 
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<aside
@@ -220,7 +215,7 @@ function DeployWorkspaceContent({
 	);
 }
 
-export default function DeployWorkspace(props: DeployWorkspaceProps = {}) {
+export default function DeployWorkspace(props: DeployWorkspaceProps) {
 	const activeRepo = useAppData((s) => s.activeRepo);
 	const activeServiceName = useAppData((s) => s.activeServiceName);
 	const deployments = useAppData((s) => s.deployments);

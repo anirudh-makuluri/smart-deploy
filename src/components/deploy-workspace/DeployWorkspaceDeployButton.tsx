@@ -40,7 +40,7 @@ export default function DeployWorkspaceDeployButton({
 				{!isSidebarCollapsed ? <span className="relative z-10">Deploy</span> : null}
 			</Button>
 			{disabled && tooltipMessage ? (
-				<div className={`absolute top-full mt-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isSidebarCollapsed ? "left-0" : "left-0 right-0"}`}>
+				<div className={`absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 ${isSidebarCollapsed ? "left-0" : "left-0 right-0"}`}>
 					<div className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap border border-destructive/20 text-center">
 						{tooltipMessage}
 					</div>
