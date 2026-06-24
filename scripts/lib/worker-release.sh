@@ -258,7 +258,8 @@ chmod +x /usr/local/bin/smart-deploy-worker-write-env
 
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
 
-cat >/etc/nginx/conf.d/smart-deploy-worker.conf <<'NGINX'
+if [[ ! -f /etc/nginx/conf.d/smart-deploy-worker.conf ]]; then
+	cat >/etc/nginx/conf.d/smart-deploy-worker.conf <<'NGINX'
 server {
   listen 80;
   server_name ${worker_dns_record};
@@ -275,6 +276,9 @@ server {
   }
 }
 NGINX
+else
+	echo "Preserving existing nginx worker config at /etc/nginx/conf.d/smart-deploy-worker.conf"
+fi
 
 nginx -t
 systemctl enable nginx

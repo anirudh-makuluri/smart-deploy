@@ -12,7 +12,7 @@ import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconcile
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.0.2";
+const version = "0.1.0";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 type AuthenticatedSocket = WebSocket & {
