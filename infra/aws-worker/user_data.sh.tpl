@@ -127,6 +127,7 @@ systemctl daemon-reload
 systemctl enable smart-deploy-worker
 systemctl start smart-deploy-worker
 
+if [[ ! -f /etc/nginx/conf.d/smart-deploy-worker.conf ]]; then
 cat >/etc/nginx/conf.d/smart-deploy-worker.conf <<'NGINX'
 server {
   listen 80;
@@ -144,6 +145,7 @@ server {
   }
 }
 NGINX
+fi
 
 nginx -t
 systemctl enable nginx
