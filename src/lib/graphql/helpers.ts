@@ -13,23 +13,15 @@ import {
 	ensureSharedAlb,
 	findTargetGroupArnByName,
 } from "@/lib/aws/awsHelpers";
-import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace } from "@/lib/githubRepoArchive";
-import { deleteDeploymentForUser, controlDeploymentForUser } from "@/lib/deploymentActions";
-import { getGithubRepos } from "@/github-helper";
-import { invalidateRepoCache, ensureUserAndRepos } from "@/lib/sessionHelpers";
+import { ensureUserAndRepos } from "@/lib/sessionHelpers";
 import { createWebSocketLogger } from "@/lib/websocketLogger";
 import { addRoute53DnsRecord } from "@/lib/route53Dns";
-import { getInitialEc2ServiceLogs } from "@/lib/aws/ec2ServiceLogs";
-import { dbHelper } from "@/db-helper";
-import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { classifyServiceForDetection } from "@/lib/serviceDetectionClassification";
 import { isEcsDeployment, isEcsCloudResources } from "@/lib/cloudResources";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import config from "@/config";
-import fs from "fs";
 import path from "path";
-import os from "os";
 
 export function githubHeaders(token: string): HeadersInit {
 	return {
@@ -246,7 +238,7 @@ async function configureCustomDomainForEcs(
 		throw new Error(`Unable to determine subnet IDs in VPC ${vpcId}.`);
 	}
 
-	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
+	const certificateArn = config.DEPLOYMENT_ACM_CERTIFICATE_ARN?.trim() || "";
 	const send = createWebSocketLogger(null);
 	const hostname = hostnameFromUrl(hostedUrlFromSubdomain(deployment.hostedSubdomain));
 	if (!hostname) {
@@ -286,9 +278,8 @@ async function configureCustomDomainForEcs(
 		throw new Error("Missing deployment URL for Route 53 DNS configuration.");
 	}
 
-	const result = await addRoute53DnsRecord(deployUrl, serviceName, {
+	const result = await addRoute53DnsRecord(deployUrl, deployment.hostedSubdomain, serviceName, {
 		deploymentTarget: "ecs",
-		previousCustomUrl,
 		sharedAlbDns: sharedAlbDns || null,
 		awsRegion: region,
 	});

@@ -7,7 +7,6 @@
 
 import { dbHelper } from "@/db-helper";
 import { ensureUserAndRepos } from "@/lib/sessionHelpers";
-import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { resolveDeploymentStatus } from "@/lib/deploymentStatus";
 import { GraphQLContext, requireUser, withTiming } from "../context";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
@@ -292,7 +291,7 @@ export async function session(
 
 /**
  * Query.serviceLogs
- * Fetches logs for a service (EC2 or GCP Cloud Run)
+ * Fetches logs for an AWS service
  */
 export async function serviceLogs(
 	_: unknown,
@@ -315,7 +314,6 @@ export async function serviceLogs(
 			throw new Error("serviceName is required");
 		}
 
-		// If deployment is EC2-backed, use SSM
 		if (repoNameStr) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameStr, serviceNameStr);
 			const deployConfig = deploymentRes.deployment;
@@ -339,15 +337,9 @@ export async function serviceLogs(
 			}
 		}
 
-		// Legacy GCP Cloud Run logs (no longer deployed; return empty)
-		const logs = (await getInitialLogs(serviceNameStr, limitNum)) as {
-			timestamp?: string;
-			message?: string;
-		}[];
-
 		return {
-			logs,
-			source: "gcp",
+			logs: [],
+			source: "ecs",
 		};
 	});
 }

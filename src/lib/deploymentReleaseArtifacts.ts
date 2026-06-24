@@ -63,10 +63,6 @@ export function isEcrImageReleaseArtifact(value: unknown): value is EcrImageRele
 	return isRecord(value) && value.kind === "ecr_image";
 }
 
-export function isLegacyEc2ConfigReleaseArtifact(value: unknown): boolean {
-	return isRecord(value) && value.kind === "ec2_config";
-}
-
 export function buildStaticSiteReleaseArtifact(args: {
 	deployConfig: DeployConfig;
 	region: string;

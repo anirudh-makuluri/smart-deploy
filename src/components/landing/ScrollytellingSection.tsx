@@ -79,7 +79,6 @@ const storyContext = {
 	serviceLabel: "api@smart-deploy",
 	repoSlug: "aniru/smart-deploy",
 	branch: "main",
-	instanceType: "t3.small",
 	region: "us-west-2",
 	customDomain: "my-app.smart-deploy.xyz",
 	deploymentTarget: "AWS / ECS",
@@ -250,9 +249,9 @@ function SetupMock() {
 					</div>
 				</div>
 				<div className="rounded-lg border border-border/60 bg-card/70 p-2.5">
-					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Instance</p>
+					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Target</p>
 					<div className="mt-2 rounded-md border border-border/60 bg-background/70 px-2 py-1.5 text-xs text-foreground">
-						{storyContext.instanceType}
+						{storyContext.deploymentTarget}
 					</div>
 				</div>
 			</div>

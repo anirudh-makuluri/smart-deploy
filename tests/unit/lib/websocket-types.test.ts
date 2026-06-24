@@ -8,7 +8,6 @@ const broadcastLogMock = vi.fn();
 const setStatusMock = vi.fn();
 const getDeploymentMock = vi.fn();
 const getEcsServiceLogsMock = vi.fn();
-const getInitialLogsMock = vi.fn();
 
 vi.mock("@/lib/handleDeploy", () => ({
 	handleDeploy: (...args: unknown[]) => handleDeployMock(...args),
@@ -30,10 +29,6 @@ vi.mock("@/db-helper", () => ({
 
 vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
 	getEcsServiceLogs: (...args: unknown[]) => getEcsServiceLogsMock(...args),
-}));
-
-vi.mock("@/gcloud-logs/getInitialLogs", () => ({
-	getInitialLogs: (...args: unknown[]) => getInitialLogsMock(...args),
 }));
 
 describe("websocket-types deploy", () => {
@@ -122,7 +117,7 @@ describe("websocket-types deploy", () => {
 		);
 	});
 
-	it("does not fetch legacy service logs for non-running deployments", async () => {
+	it("returns empty logs when the deployment is not ECS-backed", async () => {
 		getDeploymentMock.mockResolvedValue({
 			deployment: {
 				status: "failed",
@@ -139,7 +134,12 @@ describe("websocket-types deploy", () => {
 
 		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
 
-		expect(getInitialLogsMock).not.toHaveBeenCalled();
-		expect(ws.send).not.toHaveBeenCalled();
+		expect(getEcsServiceLogsMock).not.toHaveBeenCalled();
+		expect(ws.send).toHaveBeenCalledWith(
+			JSON.stringify({
+				type: "initial_logs",
+				payload: { logs: [] },
+			})
+		);
 	});
 });

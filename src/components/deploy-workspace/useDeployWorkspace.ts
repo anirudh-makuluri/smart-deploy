@@ -58,7 +58,11 @@ export function useDeployWorkspace() {
 	const posthog = usePostHog();
 	const repoName = activeRepo.name;
 	const repoIdentifier = activeRepo.full_name;
-	const repoOwner = activeRepo.owner.login;
+	const repoOwner =
+		activeRepo.owner?.login ||
+		activeRepo.full_name?.split("/")?.[0] ||
+		activeRepo.html_url?.match(/github\.com\/([^/]+)/)?.[1] ||
+		"";
 	const repoUrl = activeRepo.html_url;
 	const defaultBranch = activeRepo.default_branch;
 
@@ -93,9 +97,8 @@ export function useDeployWorkspace() {
 			const svc = list?.find((s) => s.name === serviceName);
 			return repoRelativeServicePath(svc?.path);
 		};
-		const record = activeRepoRecord
-		return fromList(record.services);
-	}, [defaultBranch, repoUrl, serviceName]);
+		return fromList(activeRepoRecord?.services);
+	}, [activeRepoRecord, repoUrl, serviceName]);
 
 	const deployDisabled = React.useMemo(() => isDeploymentDisabled({ ...deployment, scanResults: effectiveScanResults } as DeployConfig), [deployment, effectiveScanResults]);
 	
@@ -158,12 +161,12 @@ export function useDeployWorkspace() {
 	const onDeployFinishedCallback = React.useCallback(
 		(p: DeployCompleteWsPayload) => {
 			dispatch({ type: "set_deploying", value: false });
-			const finalStatus = p.finalStatus;
-			const hostedSubdomain = p.hosted_subdomain;
+			const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
+			const hostedSubdomain = p.hosted_subdomain ?? deployment.hostedSubdomain;
 			const url = hostedUrlFromSubdomain(hostedSubdomain);
 			if (p.success) {
 				toast.success("Deployment successful", {
-					description: url ? `Live at ${url}` : "Your application is now running.",
+					description: `Live at ${url}`,
 					duration: 8000,
 				});
 			} else {
@@ -176,7 +179,7 @@ export function useDeployWorkspace() {
 			updateDeploymentById({
 				repoName,
 				serviceName,
-				repoUrl: deployment.repoUrl,
+				repoUrl: deployment.repoUrl || repoUrl || "",
 				status: finalStatus,
 				firstDeployment: deployment.firstDeployment ?? new Date().toISOString(),
 				lastDeployment: new Date().toISOString(),
@@ -187,7 +190,7 @@ export function useDeployWorkspace() {
 				}),
 			});
 		},
-		[deployment.repoUrl, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, updateDeploymentById]
+		[deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById]
 	);
 
 	React.useEffect(() => {

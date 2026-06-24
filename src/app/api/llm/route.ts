@@ -80,7 +80,6 @@ ${include_extra_info ? `
   IMPORTANT: is_monorepo = true if the repo uses workspace tooling (pnpm-workspace.yaml, npm/yarn workspaces in package.json, turbo.json, nx.json, or lerna.json) with multiple apps/services in subdirectories (apps/, packages/, services/). A monorepo is automatically is_multi_service=true if it has 2+ deployable services. Mobile-only packages (React Native, Expo, Flutter) should NOT count as deployable services.
 - monorepo_services: (array, only if is_monorepo=true, otherwise omit or set to []) Each entry: { name (string), path (relative path e.g. "apps/web"), language (e.g. "TypeScript"), framework (e.g. "Next.js", "Express"), port (number or null), is_deployable (boolean - false for mobile-only, shared libs, config packages) }
   For each workspace package/app, identify if it's a deployable server-side service. Skip shared library packages (e.g. packages/config, packages/eslint-config) and mobile-only packages.
-  - ec2: true for complex apps requiring full OS-level control, custom infrastructure, or when other platforms don't fit (NOT a fallback for mobile-only or empty repos)
   - cloud_run: true only if stateless HTTP service, no long-lived WebSockets, not mobile/lib; same as cloud_run_compatible
   IMPORTANT: If the repo contains ONLY mobile code (React Native, Flutter, iOS, Android) with no server/backend, set ALL platforms to false. If the repo has no deployable code (empty, docs-only, etc.), set ALL platforms to false.
   Prefer the simplest compatible platform.

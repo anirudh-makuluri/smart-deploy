@@ -1,5 +1,5 @@
 import type { CloudResources, EcsCloudResources, StaticS3CloudResources } from "@/app/types";
-import type { EC2Result } from "@/lib/aws/handleEC2";
+import type { DeployResult } from "@/lib/deployResult";
 import config from "@/config";
 
 export function isEcsCloudResources(
@@ -63,7 +63,7 @@ export function buildStaticS3CloudResources(params: {
 export function cloudResourcesFromDeployResult(
 	target: "ecs" | "static_s3",
 	region: string,
-	result: EC2Result,
+	result: DeployResult,
 	opts?: {
 		cluster?: string;
 		service?: string;

@@ -22,7 +22,7 @@ How to use:
   - Inspect latest deploy step logs for first `❌` or `error` line
   - Check whether failure occurred in build, setup, or DNS step
 - Fix:
-  - Follow the specific mapped entries below (`CODEBUILD_DOCKER_IMAGE_BUILD_FAILED`, `EC2_CLOUD_INIT_FAILURE`, `EC2_SERVER_NOT_RESPONDING`, `VERCEL_DNS_UPDATE_FAILED`)
+  - Follow the specific mapped entries below (`CODEBUILD_DOCKER_IMAGE_BUILD_FAILED`, `AWS_ALB_CERTIFICATE_INVALID_OR_REGION_MISMATCH`, `AWS_CODEBUILD_ROLE_DOES_NOT_EXIST`)
 - Sources:
   - `src/websocket-types.ts`
   - `src/websocket-server.ts`
@@ -45,52 +45,6 @@ How to use:
 - Sources:
   - `src/lib/handleDeploy.ts`
   - `docs/AWS_SETUP.md`
-
-### EC2_CLOUD_INIT_FAILURE
-
-- Error or symptom:
-  - `Error: Cloud-init failure detected. The deployment script failed.`
-  - `Deployment failed during instance initialization (Cloud-init error). See logs for details.`
-- Likely cause:
-  - User-data/bootstrap script failed on EC2 during initialization
-- Quick checks:
-  - Inspect console output for cloud-init failures (`cloud-final`, `cloud-init failed`)
-  - Check bootstrap command errors (package install, Docker startup, env parsing)
-- Fix:
-  - Correct failing bootstrap step and retry deploy
-  - Re-run after confirming instance profile/network/package access are healthy
-- Sources:
-  - `src/lib/aws/handleEC2.ts`
-
-### EC2_CLOUD_INIT_NO_COMPLETION_SIGNAL
-
-- Error or symptom:
-  - `Cloud-init finished but no deployment completion signal found. The build likely failed.`
-  - `Deployment did not complete successfully. See deployment logs for Docker or build errors.`
-- Likely cause:
-  - Instance booted, but application build/startup did not complete
-- Quick checks:
-  - Check deploy logs for Docker build/runtime errors after cloud-init finished
-  - Verify application start command and required env vars on instance
-- Fix:
-  - Fix app build/startup failure and redeploy
-- Sources:
-  - `src/lib/aws/handleEC2.ts`
-
-### EC2_SERVER_NOT_RESPONDING
-
-- Error or symptom:
-  - `Deployment failed: Server is not responding. Check your application and try again.`
-- Likely cause:
-  - Instance came up but service health endpoint/base URL did not become reachable
-- Quick checks:
-  - Validate service/container is running on expected port
-  - Verify security group ingress and ALB/target-group health
-  - Confirm app startup did not crash after deploy
-- Fix:
-  - Resolve runtime or networking issue, then redeploy
-- Sources:
-  - `src/lib/handleDeploy.ts`
 
 ### VERCEL_DNS_UPDATE_FAILED
 
@@ -327,7 +281,7 @@ How to use:
 
 - Error or symptom:
   - ALB HTTPS setup fails
-  - Certificate errors around `EC2_ACM_CERTIFICATE_ARN`
+  - Certificate errors around `DEPLOYMENT_ACM_CERTIFICATE_ARN`
 - Likely cause:
   - Certificate pending/not issued or not in deployment region
 - Quick checks:
@@ -487,3 +441,5 @@ How to use:
   - root cause
   - verified fix
   - source file reference
+
+

@@ -2,16 +2,11 @@ import { DeployConfig } from "../../app/types";
 import { isEcsCloudResources } from "@/lib/cloudResources";
 import config from "../../config";
 import {
-	EC2Client,
-	TerminateInstancesCommand,
-} from "@aws-sdk/client-ec2";
-import {
 	ECSClient,
 	DeleteServiceCommand,
 } from "@aws-sdk/client-ecs";
 import {
 	ElasticLoadBalancingV2Client,
-	DescribeTargetGroupsCommand,
 	DescribeLoadBalancersCommand,
 	DescribeListenersCommand,
 	DescribeRulesCommand,
@@ -58,7 +53,7 @@ function awsNameChunk(s: string, max: number): string {
 }
 
 function sharedAlbEnabled(): boolean {
-	return !!config.EC2_ACM_CERTIFICATE_ARN && !!config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN;
+	return !!config.DEPLOYMENT_ACM_CERTIFICATE_ARN && !!config.NEXT_PUBLIC_DEPLOYMENT_DOMAIN;
 }
 
 function parseEcsInstanceId(instanceId: string): { cluster: string; serviceName: string } | null {
@@ -222,56 +217,14 @@ async function deleteEcsDeployment(deployConfig: DeployConfig): Promise<void> {
 }
 
 /**
- * Deletes an AWS EC2 instance using stored instanceId.
- * When shared ALB is enabled, also removes target group and listener rules.
- */
-export async function deleteEC2Instance(deployConfig: DeployConfig): Promise<void> {
-	const region = deployConfig.region || config.AWS_REGION || "us-west-2";
-	const repoName = deployConfig.repoUrl.split("/").pop()?.replace(".git", "") || "app";
-
-	const ec2Client = new EC2Client(getClientConfig(region));
-
-	if (sharedAlbEnabled()) {
-		const elbClient = new ElasticLoadBalancingV2Client(getClientConfig(region));
-		const targetGroupName =
-			`${repoName}-tg`
-				.toLowerCase()
-				.replace(/[^a-z0-9-]/g, "-")
-				.replace(/-+/g, "-")
-				.replace(/^-|-$/g, "")
-				.slice(0, 32) || "smartdeploy-tg";
-
-		try {
-			const tgResult = await elbClient.send(
-				new DescribeTargetGroupsCommand({ Names: [targetGroupName] })
-			);
-			const targetGroupArn = tgResult.TargetGroups?.[0]?.TargetGroupArn;
-			if (targetGroupArn) {
-				await cleanupSharedAlbForTargetGroup(targetGroupArn, region);
-			}
-		} catch {
-			// Ignore missing or in-use target groups
-		}
-	}
-
-	console.warn("deleteEC2Instance: legacy EC2 deployments are no longer supported; skipping instance terminate");
-
-	// Note: Security Groups, Key Pairs, and other resources are not automatically deleted
-}
-
-/**
  * Main function to delete AWS deployment based on deploymentTarget.
- * Uses stored service details (ec2) from DeployConfig
+ * Uses stored ECS or static deployment details from DeployConfig
  * to identify the exact resources to delete.
  */
 export async function deleteAWSDeployment(
 	deployConfig: DeployConfig,
 	deploymentTarget: string
 ): Promise<void> {
-	if (deploymentTarget === "ec2") {
-		await deleteEC2Instance(deployConfig);
-		return;
-	}
 	if (deploymentTarget === "ecs") {
 		await deleteEcsDeployment(deployConfig);
 		return;

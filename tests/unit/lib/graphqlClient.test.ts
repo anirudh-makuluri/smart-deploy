@@ -18,7 +18,7 @@ describe("graphqlClient.updateDeployment", () => {
 		}) as unknown as typeof fetch;
 	});
 
-	it("strips legacy fields that are not part of DeployConfigInput", async () => {
+	it("strips unsupported fields that are not part of DeployConfigInput", async () => {
 		const config = {
 			...makeDeployment({
 				repoName: "hoplio",
@@ -26,8 +26,8 @@ describe("graphqlClient.updateDeployment", () => {
 				secretsArn: "arn:aws:secretsmanager:us-west-2:123:secret:test",
 			}),
 			envVars: "SECRET=value",
-			ec2: { instanceId: "i-123" },
-		} as ReturnType<typeof makeDeployment> & { ec2: { instanceId: string } };
+			legacyField: { value: "remove-me" },
+		} as ReturnType<typeof makeDeployment> & { legacyField: { value: string } };
 
 		await updateDeployment(config);
 
@@ -45,6 +45,6 @@ describe("graphqlClient.updateDeployment", () => {
 			secretsArn: "arn:aws:secretsmanager:us-west-2:123:secret:test",
 		});
 		expect(body.variables?.config).not.toHaveProperty("envVars");
-		expect(body.variables?.config).not.toHaveProperty("ec2");
+		expect(body.variables?.config).not.toHaveProperty("legacyField");
 	});
 });

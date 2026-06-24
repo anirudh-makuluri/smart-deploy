@@ -47,7 +47,10 @@ function getWebSocketCloseMessage(event: CloseEvent) {
 }
 
 export function getWebSocketUrl(): string {
-	return process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4001";
+	const override = process.env.NEXT_PUBLIC_WS_URL?.trim();
+	if (override) return override;
+
+	return "ws://localhost:4001";
 }
 
 export function getWebSocketHealthUrl(): string {

@@ -43,27 +43,6 @@ const FAILURE_DEFINITIONS: Record<DeploymentFailureCode, FailureDefinition> = {
 		summary: "Image build failed before the release could be deployed.",
 		likelyCause: "The Docker build, dependency install, or build command failed in CodeBuild.",
 	},
-	EC2_CLOUD_INIT_FAILURE: {
-		stage: "deploy",
-		category: "infrastructure_failure",
-		retryable: false,
-		summary: "The EC2 instance failed during bootstrap.",
-		likelyCause: "Cloud-init or another instance setup command failed before the app could start cleanly.",
-	},
-	EC2_CLOUD_INIT_NO_COMPLETION_SIGNAL: {
-		stage: "deploy",
-		category: "startup_failure",
-		retryable: false,
-		summary: "The instance booted, but the app never finished starting successfully.",
-		likelyCause: "The startup command, container runtime, or required environment variables prevented the service from coming up.",
-	},
-	EC2_SERVER_NOT_RESPONDING: {
-		stage: "deploy",
-		category: "startup_failure",
-		retryable: false,
-		summary: "The release was deployed, but Smart Deploy could not reach the app afterward.",
-		likelyCause: "The service is not listening on the expected port, crashed on startup, or is blocked by networking configuration.",
-	},
 	DEPLOYMENT_VERIFICATION_FAILED: {
 		stage: "verify",
 		category: "health_check_failure",
@@ -203,14 +182,6 @@ function findFailureCode(args: {
 		return "CODEBUILD_DOCKER_IMAGE_BUILD_FAILED";
 	}
 
-	if (/cloud-init failure detected|instance initialization \(cloud-init error\)|cloud-init failed/i.test(combinedText)) {
-		return "EC2_CLOUD_INIT_FAILURE";
-	}
-
-	if (/cloud-init finished but no deployment completion signal found|deployment did not complete successfully/i.test(combinedText)) {
-		return "EC2_CLOUD_INIT_NO_COMPLETION_SIGNAL";
-	}
-
 	if (/verification failed after all retry attempts|verification deadline reached before a healthy response was observed/i.test(combinedText)) {
 		return rolledBack ? "DEPLOYMENT_VERIFICATION_FAILED" : "DEPLOYMENT_VERIFICATION_FAILED";
 	}
@@ -220,7 +191,7 @@ function findFailureCode(args: {
 			combinedText
 		)
 	) {
-		return "EC2_SERVER_NOT_RESPONDING";
+		return "DEPLOYMENT_FAILED_GENERIC";
 	}
 
 	if (AUTH_FAILURE_RE.test(combinedText) || failedStepId === "auth") {

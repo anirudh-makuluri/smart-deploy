@@ -25,7 +25,7 @@ import {
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
 import type { DetectedServiceInfo } from "@/app/types";
-import { subdomainFromHostedUrl, hostedSubdomainOrDefault, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { subdomainFromHostedUrl, hostedSubdomainOrDefault, hostedUrlFromSubdomain, getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { isEcsDeployment } from "@/lib/cloudResources";
 import { getDeploymentBaseDomain as getBaseDomain } from "@/lib/dnsUtils";
 import fs from "fs";
@@ -505,7 +505,7 @@ export async function updateCustomDomain(
 			? subdomainFromHostedUrl(formattedCustomUrl)
 			: hostedSubdomainOrDefault(repoNameTrimmed, deployment.hostedSubdomain);
 		const previousHostedUrl =
-			hostedUrlFromSubdomain(deployment.hostedSubdomain) ??
+			getDeploymentHostedUrl(deployment) ??
 			(deployment.hostedSubdomain
 				? `https://${deployment.hostedSubdomain}.${getBaseDomain()}`
 				: null);

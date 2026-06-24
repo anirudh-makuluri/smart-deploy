@@ -357,7 +357,7 @@ export const typeDefs = `
     # Current session info with repos
     session(limit: Int): Session!
 
-    # Service logs (EC2 or GCP)
+    # Service logs (AWS or GCP)
     serviceLogs(
       repoName: String
       serviceName: String!

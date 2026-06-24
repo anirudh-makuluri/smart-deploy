@@ -1,5 +1,5 @@
 /**
- * Repo-relative path where a Dockerfile will be written on deploy (EC2 SSM, etc.).
+ * Repo-relative path where a Dockerfile will be written on deploy.
  * Folder-only keys like "client" become "client/Dockerfile".
  * Paths that already end with Dockerfile or Dockerfile.* are left as-is (aside from slash normalization).
  */
@@ -41,7 +41,7 @@ function canonicalDockerfileKeysFromRecord(dockerfiles: Record<string, string>):
 type ScanServiceHint = { dockerfile_path?: string; build_context?: string };
 
 /**
- * When there is no docker-compose, EC2 uses a single `docker build`. Infer -f and context from
+ * When there is no docker-compose, Smart Deploy uses a single `docker build`. Infer -f and context from
  * scan_results.dockerfiles (one key) or a lone service's dockerfile_path / build_context.
  */
 export function inferSingleDockerfileBuild(

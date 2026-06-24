@@ -5,56 +5,14 @@ import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
-import { dbHelper } from "./db-helper";
-import { getSupabaseServer } from "./lib/supabaseServer";
-import { isDraftDeploymentStatus } from "./lib/deploymentStatus";
 import { verifyWebSocketAuthToken } from "./lib/wsAuth";
 import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
 
-async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
-	let resolvedUserId = userID;
-	let currentDeployment: any = null;
-	if (!resolvedUserId) {
-		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		currentDeployment = deploymentResponse.deployment;
-		resolvedUserId = currentDeployment?.ownerID;
-	} else {
-		// Also fetch the current deployment to check its status
-		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		currentDeployment = deploymentResponse.deployment;
-	}
-	if (!resolvedUserId) return null;
-
-	// If the current deployment is in "didnt_deploy" status (fresh/draft), don't show old history
-	if (isDraftDeploymentStatus(currentDeployment?.status)) {
-		return null;
-	}
-
-	const historyResponse = await dbHelper.getDeploymentHistory(repoName, serviceName, resolvedUserId);
-	if (historyResponse.error || !historyResponse.history || historyResponse.history.length === 0) {
-		return null;
-	}
-
-	const latest = historyResponse.history[0];
-	// Preserve actual failure details from the deploy steps instead of generic message
-	let errorDetail: string | null = null;
-	if (!latest.success) {
-		const errorSteps = (latest.steps ?? []).filter((s: any) => s.status === "error");
-		const errorLogs = errorSteps.flatMap((s: any) => (s.logs || []).filter((l: string) => l.includes("❌") || l.toLowerCase().includes("error") || l.toLowerCase().includes("failed")));
-		errorDetail = errorLogs.length > 0 ? errorLogs.slice(-3).join("\n") : "Deployment failed";
-	}
-	return {
-		steps: latest.steps ?? [],
-		status: (latest.success ? "success" : "error") as "success" | "error",
-		error: errorDetail,
-	};
-}
-
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.0.2"
+const version = "0.0.2";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 type AuthenticatedSocket = WebSocket & {
@@ -87,13 +45,15 @@ const server = http.createServer((req, res) => {
 
 	if (req.url === "/health" || req.url === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ 
-			ok: true, 
-			service: "websocket", 
-			port, 
-			environment,
-			version
-		}));
+		res.end(
+			JSON.stringify({
+				ok: true,
+				service: "websocket",
+				port,
+				environment,
+				version,
+			})
+		);
 		return;
 	}
 
@@ -126,22 +86,26 @@ function sendDeployComplete(ws: any, success: boolean, hostedSubdomain: string, 
 			hosted_subdomain: hostedSubdomain,
 		};
 		if (error) payload.error = error;
-		ws.send(JSON.stringify({
-			type: "deploy_complete",
-			payload,
-		}));
+		ws.send(
+			JSON.stringify({
+				type: "deploy_complete",
+				payload,
+			})
+		);
 	}
 }
 
 function sendSocketError(ws: any, error?: string) {
 	if (ws?.readyState === 1) {
-		ws.send(JSON.stringify({
-			type: "worker_error",
-			payload: {
-				error: error ?? "Request failed",
-				time: new Date().toISOString(),
-			},
-		}));
+		ws.send(
+			JSON.stringify({
+				type: "worker_error",
+				payload: {
+					error: error ?? "Request failed",
+					time: new Date().toISOString(),
+				},
+			})
+		);
 	}
 }
 
@@ -176,10 +140,12 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 		const running = deployLogsStore.listRunningDeploymentsForUser(authPayload.userID);
 		if (running.length === 0) return;
 		try {
-			ws.send(JSON.stringify({
-				type: "active_deployments",
-				payload: { deployments: running },
-			}));
+			ws.send(
+				JSON.stringify({
+					type: "active_deployments",
+					payload: { deployments: running },
+				})
+			);
 		} catch {
 			// ignore
 		}
@@ -193,13 +159,16 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 			switch (type) {
 				case "deploy":
 					try {
-						await deploy({
-							...response.payload,
-							userID: ws.authUserID,
-						}, ws);
+						await deploy(
+							{
+								...response.payload,
+								userID: ws.authUserID,
+							},
+							ws
+						);
 					} catch (err: any) {
 						console.error("Deploy error:", err);
-						const hostedSubdomain = response.payload.hostedSubdomain
+						const hostedSubdomain = response.payload.hostedSubdomain;
 						sendDeployComplete(
 							ws,
 							false,
@@ -209,7 +178,7 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 					}
 					break;
 				case "service_logs":
-					serviceLogs(response.payload, ws);
+					await serviceLogs(response.payload, ws);
 					break;
 				default:
 					break;

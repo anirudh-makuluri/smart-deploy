@@ -6,12 +6,9 @@ import {
 	GetAuthorizationTokenCommand,
 } from "@aws-sdk/client-ecr";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
-import { IAMClient, AttachRolePolicyCommand } from "@aws-sdk/client-iam";
 import { getAwsClientConfig } from "./sdkClients";
 
 type SendFn = (msg: string, stepId: string) => void;
-
-const ECR_READ_POLICY_ARN = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly";
 
 export async function getAwsAccountId(region: string): Promise<string> {
 	const client = new STSClient(getAwsClientConfig(region));
@@ -140,24 +137,3 @@ export async function getEcrAuthToken(region: string): Promise<{ username: strin
 	};
 }
 
-/**
- * Grants ECR read-only pull access to the EC2 SSM instance role so
- * ECR-authenticated `docker pull` works on the instance.
- * Idempotent: attaching a policy that is already attached is a no-op.
- */
-export async function ensureEc2EcrPullPolicy(
-	ssmRoleName: string,
-	region: string,
-): Promise<void> {
-	const iam = new IAMClient(getAwsClientConfig(region));
-	try {
-		await iam.send(
-			new AttachRolePolicyCommand({
-				RoleName: ssmRoleName,
-				PolicyArn: ECR_READ_POLICY_ARN,
-			}),
-		);
-	} catch {
-		// Ignore: policy may already be attached or role may not exist yet
-	}
-}

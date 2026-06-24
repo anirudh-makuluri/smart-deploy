@@ -7,7 +7,7 @@ describe("getWebSocketUrl", () => {
 	});
 
 	it("prefers NEXT_PUBLIC_WS_URL when provided", () => {
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com");
 
 		expect(getWebSocketUrl()).toBe("wss://ws.example.com");
 	});
@@ -16,29 +16,29 @@ describe("getWebSocketUrl", () => {
 		vi.stubEnv("NEXT_PUBLIC_WS_URL", "");
 		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 
-		expect(getWebSocketUrl()).toBe(`${protocol}://${window.location.host}/ws`);
+		expect(getWebSocketUrl()).toBe(`${protocol}://${window.location.host}`);
 	});
 
 	it("derives the worker health endpoint from the websocket URL", () => {
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com/ws");
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 
 		expect(getWebSocketHealthUrl()).toBe("https://ws.example.com/health");
 	});
 
 	it("derives the worker health endpoint when the websocket URL has no /ws suffix", () => {
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com");
 
 		expect(getWebSocketHealthUrl()).toBe("https://ws.example.com/health");
 	});
 
 	it("derives the authenticated worker websocket URL from the websocket URL", () => {
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com/ws");
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com/ws");
 
 		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("wss://ws.example.com/ws?auth=test-token");
 	});
 
 	it("derives the authenticated worker websocket URL when the websocket URL has no /ws suffix", () => {
-		vi.stubEnv("NEXT_PUBLIC_WS_URL", "https://ws.example.com");
+		vi.stubEnv("NEXT_PUBLIC_WS_URL", "wss://ws.example.com");
 
 		expect(getAuthenticatedWebSocketHealthUrl("test-token")).toBe("wss://ws.example.com/?auth=test-token");
 	});

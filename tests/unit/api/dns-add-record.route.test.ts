@@ -36,7 +36,7 @@ describe("POST /api/dns/add-record", () => {
 
 	it("returns custom URL on success", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
-		addRoute53DnsRecordMock.mockResolvedValue({ success: true, customUrl: "https://app.example.com" });
+		addRoute53DnsRecordMock.mockResolvedValue({ success: true, deployUrl: "https://app.example.com" });
 		const { POST } = await import("@/app/api/dns/add-record/route");
 		const res = await POST(
 			new Request("http://localhost", {

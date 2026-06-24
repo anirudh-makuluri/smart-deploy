@@ -102,7 +102,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	try {
 		const dnsResult = await deleteRoute53DnsRecord({
-			customUrl: hostedUrlFromSubdomain(deployConfig.hostedSubdomain),
+			customUrl: hostedUrlFromSubdomain(deployConfig.hostedSubdomain!),
 			serviceName: deployConfig.serviceName || validServiceName || null,
 		});
 		if (!dnsResult.success) {

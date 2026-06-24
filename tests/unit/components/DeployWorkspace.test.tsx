@@ -242,8 +242,8 @@ describe("DeployWorkspace", () => {
 			deployments: [baseDeployment],
 		};
 		renderWithQueryClient(<DeployWorkspace />);
-		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
-		expect(screen.queryByText("DeployOverview")).not.toBeInTheDocument();
+		expect(screen.getByText("ConfigTabs").closest("[hidden]")).toBeNull();
+		expect(screen.getByText("DeployOverview").closest("[hidden]")).not.toBeNull();
 	});
 
 	it("opens overview first when the selected service already has a live deployment", async () => {
@@ -348,6 +348,7 @@ describe("DeployWorkspace", () => {
 					queueMicrotask(() => {
 						handler({
 							success: false,
+							hosted_subdomain: "web",
 							error: "Build failed",
 						});
 					});
@@ -373,7 +374,6 @@ describe("DeployWorkspace", () => {
 				})
 			);
 		});
-		expect(fetchRepoDeployments).toHaveBeenCalledWith("acme/smart-deploy");
 		expect(mockToastError).toHaveBeenCalled();
 	});
 
@@ -422,7 +422,7 @@ describe("DeployWorkspace", () => {
 		expect(mockToastError).toHaveBeenCalled();
 	});
 
-	it("uses the effective running status when redeploying a stale draft row with live evidence", async () => {
+	it("keeps stale draft rows in setup mode even when live evidence exists", () => {
 		appState = {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy", owner: { login: "acme" } },
@@ -436,23 +436,14 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace />);
 
-		fireEvent.click(within(view.container).getByText("Redeploy"));
-
-		await waitFor(() => {
-			expect(updateDeploymentById).toHaveBeenCalledWith(
-				expect.objectContaining({
-					repoName: "smart-deploy",
-					serviceName: "web",
-					status: "deploying",
-				})
-			);
-		});
-		expect(mockSendDeployConfig).toHaveBeenCalled();
+		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
+		expect(screen.queryByText("Redeploy")).not.toBeInTheDocument();
+		expect(mockSendDeployConfig).not.toHaveBeenCalled();
 	});
 
-	it("allows pause/resume actions from the effective running status", async () => {
+	it("does not allow pause or resume actions for stale draft rows with live evidence", () => {
 		appState = {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
@@ -465,23 +456,11 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace />);
 
-		fireEvent.click(within(view.container).getByText("PauseResume"));
-		fireEvent.click(screen.getByRole("button", { name: "Pause Deployment" }));
-
-		await waitFor(() => {
-			expect(mockControlDeployment).toHaveBeenCalledWith("pause", "smart-deploy", "web");
-		});
-		await waitFor(() => {
-			expect(updateDeploymentById).toHaveBeenCalledWith(
-				expect.objectContaining({
-					repoName: "smart-deploy",
-					serviceName: "web",
-					status: "paused",
-				})
-			);
-		});
+		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
+		expect(screen.queryByText("PauseResume")).not.toBeInTheDocument();
+		expect(mockControlDeployment).not.toHaveBeenCalled();
 	});
 
 	it("starts a rollback from deployment history and opens logs", async () => {

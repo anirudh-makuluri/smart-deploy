@@ -36,10 +36,10 @@ describe("GET /api/service-logs-history", () => {
 		expect(res.status).toBe(400);
 	});
 
-	it("returns logs on success from EC2", async () => {
+	it("returns logs on success from ECS", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockResolvedValue({
-			serviceLogs: { logs: [{ message: "ec2 log" }], source: "ec2" },
+			serviceLogs: { logs: [{ message: "ecs log" }], source: "ecs" },
 		});
 
 		const { GET } = await import("@/app/api/service-logs-history/route");
@@ -48,13 +48,13 @@ describe("GET /api/service-logs-history", () => {
 		} as any;
 		const res = await GET(req);
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ logs: [{ message: "ec2 log" }] });
+		expect(await res.json()).toEqual({ logs: [{ message: "ecs log" }] });
 	});
 
-	it("returns logs on success from GCP", async () => {
+	it("returns empty logs when the resolver has no ECS logs", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1" } });
 		executeGraphQLOperationMock.mockResolvedValue({
-			serviceLogs: { logs: [{ message: "gcp log" }], source: "gcp" },
+			serviceLogs: { logs: [], source: "ecs" },
 		});
 
 		const { GET } = await import("@/app/api/service-logs-history/route");
@@ -63,7 +63,7 @@ describe("GET /api/service-logs-history", () => {
 		} as any;
 		const res = await GET(req);
 		expect(res.status).toBe(200);
-		expect(await res.json()).toEqual({ logs: [{ message: "gcp log" }] });
+		expect(await res.json()).toEqual({ logs: [] });
 	});
 
 	it("returns 500 when graphql operation fails", async () => {

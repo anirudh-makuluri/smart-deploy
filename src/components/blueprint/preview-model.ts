@@ -15,7 +15,6 @@ export type PreviewArtifactKind =
 	| "buildContexts"
 	| "ecrOutput"
 	| "region"
-	| "instanceType"
 	| "networking"
 	| "envVars"
 	| "nginx"

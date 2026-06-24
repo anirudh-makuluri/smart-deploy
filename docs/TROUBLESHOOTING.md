@@ -119,13 +119,13 @@ Also see [Supabase Setup](./SUPABASE_SETUP.md).
 
 ### Symptoms
 - `UnauthorizedOperation`
-- `ec2:RunInstances` denied
-- `ec2:CreateTags` denied
+- container deployment permission denied
+- shared networking permission denied
 - CodeBuild role creation fails
 
 ### Fix
 - Ensure IAM policy includes required EC2, ALB, SSM, CodeBuild, ECR, IAM, STS permissions.
-- If using ALB HTTPS, verify `EC2_ACM_CERTIFICATE_ARN` is issued and in the same `AWS_REGION`.
+- If using ALB HTTPS, verify `DEPLOYMENT_ACM_CERTIFICATE_ARN` is issued and in the same `AWS_REGION`.
 
 Also see [AWS Setup](./AWS_SETUP.md).
 
@@ -162,7 +162,7 @@ Also see [GCP Setup](./GCP_SETUP.md).
 ### Quick checks
 - `NEXT_PUBLIC_DEPLOYMENT_DOMAIN` is set.
 - If using Vercel DNS automation, `VERCEL_TOKEN` and `VERCEL_DOMAIN` are set.
-- For AWS HTTPS, `EC2_ACM_CERTIFICATE_ARN` is valid and issued.
+- For AWS HTTPS, `DEPLOYMENT_ACM_CERTIFICATE_ARN` is valid and issued.
 
 ### Fix
 - Create or correct CNAME records manually if not using Vercel automation.
@@ -230,3 +230,5 @@ or for Docker:
 docker compose ps
 docker compose logs
 ```
+
+

@@ -1,6 +1,5 @@
 import type { BlueprintEdge, BlueprintInput, BlueprintModel, BlueprintNode } from "@/components/blueprint/blueprint-types";
 import config from "@/config";
-import { DEFAULT_EC2_INSTANCE_TYPE } from "@/lib/aws/ec2InstanceTypes";
 import { validateBlueprint } from "@/components/blueprint/blueprint-validators";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 
@@ -169,7 +168,6 @@ export function buildBlueprintModel({ deployment, scanResults }: BlueprintInput)
 			region: deployment.region || "",
 			provider: deployment.cloudProvider,
 			target: deployment.deploymentTarget,
-			instanceType: DEFAULT_EC2_INSTANCE_TYPE,
 		},
 	});
 	edges.push({

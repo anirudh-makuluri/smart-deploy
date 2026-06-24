@@ -1,9 +1,6 @@
 import { DeployConfig, DeployStep } from "./app/types";
 import { isEcsCloudResources } from "@/lib/cloudResources";
 import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
-import config from "./config";
-import { getInitialLogs } from "./gcloud-logs/getInitialLogs";
-import { streamLogs } from "./gcloud-logs/streamLogs";
 import { handleDeploy } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import * as deployLogsStore from "./lib/deployLogsStore";
@@ -24,9 +21,7 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 	const serviceName = deployConfig.serviceName;
 	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
 
-	
-
-	const options : DeployLoggerOptions = {
+	const options: DeployLoggerOptions = {
 		onStepsChange: (steps: DeployStep[]) => {
 			deployLogsStore.updateSteps(userID, repoName, serviceName, steps);
 		},
@@ -74,26 +69,7 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 		return;
 	}
 
-	if (deployConfig?.status !== "running") return;
-
-	if (!serviceName) {
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
-		}
-		return;
-	}
-
-	const logs = await getInitialLogs(serviceName);
 	if (ws?.readyState === ws?.OPEN) {
-		ws.send(
-			JSON.stringify({
-				type: "initial_logs",
-				payload: {
-					logs,
-				},
-			})
-		);
+		ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
 	}
-
-	streamLogs(serviceName, ws);
 }

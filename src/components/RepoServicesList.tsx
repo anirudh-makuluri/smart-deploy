@@ -220,13 +220,7 @@ export default function RepoServicesList({
 										)}
 										{isInProgress && (
 											<span className="text-sm text-blue-600 dark:text-blue-400">
-												{status === "rolling_back"
-													? "Rolling back"
-													: status === "retrying"
-														? "Retrying"
-														: status === "verifying"
-															? "Verifying"
-															: "Deploying"}
+												Deploying
 											</span>
 										)}
 									</div>

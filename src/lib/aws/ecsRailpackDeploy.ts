@@ -10,6 +10,7 @@ import {
 	type Task,
 } from "@aws-sdk/client-ecs";
 import type { DeployConfig } from "../../app/types";
+import type { DeployResult } from "@/lib/deployResult";
 import { generateDefaultHostedSubdomain } from "@/lib/hostedUrl";
 import config from "../../config";
 import {
@@ -340,7 +341,7 @@ export async function deployRailpackServerToEcs(params: {
 	unitName: string;
 	ws: any;
 	send: SendFn;
-}) {
+}): Promise<DeployResult> {
 	const { deployConfig, region, repoName, imageUri, containerPort, unitName, ws, send } = params;
 
 	if (!ecsRailpackFromEcrConfigured()) {
@@ -349,11 +350,6 @@ export async function deployRailpackServerToEcs(params: {
 			baseUrl: "",
 			serviceUrls: new Map(),
 			instanceId: "",
-			publicIp: "",
-			vpcId: "",
-			subnetId: "",
-			securityGroupId: "",
-			amiId: "",
 		};
 	}
 
@@ -371,7 +367,7 @@ export async function deployRailpackServerToEcs(params: {
 	}
 
 	const vpcId = await describeSubnetVpcId(subnets[0]!, region, ws);
-	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
+	const certificateArn = config.DEPLOYMENT_ACM_CERTIFICATE_ARN?.trim() || "";
 
 	send("Ensuring shared ALB for ECS service...", "setup");
 	const alb = await ensureSharedAlb({
