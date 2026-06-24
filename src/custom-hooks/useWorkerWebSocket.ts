@@ -1,4 +1,4 @@
-import { CloudResources, DeployConfig, DeploymentTarget, DeployStep } from "@/app/types";
+import { CloudResources, DeployConfig, DeploymentTarget } from "@/app/types";
 import { useAppData } from "@/store/useAppData";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ export type DeployCompleteWsPayload = {
 	deploymentTarget: DeploymentTarget;
 	finalStatus: DeployConfig["status"];
 	cloudResources: CloudResources;
-	rolledBack: boolean; //TODO: REMOVE THIS
+	rolledBack: boolean; // TODO: REMOVE THIS
 	error?: string;
 };
 
@@ -20,7 +20,8 @@ export type UseWorkerWebSocketSessionParams = {
 type SocketStatus = "connecting" | "open" | "closed" | "error";
 type DeployStatus = "not-started" | "running" | "success" | "error";
 type ServiceLogEntry = { timestamp: string; message?: string };
-type DeployLogEntry = { timestamp?: string; message?: string };
+type DeployLogEntry = { id?: string; timestamp?: string; message?: string };
+const WORKER_RECONNECT_DELAY_MS = 1000;
 
 function getWebSocketCloseMessage(event: CloseEvent) {
 	const reason = event.reason?.trim();
@@ -83,13 +84,13 @@ export async function fetchWebSocketAuthToken(): Promise<string> {
 }
 
 /**
- * One WebSocket session to the deploy worker (auth + optional repo/service subscriptions).
+ * One WebSocket session to the deploy worker scoped by the active workspace in app state.
  */
 export function useWorkerWebSocketSession({
 	connectionEnabled,
 }: UseWorkerWebSocketSessionParams) {
-	const repoName = useAppData((s) => s.activeRepo)?.name;
-	const serviceName = useAppData((s) => s.activeServiceName);
+	const repoName = useAppData((s) => s.activeRepo)?.name ?? null;
+	const serviceName = useAppData((s) => s.activeServiceName) ?? null;
 
 	const [deployLogEntries, setDeployLogEntries] = useState<DeployLogEntry[]>([]);
 	const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting");
@@ -101,12 +102,19 @@ export function useWorkerWebSocketSession({
 	const isDeployingRef = useRef(false);
 	const wsRef = useRef<WebSocket | null>(null);
 	const onDeployFinishedRef = useRef<((payload: DeployCompleteWsPayload) => void) | undefined>(undefined);
+	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const manualDisconnectRef = useRef(false);
 
 	const assignDeployConfig = useCallback((config: DeployConfig | null) => {
 		setLiveDeployConfig(config);
 	}, []);
 
 	const disconnectSocket = useCallback(() => {
+		manualDisconnectRef.current = true;
+		if (reconnectTimeoutRef.current) {
+			clearTimeout(reconnectTimeoutRef.current);
+			reconnectTimeoutRef.current = null;
+		}
 		wsRef.current?.close();
 		wsRef.current = null;
 	}, []);
@@ -124,7 +132,7 @@ export function useWorkerWebSocketSession({
 		setDeployLogEntries((prev) => [
 			...prev,
 			{
-				id: id,
+				id,
 				timestamp: time,
 				message: msg,
 			},
@@ -143,17 +151,31 @@ export function useWorkerWebSocketSession({
 		}
 	}, [repoName, serviceName]);
 
+	const createWebSocketRef = useRef<() => void>(() => {});
+
+	const scheduleReconnect = useCallback(() => {
+		if (!connectionEnabled || reconnectTimeoutRef.current) return;
+		reconnectTimeoutRef.current = setTimeout(() => {
+			reconnectTimeoutRef.current = null;
+			createWebSocketRef.current();
+		}, WORKER_RECONNECT_DELAY_MS);
+	}, [connectionEnabled]);
+
 	const createWebSocket = useCallback(() => {
+		manualDisconnectRef.current = false;
 		setSocketStatus("connecting");
 		void (async () => {
 			try {
 				const authToken = await fetchWebSocketAuthToken();
 				const wsUrl = new URL(getAuthenticatedWebSocketHealthUrl(authToken));
-
-				const ws = new WebSocket(wsUrl);
+				const ws = new WebSocket(wsUrl.toString());
 				wsRef.current = ws;
 
 				ws.onopen = () => {
+					if (reconnectTimeoutRef.current) {
+						clearTimeout(reconnectTimeoutRef.current);
+						reconnectTimeoutRef.current = null;
+					}
 					setSocketStatus("open");
 					setDeployError(null);
 					initiateServiceLogs();
@@ -161,8 +183,8 @@ export function useWorkerWebSocketSession({
 
 				ws.onmessage = (event) => {
 					const data = JSON.parse(event.data) as { type: string; payload?: unknown };
-
 					const payload = data.payload;
+
 					switch (data.type) {
 						case "initial_logs":
 							replaceServiceLogs((payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? []);
@@ -171,7 +193,7 @@ export function useWorkerWebSocketSession({
 							deployLogs(payload as { id: string; msg: string; time: string });
 							break;
 						case "deploy_complete": {
-							const completePayload = (payload as DeployCompleteWsPayload);
+							const completePayload = payload as DeployCompleteWsPayload;
 							isDeployingRef.current = false;
 							setDeployStatus(completePayload.success ? "success" : "error");
 
@@ -204,16 +226,21 @@ export function useWorkerWebSocketSession({
 						setDeployError(closeMessage);
 					}
 					isDeployingRef.current = false;
+					wsRef.current = null;
+					if (!manualDisconnectRef.current) {
+						scheduleReconnect();
+					}
 				};
 			} catch (error) {
 				setSocketStatus("error");
 				const message = error instanceof Error ? error.message : "Failed to authenticate websocket connection";
 				setDeployError(message);
+				scheduleReconnect();
 			}
 		})();
+	}, [deployLogs, initiateServiceLogs, replaceServiceLogs, scheduleReconnect]);
 
-		return null;
-	}, [deployLogs, initiateServiceLogs, replaceServiceLogs]);
+	createWebSocketRef.current = createWebSocket;
 
 	const openSocket = useCallback(() => {
 		const existing = wsRef.current;
@@ -221,15 +248,19 @@ export function useWorkerWebSocketSession({
 			return existing;
 		}
 
-		return createWebSocket();
+		createWebSocket();
+		return null;
 	}, [createWebSocket]);
 
 	useEffect(() => {
-		if (!connectionEnabled) return;
+		if (!connectionEnabled) {
+			disconnectSocket();
+			setSocketStatus("closed");
+			return;
+		}
 
 		openSocket();
-		return () => {};
-	}, [connectionEnabled, openSocket]);
+	}, [connectionEnabled, disconnectSocket, openSocket]);
 
 	useEffect(() => {
 		return () => {
@@ -259,7 +290,7 @@ export function useWorkerWebSocketSession({
 			toast.error("Error occured. Refresh the page and try again.");
 			isDeployingRef.current = false;
 			setDeployError("Error occured. Refresh the page and try again.");
-			setDeployStatus("not-started")
+			setDeployStatus("not-started");
 		}
 	};
 

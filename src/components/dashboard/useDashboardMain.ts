@@ -15,7 +15,14 @@ import {
 export function useDashboardMain() {
 	const router = useRouter();
 	const { data: session } = authClient.useSession();
-	const { deployments, repoRecords, repoList, isLoading, setAppData, refreshRepoList } = useAppData();
+	const {
+		deployments = [],
+		repoRecords = [],
+		repoList = [],
+		isLoading,
+		setAppData,
+		refreshRepoList,
+	} = useAppData();
 	const [ui, dispatch] = React.useReducer(
 		(
 			state: {

@@ -72,7 +72,7 @@ describe("RepoServicesList", () => {
 			/>
 		);
 
-		fireEvent.click(within(view.container).getByRole("button", { name: /shop\/web root directory paused/i }));
+		fireEvent.click(within(view.container).getByRole("button", { name: /web root directory paused/i }));
 
 		expect(openWorkspaceForService).toHaveBeenCalledWith(service);
 	});

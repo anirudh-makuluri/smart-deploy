@@ -63,7 +63,7 @@ describe("DashboardSideBar", () => {
 		fireEvent.click(within(aside).getByRole("button", { name: "Repositories" }));
 
 		expect(onViewChange).toHaveBeenCalledWith("overview");
-		expect(onViewChange).toHaveBeenCalledWith("deployments");
+		expect(onViewChange).toHaveBeenCalledWith("history");
 		expect(onViewChange).toHaveBeenCalledWith("repositories");
 	});
 });

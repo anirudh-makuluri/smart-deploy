@@ -36,9 +36,9 @@ export type RepoCard = {
 };
 
 export function buildRepoCards(
-	repoRecords: RepoRecord[],
-	repoList: repoType[],
-	deployments: DeployConfig[]
+	repoRecords: RepoRecord[] = [],
+	repoList: repoType[] = [],
+	deployments: DeployConfig[] = []
 ): RepoCard[] {
 	return repoRecords.flatMap((record) => {
 		if ((record.services?.length ?? 0) === 0) return [];
