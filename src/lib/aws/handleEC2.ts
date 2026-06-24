@@ -99,7 +99,7 @@ export type NetworkingResult = {
 	securityGroupId: string;
 };
 
-export type EC2Result = {
+export type DeployResult = {
 	success: boolean;
 	baseUrl: string;
 	serviceUrls: Map<string, string>;

@@ -5,29 +5,28 @@ export function deploymentDomain(): string {
 }
 
 /** Build full hosted URL from a subdomain slug. */
-export function hostedUrlFromSubdomain(subdomain: string | null | undefined): string | null {
-	const slug = (subdomain ?? "").trim();
-	if (!slug) return null;
+export function hostedUrlFromSubdomain(subdomain: string): string {
+	const slug = subdomain.trim();
 	return `https://${slug}.${deploymentDomain()}`;
 }
 
-/** Extract subdomain from a full hosted URL or legacy full-URL value. */
-export function subdomainFromHostedUrl(value: string | null | undefined): string | null {
+/** Extract subdomain from a full hosted URL */
+export function subdomainFromHostedUrl(value: string): string {
 	let raw = (value ?? "").trim();
-	if (!raw) return null;
 	raw = raw.replace(/^https?:\/\//, "");
 	const suffix = `.${deploymentDomain()}`;
 	if (raw.endsWith(suffix)) {
 		const sub = raw.slice(0, -suffix.length).trim();
-		return sub || null;
+		return sub;
 	}
-	const first = raw.split(".")[0]?.trim();
-	return first || null;
+	const first = raw.split(".")[0].trim();
+	return first;
 }
 
 export function getDeploymentHostedUrl(deployment: {
-	hostedSubdomain?: string | null;
+	hostedSubdomain: string | null;
 }): string | null {
+	if(!deployment.hostedSubdomain) return null;
 	return hostedUrlFromSubdomain(deployment.hostedSubdomain);
 }
 

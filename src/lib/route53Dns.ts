@@ -31,7 +31,7 @@ const ELB_HOSTED_ZONE_IDS: Record<string, string> = {
 const CLOUDFRONT_HOSTED_ZONE_ID = "Z2FDTNDATAQYW2";
 
 export type AddRoute53DnsResult =
-	| { success: true; customUrl: string }
+	| { success: true; deployUrl: string }
 	| { success: false; error: string };
 
 export type DeleteRoute53DnsResult =
@@ -40,7 +40,6 @@ export type DeleteRoute53DnsResult =
 
 export type AddRoute53DnsOptions = {
 	deploymentTarget?: string | null;
-	previousCustomUrl?: string | null;
 	/** ALB DNS hostname — enables wildcard routing when ROUTE53_USE_WILDCARD is true. */
 	sharedAlbDns?: string | null;
 	awsRegion?: string | null;
@@ -80,15 +79,6 @@ function isElbHostname(host: string): boolean {
 
 function route53Client(region?: string): Route53Client {
 	return new Route53Client(getAwsClientConfig(region || config.AWS_REGION));
-}
-
-function resolveSubdomain(serviceName: string, options?: AddRoute53DnsOptions, baseDomain?: string): string {
-	const base = baseDomain || getDeploymentBaseDomain();
-	const previousSubdomain =
-		typeof options?.previousCustomUrl === "string" && options.previousCustomUrl.trim() && base
-			? getSubdomainFromCustomUrl(options.previousCustomUrl.trim(), base)
-			: null;
-	return previousSubdomain || sanitizeSubdomain(serviceName);
 }
 
 export async function ensureWildcardAlbRecord(
@@ -253,6 +243,7 @@ async function findExactRecord(
  */
 export async function addRoute53DnsRecord(
 	deployUrl: string,
+	hostedSubdomain: string,
 	serviceName: string,
 	options?: AddRoute53DnsOptions
 ): Promise<AddRoute53DnsResult> {
@@ -266,21 +257,8 @@ export async function addRoute53DnsRecord(
 		};
 	}
 
-	const trimmedUrl = typeof deployUrl === "string" ? deployUrl.trim() : "";
-	const name = typeof serviceName === "string" ? serviceName : "app";
-	if (!trimmedUrl && !options?.sharedAlbDns?.trim()) {
-		return { success: false, error: "deployUrl or sharedAlbDns is required" };
-	}
-
 	const region = (options?.awsRegion || config.AWS_REGION || "us-west-2").trim();
 	const sharedAlbDns = options?.sharedAlbDns?.trim().replace(/\.$/, "") || "";
-	const targetHost = sharedAlbDns || (trimmedUrl ? getDeployUrlHostname(trimmedUrl) : null);
-	if (!targetHost) {
-		return { success: false, error: "Invalid deployUrl" };
-	}
-
-	const subdomain = resolveSubdomain(name, options, baseDomain);
-	const customUrl = `https://${subdomain}.${baseDomain}`;
 
 	if (isWildcardDnsMode(options)) {
 		if (shouldEnsureWildcard() && sharedAlbDns) {
@@ -289,30 +267,30 @@ export async function addRoute53DnsRecord(
 				return { success: false, error: wildcard.error };
 			}
 		}
-		return { success: true, customUrl };
+		return { success: true, deployUrl };
 	}
 
-	const fqdn = `${subdomain}.${baseDomain}`;
-	if (isValidIpv4(targetHost)) {
+	const fqdn = `${hostedSubdomain}.${baseDomain}`;
+	if (isValidIpv4(deployUrl)) {
 		const result = await upsertRecord(
 			{
 				Name: fqdnRecordName(fqdn),
 				Type: "A",
 				TTL: 60,
-				ResourceRecords: [{ Value: targetHost }],
+				ResourceRecords: [{ Value: deployUrl }],
 			},
 			"SmartDeploy A record",
 			region
 		);
 		if (!result.ok) return { success: false, error: result.error };
-		return { success: true, customUrl };
+		return { success: true, deployUrl };
 	}
 
-	const aliasRecord = buildAliasRecord(fqdn, targetHost, region);
+	const aliasRecord = buildAliasRecord(fqdn, deployUrl, region);
 	if (aliasRecord) {
 		const result = await upsertRecord(aliasRecord, "SmartDeploy ALIAS record", region);
 		if (!result.ok) return { success: false, error: result.error };
-		return { success: true, customUrl };
+		return { success: true, deployUrl };
 	}
 
 	const result = await upsertRecord(
@@ -320,13 +298,13 @@ export async function addRoute53DnsRecord(
 			Name: fqdnRecordName(fqdn),
 			Type: "CNAME",
 			TTL: 60,
-			ResourceRecords: [{ Value: fqdnRecordName(targetHost) }],
+			ResourceRecords: [{ Value: fqdnRecordName(deployUrl) }],
 		},
 		"SmartDeploy CNAME record",
 		region
 	);
 	if (!result.ok) return { success: false, error: result.error };
-	return { success: true, customUrl };
+	return { success: true, deployUrl };
 }
 
 /**

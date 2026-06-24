@@ -471,9 +471,9 @@ export const dbHelper = {
 			}
 
 			// Build update payload
-			const inProgressStatuses = new Set<DeployConfig["status"]>(["deploying", "retrying", "verifying", "rolling_back"]);
+			const inProgressStatuses = new Set<DeployConfig["status"]>(["deploying"]);
 			const isAttemptStart =
-				(nextStatus === "deploying" || nextStatus === "retrying") &&
+				(nextStatus === "deploying") &&
 				!inProgressStatuses.has(currentStatus);
 			const updatePayload: Record<string, unknown> = {
 				revision: isAttemptStart ? (existing.revision ?? 0) + 1 : (existing.revision ?? 0),
@@ -731,7 +731,6 @@ export const dbHelper = {
 		serviceName: string;
 		branch?: string;
 		commitSha?: string;
-		commitMessage?: string;
 		responseId?: string | null;
 	}): Promise<{ error?: unknown; runId?: string }> {
 		try {
@@ -750,7 +749,6 @@ export const dbHelper = {
 					service_name: args.serviceName,
 					branch: args.branch ?? null,
 					commit_sha: args.commitSha ?? null,
-					commit_message: args.commitMessage ?? null,
 					response_id: args.responseId ?? null,
 					log_store: "s3",
 				})

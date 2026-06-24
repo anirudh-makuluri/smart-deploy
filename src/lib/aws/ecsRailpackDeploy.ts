@@ -10,7 +10,7 @@ import {
 	type Task,
 } from "@aws-sdk/client-ecs";
 import type { DeployConfig } from "../../app/types";
-import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { generateDefaultHostedSubdomain } from "@/lib/hostedUrl";
 import config from "../../config";
 import {
 	buildEcsContainerSecrets,
@@ -18,7 +18,6 @@ import {
 	getDeploymentEnvSecretObject,
 } from "./deploymentSecrets";
 import { getAwsClientConfig } from "./sdkClients";
-import type { EC2Result } from "./handleEC2";
 import {
 	allowAlbToReachService,
 	buildServiceHostname,
@@ -341,7 +340,7 @@ export async function deployRailpackServerToEcs(params: {
 	unitName: string;
 	ws: any;
 	send: SendFn;
-}): Promise<EC2Result> {
+}) {
 	const { deployConfig, region, repoName, imageUri, containerPort, unitName, ws, send } = params;
 
 	if (!ecsRailpackFromEcrConfigured()) {
@@ -393,18 +392,12 @@ export async function deployRailpackServerToEcs(params: {
 		healthCheckPath: "/",
 	});
 
-	const serviceLabel = deployConfig.serviceName?.trim() || repoName;
-	const hostedUrl = hostedUrlFromSubdomain(deployConfig.hostedSubdomain);
-	const hostedHost = hostedUrl?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
-	const hostname =
-		buildServiceHostname(serviceLabel, hostedHost || undefined) ||
-		buildServiceHostname(serviceLabel, undefined);
-	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
-	if (hostname) {
-		await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
-	} else {
-		send("⚠️ Could not derive hostname for ALB rule; traffic may only match default listener behavior.", "setup");
+	if(!deployConfig.hostedSubdomain?.trim()) {
+		deployConfig.hostedSubdomain = generateDefaultHostedSubdomain(repoName);
 	}
+	const hostname = buildServiceHostname(deployConfig.hostedSubdomain.trim());
+	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
+	await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
 
 	const scheme = alb.httpsListenerArn ? "https" : "http";
 	const baseUrl = hostname ? `${scheme}://${hostname}` : `${scheme}://${alb.dnsName}`;
@@ -522,11 +515,9 @@ export async function deployRailpackServerToEcs(params: {
 		baseUrl,
 		serviceUrls,
 		instanceId: `ecs:${cluster}/${serviceName}`,
-		publicIp: "",
 		vpcId,
 		subnetId: subnets[0] || "",
 		securityGroupId: securityGroups[0] || "",
-		amiId: "fargate",
 		sharedAlbDns: alb.dnsName,
 		albListenerArn: listenerArn,
 		targetGroupArn: tgArn,

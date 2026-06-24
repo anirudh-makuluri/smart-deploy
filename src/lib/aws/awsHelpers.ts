@@ -1244,7 +1244,7 @@ function getDeploymentBaseDomain(): string {
 		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
 		""
 	).trim();
-	if (!domain) return "";
+	if (!domain) return "smart-deploy.xyz";
 	return domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 }
 
@@ -1272,12 +1272,9 @@ function subdomainLabelFromPreferred(preferred: string | undefined, baseDomain: 
 	return sanitizeSubdomain(host);
 }
 
-export function buildServiceHostname(serviceName: string, preferredSubdomain?: string): string | null {
+export function buildServiceHostname(preferredSubdomain: string): string {
 	const baseDomain = getDeploymentBaseDomain();
-	if (!baseDomain) return null;
-	const label =
-		subdomainLabelFromPreferred(preferredSubdomain, baseDomain) ||
-		sanitizeSubdomain(serviceName);
+	const label = subdomainLabelFromPreferred(preferredSubdomain, baseDomain)
 	return `${label}.${baseDomain}`;
 }
 
