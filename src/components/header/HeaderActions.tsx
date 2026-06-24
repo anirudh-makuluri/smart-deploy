@@ -110,24 +110,13 @@ export default function HeaderActions({
 				</DropdownMenuContent>
 			</DropdownMenu>
 			{session?.user ? (
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon"
-					className="h-9 w-9 rounded-full border border-white/10 bg-white/[0.03] hover:bg-white/[0.08]"
-					onClick={onOpenReport}
-					aria-label="Report issue"
-					title="Report issue"
-				>
-					<Bug className="size-4" />
-				</Button>
-			) : null}
-			{session?.user ? (
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<button
 							type="button"
 							className="flex items-center gap-2 p-1 rounded-full hover:bg-white/5 transition-colors focus:outline-none"
+							aria-label="Open profile menu"
+							title="Open profile menu"
 							onKeyDown={handleAvatarKeyDown}
 						>
 							<div className="size-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden">
@@ -151,6 +140,10 @@ export default function HeaderActions({
 							<p className="text-sm font-bold truncate">{session.user.name}</p>
 							<p className="text-[10px] text-muted-foreground truncate">{session.user.email}</p>
 						</div>
+						<DropdownMenuItem className="cursor-pointer mt-1" onClick={onOpenReport}>
+							<Bug className="size-4 mr-2" />
+							<span className="font-medium">Report issue</span>
+						</DropdownMenuItem>
 						<DropdownMenuSeparator />
 						<DropdownMenuItem
 							className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer mt-1"
