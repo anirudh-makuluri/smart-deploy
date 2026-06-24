@@ -28,15 +28,15 @@ export function BuildConfigurationSection({
 	onUpdateResults,
 }: BuildConfigurationSectionProps) {
 	const baseline = useMemo(() => draftsFromResults(results), [results]);
-	const [draftOverrides, setDraftOverrides] = useState<UnitCommandDrafts | null>(null);
+	const [draftState, setDraftState] = useState<{
+		responseId: string | null;
+		overrides: UnitCommandDrafts | null;
+	}>({
+		responseId: results.response_id,
+		overrides: null,
+	});
 	const [saving, setSaving] = useState(false);
-	const [prevResultsId, setPrevResultsId] = useState(results.response_id);
-
-	if (results.response_id !== prevResultsId) {
-		setPrevResultsId(results.response_id);
-		setDraftOverrides(null);
-	}
-
+	const draftOverrides = draftState.responseId === results.response_id ? draftState.overrides : null;
 	const drafts = draftOverrides ?? baseline;
 
 	const anyDirty = useMemo(
@@ -53,15 +53,18 @@ export function BuildConfigurationSection({
 
 	const updateUnitDraft = useCallback(
 		(unitName: string, next: UnitCommandDrafts[string]) => {
-			setDraftOverrides((prev) => ({ ...(prev ?? baseline), [unitName]: next }));
+			setDraftState((prev) => ({
+				responseId: results.response_id,
+				overrides: { ...(prev.responseId === results.response_id ? prev.overrides ?? baseline : baseline), [unitName]: next },
+			}));
 		},
-		[baseline],
+		[baseline, results.response_id],
 	);
 
 	const handleResetCommands = useCallback(() => {
-		setDraftOverrides(null);
+		setDraftState({ responseId: results.response_id, overrides: null });
 		toast.message("Build commands reset");
-	}, []);
+	}, [results.response_id]);
 
 	const handleSaveCommands = useCallback(async () => {
 		if (!onUpdateResults || !anyDirty) return;
@@ -86,7 +89,7 @@ export function BuildConfigurationSection({
 		setSaving(true);
 		try {
 			await onUpdateResults(nextResults);
-			setDraftOverrides(null);
+			setDraftState({ responseId: results.response_id, overrides: null });
 			toast.success("Build commands saved");
 		} catch (err) {
 			console.error("Failed to save build commands:", err);

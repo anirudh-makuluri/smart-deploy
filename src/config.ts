@@ -18,9 +18,9 @@ const config = {
 	AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || "",
 	AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || "",
 	AWS_REGION: process.env.AWS_REGION || "us-west-2",
-	// EC2 ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP→HTTPS redirect are enabled.
-	EC2_ACM_CERTIFICATE_ARN: process.env.EC2_ACM_CERTIFICATE_ARN || "",
-	// ECS Fargate (Railpack / sd-artifacts server units). When unset, Railpack server deploy falls back to EC2+SSM (legacy).
+	// Shared ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP→HTTPS redirect are enabled.
+	DEPLOYMENT_ACM_CERTIFICATE_ARN: process.env.DEPLOYMENT_ACM_CERTIFICATE_ARN || "",
+	// ECS Fargate (Railpack / sd-artifacts server units).
 	ECS_CLUSTER_NAME: process.env.ECS_CLUSTER_NAME || "",
 	// Comma-separated subnet IDs for Fargate tasks (same VPC as target groups).
 	ECS_SUBNET_IDS: process.env.ECS_SUBNET_IDS || "",
@@ -34,7 +34,7 @@ const config = {
 	ECS_TASK_CPU: process.env.ECS_TASK_CPU || "512",
 	ECS_TASK_MEMORY: process.env.ECS_TASK_MEMORY || "1024",
 
-	// CodeBuild pipeline: set to "true" to build Docker images via CodeBuild + ECR instead of on the EC2 instance.
+	// CodeBuild pipeline: set to "true" to build Docker images via CodeBuild + ECR.
 	USE_CODEBUILD: (process.env.USE_CODEBUILD || "true").toLowerCase() === "true",
 
 	// Docker Hub (optional): used during CodeBuild so `docker build` pulls like `node:20-alpine` with your account limits instead of anonymous Hub limits.
@@ -82,3 +82,5 @@ const config = {
 
 
 export default config
+
+

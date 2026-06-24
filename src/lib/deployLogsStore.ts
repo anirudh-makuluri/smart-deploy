@@ -26,6 +26,11 @@ export function createEntry(userID: string | undefined, repoName: string, servic
 	});
 }
 
+export function deleteEntry(userID: string, repoName: string, serviceName: string) {
+	const k = key(userID, repoName, serviceName);
+	store.delete(k);
+}
+
 export function getEntry(userID: string | undefined, repoName: string, serviceName: string): Entry | undefined {
 	return store.get(key(userID, repoName, serviceName));
 }

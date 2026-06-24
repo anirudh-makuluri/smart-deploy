@@ -1,8 +1,15 @@
 import React from "react";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { repoType } from "@/app/types";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
-import { toast } from "sonner";
+import { useAppData } from "@/store/useAppData";
+
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({ data: { user: { id: "user-1" } } }),
+	},
+}));
 
 vi.mock("sonner", () => ({
 	toast: {
@@ -48,32 +55,13 @@ class MockWebSocket {
 }
 
 function Harness() {
-	const { socketStatus } = useWorkerWebSocketSession({
-		connectionEnabled: true,
-		repoName: "smart-deploy",
-		serviceName: "web",
-	});
-
-	return <div data-testid="socket-status">{socketStatus}</div>;
-}
-
-function HarnessWithToasts() {
-	const { socketStatus } = useWorkerWebSocketSession({
-		connectionEnabled: true,
-		repoName: "smart-deploy",
-		serviceName: "web",
-		announceActiveDeployments: true,
-	});
+	const { socketStatus } = useWorkerWebSocketSession();
 
 	return <div data-testid="socket-status">{socketStatus}</div>;
 }
 
 function HarnessWithLogs() {
-	const { deployLogEntries, socketStatus } = useWorkerWebSocketSession({
-		connectionEnabled: true,
-		repoName: "smart-deploy",
-		serviceName: "web",
-	});
+	const { deployLogEntries, socketStatus } = useWorkerWebSocketSession();
 
 	const lastMessage = deployLogEntries[deployLogEntries.length - 1]?.message ?? "";
 
@@ -91,6 +79,16 @@ describe("useWorkerWebSocketSession", () => {
 		vi.useFakeTimers();
 		MockWebSocket.instances = [];
 		vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+		useAppData.setState({
+			activeRepo: {
+				id: 1,
+				name: "smart-deploy",
+				full_name: "acme/smart-deploy",
+				html_url: "https://github.com/acme/smart-deploy",
+				owner: { login: "acme" },
+			} as repoType,
+			activeServiceName: "web",
+		});
 	});
 
 	afterEach(() => {
@@ -98,6 +96,10 @@ describe("useWorkerWebSocketSession", () => {
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
+		useAppData.setState({
+			activeRepo: null,
+			activeServiceName: null,
+		});
 	});
 
 	it("retries after a failed ws-token fetch and eventually opens the socket", async () => {
@@ -128,36 +130,6 @@ describe("useWorkerWebSocketSession", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(MockWebSocket.instances.length).toBe(1);
 		expect(MockWebSocket.instances[0]?.url).toContain("auth=token-123");
-	});
-
-	it("shows active deployment toast when server reports running deployments", async () => {
-		const infoSpy = vi.mocked(toast.info);
-		vi.spyOn(globalThis, "fetch").mockResolvedValue({
-			ok: true,
-			json: async () => ({ token: "token-abc" }),
-		} as Response);
-
-		render(<HarnessWithToasts />);
-
-		await act(async () => {
-			await Promise.resolve();
-		});
-
-		expect(screen.getByTestId("socket-status").textContent).toBe("open");
-
-		const ws = MockWebSocket.instances[0];
-		expect(ws).toBeDefined();
-
-		await act(async () => {
-			ws?.emitMessage({
-				type: "active_deployments",
-				payload: { deployments: [{ repoName: "smart-deploy", serviceName: "web" }] },
-			});
-		});
-
-		expect(infoSpy).toHaveBeenCalledWith("Deployment in progress", {
-			description: "web · smart-deploy",
-		});
 	});
 
 	it("streams deploy logs in real time for the active workspace", async () => {

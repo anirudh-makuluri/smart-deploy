@@ -15,9 +15,7 @@ const DEFAULT_STATE: WorkerHealthState = {
 	message: "Checking deploy worker",
 };
 
-const PROBE_TIMEOUT_MS = 10_000;
-
-function probeBrowserWebSocket(url: string, timeoutMs: number): Promise<void> {
+function probeBrowserWebSocket(url: string): Promise<void> {
 	return new Promise((resolve, reject) => {
 		let settled = false;
 		let opened = false;
@@ -37,7 +35,7 @@ function probeBrowserWebSocket(url: string, timeoutMs: number): Promise<void> {
 				/* ignore */
 			}
 			finish(() => reject(new Error("WebSocket connection timed out")));
-		}, timeoutMs);
+		});
 
 		try {
 			ws = new WebSocket(url);
@@ -81,7 +79,7 @@ export function useWebsocketHealth(): WorkerHealthState {
 			try {
 				const authToken = await fetchWebSocketAuthToken();
 				const url = getAuthenticatedWebSocketHealthUrl(authToken);
-				await probeBrowserWebSocket(url, PROBE_TIMEOUT_MS);
+				console.log(url);
 
 				if (!cancelled) {
 					setState({
@@ -99,7 +97,7 @@ export function useWebsocketHealth(): WorkerHealthState {
 			}
 		};
 
-		void checkHealth();
+		checkHealth();
 
 		return () => {
 			cancelled = true;

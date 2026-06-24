@@ -1,6 +1,6 @@
 # AWS setup
 
-SmartDeploy uses AWS for **EC2** deployments, **CodeBuild** + **ECR** for remote Docker image builds, an **Application Load Balancer (ALB)** for HTTPS and custom-domain routing, **SSM** for remote commands, **STS** for identity checks, and optionally **ACM** for TLS certificates on the ALB.
+SmartDeploy uses AWS for **CodeBuild** + **ECR** image builds, **ECS Fargate** runtime deployments, an **Application Load Balancer (ALB)** for HTTPS and custom-domain routing, **STS** for identity checks, and optionally **ACM** for TLS certificates on the ALB.
 
 Use this guide together with:
 
@@ -143,7 +143,7 @@ In `.env` (see also [`.env.example`](../.env.example)):
 | `AWS_SECRET_ACCESS_KEY` | Secret access key |
 | `AWS_REGION` | Region for EC2, CodeBuild, ECR, ALB (e.g. `us-west-2`) |
 | `USE_CODEBUILD` | `true` (default) to build images in CodeBuild and push to ECR |
-| `EC2_ACM_CERTIFICATE_ARN` | Optional. ACM certificate ARN in the **same region** as `AWS_REGION` for ALB HTTPS |
+| `DEPLOYMENT_ACM_CERTIFICATE_ARN` | Optional. ACM certificate ARN in the **same region** as `AWS_REGION` for ALB HTTPS |
 | `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` | Optional. Reduces Docker Hub anonymous rate limits during CodeBuild pulls |
 | `STATIC_SITE_BUCKET` | Optional. S3 bucket for **static_build** (no container start command) deploys: CodeBuild syncs build output here. |
 | `STATIC_SITE_PUBLIC_BASE_URL` | Required when using static S3 deploys. Public site URL (e.g. `https://d123.cloudfront.net` or your domain). |
@@ -192,7 +192,7 @@ Details: [Self-hosting](./SELF_HOSTING.md).
 1. Open **ACM** in the **same region** as `AWS_REGION`.
 2. Request a public certificate (wildcard or hostname you will use).
 3. Complete DNS validation.
-4. Set `EC2_ACM_CERTIFICATE_ARN` in `.env`.
+4. Set `DEPLOYMENT_ACM_CERTIFICATE_ARN` in `.env`.
 
 SmartDeploy creates an HTTPS (443) listener and can redirect HTTP to HTTPS. More context: [Custom domains](./CUSTOM_DOMAINS.md).
 
@@ -216,10 +216,10 @@ Extend the IAM policy with Bedrock invoke permissions if you use a separate key.
 
 | Error | Fix |
 |-------|-----|
-| `UnauthorizedOperation: ec2:RunInstances` | Confirm the EC2 statement is attached to the principal in use. |
+| ECS or shared-networking permission denied | Confirm the IAM policy includes the required ECS, ELBv2, EC2 networking, and IAM actions. |
 | `ec2:CreateTags` denied | Include `ec2:CreateTags` in the policy (see §2). |
-| ALB / `EC2_ACM_CERTIFICATE_ARN` | Certificate must be **issued** (not pending) and in the **same region** as the deployment. |
-| SSM `SendCommand` issues | EC2 instances need the SSM agent and an instance profile; SmartDeploy wires `AmazonSSMManagedInstanceCore` when it creates roles. |
+| ALB / `DEPLOYMENT_ACM_CERTIFICATE_ARN` | Certificate must be **issued** (not pending) and in the **same region** as the deployment. |
+| ECS rollout or task startup issues | Check ECS service events, task logs, and execution-role permissions. |
 | CodeBuild “role does not exist” | First deploy creates the CodeBuild service role; verify the IAM block in §2 allows role creation. |
 | Docker Hub 429 in CodeBuild | Set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (read-only token). |
 
@@ -231,3 +231,5 @@ Extend the IAM policy with Bedrock invoke permissions if you use a separate key.
 - Rotate access keys on a schedule.
 - Prefer an EC2 instance role over static keys when self-hosting.
 - Enable CloudTrail for API auditing.
+
+

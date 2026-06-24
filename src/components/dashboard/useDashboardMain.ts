@@ -15,7 +15,14 @@ import {
 export function useDashboardMain() {
 	const router = useRouter();
 	const { data: session } = authClient.useSession();
-	const { deployments, repoServices, repoList, isLoading, setAppData, refreshRepoList } = useAppData();
+	const {
+		deployments = [],
+		repoRecords = [],
+		repoList = [],
+		isLoading,
+		setAppData,
+		refreshRepoList,
+	} = useAppData();
 	const [ui, dispatch] = React.useReducer(
 		(
 			state: {
@@ -60,15 +67,15 @@ export function useDashboardMain() {
 	);
 
 	const repoCards = React.useMemo(
-		() => buildRepoCards(repoServices, repoList, deployments),
-		[deployments, repoList, repoServices]
+		() => buildRepoCards(repoRecords, repoList, deployments),
+		[deployments, repoList, repoRecords]
 	);
 
 	const filteredRepositories = React.useMemo(() => {
 		const query = ui.repoSearch.trim().toLowerCase();
 		if (!query) return repoList;
 		return repoList.filter((repo) =>
-			`${repo.full_name} ${repo.name} ${repo.owner?.login ?? ""} ${repo.latest_commit?.message ?? ""}`
+			`${repo.full_name}`
 				.toLowerCase()
 				.includes(query)
 		);
@@ -104,7 +111,7 @@ export function useDashboardMain() {
 				return;
 			}
 			dispatch({ type: "reset_add_repo" });
-			setAppData([repo, ...repoList], deployments, isLoading, repoServices);
+			setAppData([repo, ...repoList], deployments, repoRecords);
 			toast.success(`Added ${repo.full_name}`);
 			router.push(`/${repo.owner.login}/${repo.name}`);
 		} catch (error) {

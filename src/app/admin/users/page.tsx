@@ -27,12 +27,14 @@ type WaitingListRow = {
 	created_at: string | null;
 };
 
+const waitingListDateFormatter = new Intl.DateTimeFormat("en", {
+	dateStyle: "medium",
+	timeStyle: "short",
+});
+
 function formatDate(value: string | null) {
 	if (!value) return "-";
-	return new Intl.DateTimeFormat("en", {
-		dateStyle: "medium",
-		timeStyle: "short",
-	}).format(new Date(value));
+	return waitingListDateFormatter.format(new Date(value));
 }
 
 async function approveWaitingListEntry(formData: FormData) {

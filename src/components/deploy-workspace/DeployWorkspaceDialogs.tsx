@@ -1,42 +1,38 @@
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import type { DeployConfig } from "@/app/types";
 
 type DeployWorkspaceDialogsProps = {
-	showRejectConfirm: boolean;
+	dialogState: {
+		showRejectConfirm: boolean;
+		showDeleteConfirm: boolean;
+		isChangingDeploymentState: boolean;
+		showPauseResumeConfirm: boolean;
+		showRollbackConfirm: boolean;
+	};
 	onRejectConfirmOpenChange: (open: boolean) => void;
 	onConfirmRejectScan: () => void;
-	showDeleteConfirm: boolean;
 	onDeleteConfirmOpenChange: (open: boolean) => void;
 	onConfirmDeleteDeployment: () => void;
-	isChangingDeploymentState: boolean;
-	showPauseResumeConfirm: boolean;
 	onPauseResumeConfirmOpenChange: (open: boolean) => void;
 	onConfirmPauseResumeDeployment: () => void;
 	pauseResumeDialogTitle: string;
 	pauseResumeDialogDescription: string;
 	pauseResumeConfirmText: string;
-	effectiveDeploymentStatus: DeployConfig["status"];
-	showRollbackConfirm: boolean;
 	onRollbackConfirmOpenChange: (open: boolean) => void;
 	onConfirmRollbackDeployment: () => void;
 	rollbackCommitSha?: string | null;
 };
 
 export default function DeployWorkspaceDialogs({
-	showRejectConfirm,
+	dialogState,
 	onRejectConfirmOpenChange,
 	onConfirmRejectScan,
-	showDeleteConfirm,
 	onDeleteConfirmOpenChange,
 	onConfirmDeleteDeployment,
-	isChangingDeploymentState,
-	showPauseResumeConfirm,
 	onPauseResumeConfirmOpenChange,
 	onConfirmPauseResumeDeployment,
 	pauseResumeDialogTitle,
 	pauseResumeDialogDescription,
 	pauseResumeConfirmText,
-	showRollbackConfirm,
 	onRollbackConfirmOpenChange,
 	onConfirmRollbackDeployment,
 	rollbackCommitSha,
@@ -44,7 +40,7 @@ export default function DeployWorkspaceDialogs({
 	return (
 		<>
 			<ConfirmDialog
-				open={showRejectConfirm}
+				open={dialogState.showRejectConfirm}
 				onOpenChange={onRejectConfirmOpenChange}
 				onConfirm={onConfirmRejectScan}
 				title="Reject Analysis?"
@@ -53,16 +49,16 @@ export default function DeployWorkspaceDialogs({
 				variant="destructive"
 			/>
 			<ConfirmDialog
-				open={showDeleteConfirm}
+				open={dialogState.showDeleteConfirm}
 				onOpenChange={onDeleteConfirmOpenChange}
 				onConfirm={onConfirmDeleteDeployment}
 				title="Delete Deployment?"
 				description="This permanently removes the deployment and its tracked runtime state. You can deploy again later, but this current deployment record will be deleted."
-				confirmText={isChangingDeploymentState ? "Deleting..." : "Delete Deployment"}
+				confirmText={dialogState.isChangingDeploymentState ? "Deleting..." : "Delete Deployment"}
 				variant="destructive"
 			/>
 			<ConfirmDialog
-				open={showPauseResumeConfirm}
+				open={dialogState.showPauseResumeConfirm}
 				onOpenChange={onPauseResumeConfirmOpenChange}
 				onConfirm={onConfirmPauseResumeDeployment}
 				title={pauseResumeDialogTitle}
@@ -71,7 +67,7 @@ export default function DeployWorkspaceDialogs({
 				variant="default"
 			/>
 			<ConfirmDialog
-				open={showRollbackConfirm}
+				open={dialogState.showRollbackConfirm}
 				onOpenChange={onRollbackConfirmOpenChange}
 				onConfirm={onConfirmRollbackDeployment}
 				title="Rollback Deployment?"
@@ -80,7 +76,7 @@ export default function DeployWorkspaceDialogs({
 						? `This will redeploy the release from commit ${rollbackCommitSha.slice(0, 7)} while keeping current environment variables.`
 						: "This will redeploy the selected release while keeping current environment variables."
 				}
-				confirmText={isChangingDeploymentState ? "Rolling back..." : "Rollback Release"}
+				confirmText={dialogState.isChangingDeploymentState ? "Rolling back..." : "Rollback Release"}
 				variant="default"
 			/>
 		</>

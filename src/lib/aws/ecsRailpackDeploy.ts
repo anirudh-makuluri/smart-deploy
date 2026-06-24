@@ -10,7 +10,8 @@ import {
 	type Task,
 } from "@aws-sdk/client-ecs";
 import type { DeployConfig } from "../../app/types";
-import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import type { DeployResult } from "@/lib/deployResult";
+import { generateDefaultHostedSubdomain } from "@/lib/hostedUrl";
 import config from "../../config";
 import {
 	buildEcsContainerSecrets,
@@ -18,7 +19,6 @@ import {
 	getDeploymentEnvSecretObject,
 } from "./deploymentSecrets";
 import { getAwsClientConfig } from "./sdkClients";
-import type { EC2Result } from "./handleEC2";
 import {
 	allowAlbToReachService,
 	buildServiceHostname,
@@ -56,10 +56,11 @@ function containerEnvFromDeploy(envVars?: string | null): { name: string; value:
 	for (const line of envVars.split(/\r?\n/)) {
 		const t = line.trim();
 		if (!t || t.startsWith("#")) continue;
-		const eq = t.indexOf("=");
-		if (eq <= 0) continue;
-		const name = t.slice(0, eq).trim();
-		const value = t.slice(eq + 1).trim();
+		const match = /^([^=]+)=(.*)$/.exec(t);
+		if (!match) continue;
+		const [, rawName, rawValue] = match;
+		const name = rawName.trim();
+		const value = rawValue.trim();
 		if (name) out.push({ name, value });
 	}
 	return out.slice(0, 50);
@@ -210,20 +211,21 @@ export async function waitForEcsServiceRollout(params: {
 			params.send(summary, "rollout");
 		}
 
-		const taskArnSet = new Set<string>();
-		for (const desiredStatus of ["RUNNING", "STOPPED"] as const) {
-			const listed = await ecs.send(
-				new ListTasksCommand({
-					cluster: params.cluster,
-					serviceName: params.serviceName,
-					desiredStatus,
-					maxResults: 10,
-				})
-			);
-			for (const taskArn of listed.taskArns ?? []) {
-				taskArnSet.add(taskArn);
-			}
-		}
+		const listedTasks = await Promise.all(
+			(["RUNNING", "STOPPED"] as const).map((desiredStatus) =>
+				ecs.send(
+					new ListTasksCommand({
+						cluster: params.cluster,
+						serviceName: params.serviceName,
+						desiredStatus,
+						maxResults: 10,
+					})
+				)
+			)
+		);
+		const taskArnSet = new Set<string>(
+			listedTasks.flatMap((listed) => listed.taskArns ?? [])
+		);
 
 		const taskArns = [...taskArnSet];
 		let tasks: Task[] = [];
@@ -341,7 +343,7 @@ export async function deployRailpackServerToEcs(params: {
 	unitName: string;
 	ws: any;
 	send: SendFn;
-}): Promise<EC2Result> {
+}): Promise<DeployResult> {
 	const { deployConfig, region, repoName, imageUri, containerPort, unitName, ws, send } = params;
 
 	if (!ecsRailpackFromEcrConfigured()) {
@@ -350,11 +352,6 @@ export async function deployRailpackServerToEcs(params: {
 			baseUrl: "",
 			serviceUrls: new Map(),
 			instanceId: "",
-			publicIp: "",
-			vpcId: "",
-			subnetId: "",
-			securityGroupId: "",
-			amiId: "",
 		};
 	}
 
@@ -372,7 +369,7 @@ export async function deployRailpackServerToEcs(params: {
 	}
 
 	const vpcId = await describeSubnetVpcId(subnets[0]!, region, ws);
-	const certificateArn = config.EC2_ACM_CERTIFICATE_ARN?.trim() || "";
+	const certificateArn = config.DEPLOYMENT_ACM_CERTIFICATE_ARN?.trim() || "";
 
 	send("Ensuring shared ALB for ECS service...", "setup");
 	const alb = await ensureSharedAlb({
@@ -393,18 +390,12 @@ export async function deployRailpackServerToEcs(params: {
 		healthCheckPath: "/",
 	});
 
-	const serviceLabel = deployConfig.serviceName?.trim() || repoName;
-	const hostedUrl = hostedUrlFromSubdomain(deployConfig.hostedSubdomain);
-	const hostedHost = hostedUrl?.replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
-	const hostname =
-		buildServiceHostname(serviceLabel, hostedHost || undefined) ||
-		buildServiceHostname(serviceLabel, undefined);
-	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
-	if (hostname) {
-		await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
-	} else {
-		send("⚠️ Could not derive hostname for ALB rule; traffic may only match default listener behavior.", "setup");
+	if(!deployConfig.hostedSubdomain?.trim()) {
+		deployConfig.hostedSubdomain = generateDefaultHostedSubdomain(repoName);
 	}
+	const hostname = buildServiceHostname(deployConfig.hostedSubdomain.trim());
+	const listenerArn = alb.httpsListenerArn || alb.httpListenerArn;
+	await ensureHostRule(listenerArn, hostname, tgArn, region, ws);
 
 	const scheme = alb.httpsListenerArn ? "https" : "http";
 	const baseUrl = hostname ? `${scheme}://${hostname}` : `${scheme}://${alb.dnsName}`;
@@ -522,11 +513,9 @@ export async function deployRailpackServerToEcs(params: {
 		baseUrl,
 		serviceUrls,
 		instanceId: `ecs:${cluster}/${serviceName}`,
-		publicIp: "",
 		vpcId,
 		subnetId: subnets[0] || "",
 		securityGroupId: securityGroups[0] || "",
-		amiId: "fargate",
 		sharedAlbDns: alb.dnsName,
 		albListenerArn: listenerArn,
 		targetGroupArn: tgArn,

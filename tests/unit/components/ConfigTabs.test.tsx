@@ -25,12 +25,6 @@ vi.mock("@/config.client", () => ({
 	},
 }));
 
-vi.mock("@/lib/aws/ec2InstanceTypes", () => ({
-	DEFAULT_EC2_INSTANCE_TYPE: "t3.micro",
-	EC2_INSTANCE_TYPE_PRESETS: ["t3.micro"],
-	formatApproxEc2PriceCompact: vi.fn(() => "$0.0104/hr"),
-}));
-
 vi.mock("@/custom-hooks/useDeploymentEnvSecrets", () => ({
 	useDeploymentEnvSecrets: () => ({
 		entries: [{ name: "", value: "" }],

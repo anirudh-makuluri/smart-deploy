@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useQuery } from "@tanstack/react-query";
 import { formatTimestamp } from "@/lib/utils";
 import type { DeployStep, DeploymentHistoryEntry } from "@/app/types";
 import { Badge } from "@/components/ui/badge";
@@ -33,37 +34,19 @@ export function DeploymentHistoryEntryItem({
 	onWhyDidItFail,
 	onRollback,
 }: DeploymentHistoryEntryItemProps) {
-	const [fetchedSteps, setFetchedSteps] = React.useState<DeployStep[] | null>(null);
-	const [logsLoading, setLogsLoading] = React.useState(false);
-	const [logsError, setLogsError] = React.useState<string | null>(null);
-	const displaySteps = fetchedSteps ?? entry.steps;
-
-	React.useEffect(() => {
-		if (!entry.logRef) return;
-		let cancelled = false;
-		void (async () => {
-			setLogsLoading(true);
-			try {
-				const res = await fetch(`/api/deployment-runs/${entry.id}/logs`);
-				const data = (await res.json()) as { steps?: DeployStep[]; error?: string };
-				if (!res.ok) {
-					throw new Error(data.error || "Failed to load deploy logs");
-				}
-				if (!cancelled && data.steps) {
-					setFetchedSteps(data.steps);
-				}
-			} catch (error) {
-				if (!cancelled) {
-					setLogsError(error instanceof Error ? error.message : "Failed to load deploy logs");
-				}
-			} finally {
-				if (!cancelled) setLogsLoading(false);
+	const { data: fetchedSteps, isLoading: logsLoading, error: logsError } = useQuery({
+		queryKey: ["deployment-history-logs", entry.id],
+		enabled: Boolean(entry.logRef),
+		queryFn: async () => {
+			const res = await fetch(`/api/deployment-runs/${entry.id}/logs`);
+			const data = (await res.json()) as { steps?: DeployStep[]; error?: string };
+			if (!res.ok) {
+				throw new Error(data.error || "Failed to load deploy logs");
 			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [entry.id, entry.logRef]);
+			return data.steps ?? null;
+		},
+	});
+	const displaySteps = fetchedSteps ?? entry.steps;
 
 	return (
 		<AccordionItem key={entry.id} value={entry.id} className="border-border px-4">
@@ -138,7 +121,9 @@ export function DeploymentHistoryEntryItem({
 							</p>
 						)}
 						{logsError && (
-							<p className="text-xs text-amber-500 mb-2">{logsError}</p>
+							<p className="text-xs text-amber-500 mb-2">
+								{logsError instanceof Error ? logsError.message : "Failed to load deploy logs"}
+							</p>
 						)}
 						<ScrollArea className="h-48 rounded-md border border-border bg-background p-3">
 							<div className="space-y-3 text-xs font-mono text-muted-foreground">

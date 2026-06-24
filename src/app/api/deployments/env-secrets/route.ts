@@ -40,12 +40,9 @@ function normalizeEntries(raw: unknown): EnvSecretEntry[] {
 }
 
 async function loadOwnedDeployment(userID: string, repoName: string, serviceName: string) {
-	const result = await dbHelper.getDeployment(repoName, serviceName);
+	const result = await dbHelper.getDeploymentForUser(repoName, serviceName, userID);
 	if (result.error || !result.deployment) {
 		return { error: NextResponse.json({ error: "Deployment not found" }, { status: 404 }) };
-	}
-	if (result.deployment.ownerID !== userID) {
-		return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
 	}
 	return { deployment: result.deployment };
 }

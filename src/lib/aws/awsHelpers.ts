@@ -162,9 +162,10 @@ function parseAwsArgs(args: string[]): ParsedAwsArgs {
 	for (let i = 2; i < args.length; i++) {
 		const token = args[i];
 		if (token.startsWith("--")) {
-			const eqIdx = token.indexOf("=");
-			if (eqIdx !== -1) {
-				addOpt(token.slice(2, eqIdx), token.slice(eqIdx + 1));
+			const inlineOptionMatch = /^--([^=]+)=(.*)$/.exec(token);
+			if (inlineOptionMatch) {
+				const [, key, value] = inlineOptionMatch;
+				addOpt(key, value);
 			} else {
 				const next = args[i + 1];
 				if (next && !next.startsWith("--")) {
@@ -1098,9 +1099,17 @@ export async function getSubnetIds(vpcId: string, ws: any): Promise<string[]> {
 			.filter((az): az is string => Boolean(az))
 	);
 
-	for (const az of azs) {
-		if (subnetIds.length >= 2) break;
-		if (existingAzs.has(az)) continue;
+	const ensureAdditionalSubnet = async (azIndex: number): Promise<void> => {
+		if (subnetIds.length >= 2 || azIndex >= azs.length) {
+			return;
+		}
+
+		const az = azs[azIndex];
+		if (existingAzs.has(az)) {
+			await ensureAdditionalSubnet(azIndex + 1);
+			return;
+		}
+
 		try {
 			send(`Creating default subnet in ${az} for ALB multi-AZ support...`, "setup");
 			await runAWSCommand([
@@ -1112,9 +1121,13 @@ export async function getSubnetIds(vpcId: string, ws: any): Promise<string[]> {
 		} catch {
 			// subnet may already exist or AZ may be restricted; continue
 		}
+
 		subnets = await listSubnets();
 		subnetIds = toDistinctAzSubnetIds(subnets);
-	}
+		await ensureAdditionalSubnet(azIndex + 1);
+	};
+
+	await ensureAdditionalSubnet(0);
 
 	if (subnetIds.length < 2) {
 		send(`Could not ensure two AZ subnets in VPC ${vpcId}. Continuing with available subnet(s).`, "setup");
@@ -1221,7 +1234,11 @@ export async function waitForResource(
 ): Promise<boolean> {
 	const send = createWebSocketLogger(ws);
 
-	for (let i = 0; i < maxAttempts; i++) {
+	const waitForAttempt = async (attempt: number): Promise<boolean> => {
+		if (attempt >= maxAttempts) {
+			return false;
+		}
+
 		try {
 			const output = await runAWSCommand(checkCommand, ws, 'wait');
 			if (output.trim().includes(expectedValue)) {
@@ -1231,11 +1248,12 @@ export async function waitForResource(
 			// Continue waiting
 		}
 
-		send(`Waiting for resource... (${i + 1}/${maxAttempts})`, 'wait');
+		send(`Waiting for resource... (${attempt + 1}/${maxAttempts})`, 'wait');
 		await new Promise(resolve => setTimeout(resolve, delaySeconds * 1000));
-	}
+		return waitForAttempt(attempt + 1);
+	};
 
-	return false;
+	return waitForAttempt(0);
 }
 
 function getDeploymentBaseDomain(): string {
@@ -1244,7 +1262,7 @@ function getDeploymentBaseDomain(): string {
 		process.env.NEXT_PUBLIC_DEPLOYMENT_DOMAIN ||
 		""
 	).trim();
-	if (!domain) return "";
+	if (!domain) return "smart-deploy.xyz";
 	return domain.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
 }
 
@@ -1272,12 +1290,9 @@ function subdomainLabelFromPreferred(preferred: string | undefined, baseDomain: 
 	return sanitizeSubdomain(host);
 }
 
-export function buildServiceHostname(serviceName: string, preferredSubdomain?: string): string | null {
+export function buildServiceHostname(preferredSubdomain: string): string {
 	const baseDomain = getDeploymentBaseDomain();
-	if (!baseDomain) return null;
-	const label =
-		subdomainLabelFromPreferred(preferredSubdomain, baseDomain) ||
-		sanitizeSubdomain(serviceName);
+	const label = subdomainLabelFromPreferred(preferredSubdomain, baseDomain)
 	return `${label}.${baseDomain}`;
 }
 

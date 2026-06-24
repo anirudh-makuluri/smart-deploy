@@ -1,10 +1,7 @@
 export const deploymentStatuses = [
 	"didnt_deploy",
 	"deploying",
-	"verifying",
 	"running",
-	"retrying",
-	"rolling_back",
 	"paused",
 	"failed",
 	"stopped",
@@ -36,43 +33,22 @@ const transitionMap: Record<DeploymentStatus, Partial<Record<DeploymentStatusEve
 		stop_requested: "stopped",
 	},
 	deploying: {
-		verification_requested: "verifying",
 		deployment_succeeded: "running",
 		deployment_failed: "failed",
-		stop_requested: "stopped",
-	},
-	verifying: {
-		deployment_succeeded: "running",
-		deployment_failed: "failed",
-		rollback_requested: "rolling_back",
 		stop_requested: "stopped",
 	},
 	running: {
 		deploy_requested: "deploying",
 		pause_requested: "paused",
-		rollback_requested: "rolling_back",
-		stop_requested: "stopped",
-	},
-	retrying: {
-		verification_requested: "verifying",
-		deployment_succeeded: "running",
-		deployment_failed: "failed",
-		stop_requested: "stopped",
-	},
-	rolling_back: {
-		rollback_succeeded: "running",
-		deployment_failed: "failed",
 		stop_requested: "stopped",
 	},
 	paused: {
 		deploy_requested: "deploying",
 		resume_requested: "running",
-		rollback_requested: "rolling_back",
 		stop_requested: "stopped",
 	},
 	failed: {
-		deploy_requested: "retrying",
-		rollback_requested: "rolling_back",
+		deploy_requested: "deploying",
 		stop_requested: "stopped",
 	},
 	stopped: {
@@ -134,12 +110,7 @@ export function isLiveDeploymentStatus(status: string | null | undefined): boole
 
 export function isInProgressDeploymentStatus(status: string | null | undefined): boolean {
 	const normalized = normalizeDeploymentStatus(status);
-	return (
-		normalized === "deploying" ||
-		normalized === "verifying" ||
-		normalized === "retrying" ||
-		normalized === "rolling_back"
-	);
+	return normalized === "deploying"
 }
 
 export function isProblemDeploymentStatus(status: string | null | undefined): boolean {

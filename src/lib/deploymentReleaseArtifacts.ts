@@ -8,7 +8,7 @@ import type {
 
 function cloneJsonObject<T>(value: T): T {
 	if (!value || typeof value !== "object") return value;
-	return JSON.parse(JSON.stringify(value)) as T;
+	return structuredClone(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,10 +61,6 @@ export function attachDeployConfigToReleaseArtifact(
 
 export function isEcrImageReleaseArtifact(value: unknown): value is EcrImageReleaseArtifact {
 	return isRecord(value) && value.kind === "ecr_image";
-}
-
-export function isLegacyEc2ConfigReleaseArtifact(value: unknown): boolean {
-	return isRecord(value) && value.kind === "ec2_config";
 }
 
 export function buildStaticSiteReleaseArtifact(args: {

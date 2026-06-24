@@ -85,8 +85,10 @@ export async function uploadDeployRunLogs(args: {
 	const body = stepsToJsonl(args.steps);
 	const key = deployRunLogsS3Key(args.userId, args.runId);
 	const region = args.region?.trim() || config.AWS_REGION;
-	const client = await createS3Client(region);
-	const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+	const [client, { PutObjectCommand }] = await Promise.all([
+		createS3Client(region),
+		import("@aws-sdk/client-s3"),
+	]);
 
 	await client.send(
 		new PutObjectCommand({
@@ -112,8 +114,10 @@ export async function fetchDeployRunLogsFromS3(args: {
 	if (!bucket || !args.logRef?.trim()) return [];
 
 	const region = args.region?.trim() || config.AWS_REGION;
-	const client = await createS3Client(region);
-	const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+	const [client, { GetObjectCommand }] = await Promise.all([
+		createS3Client(region),
+		import("@aws-sdk/client-s3"),
+	]);
 	const out = await client.send(
 		new GetObjectCommand({
 			Bucket: bucket,
@@ -125,13 +129,13 @@ export async function fetchDeployRunLogsFromS3(args: {
 
 	return text
 		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean)
-		.map((line) => {
+		.flatMap((rawLine) => {
+			const line = rawLine.trim();
+			if (!line) return [];
 			try {
-				return JSON.parse(line) as DeployLogLine;
+				return [JSON.parse(line) as DeployLogLine];
 			} catch {
-				return { ts: new Date().toISOString(), step_id: "unknown", message: line };
+				return [{ ts: new Date().toISOString(), step_id: "unknown", message: line }];
 			}
 		});
 }

@@ -7,9 +7,7 @@
 
 import { dbHelper } from "@/db-helper";
 import { ensureUserAndRepos } from "@/lib/sessionHelpers";
-import { getInitialLogs } from "@/gcloud-logs/getInitialLogs";
 import { resolveDeploymentStatus } from "@/lib/deploymentStatus";
-import config from "@/config";
 import { GraphQLContext, requireUser, withTiming } from "../context";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { isEcsCloudResources } from "@/lib/cloudResources";
@@ -40,8 +38,8 @@ export async function appOverview(_: unknown, __: unknown, ctx: GraphQLContext) 
 		const deploymentsPromise = withTiming("appOverview.getUserDeployments", async () =>
 			dbHelper.getUserDeployments(userID)
 		);
-		const servicesPromise = withTiming("appOverview.getUserRepoServices", async () =>
-			dbHelper.getUserRepoServices(userID)
+		const servicesPromise = withTiming("appOverview.getUserRepoRecords", async () =>
+			dbHelper.getUserRepoRecords(userID)
 		);
 
 		const [{ repoList }, deploymentsRes, servicesRes] = await Promise.all([
@@ -58,7 +56,7 @@ export async function appOverview(_: unknown, __: unknown, ctx: GraphQLContext) 
 		return {
 			repoList: sortAndLimitRepos(repoList),
 			deployments: (deploymentsRes.deployments ?? []).map(transformDeployment),
-			repoServices: servicesRes.records ?? [],
+			repoRecords: servicesRes.records ?? [],
 		};
 	});
 }
@@ -81,16 +79,54 @@ export async function repoDeployments(
 }
 
 /**
- * Query.repoServices
- * Returns detected services for all user repos
+ * Query.repoRecord
+ * Returns a single detected record for a user repo
  */
-export async function repoServices(_: unknown, __: unknown, ctx: GraphQLContext) {
-	return withTiming("repoServices", async () => {
+export async function repoRecord(
+	_: unknown,
+	{ owner, repo }: { owner: string; repo: string },
+	ctx: GraphQLContext
+) {
+	return withTiming("repoRecord", async () => {
 		const userID = requireUser(ctx);
-		const response = await dbHelper.getUserRepoServices(userID);
-		if (response.error) throw new Error(String(response.error));
-		return response.records ?? [];
+		const ownerTrimmed = String(owner ?? "").trim();
+		const repoTrimmed = String(repo ?? "").trim();
+
+		if (!ownerTrimmed || !repoTrimmed) {
+			throw new Error("Owner and repo are required");
+		}
+
+		const repoUrl = `https://github.com/${ownerTrimmed}/${repoTrimmed}`.replace(/\.git$/i, "");
+		const directResponse = await dbHelper.getRepoServicesByUrl(userID, repoUrl);
+		if (directResponse.error) throw new Error(String(directResponse.error));
+		if (directResponse.record) return directResponse.record;
+
+		// Fall back to a case-insensitive owner/repo match in case the URL casing differs.
+		const allRecordsResponse = await dbHelper.getUserRepoRecords(userID);
+		if (allRecordsResponse.error) throw new Error(String(allRecordsResponse.error));
+
+		const ownerLower = ownerTrimmed.toLowerCase();
+		const repoLower = repoTrimmed.toLowerCase();
+
+		return (
+			allRecordsResponse.records?.find(
+				(record) =>
+					record.repo_owner.toLowerCase() === ownerLower &&
+					record.repo_name.toLowerCase() === repoLower
+			) ?? null
+		);
 	});
+}
+
+/**
+ * Query.repoRecords
+ * Returns detected records for all user repos
+ */
+export async function repoRecords(_: unknown, __: unknown, ctx: GraphQLContext) {
+	const userID = requireUser(ctx);
+	const response = await dbHelper.getUserRepoRecords(userID);
+	if (response.error) throw new Error(String(response.error));
+	return response.records ?? [];
 }
 
 /**
@@ -255,7 +291,7 @@ export async function session(
 
 /**
  * Query.serviceLogs
- * Fetches logs for a service (EC2 or GCP Cloud Run)
+ * Fetches logs for an AWS service
  */
 export async function serviceLogs(
 	_: unknown,
@@ -278,7 +314,6 @@ export async function serviceLogs(
 			throw new Error("serviceName is required");
 		}
 
-		// If deployment is EC2-backed, use SSM
 		if (repoNameStr) {
 			const deploymentRes = await dbHelper.getDeployment(repoNameStr, serviceNameStr);
 			const deployConfig = deploymentRes.deployment;
@@ -302,15 +337,9 @@ export async function serviceLogs(
 			}
 		}
 
-		// Legacy GCP Cloud Run logs (no longer deployed; return empty)
-		const logs = (await getInitialLogs(serviceNameStr, limitNum)) as {
-			timestamp?: string;
-			message?: string;
-		}[];
-
 		return {
-			logs,
-			source: "gcp",
+			logs: [],
+			source: "ecs",
 		};
 	});
 }
@@ -369,7 +398,6 @@ function transformDeployment(deployment: any) {
 		id: deployment.id,
 		repoName: deployment.repoName,
 		serviceName: deployment.serviceName,
-		ownerID: deployment.ownerID,
 		status: resolveDeploymentStatus({
 			status: deployment.status,
 			hostedSubdomain,

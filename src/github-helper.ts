@@ -78,7 +78,6 @@ export async function getGithubRepos(token: string) {
 					private: repo.private,
 					visibility: repo.visibility,
 					owner: repo.owner,
-					// Latest commit info
 					latest_commit: latestCommit
 						? {
 							message: latestCommit.commit.message,

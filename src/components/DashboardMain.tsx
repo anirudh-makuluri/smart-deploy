@@ -5,8 +5,8 @@ import DashboardOverviewView from "@/components/dashboard/DashboardOverviewView"
 import DashboardRepositoriesView from "@/components/dashboard/DashboardRepositoriesView";
 import { useDashboardMain } from "@/components/dashboard/useDashboardMain";
 
-type DashboardMainProps = {
-	activeView: "overview" | "deployments" | "repositories";
+export type DashboardMainProps = {
+	activeView: "overview" | "history" | "repositories";
 };
 
 export default function DashboardMain({ activeView }: DashboardMainProps) {
@@ -33,7 +33,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 						<h1 className="font-semibold text-xl text-foreground">
 							{activeView === "overview"
 								? "Deployments"
-								: activeView === "deployments"
+								: activeView === "history"
 									? "History"
 									: "Repositories"}
 						</h1>
@@ -44,7 +44,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 				<div className={activeView === "overview" ? "" : "hidden"}>
 					<DashboardOverviewView repoCards={repoCards} isLoading={isLoading} />
 				</div>
-				<div className={activeView === "deployments" ? "" : "hidden"}>
+				<div className={activeView === "history" ? "" : "hidden"}>
 					<DashboardDeploymentsView />
 				</div>
 				<div className={activeView === "repositories" ? "" : "hidden"}>
@@ -53,13 +53,15 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 						visibleRepositories={visibleRepositories}
 						repoSearch={ui.repoSearch}
 						onRepoSearchChange={(value) => dispatch({ type: "set_repo_search", value })}
-						showAddRepo={ui.showAddRepo}
+						ui={{
+							showAddRepo: ui.showAddRepo,
+							isLoadingRepo: ui.isLoadingRepo,
+							isRefreshing: ui.isRefreshing,
+							isLoading,
+						}}
 						onToggleAddRepo={() => dispatch({ type: "toggle_add_repo" })}
 						repoUrl={ui.repoUrl}
 						onRepoUrlChange={(value) => dispatch({ type: "set_repo_url", value })}
-						isLoadingRepo={ui.isLoadingRepo}
-						isRefreshing={ui.isRefreshing}
-						isLoading={isLoading}
 						onAddPublicRepo={handleAddPublicRepo}
 						onRefresh={handleRefresh}
 						onCancelAddRepo={() => dispatch({ type: "reset_add_repo" })}

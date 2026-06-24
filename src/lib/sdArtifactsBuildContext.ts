@@ -51,8 +51,10 @@ function normalizePackagePathForSdArtifacts(packagePath: string | null | undefin
 	const trimmed = (packagePath || ".").trim().replace(/\\/g, "/");
 	const segments = trimmed
 		.split("/")
-		.map((segment) => segment.trim())
-		.filter((segment) => segment.length > 0 && segment !== ".");
+		.flatMap((segment) => {
+			const normalized = segment.trim();
+			return normalized && normalized !== "." ? [normalized] : [];
+		});
 	return segments.length > 0 ? segments.join("/") : ".";
 }
 
@@ -60,8 +62,10 @@ function sanitizeSdArtifactsRepoSegment(value: string, fallback: string): string
 	const lowered = [...value].map((ch) => (/[a-z0-9]/i.test(ch) ? ch.toLowerCase() : "-")).join("");
 	const collapsed = lowered
 		.split("-")
-		.map((segment) => segment.trim())
-		.filter(Boolean)
+		.flatMap((segment) => {
+			const trimmed = segment.trim();
+			return trimmed ? [trimmed] : [];
+		})
 		.join("-");
 	const base = collapsed || fallback;
 	const withPrefix = /^[a-z]/.test(base) ? base : `a-${base}`;

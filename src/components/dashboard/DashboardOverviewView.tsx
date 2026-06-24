@@ -20,7 +20,7 @@ export default function DashboardOverviewView({ repoCards, isLoading }: Dashboar
 					<p className="mt-1 max-w-sm text-sm text-muted-foreground">
 						{isLoading
 							? "Fetching your data."
-							: "Open Repositories from the menu (phone) or sidebar (desktop), pick a repo, and we will detect and save its services there."}
+							: "Open Repositories, pick a repo, and we will detect and save its services there."}
 					</p>
 				</div>
 			) : (
@@ -34,7 +34,7 @@ export default function DashboardOverviewView({ repoCards, isLoading }: Dashboar
 								<LanguageIcon language={language} />
 								<div className="min-w-0">
 									<p className="font-semibold text-foreground truncate">
-										{owner} / {name}
+										{name}
 									</p>
 									<p className="text-sm text-muted-foreground">{subtitle}</p>
 								</div>

@@ -5,11 +5,13 @@ import DeployWorkspaceActiveSection from "@/components/deploy-workspace/DeployWo
 import DeployWorkspaceDeployButton from "@/components/deploy-workspace/DeployWorkspaceDeployButton";
 import DeployWorkspaceDialogs from "@/components/deploy-workspace/DeployWorkspaceDialogs";
 import { useDeployWorkspace } from "@/components/deploy-workspace/useDeployWorkspace";
+import { resolveActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useAppData } from "@/store/useAppData";
 
 export type DeployWorkspaceProps = {
-	mobileNavOpen?: boolean;
-	onMobileNavOpenChange?: (open: boolean) => void;
+	mobileNavOpen: boolean;
+	onMobileNavOpenChange: (open: boolean) => void;
 };
 
 function ServiceNotFound() {
@@ -20,15 +22,11 @@ function ServiceNotFound() {
 	);
 }
 
-export default function DeployWorkspace({
+function DeployWorkspaceContent({
 	mobileNavOpen = false,
 	onMobileNavOpenChange,
-}: DeployWorkspaceProps = {}) {
+}: DeployWorkspaceProps) {
 	const workspace = useDeployWorkspace();
-
-	if (workspace.missingService || workspace.repoNotFound) {
-		return <ServiceNotFound />;
-	}
 
 	const {
 		ui,
@@ -54,9 +52,8 @@ export default function DeployWorkspace({
 		showDeployLogs,
 		deployLogEntries,
 		serviceLogs,
-		effectiveDeployStatus,
+		deployStatus,
 		deployError,
-		steps,
 		liveDeployConfig,
 		isRefreshingPreview,
 		pauseResumeDialogTitle,
@@ -78,7 +75,7 @@ export default function DeployWorkspace({
 		handleConfirmRejectScan,
 		handleDeleteDeployment,
 		handlePauseResumeDeployment,
-		handleRollbackDeployment,
+		handleConfirmRollbackDeployment,
 	} = workspace;
 
 	const deployAction = (
@@ -95,11 +92,6 @@ export default function DeployWorkspace({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-background/30 text-foreground dot-grid-bg">
-			<div className="border-b border-white/5 bg-background/50 backdrop-blur-md sticky top-0 z-10 transition-all">
-				<div className="mx-auto flex max-w-6xl items-center justify-end px-6 py-4 md:justify-end">
-					<div className="w-full max-w-[164px] md:hidden">{deployAction}</div>
-				</div>
-			</div>
 
 			<div className="flex min-h-0 flex-1 overflow-hidden">
 				<aside
@@ -132,7 +124,6 @@ export default function DeployWorkspace({
 							onScanCancel={() => dispatch({ type: "set_scan_mode", value: "idle" })}
 							onImproveScanComplete={handleImproveScanComplete}
 							onImproveScanCancel={handleImproveScanCancel}
-							hasScanResults={hasScanResults}
 							effectiveScanResults={effectiveScanResults}
 							scanDuration={ui.scanDuration}
 							deployment={deploymentConfig}
@@ -142,7 +133,6 @@ export default function DeployWorkspace({
 							onStartScan={startScan}
 							deploymentHistory={deploymentHistory}
 							historyTotal={historyTotal}
-							isLoadingHistory={isLoadingHistory}
 							onRollbackEntrySelect={handleRollbackEntrySelect}
 							rollbackingEntryId={ui.isChangingDeploymentState ? ui.rollbackEntry?.id ?? null : null}
 							effectiveDeploymentStatus={effectiveDeploymentStatus}
@@ -154,24 +144,28 @@ export default function DeployWorkspace({
 							showDeployLogs={showDeployLogs}
 							deployLogEntries={deployLogEntries}
 							serviceLogs={serviceLogs}
-							effectiveDeployStatus={effectiveDeployStatus}
+							effectiveDeployStatus={deployStatus}
 							deployError={deployError}
 							latestDeploymentRunId={latestDeploymentRunId}
 							deployingCommitInfo={ui.deployingCommitInfo}
-							steps={steps}
 							liveDeployConfig={liveDeployConfig}
-							isDeploying={ui.isDeploying}
-							isRefreshingPreview={isRefreshingPreview}
 							onRedeploy={handleDeploy}
 							onRefreshPreview={handleManualCreatePreview}
 							onEditConfiguration={() => setActiveSection("setup")}
 							onOpenScanSection={() => setActiveSection("scan")}
 							onPauseResumeDeployment={() => dispatch({ type: "set_show_pause_resume_confirm", value: true })}
 							onDeleteDeployment={() => dispatch({ type: "set_show_delete_confirm", value: true })}
-							isChangingDeploymentState={ui.isChangingDeploymentState}
 							activeRepo={repoRecord!}
-							deployDisabled={deployDisabled}
 							deployDisabledMessage={deployDisabledMessage}
+							viewState={{
+								hasScanResults,
+								isLoadingHistory,
+								showDeployLogs,
+								isDeploying: ui.isDeploying,
+								isRefreshingPreview,
+								isChangingDeploymentState: ui.isChangingDeploymentState,
+								deployDisabled,
+							}}
 						/>
 					</main>
 				</div>
@@ -201,25 +195,44 @@ export default function DeployWorkspace({
 			) : null}
 
 			<DeployWorkspaceDialogs
-				showRejectConfirm={ui.showRejectConfirm}
+				dialogState={{
+					showRejectConfirm: ui.showRejectConfirm,
+					showDeleteConfirm: ui.showDeleteConfirm,
+					isChangingDeploymentState: ui.isChangingDeploymentState,
+					showPauseResumeConfirm: ui.showPauseResumeConfirm,
+					showRollbackConfirm: ui.showRollbackConfirm,
+				}}
 				onRejectConfirmOpenChange={(open) => dispatch({ type: "set_show_reject_confirm", value: open })}
 				onConfirmRejectScan={() => void handleConfirmRejectScan()}
-				showDeleteConfirm={ui.showDeleteConfirm}
 				onDeleteConfirmOpenChange={(open) => dispatch({ type: "set_show_delete_confirm", value: open })}
 				onConfirmDeleteDeployment={() => void handleDeleteDeployment()}
-				isChangingDeploymentState={ui.isChangingDeploymentState}
-				showPauseResumeConfirm={ui.showPauseResumeConfirm}
 				onPauseResumeConfirmOpenChange={(open) => dispatch({ type: "set_show_pause_resume_confirm", value: open })}
 				onConfirmPauseResumeDeployment={() => void handlePauseResumeDeployment()}
 				pauseResumeDialogTitle={pauseResumeDialogTitle}
 				pauseResumeDialogDescription={pauseResumeDialogDescription}
 				pauseResumeConfirmText={pauseResumeConfirmText}
-				effectiveDeploymentStatus={effectiveDeploymentStatus}
-				showRollbackConfirm={ui.showRollbackConfirm}
 				onRollbackConfirmOpenChange={(open) => dispatch({ type: "set_show_rollback_confirm", value: open })}
-				onConfirmRollbackDeployment={() => void handleRollbackDeployment()}
+				onConfirmRollbackDeployment={() => void handleConfirmRollbackDeployment()}
 				rollbackCommitSha={ui.rollbackEntry?.commitSha}
 			/>
 		</div>
 	);
+}
+
+export default function DeployWorkspace(props: DeployWorkspaceProps) {
+	const activeRepo = useAppData((s) => s.activeRepo);
+	const activeServiceName = useAppData((s) => s.activeServiceName);
+	const deployments = useAppData((s) => s.deployments);
+
+	const activeDeployment = resolveActiveDeployment({
+		activeRepo,
+		activeServiceName,
+		deployments,
+	});
+
+	if (!activeRepo || !activeServiceName || !activeDeployment) {
+		return <ServiceNotFound />;
+	}
+
+	return <DeployWorkspaceContent {...props} />;
 }

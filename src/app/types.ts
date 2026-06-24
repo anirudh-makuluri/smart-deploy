@@ -186,9 +186,6 @@ export type DeploymentFailureCategory =
 export type DeploymentFailureCode =
 	| "AUTHENTICATION_FAILED"
 	| "CODEBUILD_DOCKER_IMAGE_BUILD_FAILED"
-	| "EC2_CLOUD_INIT_FAILURE"
-	| "EC2_CLOUD_INIT_NO_COMPLETION_SIGNAL"
-	| "EC2_SERVER_NOT_RESPONDING"
 	| "DEPLOYMENT_VERIFICATION_FAILED"
 	| "AUTOMATIC_ROLLBACK_FAILED"
 	| "AUTOMATIC_ROLLBACK_NO_CANDIDATE"
@@ -231,7 +228,7 @@ export type DetectedServiceInfo = {
 };
 
 /** Stored record per user+repo for detected services metadata. */
-export type RepoServicesRecord = {
+export type RepoRecord = {
 	repo_url: string;
 	branch: string;
 	repo_owner: string;

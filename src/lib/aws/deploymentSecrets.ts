@@ -60,7 +60,10 @@ export function buildEcsContainerSecrets(
 	secretsArn: string,
 	keys: string[]
 ): { name: string; valueFrom: string }[] {
-	const uniqueKeys = [...new Set(keys.map((k) => k.trim()).filter(Boolean))];
+	const uniqueKeys = [...new Set(keys.flatMap((key) => {
+		const trimmed = key.trim();
+		return trimmed ? [trimmed] : [];
+	}))];
 	return uniqueKeys.slice(0, 50).map((key) => ({
 		name: key,
 		valueFrom: ecsSecretReference(secretsArn, key),

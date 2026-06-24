@@ -1,4 +1,4 @@
-import { DeployConfig, DeploymentTarget, RepoServicesRecord, SDArtifactsResponse } from "@/app/types";
+import { DeployConfig, DeploymentTarget, RepoRecord, SDArtifactsResponse } from "@/app/types";
 import { sanitizeDeployConfigForHistory } from "@/lib/deploymentReleaseArtifacts";
 import { getDeploymentStatusRank, isDraftDeploymentStatus } from "@/lib/deploymentStatus";
 import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
@@ -296,7 +296,7 @@ export function getDeploymentForService(
 }
 
 export function countDeployedServicesForRepo(
-	repoRecord: Pick<RepoServicesRecord, "repo_url" | "repo_name" | "services">,
+	repoRecord: Pick<RepoRecord, "repo_url" | "repo_name" | "services">,
 	deployments: DeployConfig[]
 ): number {
 	const services = repoRecord.services ?? [];

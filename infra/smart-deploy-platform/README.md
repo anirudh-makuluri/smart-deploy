@@ -53,7 +53,7 @@ AWS_SECRET_ACCESS_KEY=...
 Optional for HTTPS on container deploys (shared ALB):
 
 ```env
-EC2_ACM_CERTIFICATE_ARN=arn:aws:acm:us-west-2:ACCOUNT:certificate/...
+DEPLOYMENT_ACM_CERTIFICATE_ARN=arn:aws:acm:us-west-2:ACCOUNT:certificate/...
 ```
 
 ## Already created resources
@@ -87,3 +87,4 @@ terraform import 'aws_s3_bucket.static[0]' smart-deploy-static-site
 
 - [docs/AWS_SETUP.md](../../docs/AWS_SETUP.md) — IAM policy for the Smart Deploy service user
 - [infra/aws-worker-new](../aws-worker-new) — optional WebSocket/deploy worker EC2
+

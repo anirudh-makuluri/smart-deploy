@@ -36,13 +36,19 @@ export function useDeploymentEnvSecrets({
 	branch,
 }: UseDeploymentEnvSecretsArgs) {
 	const updateDeploymentById = useAppData((state) => state.updateDeploymentById);
-	const [entries, setEntries] = React.useState<DeploymentEnvSecretEntry[]>([]);
+	const [deploymentState, setDeploymentState] = React.useState<{
+		entries: DeploymentEnvSecretEntry[];
+		loadedDeploymentKey: string | null;
+	}>({
+		entries: [],
+		loadedDeploymentKey: null,
+	});
 	const [isSaving, setIsSaving] = React.useState(false);
-	const [loadedDeploymentKey, setLoadedDeploymentKey] = React.useState<string | null>(null);
 	const lastPersistedKeyRef = React.useRef<string | null>(null);
 
 	const deploymentKey = `${repoName}:${serviceName}:${secretsArn ?? ""}`;
-	const isLoading = Boolean(repoName && serviceName && loadedDeploymentKey !== deploymentKey);
+	const isLoading = Boolean(repoName && serviceName && deploymentState.loadedDeploymentKey !== deploymentKey);
+	const entries = deploymentState.entries;
 
 	React.useEffect(() => {
 		if (!repoName || !serviceName) return undefined;
@@ -54,15 +60,19 @@ export function useDeploymentEnvSecrets({
 				if (cancelled) return;
 				const nextEntries = result.entries.length > 0 ? result.entries : [{ name: "", value: "" }];
 				lastPersistedKeyRef.current = entriesPersistenceKey(nextEntries);
-				setEntries(nextEntries);
-				setLoadedDeploymentKey(deploymentKey);
+				setDeploymentState({
+					entries: nextEntries,
+					loadedDeploymentKey: deploymentKey,
+				});
 			})
 			.catch((error: unknown) => {
 				if (cancelled) return;
 				const message = error instanceof Error ? error.message : "Failed to load environment variables";
 				toast.error(message);
-				setEntries([{ name: "", value: "" }]);
-				setLoadedDeploymentKey(deploymentKey);
+				setDeploymentState({
+					entries: [{ name: "", value: "" }],
+					loadedDeploymentKey: deploymentKey,
+				});
 			});
 
 		return () => {
@@ -101,7 +111,10 @@ export function useDeploymentEnvSecrets({
 	);
 
 	const handleEntriesChange = React.useCallback((nextEntries: DeploymentEnvSecretEntry[]) => {
-		setEntries(nextEntries);
+		setDeploymentState((current) => ({
+			...current,
+			entries: nextEntries,
+		}));
 	}, []);
 
 	React.useEffect(() => {
@@ -125,7 +138,10 @@ export function useDeploymentEnvSecrets({
 	const saveEnvString = React.useCallback(
 		async (envString: string) => {
 			const parsed = parseEnvLinesToEntries(envString);
-			setEntries(parsed.length > 0 ? parsed : [{ name: "", value: "" }]);
+			setDeploymentState((current) => ({
+				...current,
+				entries: parsed.length > 0 ? parsed : [{ name: "", value: "" }],
+			}));
 			await persistEntries(parsed);
 		},
 		[persistEntries]

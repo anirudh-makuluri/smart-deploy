@@ -14,8 +14,6 @@ import { parseGithubOwnerRepo, fetchRepoMetadata, prepareGithubRepoWorkspace, Gi
 import { detectMultiService, discoverServiceCatalog, sanitizeFolderServiceId } from "@/lib/multiServiceDetector";
 import { safeResolveUnderRepoRoot } from "@/lib/repoPathUtils";
 import { buildPrefilledScanResults } from "@/lib/infrastructurePrefill";
-import { getSubnetIds } from "@/lib/aws/awsHelpers";
-import { configureAlb } from "@/lib/aws/handleEC2";
 import { lookupRoute53Subdomain } from "@/lib/route53Dns";
 import { getDeploymentBaseDomain, sanitizeSubdomain } from "@/lib/dnsUtils";
 import {
@@ -26,9 +24,8 @@ import {
 	configureCustomDomainForDeployment,
 	githubAuthenticatedCloneUrl,
 } from "@/lib/graphql/helpers";
-import config from "@/config";
 import type { DetectedServiceInfo } from "@/app/types";
-import { subdomainFromHostedUrl, hostedUrlFromSubdomain } from "@/lib/hostedUrl";
+import { subdomainFromHostedUrl, hostedSubdomainOrDefault, hostedUrlFromSubdomain, getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { isEcsDeployment } from "@/lib/cloudResources";
 import { getDeploymentBaseDomain as getBaseDomain } from "@/lib/dnsUtils";
 import fs from "fs";
@@ -495,18 +492,16 @@ export async function updateCustomDomain(
 			throw new Error("Invalid customUrl format");
 		}
 
-		const { deployment, error: getFetchError } = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
+		const { deployment, error: getFetchError } = await dbHelper.getDeploymentForUser(repoNameTrimmed, serviceNameTrimmed, userID);
 		if (getFetchError || !deployment) {
 			throw new Error("Deployment not found");
 		}
 
-		if (deployment.ownerID !== userID) {
-			throw new Error("Unauthorized: deployment does not belong to you");
-		}
-
-		const hostedSubdomain = formattedCustomUrl ? subdomainFromHostedUrl(formattedCustomUrl) : null;
+		const hostedSubdomain = formattedCustomUrl
+			? subdomainFromHostedUrl(formattedCustomUrl)
+			: hostedSubdomainOrDefault(repoNameTrimmed, deployment.hostedSubdomain);
 		const previousHostedUrl =
-			hostedUrlFromSubdomain(deployment.hostedSubdomain) ??
+			getDeploymentHostedUrl(deployment) ??
 			(deployment.hostedSubdomain
 				? `https://${deployment.hostedSubdomain}.${getBaseDomain()}`
 				: null);
@@ -601,13 +596,18 @@ export async function verifyDns(
 			}
 		}
 
-		const alternatives: string[] = [];
-		for (let i = 1; i <= 5; i += 1) {
-			const alt = `${sanitized}-${i}`;
-			const altLookup = await lookupRoute53Subdomain(alt, baseDomain);
-			if (!altLookup.exists) alternatives.push(alt);
-			if (alternatives.length >= 3) break;
-		}
+		const alternatives = (
+			await Promise.all(
+				Array.from({ length: 5 }, (_, index) => {
+					const alt = `${sanitized}-${index + 1}`;
+					return lookupRoute53Subdomain(alt, baseDomain).then((altLookup) =>
+						altLookup.exists ? null : alt
+					);
+				})
+			)
+		)
+			.filter((alt): alt is string => Boolean(alt))
+			.slice(0, 3);
 
 		return {
 			available: false,

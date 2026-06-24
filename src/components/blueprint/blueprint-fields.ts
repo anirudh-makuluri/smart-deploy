@@ -1,5 +1,4 @@
 import type { BlueprintNodeKind } from "@/components/blueprint/blueprint-types";
-import { EC2_INSTANCE_TYPE_PRESETS } from "@/lib/aws/ec2InstanceTypes";
 
 export type BlueprintFieldOption = {
 	value: string;
@@ -29,11 +28,6 @@ export const AWS_REGION_OPTIONS: BlueprintFieldOption[] = [
 	{ value: "ap-southeast-2", label: "Asia Pacific (Sydney)" },
 	{ value: "ap-northeast-1", label: "Asia Pacific (Tokyo)" },
 ];
-
-export const EC2_INSTANCE_OPTIONS: BlueprintFieldOption[] = EC2_INSTANCE_TYPE_PRESETS.map((value) => ({
-	value,
-	label: value,
-}));
 
 export const BLUEPRINT_NODE_FIELDS: Record<BlueprintNodeKind, BlueprintFieldDefinition[]> = {
 	deployConfig: [],
@@ -87,11 +81,10 @@ export const BLUEPRINT_NODE_FIELDS: Record<BlueprintNodeKind, BlueprintFieldDefi
 			type: "select",
 			editable: true,
 			options: [
-				{ value: "ec2", label: "EC2" },
-				{ value: "cloud_run", label: "Cloud Run" },
+				{ value: "ecs", label: "ECS Fargate" },
+				{ value: "static_s3", label: "Static S3" },
 			],
 		},
 		{ key: "region", label: "Region", type: "select", editable: true, placeholder: "Select region", options: AWS_REGION_OPTIONS },
-		{ key: "instanceType", label: "Instance Type", type: "select", editable: true, placeholder: "Select instance type", options: EC2_INSTANCE_OPTIONS },
 	],
 };

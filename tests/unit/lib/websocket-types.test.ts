@@ -1,22 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const handleDeployMock = vi.fn();
-const handleManualRollbackMock = vi.fn();
 const createEntryMock = vi.fn();
+const deleteEntryMock = vi.fn();
 const updateStepsMock = vi.fn();
 const broadcastLogMock = vi.fn();
 const setStatusMock = vi.fn();
 const getDeploymentMock = vi.fn();
 const getEcsServiceLogsMock = vi.fn();
-const getInitialLogsMock = vi.fn();
 
 vi.mock("@/lib/handleDeploy", () => ({
 	handleDeploy: (...args: unknown[]) => handleDeployMock(...args),
-	handleManualRollback: (...args: unknown[]) => handleManualRollbackMock(...args),
 }));
 
 vi.mock("@/lib/deployLogsStore", () => ({
 	createEntry: (...args: unknown[]) => createEntryMock(...args),
+	deleteEntry: (...args: unknown[]) => deleteEntryMock(...args),
 	updateSteps: (...args: unknown[]) => updateStepsMock(...args),
 	broadcastLog: (...args: unknown[]) => broadcastLogMock(...args),
 	setStatus: (...args: unknown[]) => setStatusMock(...args),
@@ -32,35 +31,33 @@ vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
 	getEcsServiceLogs: (...args: unknown[]) => getEcsServiceLogsMock(...args),
 }));
 
-vi.mock("@/gcloud-logs/getInitialLogs", () => ({
-	getInitialLogs: (...args: unknown[]) => getInitialLogsMock(...args),
-}));
-
 describe("websocket-types deploy", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("marks store status as error when handleDeploy returns error", async () => {
-		handleDeployMock.mockResolvedValue("error");
+	it("marks store status as error when handleDeploy throws", async () => {
+		handleDeployMock.mockRejectedValue(new Error("Deployment failed"));
 		const { deploy } = await import("@/websocket-types");
 
-		await deploy(
-			{
-				deployConfig: {
-					repoName: "smart-deploy",
-					serviceName: "web",
-				} as any,
-				token: "gh-token",
-				userID: "user-1",
-			},
-			{}
-		);
+		await expect(
+			deploy(
+				{
+					deployConfig: {
+						repoName: "smart-deploy",
+						serviceName: "web",
+					} as any,
+					token: "gh-token",
+					userID: "user-1",
+				},
+				{}
+			)
+		).rejects.toThrow("Deployment failed");
 
 		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "error", "Deployment failed");
 	}, 10000);
 
-	it("marks store status as success when handleDeploy returns done", async () => {
+	it("cleans up the running deploy entry when handleDeploy succeeds", async () => {
 		handleDeployMock.mockResolvedValue("done");
 		const { deploy } = await import("@/websocket-types");
 
@@ -76,45 +73,8 @@ describe("websocket-types deploy", () => {
 			{}
 		);
 
-		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "success");
-	}, 10000);
-
-	it("marks store status as success when manual rollback returns done", async () => {
-		handleManualRollbackMock.mockResolvedValue("done");
-		const { rollback } = await import("@/websocket-types");
-
-		await rollback(
-			{
-				repoName: "smart-deploy",
-				serviceName: "web",
-				historyEntryId: "hist-1",
-				token: "gh-token",
-				userID: "user-1",
-			},
-			{}
-		);
-
-		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "success");
-	}, 10000);
-
-	it("marks store status as error when manual rollback throws", async () => {
-		handleManualRollbackMock.mockRejectedValue(new Error("Rollback failed"));
-		const { rollback } = await import("@/websocket-types");
-
-		await expect(
-			rollback(
-				{
-					repoName: "smart-deploy",
-					serviceName: "web",
-					historyEntryId: "hist-1",
-					token: "gh-token",
-					userID: "user-1",
-				},
-				{}
-			)
-		).rejects.toThrow("Rollback failed");
-
-		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "error", "Rollback failed");
+		expect(deleteEntryMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web");
+		expect(setStatusMock).not.toHaveBeenCalled();
 	}, 10000);
 
 	it("returns ECS logs even when the stored deployment status is failed", async () => {
@@ -157,7 +117,7 @@ describe("websocket-types deploy", () => {
 		);
 	});
 
-	it("does not fetch legacy service logs for non-running deployments", async () => {
+	it("returns empty logs when the deployment is not ECS-backed", async () => {
 		getDeploymentMock.mockResolvedValue({
 			deployment: {
 				status: "failed",
@@ -174,7 +134,12 @@ describe("websocket-types deploy", () => {
 
 		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
 
-		expect(getInitialLogsMock).not.toHaveBeenCalled();
-		expect(ws.send).not.toHaveBeenCalled();
+		expect(getEcsServiceLogsMock).not.toHaveBeenCalled();
+		expect(ws.send).toHaveBeenCalledWith(
+			JSON.stringify({
+				type: "initial_logs",
+				payload: { logs: [] },
+			})
+		);
 	});
 });

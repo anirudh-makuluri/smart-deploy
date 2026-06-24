@@ -8,17 +8,12 @@ vi.mock("@/components/DeployOptions", () => ({
 	default: () => <div data-testid="deploy-options">Deploy Options</div>,
 }));
 
-vi.mock("@/lib/aws/ec2InstanceTypes", () => ({
-	DEFAULT_EC2_INSTANCE_TYPE: "t3.micro",
-	formatApproxEc2PriceCompact: vi.fn(() => "$0.0104/hr"),
-}));
-
 vi.mock("@/lib/utils", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@/lib/utils")>();
 	return {
 		...actual,
 		formatTimestamp: vi.fn(() => "formatted-time"),
-		formatDeploymentTargetName: vi.fn(() => "EC2"),
+		formatDeploymentTargetName: vi.fn(() => "ECS"),
 		getDeploymentDisplayUrl: vi.fn((deployment: DeployConfig) =>
 			deployment.hostedSubdomain ? `https://${deployment.hostedSubdomain}.example.com` : ""
 		),

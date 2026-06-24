@@ -39,24 +39,28 @@ function EnvVarsEditor({
 	envVarsString: string;
 	onSaveEnvVarsString: (value: string) => Promise<void>;
 }) {
-	const [envDraft, setEnvDraft] = React.useState(envVarsString);
+	const onSaveEnvVarsStringRef = React.useRef(onSaveEnvVarsString);
+	const saveTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	React.useEffect(() => {
-		if (envDraft === envVarsString) return undefined;
-		const timeout = setTimeout(() => {
-			void onSaveEnvVarsString(envDraft).catch(() => undefined);
-		}, 700);
-		return () => {
-			clearTimeout(timeout);
-		};
-	}, [envDraft, envVarsString, onSaveEnvVarsString]);
+		onSaveEnvVarsStringRef.current = onSaveEnvVarsString;
+	}, [onSaveEnvVarsString]);
 
 	return (
 		<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
 			<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Runtime env vars</div>
 			<Textarea
-				value={envDraft}
-				onChange={(e) => setEnvDraft(e.target.value)}
+				defaultValue={envVarsString}
+				onChange={(e) => {
+					if (saveTimeoutRef.current) {
+						clearTimeout(saveTimeoutRef.current);
+					}
+					const nextValue = e.target.value;
+					saveTimeoutRef.current = setTimeout(() => {
+						void onSaveEnvVarsStringRef.current(nextValue).catch(() => undefined);
+						saveTimeoutRef.current = null;
+					}, 700);
+				}}
 				placeholder="KEY=value"
 				className="min-h-44 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
 			/>

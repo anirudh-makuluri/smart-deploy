@@ -504,7 +504,7 @@
 			"shortHash": "b1ce933",
 			"date": "2026-04-03",
 			"author": "amakulur",
-			"subject": "Refactor: Standardize property naming in RepoServicesRecord for consistency",
+			"subject": "Refactor: Standardize property naming in RepoRecord for consistency",
 			"prNumber": null
 		},
 		{

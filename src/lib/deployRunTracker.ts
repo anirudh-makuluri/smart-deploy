@@ -43,7 +43,6 @@ export async function startDeploymentRun(args: {
 	serviceName: string;
 	branch?: string;
 	commitSha?: string;
-	commitMessage?: string;
 	responseId?: string | null;
 	region?: string;
 }): Promise<ActiveDeployRun | null> {

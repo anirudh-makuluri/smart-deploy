@@ -1,4 +1,5 @@
 import config from "../../config";
+import { randomInt } from "crypto";
 import { DatabaseConfig } from "../databaseDetector";
 import { createWebSocketLogger } from "../websocketLogger";
 import { 
@@ -25,7 +26,7 @@ function generatePassword(): string {
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 	let password = "";
 	for (let i = 0; i < 16; i++) {
-		password += chars.charAt(Math.floor(Math.random() * chars.length));
+		password += chars.charAt(randomInt(chars.length));
 	}
 	return password;
 }
@@ -174,11 +175,12 @@ export async function createRDSInstance(
 	// Wait for instance to be available
 	send("Waiting for RDS instance to be available...", 'database');
 	
-	let attempts = 0;
 	const maxAttempts = 60;
-	let endpoint = '';
+	const pollForEndpoint = async (attempt: number): Promise<string> => {
+		if (attempt >= maxAttempts) {
+			throw new Error("RDS instance creation timed out");
+		}
 
-	while (attempts < maxAttempts) {
 		try {
 			const statusOutput = await runAWSCommand([
 				"rds", "describe-db-instances",
@@ -191,23 +193,19 @@ export async function createRDSInstance(
 			const [status, addr] = statusOutput.trim().split(/\s+/);
 			
 			if (status === 'available' && addr && addr !== 'None') {
-				endpoint = addr;
-				send(`RDS instance is available: ${endpoint}`, 'database');
-				break;
+				send(`RDS instance is available: ${addr}`, 'database');
+				return addr;
 			}
 
-			send(`RDS status: ${status} (${attempts + 1}/${maxAttempts})`, 'database');
-		} catch (error) {
+			send(`RDS status: ${status} (${attempt + 1}/${maxAttempts})`, 'database');
+		} catch {
 			// Continue waiting
 		}
 
-		attempts++;
 		await new Promise(resolve => setTimeout(resolve, 15000));
-	}
-
-	if (!endpoint) {
-		throw new Error("RDS instance creation timed out");
-	}
+		return pollForEndpoint(attempt + 1);
+	};
+	const endpoint = await pollForEndpoint(0);
 
 	// For MSSQL, create the database
 	if (dbType === 'mssql') {

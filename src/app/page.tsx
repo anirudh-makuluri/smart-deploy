@@ -24,6 +24,14 @@ const webApplicationJsonLd = {
 		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
 };
 
+function jsonLdString(value: unknown): string {
+	return JSON.stringify(value).replace(/[<>&]/g, (char) => {
+		if (char === "<") return "\\u003c";
+		if (char === ">") return "\\u003e";
+		return "\\u0026";
+	});
+}
+
 export default async function Home() {
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	try {
@@ -39,7 +47,7 @@ export default async function Home() {
 
 	return (
 		<>
-			<script type="application/ld+json">{JSON.stringify(webApplicationJsonLd)}</script>
+			<script type="application/ld+json">{jsonLdString(webApplicationJsonLd)}</script>
 			<LandingExperience isSignedIn={Boolean(session)} publicStats={publicStats} />
 		</>
 	);

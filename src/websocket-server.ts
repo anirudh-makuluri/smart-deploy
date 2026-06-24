@@ -3,58 +3,16 @@ dotenv.config();
 
 import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
-import { deploy, rollback, serviceLogs } from "./websocket-types";
+import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
-import { dbHelper } from "./db-helper";
-import { getSupabaseServer } from "./lib/supabaseServer";
-import { isDraftDeploymentStatus } from "./lib/deploymentStatus";
 import { verifyWebSocketAuthToken } from "./lib/wsAuth";
 import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
 
-async function getSnapshotFromHistory(repoName: string, serviceName: string, userID?: string) {
-	let resolvedUserId = userID;
-	let currentDeployment: any = null;
-	if (!resolvedUserId) {
-		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		currentDeployment = deploymentResponse.deployment;
-		resolvedUserId = currentDeployment?.ownerID;
-	} else {
-		// Also fetch the current deployment to check its status
-		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		currentDeployment = deploymentResponse.deployment;
-	}
-	if (!resolvedUserId) return null;
-
-	// If the current deployment is in "didnt_deploy" status (fresh/draft), don't show old history
-	if (isDraftDeploymentStatus(currentDeployment?.status)) {
-		return null;
-	}
-
-	const historyResponse = await dbHelper.getDeploymentHistory(repoName, serviceName, resolvedUserId);
-	if (historyResponse.error || !historyResponse.history || historyResponse.history.length === 0) {
-		return null;
-	}
-
-	const latest = historyResponse.history[0];
-	// Preserve actual failure details from the deploy steps instead of generic message
-	let errorDetail: string | null = null;
-	if (!latest.success) {
-		const errorSteps = (latest.steps ?? []).filter((s: any) => s.status === "error");
-		const errorLogs = errorSteps.flatMap((s: any) => (s.logs || []).filter((l: string) => l.includes("❌") || l.toLowerCase().includes("error") || l.toLowerCase().includes("failed")));
-		errorDetail = errorLogs.length > 0 ? errorLogs.slice(-3).join("\n") : "Deployment failed";
-	}
-	return {
-		steps: latest.steps ?? [],
-		status: (latest.success ? "success" : "error") as "success" | "error",
-		error: errorDetail,
-	};
-}
-
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.0.1"
+const version = "0.0.2";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 type AuthenticatedSocket = WebSocket & {
@@ -87,13 +45,15 @@ const server = http.createServer((req, res) => {
 
 	if (req.url === "/health" || req.url === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ 
-			ok: true, 
-			service: "websocket", 
-			port, 
-			environment,
-			version
-		}));
+		res.end(
+			JSON.stringify({
+				ok: true,
+				service: "websocket",
+				port,
+				environment,
+				version,
+			})
+		);
 		return;
 	}
 
@@ -118,12 +78,34 @@ const server = http.createServer((req, res) => {
 });
 const wss = new WebSocketServer({ server });
 
-function sendDeployComplete(ws: any, success: boolean, error?: string) {
+function sendDeployComplete(ws: any, success: boolean, hostedSubdomain: string, error?: string) {
 	if (ws?.readyState === 1) {
-		ws.send(JSON.stringify({
-			type: "deploy_complete",
-			payload: { success, deployUrl: null, error: error ?? null, time: new Date().toISOString() },
-		}));
+		const payload: Record<string, unknown> = {
+			success,
+			time: new Date().toISOString(),
+			hosted_subdomain: hostedSubdomain,
+		};
+		if (error) payload.error = error;
+		ws.send(
+			JSON.stringify({
+				type: "deploy_complete",
+				payload,
+			})
+		);
+	}
+}
+
+function sendSocketError(ws: any, error?: string) {
+	if (ws?.readyState === 1) {
+		ws.send(
+			JSON.stringify({
+				type: "worker_error",
+				payload: {
+					error: error ?? "Request failed",
+					time: new Date().toISOString(),
+				},
+			})
+		);
 	}
 }
 
@@ -158,10 +140,12 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 		const running = deployLogsStore.listRunningDeploymentsForUser(authPayload.userID);
 		if (running.length === 0) return;
 		try {
-			ws.send(JSON.stringify({
-				type: "active_deployments",
-				payload: { deployments: running },
-			}));
+			ws.send(
+				JSON.stringify({
+					type: "active_deployments",
+					payload: { deployments: running },
+				})
+			);
 		} catch {
 			// ignore
 		}
@@ -175,62 +159,32 @@ wss.on("connection", (ws: AuthenticatedSocket, req) => {
 			switch (type) {
 				case "deploy":
 					try {
-						await deploy({
-							...response.payload,
-							userID: ws.authUserID,
-						}, ws);
+						await deploy(
+							{
+								...response.payload,
+								userID: ws.authUserID,
+							},
+							ws
+						);
 					} catch (err: any) {
 						console.error("Deploy error:", err);
-						sendDeployComplete(ws, false, err?.message ?? "Deployment failed");
-					}
-					break;
-				case "rollback":
-					try {
-						await rollback({
-							...response.payload,
-							userID: ws.authUserID,
-						}, ws);
-					} catch (err: any) {
-						console.error("Rollback error:", err);
-						sendDeployComplete(ws, false, err?.message ?? "Rollback failed");
+						const hostedSubdomain = response.payload.hostedSubdomain;
+						sendDeployComplete(
+							ws,
+							false,
+							hostedSubdomain,
+							err?.message ?? "Deployment failed"
+						);
 					}
 					break;
 				case "service_logs":
-					serviceLogs(response.payload, ws);
+					await serviceLogs(response.payload, ws);
 					break;
-				case "get_deploy_logs": {
-					const { repoName, serviceName } = response.payload ?? {};
-					const userID = ws.authUserID;
-					if (!repoName || !serviceName) {
-						if (ws?.readyState === 1) {
-							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { error: "repoName and serviceName required", time: new Date().toISOString() } }));
-						}
-						break;
-					}
-					let snapshot = deployLogsStore.getSnapshot(userID, repoName, serviceName);
-					if (!snapshot) {
-						snapshot = await getSnapshotFromHistory(repoName, serviceName, userID);
-					}
-					const time = new Date().toISOString();
-					if (snapshot) {
-						if (ws?.readyState === 1) {
-							ws.send(JSON.stringify({ type: "deploy_logs_snapshot", payload: { ...snapshot, time } }));
-						}
-						deployLogsStore.addSubscriber(userID, repoName, serviceName, ws);
-					} else if (ws?.readyState === 1) {
-						ws.send(JSON.stringify({
-							type: "deploy_logs_snapshot",
-							payload: { steps: [], status: "not-started", error: null, time },
-						}));
-					}
-					break;
-				}
 				default:
 					break;
 			}
 		} catch (err: any) {
-			// JSON parse error or other sync error: send structured deploy_complete so client can show it
-			sendDeployComplete(ws, false, err?.message ?? "Request failed");
+			sendSocketError(ws, err?.message ?? "Request failed");
 		}
 	});
 

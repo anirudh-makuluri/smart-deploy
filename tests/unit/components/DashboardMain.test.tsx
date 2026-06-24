@@ -44,10 +44,10 @@ describe("DashboardMain", () => {
 		});
 		appState = {
 			deployments: [
-				{ status: "running", url: "https://github.com/acme/repo-one" },
-				{ status: "failed", url: "https://github.com/acme/repo-two" },
+				{ status: "running", repoUrl: "https://github.com/acme/repo-one" },
+				{ status: "failed", repoUrl: "https://github.com/acme/repo-two" },
 			],
-			repoServices: [
+			repoRecords: [
 				{ repo_owner: "acme", repo_name: "repo-one", repo_url: "https://github.com/acme/repo-one", services: [{ name: "web", path: ".", language: "node" }] },
 				{ repo_owner: "acme", repo_name: "repo-two", repo_url: "https://github.com/acme/repo-two", services: [{ name: "api", path: ".", language: "node" }] },
 			],
@@ -70,11 +70,11 @@ describe("DashboardMain", () => {
 		render(<DashboardMain activeView="overview" />);
 
 		expect(screen.getAllByRole("heading", { name: "Deployments" }).length).toBeGreaterThan(0);
-		expect(screen.getByText("acme / repo-one")).toBeInTheDocument();
+		expect(screen.getAllByText("repo-one").length).toBeGreaterThan(0);
 	});
 
 	it("renders history view table", () => {
-		render(<DashboardMain activeView="deployments" />);
+		render(<DashboardMain activeView="history" />);
 
 		expect(screen.getAllByRole("heading", { name: "History" }).length).toBeGreaterThan(0);
 		expect(screen.getAllByText("DeploymentHistoryTable").length).toBeGreaterThan(0);
@@ -86,6 +86,6 @@ describe("DashboardMain", () => {
 		expect(screen.getAllByRole("heading", { name: "Repositories" }).length).toBeGreaterThan(0);
 		expect(screen.getAllByRole("button", { name: "Refresh" }).length).toBeGreaterThan(0);
 		expect(screen.getAllByTitle("Add public repository").length).toBeGreaterThan(0);
-		expect(screen.getAllByText("acme/repo-one").length).toBeGreaterThan(0);
+		expect(screen.getAllByText("repo-one").length).toBeGreaterThan(0);
 	});
 });

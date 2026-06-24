@@ -7,10 +7,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { sanitizeSubdomain } from "@/lib/utils";
 import { toast } from "sonner";
 import type { DeployConfig } from "@/app/types";
-import {
-	DEFAULT_EC2_INSTANCE_TYPE,
-	EC2_INSTANCE_TYPE_PRESETS,
-} from "@/lib/aws/ec2InstanceTypes";
 import { updateCustomDomain } from "@/lib/graphqlClient";
 import { useAppData } from "@/store/useAppData";
 import { useDeploymentEnvSecrets } from "@/custom-hooks/useDeploymentEnvSecrets";
@@ -113,9 +109,6 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 
 	const hasScanResults = !!deployment.scanResults && Object.keys(deployment.scanResults).length > 0;
 
-	const ec2InstanceOptions = React.useMemo(() => [...EC2_INSTANCE_TYPE_PRESETS], []);
-	const ec2InstanceValue = DEFAULT_EC2_INSTANCE_TYPE;
-
 	const branchSelectOptions = React.useMemo(() => {
 		const fromRepo = (branchesProp ?? []).filter(Boolean);
 		const current = deployment.branch?.trim();
@@ -143,8 +136,6 @@ export function useConfigTabs({ onConfigChange, deployment, branches: branchesPr
 		handleSaveHostedSubdomain,
 		handleCancelHostedSubdomain,
 		hasScanResults,
-		ec2InstanceOptions,
-		ec2InstanceValue,
 		branchSelectOptions,
 		envEntryCount,
 		onConfigChange,

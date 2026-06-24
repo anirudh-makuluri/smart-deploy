@@ -1,11 +1,8 @@
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
 import { deleteRoute53DnsRecord } from "@/lib/route53Dns";
 import { dbHelper } from "@/db-helper";
-import config from "@/config";
 import { DeployConfig } from "@/app/types";
 import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
-import { transitionDeploymentStatus } from "@/lib/deploymentStatus";
-import { runCommandLiveWithOutput } from "@/server-helper";
 
 export type DeleteDeploymentArgs = {
 	repoName: string;
@@ -33,19 +30,14 @@ export type DeploymentControlResult = {
 	details?: string;
 };
 
-const GCP_REGION = "us-central1";
-
 function sanitizeName(value: unknown): string {
 	return typeof value === "string" ? value.trim() : "";
 }
 
 async function requireDeployment(repoName: string, serviceName: string, userID: string) {
-	const { deployment, error } = await dbHelper.getDeployment(repoName, serviceName);
+	const { deployment, error } = await dbHelper.getDeploymentForUser(repoName, serviceName, userID);
 	if (error || !deployment) {
 		return { error: "Deployment not found" };
-	}
-	if (deployment.ownerID !== userID) {
-		return { error: "Forbidden: deployment does not belong to user" };
 	}
 	return { deployment };
 }
@@ -63,28 +55,10 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 	}
 
 	const deployConfig = deployment as DeployConfig;
-	const cloudProvider = deployConfig.cloudProvider || "aws";
 	const deploymentTarget = deployConfig.deploymentTarget || "ecs";
 
 	try {
-		if (cloudProvider === "aws" && deploymentTarget) {
-			await deleteAWSDeployment(deployConfig, deploymentTarget);
-		} else {
-			const projectId = config.GCP_PROJECT_ID;
-			const deleteArgs = [
-				"run",
-				"services",
-				"delete",
-				validServiceName,
-				"--project",
-				projectId,
-				"--region",
-				GCP_REGION,
-				"--platform=managed",
-				"--quiet",
-			];
-			await runCommandLiveWithOutput("gcloud", deleteArgs);
-		}
+		await deleteAWSDeployment(deployConfig, deploymentTarget);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
 		const alreadyGone =
@@ -102,7 +76,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 
 	try {
 		const dnsResult = await deleteRoute53DnsRecord({
-			customUrl: hostedUrlFromSubdomain(deployConfig.hostedSubdomain),
+			customUrl: hostedUrlFromSubdomain(deployConfig.hostedSubdomain!),
 			serviceName: deployConfig.serviceName || validServiceName || null,
 		});
 		if (!dnsResult.success) {
@@ -140,66 +114,34 @@ export async function controlDeploymentForUser({ repoName, serviceName, action, 
 		return { status: "error", message: "Missing action" };
 	}
 
-	if (repoName && serviceName) {
-		const validRepoName = sanitizeName(repoName);
-		const validServiceName = sanitizeName(serviceName);
-		if (!validRepoName || !validServiceName) {
-			return { status: "error", message: "repoName and serviceName are required together" };
-		}
-
-		const { deployment, error } = await requireDeployment(validRepoName, validServiceName, userID);
-		if (error) {
-			return { status: "error", message: error };
-		}
-		const deployConfig = deployment as DeployConfig;
-		const cloudProvider = deployConfig.cloudProvider || "aws";
-
-		if (cloudProvider === "aws" && (deployConfig.deploymentTarget === "ecs" || deployConfig.deploymentTarget === "static_s3")) {
-			if (action === "pause" || action === "resume") {
-				return {
-					status: "error",
-					message: "Pause and resume are not supported for ECS or static S3 deployments yet.",
-				};
-			}
-		}
+	if (!repoName || !serviceName) {
+		return { status: "error", message: "repoName and serviceName are required" };
 	}
 
-	if (!serviceName) {
-		return { status: "error", message: "Missing service name for legacy Cloud Run control" };
+	const validRepoName = sanitizeName(repoName);
+	const validServiceName = sanitizeName(serviceName);
+	if (!validRepoName || !validServiceName) {
+		return { status: "error", message: "repoName and serviceName are required together" };
 	}
 
-	const region = GCP_REGION;
-	const projectId = config.GCP_PROJECT_ID;
-	const commands: Record<string, string[]> = {
-		pause: ["run", "services", "update-traffic", serviceName, "--project", projectId, "--to-zero", "--region", region, "--platform=managed"],
-		resume: ["run", "services", "update-traffic", serviceName, "--project", projectId, "--to-latest", "--region", region, "--platform=managed"],
-		stop: ["run", "services", "delete", serviceName, "--project", projectId, "--region", region, "--platform=managed", "--quiet"],
+	const { deployment, error } = await requireDeployment(validRepoName, validServiceName, userID);
+	if (error) {
+		return { status: "error", message: error };
+	}
+
+	if (!deployment) {
+		return { status: "error", message: "Deployment not found" };
+	}
+
+	if (action === "stop") {
+		return {
+			status: "error",
+			message: "Stopping deployments is not supported. Delete the deployment instead.",
+		};
+	}
+
+	return {
+		status: "error",
+		message: `AWS ${deployment.deploymentTarget || "ecs"} deployments do not support ${action} yet.`,
 	};
-
-	const args = commands[action];
-
-	if (!args) {
-		return { status: "error", message: "Invalid action. Must be pause, resume, or stop" };
-	}
-
-	try {
-		const output = await runCommandLiveWithOutput("gcloud", args);
-		if (repoName && serviceName && action !== "stop") {
-			const { deployment } = await requireDeployment(sanitizeName(repoName), sanitizeName(serviceName), userID);
-			if (deployment) {
-				const nextStatus =
-					action === "pause"
-						? transitionDeploymentStatus(deployment.status, "pause_requested")
-						: transitionDeploymentStatus(deployment.status, "resume_requested");
-				await dbHelper.updateDeployments({ ...deployment, status: nextStatus }, userID);
-			}
-		}
-		return { status: "success", message: output };
-	} catch (cmdErr: any) {
-		if (action === "stop" && cmdErr.message?.includes("could not be found")) {
-			return { status: "success", message: "Service already deleted or not found" };
-		}
-		const message = cmdErr instanceof Error ? cmdErr.message : String(cmdErr);
-		return { status: "error", message };
-	}
 }
