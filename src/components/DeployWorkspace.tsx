@@ -52,7 +52,7 @@ function DeployWorkspaceContent({
 		showDeployLogs,
 		deployLogEntries,
 		serviceLogs,
-		effectiveDeployStatus,
+		deployStatus,
 		deployError,
 		liveDeployConfig,
 		isRefreshingPreview,
@@ -146,7 +146,7 @@ function DeployWorkspaceContent({
 							showDeployLogs={showDeployLogs}
 							deployLogEntries={deployLogEntries}
 							serviceLogs={serviceLogs}
-							effectiveDeployStatus={effectiveDeployStatus}
+							effectiveDeployStatus={deployStatus}
 							deployError={deployError}
 							latestDeploymentRunId={latestDeploymentRunId}
 							deployingCommitInfo={ui.deployingCommitInfo}
