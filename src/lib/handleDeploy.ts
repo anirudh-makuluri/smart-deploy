@@ -91,6 +91,7 @@ import {
 	isStaticSiteReleaseArtifact,
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
+import { DeployLoggerOptions } from "@/websocket-types";
 
 type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
@@ -98,11 +99,6 @@ type DeploymentLifecycleOptions = {
 	finalStatus?: DeployConfig["status"] | null;
 	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null;
 	failure?: DeploymentFailureRecord | null;
-};
-
-type DeployLoggerOptions = {
-	onStepsChange?: (steps: DeployStep[]) => void;
-	broadcast?: (id: string, msg: string) => void;
 };
 
 type VerificationResult =
@@ -253,7 +249,7 @@ async function updatePersistedDeploymentStatus(
 function createTrackedDeployLogger(
 	ws: any,
 	deploySteps: DeployStep[],
-	options: DeployLoggerOptions | undefined,
+	options: DeployLoggerOptions,
 	getActiveDeployRun: () => ActiveDeployRun | null
 ) {
 	// One logger fans out to three audiences at once:
@@ -983,15 +979,12 @@ export async function handleDeploy(
 	deployConfig: DeployConfig,
 	token: string,
 	ws: any,
-	userID?: string,
-	options?: DeployLoggerOptions
+	userID: string,
+	options: DeployLoggerOptions
 ): Promise<string> {
 	const deployStartTime = Date.now();
-	const isRailpackAnalyze = isSdArtifactsAnalyzeScan(deployConfig.scanResults);
-	if (!isRailpackAnalyze) {
-		throw new Error("Deployment requires a completed sd-artifacts analyze scan.");
-	}
-	if (isRailpackAnalyze && !(deployConfig.scanResults as SDArtifactsResponse).deploy_units?.length) {
+
+	if (!(deployConfig.scanResults as SDArtifactsResponse).deploy_units?.length) {
 		throw new Error("Analyze response has no deploy_units.");
 	}
 
@@ -1032,233 +1025,6 @@ export async function handleDeploy(
 		await sendDeployComplete(ws, undefined, false, deployConfig, deploySteps, userID, deployConfig.deploymentTarget, null, null, durationMs, {
 			errorMessage: error instanceof Error ? error.message : String(error),
 		});
-		throw error;
-	}
-}
-
-export async function handleManualRollback(args: {
-	repoName: string;
-	serviceName: string;
-	historyEntryId: string;
-	token: string;
-	ws: any;
-	userID?: string;
-	options?: DeployLoggerOptions;
-}): Promise<string> {
-	const deployStartTime = Date.now();
-	const repoName = args.repoName.trim();
-	const serviceName = args.serviceName.trim();
-	const historyEntryId = args.historyEntryId.trim();
-	const token = args.token;
-	const ws = args.ws;
-	const userID = args.userID;
-	const deploySteps: DeployStep[] = [];
-	let activeDeployRun: ActiveDeployRun | null = null;
-	let activeDeployment: DeployConfig | null = null;
-	const send = createTrackedDeployLogger(ws, deploySteps, args.options, () => activeDeployRun);
-	if (ws) {
-		(ws as any).__deploySend = send;
-	}
-
-	try {
-		if (!userID) {
-			throw new Error("User not found");
-		}
-		if (!repoName || !serviceName || !historyEntryId) {
-			throw new Error("repoName, serviceName, and historyEntryId are required");
-		}
-
-		sendDeploySteps(ws, MANUAL_ROLLBACK_STEPS);
-
-		const deploymentResponse = await dbHelper.getDeployment(repoName, serviceName);
-		const deployConfig = deploymentResponse.deployment;
-		if (deploymentResponse.error || !deployConfig) {
-			throw new Error("Deployment not found");
-		}
-		activeDeployment = deployConfig;
-		if (deployConfig.ownerID !== userID) {
-			throw new Error("Forbidden: deployment does not belong to user");
-		}
-
-		activeDeployRun = await startTrackedDeployRun(deployConfig, userID, ws);
-
-		const targetHistoryResponse = await dbHelper.getDeploymentHistoryEntryById(historyEntryId, userID);
-		if (targetHistoryResponse.error) {
-			throw new Error(String(targetHistoryResponse.error));
-		}
-		const targetHistoryEntry = targetHistoryResponse.history;
-		if (!targetHistoryEntry) {
-			throw new Error("Selected deployment history entry was not found");
-		}
-		if (targetHistoryEntry.repo_name !== repoName || targetHistoryEntry.service_name !== serviceName) {
-			throw new Error("Selected deployment history entry does not belong to this service");
-		}
-		if (!targetHistoryEntry.success) {
-			throw new Error("Rollback is only available for successful deployment history entries");
-		}
-
-		const latestSuccessfulResponse = await dbHelper.getLastSuccessfulDeploymentHistory(repoName, serviceName, userID);
-		if (latestSuccessfulResponse.error) {
-			send(`Warning: could not load current successful deployment history: ${String(latestSuccessfulResponse.error)}`, "rollback");
-		}
-		const fallbackHistoryEntry =
-			latestSuccessfulResponse.history && latestSuccessfulResponse.history.id !== targetHistoryEntry.id
-				? latestSuccessfulResponse.history
-				: null;
-
-		const serviceDetails: ServiceDeployDetails | null = deployConfig.cloudResources
-			? { cloudResources: deployConfig.cloudResources }
-			: null;
-		const rollbackAttempt = await restoreDeploymentFromHistory({
-			deployConfig,
-			rollbackHistoryEntry: targetHistoryEntry,
-			serviceDetails,
-			userID,
-			token,
-			send,
-			deploySteps,
-			mode: "manual",
-		});
-
-		if (!rollbackAttempt.success || !rollbackAttempt.restoredConfig) {
-			const durationMs = Date.now() - deployStartTime;
-			const failedRollbackConfig: DeployConfig = {
-				...deployConfig,
-				commitSha: targetHistoryEntry.commitSha ?? deployConfig.commitSha,
-				branch: targetHistoryEntry.branch ?? deployConfig.branch,
-			};
-			await sendDeployComplete(
-				ws,
-				undefined,
-				false,
-				failedRollbackConfig,
-				deploySteps,
-				userID,
-				deployConfig.deploymentTarget,
-				null,
-				serviceDetails,
-				durationMs,
-				{
-					errorMessage: rollbackAttempt.message,
-					releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
-				}
-			);
-			return "error";
-		}
-
-		const verificationConfig: DeployConfig = {
-			...rollbackAttempt.restoredConfig,
-			status: deployConfig.status,
-		};
-		const verification = await verifyDeploymentReadiness({
-			deployConfig: verificationConfig,
-			deployUrl:
-				rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
-					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
-					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
-						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
-						: getDeploymentHostedUrl(rollbackAttempt.restoredConfig) || "",
-			customUrl: getDeploymentHostedUrl(rollbackAttempt.restoredConfig),
-			userID,
-			token,
-			send,
-			deploySteps,
-			rollbackHistoryEntry: fallbackHistoryEntry,
-			serviceDetails,
-		});
-
-		if (!verification.success || !rollbackAttempt.restoredConfig) {
-			const durationMs = Date.now() - deployStartTime;
-			const failedVerificationConfig: DeployConfig = {
-				...verificationConfig,
-				status: verification.success ? verificationConfig.status : (verification.postPersistConfig?.status ?? verificationConfig.status),
-			};
-			await sendDeployComplete(
-				ws,
-				verification.success
-					? (getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined)
-					: (verification.postPersistConfig
-						? getDeploymentHostedUrl(verification.postPersistConfig) ?? undefined
-						: getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ?? undefined),
-				false,
-				failedVerificationConfig,
-				deploySteps,
-				userID,
-				deployConfig.deploymentTarget,
-				null,
-				verification.success
-					? serviceDetails
-					: (verification.postPersistConfig?.cloudResources
-						? { cloudResources: verification.postPersistConfig.cloudResources }
-						: serviceDetails),
-				durationMs,
-				{
-					errorMessage: verification.success ? "Rollback verification failed." : verification.errorMessage,
-					postPersistConfig: verification.success ? null : verification.postPersistConfig,
-					finalStatus: verification.success ? "failed" : (verification.postPersistConfig?.status ?? "failed"),
-					releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
-				}
-			);
-			return "error";
-		}
-
-		const completionConfig: DeployConfig = verificationConfig;
-		const restoredDetails: ServiceDeployDetails | null = rollbackAttempt.restoredConfig.cloudResources
-			? { cloudResources: rollbackAttempt.restoredConfig.cloudResources }
-			: null;
-		const durationMs = Date.now() - deployStartTime;
-		await sendDeployComplete(
-			ws,
-			getDeploymentHostedUrl(rollbackAttempt.restoredConfig) ||
-				(rollbackAttempt.restoredConfig.cloudResources?.target === "ecs"
-					? rollbackAttempt.restoredConfig.cloudResources.baseUrl
-					: rollbackAttempt.restoredConfig.cloudResources?.target === "static_s3"
-						? rollbackAttempt.restoredConfig.cloudResources.publicBaseUrl
-						: undefined),
-			true,
-			completionConfig,
-			deploySteps,
-			userID,
-			deployConfig.deploymentTarget,
-			null,
-			restoredDetails,
-			durationMs,
-			{
-				finalStatus: rollbackAttempt.restoredConfig.status,
-				releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
-			}
-		);
-		return "done";
-	} catch (error) {
-		send(`ERROR: Rollback failed: ${error instanceof Error ? error.message : String(error)}`, "rollback");
-		const durationMs = Date.now() - deployStartTime;
-		const doneStep = deploySteps.find((step) => step.id === "done");
-		if (doneStep) doneStep.status = "error";
-		if (repoName && serviceName) {
-			const fallbackConfig = {
-				id: `rollback-${repoName}-${serviceName}`,
-				repoName,
-				serviceName,
-				repoUrl: "",
-				branch: "",
-				commitSha: null,
-				envVars: null,
-				hostedSubdomain: hostedSubdomainOrDefault(repoName, activeDeployment?.hostedSubdomain),
-				screenshotUrl: null,
-				status: "failed",
-				firstDeployment: null,
-				lastDeployment: null,
-				revision: null,
-				cloudProvider: "aws",
-				deploymentTarget: "ecs",
-				region: config.AWS_REGION,
-				cloudResources: null,
-				scanResults: {},
-			} as DeployConfig;
-			await sendDeployComplete(ws, undefined, false, fallbackConfig, deploySteps, userID, "ecs", null, null, durationMs, {
-				errorMessage: error instanceof Error ? error.message : String(error),
-			});
-		}
 		throw error;
 	}
 }
@@ -1305,14 +1071,6 @@ const AWS_DEPLOY_STEPS: Record<string, { id: string; label: string }[]> = {
 		{ id: "done", label: "✅ Done" },
 	],
 };
-
-const MANUAL_ROLLBACK_STEPS = [
-	{ id: "rollback", label: "Restore release" },
-	{ id: "setup", label: "Setup" },
-	{ id: "deploy", label: "Deploy" },
-	{ id: "verify", label: "Verify" },
-	{ id: "done", label: "Done" },
-];
 
 function getTransportDeploySteps(
 	steps: { id: string; label: string }[],
