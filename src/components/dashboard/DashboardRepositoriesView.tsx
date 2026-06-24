@@ -14,13 +14,15 @@ type DashboardRepositoriesViewProps = {
 	visibleRepositories: repoType[];
 	repoSearch: string;
 	onRepoSearchChange: (value: string) => void;
-	showAddRepo: boolean;
+	ui: {
+		showAddRepo: boolean;
+		isLoadingRepo: boolean;
+		isRefreshing: boolean;
+		isLoading: boolean;
+	};
 	onToggleAddRepo: () => void;
 	repoUrl: string;
 	onRepoUrlChange: (value: string) => void;
-	isLoadingRepo: boolean;
-	isRefreshing: boolean;
-	isLoading: boolean;
 	onAddPublicRepo: () => void;
 	onRefresh: () => void;
 	onCancelAddRepo: () => void;
@@ -31,13 +33,10 @@ export default function DashboardRepositoriesView({
 	visibleRepositories,
 	repoSearch,
 	onRepoSearchChange,
-	showAddRepo,
+	ui,
 	onToggleAddRepo,
 	repoUrl,
 	onRepoUrlChange,
-	isLoadingRepo,
-	isRefreshing,
-	isLoading,
 	onAddPublicRepo,
 	onRefresh,
 	onCancelAddRepo,
@@ -62,15 +61,15 @@ export default function DashboardRepositoriesView({
 						onClick={onRefresh}
 						variant="outline"
 						size="sm"
-						disabled={isRefreshing}
+						disabled={ui.isRefreshing}
 						className="border-border bg-transparent text-foreground hover:bg-secondary hover:text-foreground"
 					>
-						<RefreshCcw className={`size-4 mr-1.5 ${isRefreshing ? "animate-spin" : ""}`} />
+						<RefreshCcw className={`size-4 mr-1.5 ${ui.isRefreshing ? "animate-spin" : ""}`} />
 						Refresh
 					</Button>
 				</div>
 			</div>
-			{showAddRepo ? (
+			{ui.showAddRepo ? (
 				<div className="p-3 rounded-lg border border-border bg-background">
 					<p className="text-xs text-muted-foreground mb-2">Add Public Repository</p>
 					<div className="flex gap-2">
@@ -84,16 +83,16 @@ export default function DashboardRepositoriesView({
 								if (e.key === "Escape") onCancelAddRepo();
 							}}
 							className="flex-1 border-border bg-background text-foreground placeholder:text-muted-foreground/70 focus-visible:ring-primary text-sm"
-							disabled={isLoadingRepo}
+							disabled={ui.isLoadingRepo}
 						/>
 						<Button
 							type="button"
 							onClick={onAddPublicRepo}
 							size="sm"
-							disabled={isLoadingRepo || !repoUrl.trim()}
+							disabled={ui.isLoadingRepo || !repoUrl.trim()}
 							className="landing-build-blue hover:opacity-95 text-primary-foreground shrink-0"
 						>
-							{isLoadingRepo ? (
+							{ui.isLoadingRepo ? (
 								<RefreshCcw className="size-4 animate-spin" />
 							) : (
 								<ExternalLink className="size-4" />
@@ -120,7 +119,7 @@ export default function DashboardRepositoriesView({
 			{repoList.length === 0 ? (
 				<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">
 					<Boxes className="size-12 text-muted-foreground/70 mb-4" />
-					<p className="text-foreground font-medium">{isLoading ? "Loading…" : "No repositories yet"}</p>
+					<p className="text-foreground font-medium">{ui.isLoading ? "Loading…" : "No repositories yet"}</p>
 				</div>
 			) : visibleRepositories.length === 0 ? (
 				<div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-border/60 bg-card/20 text-center">

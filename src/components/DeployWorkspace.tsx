@@ -124,7 +124,6 @@ function DeployWorkspaceContent({
 							onScanCancel={() => dispatch({ type: "set_scan_mode", value: "idle" })}
 							onImproveScanComplete={handleImproveScanComplete}
 							onImproveScanCancel={handleImproveScanCancel}
-							hasScanResults={hasScanResults}
 							effectiveScanResults={effectiveScanResults}
 							scanDuration={ui.scanDuration}
 							deployment={deploymentConfig}
@@ -134,7 +133,6 @@ function DeployWorkspaceContent({
 							onStartScan={startScan}
 							deploymentHistory={deploymentHistory}
 							historyTotal={historyTotal}
-							isLoadingHistory={isLoadingHistory}
 							onRollbackEntrySelect={handleRollbackEntrySelect}
 							rollbackingEntryId={ui.isChangingDeploymentState ? ui.rollbackEntry?.id ?? null : null}
 							effectiveDeploymentStatus={effectiveDeploymentStatus}
@@ -151,18 +149,23 @@ function DeployWorkspaceContent({
 							latestDeploymentRunId={latestDeploymentRunId}
 							deployingCommitInfo={ui.deployingCommitInfo}
 							liveDeployConfig={liveDeployConfig}
-							isDeploying={ui.isDeploying}
-							isRefreshingPreview={isRefreshingPreview}
 							onRedeploy={handleDeploy}
 							onRefreshPreview={handleManualCreatePreview}
 							onEditConfiguration={() => setActiveSection("setup")}
 							onOpenScanSection={() => setActiveSection("scan")}
 							onPauseResumeDeployment={() => dispatch({ type: "set_show_pause_resume_confirm", value: true })}
 							onDeleteDeployment={() => dispatch({ type: "set_show_delete_confirm", value: true })}
-							isChangingDeploymentState={ui.isChangingDeploymentState}
 							activeRepo={repoRecord!}
-							deployDisabled={deployDisabled}
 							deployDisabledMessage={deployDisabledMessage}
+							viewState={{
+								hasScanResults,
+								isLoadingHistory,
+								showDeployLogs,
+								isDeploying: ui.isDeploying,
+								isRefreshingPreview,
+								isChangingDeploymentState: ui.isChangingDeploymentState,
+								deployDisabled,
+							}}
 						/>
 					</main>
 				</div>
@@ -192,21 +195,22 @@ function DeployWorkspaceContent({
 			) : null}
 
 			<DeployWorkspaceDialogs
-				showRejectConfirm={ui.showRejectConfirm}
+				dialogState={{
+					showRejectConfirm: ui.showRejectConfirm,
+					showDeleteConfirm: ui.showDeleteConfirm,
+					isChangingDeploymentState: ui.isChangingDeploymentState,
+					showPauseResumeConfirm: ui.showPauseResumeConfirm,
+					showRollbackConfirm: ui.showRollbackConfirm,
+				}}
 				onRejectConfirmOpenChange={(open) => dispatch({ type: "set_show_reject_confirm", value: open })}
 				onConfirmRejectScan={() => void handleConfirmRejectScan()}
-				showDeleteConfirm={ui.showDeleteConfirm}
 				onDeleteConfirmOpenChange={(open) => dispatch({ type: "set_show_delete_confirm", value: open })}
 				onConfirmDeleteDeployment={() => void handleDeleteDeployment()}
-				isChangingDeploymentState={ui.isChangingDeploymentState}
-				showPauseResumeConfirm={ui.showPauseResumeConfirm}
 				onPauseResumeConfirmOpenChange={(open) => dispatch({ type: "set_show_pause_resume_confirm", value: open })}
 				onConfirmPauseResumeDeployment={() => void handlePauseResumeDeployment()}
 				pauseResumeDialogTitle={pauseResumeDialogTitle}
 				pauseResumeDialogDescription={pauseResumeDialogDescription}
 				pauseResumeConfirmText={pauseResumeConfirmText}
-				effectiveDeploymentStatus={effectiveDeploymentStatus}
-				showRollbackConfirm={ui.showRollbackConfirm}
 				onRollbackConfirmOpenChange={(open) => dispatch({ type: "set_show_rollback_confirm", value: open })}
 				onConfirmRollbackDeployment={() => void handleConfirmRollbackDeployment()}
 				rollbackCommitSha={ui.rollbackEntry?.commitSha}

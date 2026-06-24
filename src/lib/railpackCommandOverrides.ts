@@ -9,9 +9,10 @@ export type RailpackCommandOverrides = {
 type RailpackCommandEntry = { cmd?: string; [key: string]: unknown };
 
 function shellCommands(step?: { commands?: RailpackCommandEntry[] }): string[] {
-	return (step?.commands ?? [])
-		.map((c) => (typeof c.cmd === "string" ? c.cmd.trim() : ""))
-		.filter(Boolean);
+	return (step?.commands ?? []).flatMap((command) => {
+		const trimmed = typeof command.cmd === "string" ? command.cmd.trim() : "";
+		return trimmed ? [trimmed] : [];
+	});
 }
 
 function findStep(plan: SDRailpackPlan, stepName: string) {
@@ -19,9 +20,12 @@ function findStep(plan: SDRailpackPlan, stepName: string) {
 }
 
 function shellCmdIndexes(commands: RailpackCommandEntry[]): number[] {
-	return commands
-		.map((c, i) => (typeof c.cmd === "string" && c.cmd.trim() ? i : -1))
-		.filter((i) => i >= 0);
+	return commands.reduce<number[]>((indexes, command, index) => {
+		if (typeof command.cmd === "string" && command.cmd.trim()) {
+			indexes.push(index);
+		}
+		return indexes;
+	}, []);
 }
 
 function formatBuildCmd(trimmed: string, previousCmd: string): string {

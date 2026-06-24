@@ -56,10 +56,11 @@ function containerEnvFromDeploy(envVars?: string | null): { name: string; value:
 	for (const line of envVars.split(/\r?\n/)) {
 		const t = line.trim();
 		if (!t || t.startsWith("#")) continue;
-		const eq = t.indexOf("=");
-		if (eq <= 0) continue;
-		const name = t.slice(0, eq).trim();
-		const value = t.slice(eq + 1).trim();
+		const match = /^([^=]+)=(.*)$/.exec(t);
+		if (!match) continue;
+		const [, rawName, rawValue] = match;
+		const name = rawName.trim();
+		const value = rawValue.trim();
 		if (name) out.push({ name, value });
 	}
 	return out.slice(0, 50);
@@ -210,20 +211,21 @@ export async function waitForEcsServiceRollout(params: {
 			params.send(summary, "rollout");
 		}
 
-		const taskArnSet = new Set<string>();
-		for (const desiredStatus of ["RUNNING", "STOPPED"] as const) {
-			const listed = await ecs.send(
-				new ListTasksCommand({
-					cluster: params.cluster,
-					serviceName: params.serviceName,
-					desiredStatus,
-					maxResults: 10,
-				})
-			);
-			for (const taskArn of listed.taskArns ?? []) {
-				taskArnSet.add(taskArn);
-			}
-		}
+		const listedTasks = await Promise.all(
+			(["RUNNING", "STOPPED"] as const).map((desiredStatus) =>
+				ecs.send(
+					new ListTasksCommand({
+						cluster: params.cluster,
+						serviceName: params.serviceName,
+						desiredStatus,
+						maxResults: 10,
+					})
+				)
+			)
+		);
+		const taskArnSet = new Set<string>(
+			listedTasks.flatMap((listed) => listed.taskArns ?? [])
+		);
 
 		const taskArns = [...taskArnSet];
 		let tasks: Task[] = [];

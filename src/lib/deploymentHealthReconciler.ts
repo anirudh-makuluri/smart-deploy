@@ -43,18 +43,20 @@ export function msUntilNextTenMinuteMark(now = new Date()): number {
 }
 
 async function probeBurst(baseUrl: string): Promise<boolean[]> {
-	const results: boolean[] = [];
-	for (let i = 0; i < PROBE_COUNT; i += 1) {
-		results.push(await probeDeploymentReachable(baseUrl, REQUEST_TIMEOUT_MS));
-		if (i < PROBE_COUNT - 1) {
-			await sleep(PROBE_GAP_MS);
+	const probeAttempt = async (attempt: number): Promise<boolean[]> => {
+		const result = await probeDeploymentReachable(baseUrl, REQUEST_TIMEOUT_MS);
+		if (attempt >= PROBE_COUNT - 1) {
+			return [result];
 		}
-	}
-	return results;
+		await sleep(PROBE_GAP_MS);
+		return [result, ...(await probeAttempt(attempt + 1))];
+	};
+
+	return probeAttempt(0);
 }
 
-function deployConfigForStatusUpdate(deployment: DeployConfig & { ownerID: string }): DeployConfig {
-	const { scanResults: _scanResults, ownerID: _ownerID, ...rest } = deployment;
+function deployConfigForStatusUpdate(deployment: DeployConfig): DeployConfig {
+	const { scanResults: _scanResults, ...rest } = deployment;
 	return rest as DeployConfig;
 }
 
@@ -74,50 +76,54 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 	console.log(`[health-reconcile] checking ${deployments.length} deployment(s)`);
 	let updated = 0;
 
-	for (const deployment of deployments) {
-		const storedStatus = normalizeDeploymentStatus(deployment.status);
-		if (storedStatus !== "running" && storedStatus !== "failed") {
-			continue;
-		}
-
-		const baseUrl = getDeploymentHostedUrl(deployment);
-		if (!baseUrl) {
-			continue;
-		}
-
-		try {
-			const probeResults = await probeBurst(baseUrl);
-			const nextStatus = resolveReconciledStatus(storedStatus, probeResults);
-			if (!nextStatus || nextStatus === storedStatus) {
-				continue;
+	const reconcileResults = await Promise.all(
+		deployments.map(async (deployment) => {
+			const storedStatus = normalizeDeploymentStatus(deployment.status);
+			if (storedStatus !== "running" && storedStatus !== "failed") {
+				return false;
 			}
 
-			const updateResponse = await dbHelper.updateDeployments(
-				deployConfigForStatusUpdate({
-					...deployment,
-					status: nextStatus,
-				}),
-				deployment.ownerID
-			);
-			if (updateResponse.error) {
-				console.error(
-					`[health-reconcile] failed to update ${deployment.repoName}/${deployment.serviceName}:`,
-					updateResponse.error
+			const baseUrl = getDeploymentHostedUrl(deployment);
+			if (!baseUrl) {
+				return false;
+			}
+
+			try {
+				const probeResults = await probeBurst(baseUrl);
+				const nextStatus = resolveReconciledStatus(storedStatus, probeResults);
+				if (!nextStatus || nextStatus === storedStatus) {
+					return false;
+				}
+
+				const updateResponse = await dbHelper.updateDeploymentSystem(
+					deployConfigForStatusUpdate({
+						...deployment,
+						status: nextStatus,
+					})
 				);
-				continue;
-			}
+				if (updateResponse.error) {
+					console.error(
+						`[health-reconcile] failed to update ${deployment.repoName}/${deployment.serviceName}:`,
+						updateResponse.error
+					);
+					return false;
+				}
 
-			updated += 1;
-			console.log(
-				`[health-reconcile] ${deployment.repoName}/${deployment.serviceName}: ${storedStatus} -> ${nextStatus} (probes=${probeResults.map((ok) => (ok ? "ok" : "fail")).join(",")})`
-			);
-		} catch (error) {
-			console.error(
-				`[health-reconcile] error checking ${deployment.repoName}/${deployment.serviceName}:`,
-				error
-			);
-		}
-	}
+				console.log(
+					`[health-reconcile] ${deployment.repoName}/${deployment.serviceName}: ${storedStatus} -> ${nextStatus} (probes=${probeResults.map((ok) => (ok ? "ok" : "fail")).join(",")})`
+				);
+				return true;
+			} catch (error) {
+				console.error(
+					`[health-reconcile] error checking ${deployment.repoName}/${deployment.serviceName}:`,
+					error
+				);
+				return false;
+			}
+		})
+	);
+
+	updated = reconcileResults.filter(Boolean).length;
 
 	console.log(`[health-reconcile] finished; ${updated} status update(s)`);
 }

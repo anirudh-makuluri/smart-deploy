@@ -5,6 +5,12 @@ import type { repoType } from "@/app/types";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import { useAppData } from "@/store/useAppData";
 
+vi.mock("@/lib/auth-client", () => ({
+	authClient: {
+		useSession: () => ({ data: { user: { id: "user-1" } } }),
+	},
+}));
+
 vi.mock("sonner", () => ({
 	toast: {
 		info: vi.fn(),
@@ -49,17 +55,13 @@ class MockWebSocket {
 }
 
 function Harness() {
-	const { socketStatus } = useWorkerWebSocketSession({
-		connectionEnabled: true,
-	});
+	const { socketStatus } = useWorkerWebSocketSession();
 
 	return <div data-testid="socket-status">{socketStatus}</div>;
 }
 
 function HarnessWithLogs() {
-	const { deployLogEntries, socketStatus } = useWorkerWebSocketSession({
-		connectionEnabled: true,
-	});
+	const { deployLogEntries, socketStatus } = useWorkerWebSocketSession();
 
 	const lastMessage = deployLogEntries[deployLogEntries.length - 1]?.message ?? "";
 

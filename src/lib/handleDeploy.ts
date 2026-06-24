@@ -74,7 +74,7 @@ import {
 	buildStaticSiteReleaseArtifact,
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
-import { DeployLoggerOptions } from "@/websocket-types";
+import type { DeployLoggerOptions } from "@/lib/deployLoggerOptions";
 
 type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
@@ -386,34 +386,39 @@ async function verifyDeploymentReadiness(params: {
 	send(`Starting verification: ${targetUrl}`, "verify");
 
 	const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
-	for (let round = 1; round <= maxRounds; round += 1) {
+	const verifyRound = async (round: number): Promise<VerificationResult | null> => {
+		if (round > maxRounds) {
+			return null;
+		}
+
 		const remainingBudgetMs = verificationDeadlineAt - Date.now();
 		if (remainingBudgetMs <= 0) {
 			send("Verification deadline reached before a healthy response was observed.", "verify");
-			break;
+			return null;
 		}
 
 		send(`Verification round ${round}/${maxRounds}.`, "verify");
 		const roundController = new AbortController();
 		let roundResolved = false;
 		const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
-		const probes = candidates.map(async (candidate) => {
+		const probes = candidates.map((candidate) => {
 			send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
-			try {
-				const response = await fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal);
-				if (response.status < 500) {
-					return {
-						candidate,
-						statusCode: response.status,
-					};
-				}
-				throw new Error(`HTTP ${response.status}`);
-			} catch (error) {
-				if (roundResolved && roundController.signal.aborted) {
+			return fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal)
+				.then((response) => {
+					if (response.status < 500) {
+						return {
+							candidate,
+							statusCode: response.status,
+						};
+					}
+					throw new Error(`HTTP ${response.status}`);
+				})
+				.catch((error) => {
+					if (roundResolved && roundController.signal.aborted) {
+						throw error;
+					}
 					throw error;
-				}
-				throw error;
-			}
+				});
 		});
 
 		try {
@@ -440,6 +445,12 @@ async function verifyDeploymentReadiness(params: {
 				await new Promise((resolve) => setTimeout(resolve, delayMs));
 			}
 		}
+		return verifyRound(round + 1);
+	};
+
+	const verificationResult = await verifyRound(1);
+	if (verificationResult) {
+		return verificationResult;
 	}
 
 	setStepState(deploySteps, "verify", "error");

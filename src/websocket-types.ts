@@ -1,14 +1,10 @@
 import { DeployConfig, DeployStep } from "./app/types";
 import { isEcsCloudResources } from "@/lib/cloudResources";
 import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
+import type { DeployLoggerOptions } from "@/lib/deployLoggerOptions";
 import { handleDeploy } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import * as deployLogsStore from "./lib/deployLogsStore";
-
-export type DeployLoggerOptions = {
-	onStepsChange: (steps: DeployStep[]) => void;
-	broadcast: (id: string, msg: string) => void;
-};
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID: string }, ws: any) {
 	const {

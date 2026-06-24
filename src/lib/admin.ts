@@ -6,10 +6,10 @@ import { auth } from "@/lib/auth";
 
 function adminEmailSet(): Set<string> {
 	return new Set(
-		(process.env.ADMIN_EMAILS ?? "")
-			.split(",")
-			.map((email) => email.trim().toLowerCase())
-			.filter(Boolean)
+		(process.env.ADMIN_EMAILS ?? "").split(",").flatMap((email) => {
+			const normalized = email.trim().toLowerCase();
+			return normalized ? [normalized] : [];
+		})
 	);
 }
 

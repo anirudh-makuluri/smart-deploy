@@ -24,15 +24,15 @@ function sanitizeEcrRepositoryPath(value: string): string {
 	return value
 		.replace(/\\/g, "/")
 		.split("/")
-		.map((segment) => segment.trim().toLowerCase())
-		.filter((segment) => segment.length > 0 && segment !== "." && segment !== "..")
-		.map((segment) =>
-			segment
+		.flatMap((segment) => {
+			const trimmed = segment.trim().toLowerCase();
+			if (!trimmed || trimmed === "." || trimmed === "..") return [];
+			const sanitized = trimmed
 				.replace(/[^a-z0-9._-]+/g, "-")
 				.replace(/-+/g, "-")
-				.replace(/^[-._]+|[-._]+$/g, "")
-		)
-		.filter(Boolean)
+				.replace(/^[-._]+|[-._]+$/g, "");
+			return sanitized ? [sanitized] : [];
+		})
 		.join("/");
 }
 

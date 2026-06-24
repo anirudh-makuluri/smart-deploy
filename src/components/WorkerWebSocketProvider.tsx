@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { authClient } from "@/lib/auth-client";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 
 type WorkerWebSocketContextValue = ReturnType<typeof useWorkerWebSocketSession>;
@@ -9,25 +8,18 @@ type WorkerWebSocketContextValue = ReturnType<typeof useWorkerWebSocketSession>;
 const WorkerWebSocketContext = React.createContext<WorkerWebSocketContextValue | null>(null);
 
 export function WorkerWebSocketProvider({ children }: { children: React.ReactNode }) {
-	const { data: session } = authClient.useSession();
-
-	const connectionEnabled = Boolean(session?.user?.id);
-
-	const sessionValue = useWorkerWebSocketSession({
-		connectionEnabled
-	});
+	const sessionValue = useWorkerWebSocketSession();
 
 	const {
 		deployLogEntries,
 		socketStatus,
 		sendDeployConfig,
-		openSocket,
 		liveDeployConfig,
 		deployStatus,
 		deployError,
+		deployCompleteEvent,
 		initiateServiceLogs,
 		serviceLogs,
-		setOnDeployFinished,
 	} = sessionValue;
 
 	const value = React.useMemo(
@@ -35,25 +27,23 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 			deployLogEntries,
 			socketStatus,
 			sendDeployConfig,
-			openSocket,
 			liveDeployConfig,
 			deployStatus,
 			deployError,
+			deployCompleteEvent,
 			initiateServiceLogs,
 			serviceLogs,
-			setOnDeployFinished
 		}),
 		[
 			deployLogEntries,
 			socketStatus,
 			sendDeployConfig,
-			openSocket,
 			liveDeployConfig,
 			deployStatus,
 			deployError,
+			deployCompleteEvent,
 			initiateServiceLogs,
 			serviceLogs,
-			setOnDeployFinished,
 		]
 	);
 

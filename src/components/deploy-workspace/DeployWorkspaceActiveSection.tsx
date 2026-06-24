@@ -35,7 +35,6 @@ type DeployWorkspaceActiveSectionProps = {
 	onScanCancel: () => void;
 	onImproveScanComplete: (data: ScanResultsPayload) => Promise<void>;
 	onImproveScanCancel: () => void;
-	hasScanResults: boolean;
 	effectiveScanResults: ScanResultsPayload | null;
 	scanDuration: number;
 	deployment: DeployConfig;
@@ -45,7 +44,6 @@ type DeployWorkspaceActiveSectionProps = {
 	onStartScan: () => void;
 	deploymentHistory: DeploymentHistoryEntry[] | null | undefined;
 	historyTotal: number;
-	isLoadingHistory: boolean;
 	onRollbackEntrySelect: (entry: DeploymentHistoryEntry) => void;
 	rollbackingEntryId: string | null;
 	effectiveDeploymentStatus: DeployConfig["status"];
@@ -62,18 +60,23 @@ type DeployWorkspaceActiveSectionProps = {
 	latestDeploymentRunId?: string | null;
 	deployingCommitInfo: { sha: string; message: string; author: string; date: string } | null;
 	liveDeployConfig: DeployConfig | null;
-	isDeploying: boolean;
-	isRefreshingPreview: boolean;
 	onRedeploy: (commitSha?: string) => void;
 	onRefreshPreview: () => void;
 	onEditConfiguration: () => void;
 	onOpenScanSection: () => void;
 	onPauseResumeDeployment: () => void;
 	onDeleteDeployment: () => void;
-	isChangingDeploymentState: boolean;
 	activeRepo: repoType;
-	deployDisabled: boolean;
 	deployDisabledMessage: string;
+	viewState: {
+		hasScanResults: boolean;
+		isLoadingHistory: boolean;
+		showDeployLogs: boolean;
+		isDeploying: boolean;
+		isRefreshingPreview: boolean;
+		isChangingDeploymentState: boolean;
+		deployDisabled: boolean;
+	};
 };
 
 export default function DeployWorkspaceActiveSection({
@@ -90,7 +93,6 @@ export default function DeployWorkspaceActiveSection({
 	onScanCancel,
 	onImproveScanComplete,
 	onImproveScanCancel,
-	hasScanResults,
 	effectiveScanResults,
 	scanDuration,
 	deployment,
@@ -100,7 +102,6 @@ export default function DeployWorkspaceActiveSection({
 	onStartScan,
 	deploymentHistory,
 	historyTotal,
-	isLoadingHistory,
 	onRollbackEntrySelect,
 	rollbackingEntryId,
 	effectiveDeploymentStatus,
@@ -117,18 +118,15 @@ export default function DeployWorkspaceActiveSection({
 	latestDeploymentRunId,
 	deployingCommitInfo,
 	liveDeployConfig,
-	isDeploying,
-	isRefreshingPreview,
 	onRedeploy,
 	onRefreshPreview,
 	onEditConfiguration,
 	onOpenScanSection,
 	onPauseResumeDeployment,
 	onDeleteDeployment,
-	isChangingDeploymentState,
 	activeRepo,
-	deployDisabled,
 	deployDisabledMessage,
+	viewState,
 }: DeployWorkspaceActiveSectionProps) {
 	const isDraft = isDraftDeploymentStatus(effectiveDeploymentStatus);
 
@@ -164,7 +162,7 @@ export default function DeployWorkspaceActiveSection({
 				</div>
 			);
 		}
-		if ((scanMode === "results" || hasScanResults) && isSdArtifactsAnalyzeScan(effectiveScanResults)) {
+		if ((scanMode === "results" || viewState.hasScanResults) && isSdArtifactsAnalyzeScan(effectiveScanResults)) {
 			return (
 				<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 					<SdArtifactsScanResults
@@ -248,16 +246,16 @@ export default function DeployWorkspaceActiveSection({
 			<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 				<DeployOverview
 					deployment={deployment}
-					isDeploying={isDeploying}
-					isRefreshingPreview={isRefreshingPreview}
+					isDeploying={viewState.isDeploying}
+					isRefreshingPreview={viewState.isRefreshingPreview}
 					onRedeploy={onRedeploy}
 					onRefreshPreview={onRefreshPreview}
 					onEditConfiguration={onEditConfiguration}
 					onPauseResumeDeployment={onPauseResumeDeployment}
 					onDeleteDeployment={onDeleteDeployment}
-					isChangingDeploymentState={isChangingDeploymentState}
+					isChangingDeploymentState={viewState.isChangingDeploymentState}
 					repo={activeRepo}
-					deployDisabled={deployDisabled}
+					deployDisabled={viewState.deployDisabled}
 					deployDisabledReason={deployDisabledMessage}
 				/>
 			</div>
@@ -313,7 +311,7 @@ export default function DeployWorkspaceActiveSection({
 				<div className="w-full mx-auto p-6 flex-1 max-w-6xl min-h-0 overflow-hidden">
 					<DeployLogsView
 						isDeploymentLive={isLiveDeploymentStatus(effectiveDeploymentStatus)}
-						showDeployLogs={showDeployLogs}
+						showDeployLogs={viewState.showDeployLogs}
 						deployLogEntries={deployLogEntries}
 						serviceLogs={serviceLogs}
 						deployStatus={effectiveDeployStatus}
@@ -343,7 +341,7 @@ export default function DeployWorkspaceActiveSection({
 						repoName={deployment.repoName}
 						serviceName={deployment.serviceName}
 						prefetchedData={deploymentHistory ? { history: deploymentHistory, total: historyTotal } : null}
-						isPrefetching={isLoadingHistory}
+						isPrefetching={viewState.isLoadingHistory}
 						onRollback={onRollbackEntrySelect}
 						rollbackingEntryId={rollbackingEntryId}
 						activeDeployment={deployment}

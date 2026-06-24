@@ -1,4 +1,5 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
+import { getDbPool } from "./lib/dbPool";
 import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoRecord, StaticServiceType } from "./app/types";
 import type { DeployLogLine, DeployStepSummary } from "./lib/aws/deployRunLogs";
 import { deployStepsFromLogLines } from "./lib/aws/deployRunLogs";
@@ -82,7 +83,6 @@ function normalizeDetectedServiceList(value: unknown): DetectedServiceInfo[] {
 
 type DeploymentDbRow = Record<string, unknown>;
 type AnalysisPayloadMap = Map<string, Record<string, unknown>>;
-
 async function upsertAnalysisResponse(args: {
 	id: string;
 	payload: Record<string, unknown>;
@@ -109,6 +109,107 @@ async function upsertAnalysisResponse(args: {
 			{ onConflict: "id" }
 		);
 	if (error) throw new Error(error.message);
+}
+
+function toSqlInsertValue(value: unknown): unknown {
+	if (value == null) return value;
+	if (typeof value === "object") {
+		return JSON.stringify(value);
+	}
+	return value;
+}
+
+async function insertDeploymentRow(row: Record<string, unknown>): Promise<void> {
+	const keys = Object.keys(row);
+	const placeholders = keys.map((_, index) => `$${index + 1}`);
+	const values = keys.map((key) => toSqlInsertValue(row[key]));
+	const sql = `insert into deployments (${keys.map((key) => `"${key}"`).join(", ")}) values (${placeholders.join(", ")})`;
+	await getDbPool().query(sql, values);
+}
+
+function quoteSqlIdentifier(identifier: string): string {
+	return `"${identifier.replace(/"/g, "\"\"")}"`;
+}
+
+async function insertTableRow(
+	tableName: string,
+	row: Record<string, unknown>,
+	options?: {
+		returning?: string[];
+	}
+): Promise<Record<string, unknown> | null> {
+	const keys = Object.keys(row);
+	const placeholders = keys.map((_, index) => `$${index + 1}`);
+	const values = keys.map((key) => toSqlInsertValue(row[key]));
+	const returningClause = options?.returning?.length
+		? ` returning ${options.returning.map((column) => quoteSqlIdentifier(column)).join(", ")}`
+		: "";
+	const sql = `insert into ${quoteSqlIdentifier(tableName)} (${keys.map((key) => quoteSqlIdentifier(key)).join(", ")}) values (${placeholders.join(", ")})${returningClause}`;
+	const result = await getDbPool().query(sql, values);
+	return (result.rows?.[0] as Record<string, unknown> | undefined) ?? null;
+}
+
+async function insertTableRows(tableName: string, rows: Record<string, unknown>[]): Promise<void> {
+	if (rows.length === 0) return;
+
+	const keys = Object.keys(rows[0]);
+	const values: unknown[] = [];
+	const valueGroups = rows.map((row, rowIndex) => {
+		const placeholders = keys.map((key, columnIndex) => {
+			values.push(toSqlInsertValue(row[key]));
+			return `$${rowIndex * keys.length + columnIndex + 1}`;
+		});
+		return `(${placeholders.join(", ")})`;
+	});
+	const sql = `insert into ${quoteSqlIdentifier(tableName)} (${keys.map((key) => quoteSqlIdentifier(key)).join(", ")}) values ${valueGroups.join(", ")}`;
+	await getDbPool().query(sql, values);
+}
+
+async function updateTableRows(
+	tableName: string,
+	payload: Record<string, unknown>,
+	filters: Record<string, unknown>
+): Promise<void> {
+	const payloadKeys = Object.keys(payload);
+	if (payloadKeys.length === 0) return;
+
+	const filterKeys = Object.keys(filters);
+	const values = [
+		...payloadKeys.map((key) => toSqlInsertValue(payload[key])),
+		...filterKeys.map((key) => toSqlInsertValue(filters[key])),
+	];
+	const setClause = payloadKeys
+		.map((key, index) => `${quoteSqlIdentifier(key)} = $${index + 1}`)
+		.join(", ");
+	const whereClause = filterKeys
+		.map((key, index) => `${quoteSqlIdentifier(key)} = $${payloadKeys.length + index + 1}`)
+		.join(" and ");
+	const sql = `update ${quoteSqlIdentifier(tableName)} set ${setClause} where ${whereClause}`;
+	await getDbPool().query(sql, values);
+}
+
+async function upsertTableRows(
+	tableName: string,
+	rows: Record<string, unknown>[],
+	conflictColumns: string[]
+): Promise<void> {
+	if (rows.length === 0) return;
+
+	const keys = Object.keys(rows[0]);
+	const values: unknown[] = [];
+	const valueGroups = rows.map((row, rowIndex) => {
+		const placeholders = keys.map((key, columnIndex) => {
+			values.push(toSqlInsertValue(row[key]));
+			return `$${rowIndex * keys.length + columnIndex + 1}`;
+		});
+		return `(${placeholders.join(", ")})`;
+	});
+	const updateColumns = keys.filter((key) => !conflictColumns.includes(key));
+	const updateClause = updateColumns
+		.map((key) => `${quoteSqlIdentifier(key)} = excluded.${quoteSqlIdentifier(key)}`)
+		.join(", ");
+	const sql = `insert into ${quoteSqlIdentifier(tableName)} (${keys.map((key) => quoteSqlIdentifier(key)).join(", ")}) values ${valueGroups.join(", ")} on conflict (${conflictColumns.map((key) => quoteSqlIdentifier(key)).join(", ")}) do update set ${updateClause}`;
+	await getDbPool().query(sql, values);
 }
 
 async function fetchAnalysisPayloadMap(rows: DeploymentDbRow[]): Promise<AnalysisPayloadMap> {
@@ -155,7 +256,7 @@ function attachAnalysisPayload(rows: DeploymentDbRow[], payloadMap: AnalysisPayl
 /**
  * Transform database row (snake_case) to DeployConfig (camelCase)
  */
-function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { ownerID: string } {
+function rowToDeployConfig(row: Record<string, unknown>): DeployConfig {
 	const {
 		id,
 		repo_name,
@@ -179,7 +280,6 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		scan_results,
 	} = row;
 
-	const ownerID = String(owner_id ?? "");
 	const hostedSubdomain = toOptionalTrimmedString(hosted_subdomain);
 	const normalized = withDeployInfraDefaults({
 		id: String(id ?? ""),
@@ -206,7 +306,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig & { owner
 		cloudResources: (cloud_resources as DeployConfig["cloudResources"]) ?? null,
 		scanResults: (scan_results || {}) as DeployConfig["scanResults"],
 	});
-	return { ...normalized, ownerID };
+	return normalized;
 }
 
 /**
@@ -269,7 +369,7 @@ function rowToDeploymentHistoryEntryFromRun(row: Record<string, unknown>): Deplo
 }
 
 async function fetchDeploymentRuns(args: {
-	userID: string;
+	accountId: string;
 	repoName?: string;
 	serviceName?: string;
 	page: number;
@@ -282,7 +382,7 @@ async function fetchDeploymentRuns(args: {
 	let query = supabase
 		.from("deployment_runs")
 		.select("*", { count: "exact" })
-		.eq("user_id", args.userID)
+		.eq("user_id", args.accountId)
 		.order("started_at", { ascending: false })
 		.range(from, to);
 
@@ -371,7 +471,7 @@ function dedupeRepoSyncRows(rows: Record<string, unknown>[]) {
 }
 
 export const dbHelper = {
-	updateDeployments: async function (deployConfig: DeployConfig, userID: string) {
+	updateDeployments: async function (deployConfig: DeployConfig, accountId: string) {
 		try {
 			const { repoName, serviceName } = deployConfig;
 			if (!repoName || !serviceName) return { error: "repoName and serviceName are required" };
@@ -457,7 +557,7 @@ export const dbHelper = {
 					id: crypto.randomUUID(),
 					repo_name: repoName,
 					service_name: serviceName,
-					owner_id: userID,
+					owner_id: accountId,
 					first_deployment: nextStatus === "running" ? now : null,
 					last_deployment: isDraft ? null : now,
 					revision: isDraft ? 0 : 1,
@@ -465,8 +565,7 @@ export const dbHelper = {
 					response_id: nextResponseId,
 				};
 
-				const { error: insertError } = await supabase.from("deployments").insert(insertPayload);
-				if (insertError) return { error: insertError.message };
+				await insertDeploymentRow(insertPayload);
 				return { success: "New deployment created and added to user", responseId: nextResponseId };
 			}
 
@@ -510,9 +609,9 @@ export const dbHelper = {
 		}
 	},
 
-	deleteDeployment: async function (repoName: string, serviceName: string, userID: string) {
+	deleteDeployment: async function (repoName: string, serviceName: string, accountId: string) {
 		try {
-			if (!repoName || !serviceName || !userID) return { error: "repoName, serviceName, and user ID are required" };
+			if (!repoName || !serviceName || !accountId) return { error: "repoName, serviceName, and user ID are required" };
 
 			const supabase = getSupabaseServer();
 
@@ -526,7 +625,7 @@ export const dbHelper = {
 				.maybeSingle();
 
 			if (fetchError || !deployment) return { success: "Deployment already deleted or not found" };
-			if (deployment.owner_id !== userID) return { error: "Unauthorized: deployment does not belong to user" };
+			if (deployment.owner_id !== accountId) return { error: "Unauthorized: deployment does not belong to user" };
 
 			await supabase.from("deployments").delete()
 				.eq("repo_name", repoName)
@@ -561,14 +660,14 @@ export const dbHelper = {
 		}
 	},
 
-	getUserDeployments: async function (userID: string) {
+	getUserDeployments: async function (accountId: string) {
 		try {
 			const supabase = getSupabaseServer();
 
 			const { data: rows, error } = await supabase
 				.from("deployments")
 				.select("*")
-				.eq("owner_id", userID);
+				.eq("owner_id", accountId);
 
 			if (error) return { error: error.message };
 
@@ -584,14 +683,14 @@ export const dbHelper = {
 		}
 	},
 
-	getDeploymentsByRepo: async function (userID: string, repoIdentifier: string) {
+	getDeploymentsByRepo: async function (accountId: string, repoIdentifier: string) {
 		try {
 			const supabase = getSupabaseServer();
 
 			const { data: rows, error } = await supabase
 				.from("deployments")
 				.select("*")
-				.eq("owner_id", userID);
+				.eq("owner_id", accountId);
 
 			if (error) return { error: error.message };
 
@@ -609,18 +708,21 @@ export const dbHelper = {
 		}
 	},
 
-	deleteDeploymentsByRepo: async function (userID: string, repoIdentifier: string) {
+	deleteDeploymentsByRepo: async function (accountId: string, repoIdentifier: string) {
 		try {
-			const { deployments, error } = await this.getDeploymentsByRepo(userID, repoIdentifier);
+			const { deployments, error } = await this.getDeploymentsByRepo(accountId, repoIdentifier);
 			if (error) return { error };
 			const repoDeployments = deployments ?? [];
 			if (repoDeployments.length === 0) return { deleted: 0 };
 
-			for (const deployment of repoDeployments) {
-				const result = await this.deleteDeployment(deployment.repoName, deployment.serviceName, userID);
-				if (result.error) {
-					return { error: typeof result.error === "string" ? result.error : String(result.error) };
-				}
+			const results = await Promise.all(
+				repoDeployments.map((deployment) =>
+					this.deleteDeployment(deployment.repoName, deployment.serviceName, accountId)
+				)
+			);
+			const failedResult = results.find((result) => result.error);
+			if (failedResult?.error) {
+				return { error: typeof failedResult.error === "string" ? failedResult.error : String(failedResult.error) };
 			}
 
 			return { deleted: repoDeployments.length };
@@ -630,7 +732,7 @@ export const dbHelper = {
 		}
 	},
 
-	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig & { ownerID: string } }> {
+	getDeployment: async function (repoName: string, serviceName: string): Promise<{ error?: string; deployment?: DeployConfig }> {
 		try {
 			const supabase = getSupabaseServer();
 			const { data: row, error } = await supabase
@@ -654,9 +756,53 @@ export const dbHelper = {
 		}
 	},
 
+	getDeploymentForUser: async function (repoName: string, serviceName: string, accountId: string): Promise<{ error?: string; deployment?: DeployConfig }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data: row, error } = await supabase
+				.from("deployments")
+				.select("*")
+				.eq("repo_name", repoName)
+				.eq("service_name", serviceName)
+				.eq("owner_id", accountId)
+				.order("last_deployment", { ascending: false })
+				.limit(1)
+				.maybeSingle();
+
+			if (error || !row) return { error: "Deployment not found" };
+			const hydratedRows = attachAnalysisPayload(
+				[row as DeploymentDbRow],
+				await fetchAnalysisPayloadMap([row as DeploymentDbRow])
+			);
+			return { deployment: rowToDeployConfig(hydratedRows[0]) };
+		} catch (error) {
+			console.error("getDeploymentForUser error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	updateDeploymentSystem: async function (deployConfig: Partial<DeployConfig> & { repoName: string; serviceName: string }) {
+		try {
+			const supabase = getSupabaseServer();
+			const updatePayload = deployConfigToRow(deployConfig, {
+				includeStatus: Object.prototype.hasOwnProperty.call(deployConfig, "status"),
+				resolvedStatus: deployConfig.status,
+			});
+			const { error } = await supabase
+				.from("deployments")
+				.update(updatePayload)
+				.eq("repo_name", deployConfig.repoName)
+				.eq("service_name", deployConfig.serviceName);
+
+			if (error) return { error: error.message };
+			return { success: "Deployment updated" };
+		} catch (error) {
+			console.error("updateDeploymentSystem error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
-		const supabase = getSupabaseServer();
-		
 		const rows = dedupeRepoSyncRows(repoList.map(repo => ({
 			user_id: userID,
 			repo_name: repo.full_name,
@@ -678,12 +824,12 @@ export const dbHelper = {
 			synced_at: new Date().toISOString(),
 			sync_error: null,
 		})));
-		
-		const { error } = await supabase
-			.from("user_repos")
-			.upsert(rows, { onConflict: "user_id,repo_name" });
-		
-		if (error) throw new Error(`Failed to sync repos: ${error.message}`);
+
+		try {
+			await upsertTableRows("user_repos", rows, ["user_id", "repo_name"]);
+		} catch (error) {
+			throw new Error(`Failed to sync repos: ${error instanceof Error ? error.message : String(error)}`);
+		}
 		if (rows.length !== repoList.length) {
 			console.warn(`Deduped ${repoList.length - rows.length} repo sync rows for user: ${userID}`);
 		}
@@ -740,10 +886,9 @@ export const dbHelper = {
 				return { error: "repo_name and service_name are required." };
 			}
 
-			const supabase = getSupabaseServer();
-			const { data, error } = await supabase
-				.from("deployment_runs")
-				.insert({
+			const inserted = await insertTableRow(
+				"deployment_runs",
+				{
 					user_id: userId,
 					repo_name: args.repoName,
 					service_name: args.serviceName,
@@ -751,12 +896,11 @@ export const dbHelper = {
 					commit_sha: args.commitSha ?? null,
 					response_id: args.responseId ?? null,
 					log_store: "s3",
-				})
-				.select("id")
-				.single();
+				},
+				{ returning: ["id"] }
+			);
 
-			if (error) return { error };
-			return { runId: data?.id as string };
+			return { runId: inserted?.id as string | undefined };
 		} catch (error) {
 			console.error("createDeploymentRun error:", error);
 			return { error };
@@ -773,18 +917,15 @@ export const dbHelper = {
 		}
 	): Promise<{ error?: unknown }> {
 		try {
-			const supabase = getSupabaseServer();
-			const { error } = await supabase
-				.from("deployment_runs")
-				.update({
+			await updateTableRows(
+				"deployment_runs",
+				{
 					log_ref: progress.logRef,
 					step_summary: progress.stepSummary,
 					log_tail: progress.logTail,
-				})
-				.eq("id", runId)
-				.eq("user_id", userId);
-
-			if (error) return { error };
+				},
+				{ id: runId, user_id: userId }
+			);
 			return {};
 		} catch (error) {
 			console.error("updateDeploymentRunProgress error:", error);
@@ -806,10 +947,9 @@ export const dbHelper = {
 		logTail?: DeployLogLine[];
 	}): Promise<{ error?: unknown }> {
 		try {
-			const supabase = getSupabaseServer();
-			const { error } = await supabase
-				.from("deployment_runs")
-				.update({
+			await updateTableRows(
+				"deployment_runs",
+				{
 					finished_at: new Date().toISOString(),
 					success: args.success,
 					duration_ms: args.durationMs ?? null,
@@ -819,11 +959,9 @@ export const dbHelper = {
 					...(args.logRef ? { log_ref: args.logRef } : {}),
 					...(args.stepSummary ? { step_summary: args.stepSummary } : {}),
 					...(args.logTail ? { log_tail: args.logTail } : {}),
-				})
-				.eq("id", args.runId)
-				.eq("user_id", args.userId);
-
-			if (error) return { error };
+				},
+				{ id: args.runId, user_id: args.userId }
+			);
 			return {};
 		} catch (error) {
 			console.error("finalizeDeploymentRun error:", error);
@@ -848,10 +986,9 @@ export const dbHelper = {
 				return { error: "userID, question, and answer are required" };
 			}
 
-			const supabase = getSupabaseServer();
-			const { data: inserted, error } = await supabase
-				.from("help_agent_chats")
-				.insert({
+			const inserted = await insertTableRow(
+				"help_agent_chats",
+				{
 					user_id: userID,
 					question: question.trim(),
 					answer: answer.trim(),
@@ -861,11 +998,9 @@ export const dbHelper = {
 					moss_retrieval_ms: typeof args.mossRetrievalMs === "number" ? Math.round(args.mossRetrievalMs) : null,
 					response_time_ms: typeof args.responseTimeMs === "number" ? Math.round(args.responseTimeMs) : null,
 					chat_history: Array.isArray(args.history) ? args.history : [],
-				})
-				.select("id")
-				.single();
-
-			if (error) return { error };
+				},
+				{ returning: ["id"] }
+			);
 			return { success: true, id: inserted?.id };
 		} catch (error) {
 			console.error("recordHelpAgentChat error:", error);
@@ -899,9 +1034,7 @@ export const dbHelper = {
 			}
 			if (rows.length === 0) return { success: true, inserted: 0 };
 
-			const supabase = getSupabaseServer();
-			const { error } = await supabase.from("artifact_events").insert(rows);
-			if (error) return { error: error.message };
+			await insertTableRows("artifact_events", rows);
 			return { success: true, inserted: rows.length };
 		} catch (error) {
 			console.error("recordArtifactGeneration error:", error);
@@ -915,7 +1048,7 @@ export const dbHelper = {
 			const safePage = Math.max(1, page);
 			const safeLimit = Math.max(1, limit);
 			const merged = await fetchDeploymentRuns({
-				userID,
+				accountId: userID,
 				repoName,
 				serviceName,
 				page: safePage,
@@ -940,7 +1073,7 @@ export const dbHelper = {
 			const safePage = Math.max(1, page);
 			const safeLimit = Math.max(1, limit);
 			const merged = await fetchDeploymentRuns({
-				userID,
+				accountId: userID,
 				page: safePage,
 				limit: safeLimit,
 			});
@@ -1049,9 +1182,9 @@ export const dbHelper = {
 			const normalizedUrl = repoUrl.replace(/\.git$/, "").trim();
 			if (!userID || !normalizedUrl) return { error: "userID and repo_url are required" };
 
-			const supabase = getSupabaseServer();
-			const { error } = await supabase.from("repo_services").upsert(
-				{
+			await upsertTableRows(
+				"repo_services",
+				[{
 					user_id: userID,
 					repo_url: normalizedUrl,
 					branch: payload.branch,
@@ -1060,10 +1193,9 @@ export const dbHelper = {
 					services: payload.services,
 					is_monorepo: payload.is_monorepo,
 					updated_at: new Date().toISOString(),
-				},
-				{ onConflict: "user_id,repo_url" }
+				}],
+				["user_id", "repo_url"]
 			);
-			if (error) return { error: error.message };
 			return {};
 		} catch (err) {
 			console.error("upsertRepoServices error:", err);

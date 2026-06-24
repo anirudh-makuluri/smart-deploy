@@ -168,9 +168,9 @@ describe("DeployWorkspace", () => {
 			deployConfigRef: { current: null },
 			deployStatus: "not-started",
 			deployError: null,
+			deployCompleteEvent: null,
 			serviceLogs: [],
 			deployLogEntries: [],
-			setOnDeployFinished: vi.fn(),
 		});
 		mockFetchLatestCommit.mockResolvedValue(null);
 		mockControlDeployment.mockResolvedValue({ ok: true });
@@ -298,18 +298,19 @@ describe("DeployWorkspace", () => {
 			deployConfigRef: { current: null },
 			deployStatus: "success",
 			deployError: null,
+			deployCompleteEvent: {
+				payload: {
+					success: true,
+					hosted_subdomain: "web",
+					deploymentTarget: "ecs",
+					finalStatus: "running",
+					cloudResources: null,
+					rolledBack: false,
+				},
+				receivedAt: Date.now(),
+			},
 			serviceLogs: [],
 			deployLogEntries: [],
-			setOnDeployFinished: vi.fn((handler) => {
-				if (handler) {
-					queueMicrotask(() => {
-						handler({
-							success: true,
-							hosted_subdomain: "web",
-						});
-					});
-				}
-			}),
 		});
 
 		appState = {
@@ -341,19 +342,20 @@ describe("DeployWorkspace", () => {
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Build failed",
+			deployCompleteEvent: {
+				payload: {
+					success: false,
+					hosted_subdomain: "web",
+					deploymentTarget: "ecs",
+					finalStatus: "failed",
+					cloudResources: null,
+					rolledBack: false,
+					error: "Build failed",
+				},
+				receivedAt: Date.now(),
+			},
 			serviceLogs: [],
 			deployLogEntries: [],
-			setOnDeployFinished: vi.fn((handler) => {
-				if (handler) {
-					queueMicrotask(() => {
-						handler({
-							success: false,
-							hosted_subdomain: "web",
-							error: "Build failed",
-						});
-					});
-				}
-			}),
 		});
 
 		appState = {
@@ -384,20 +386,20 @@ describe("DeployWorkspace", () => {
 			deployConfigRef: { current: null },
 			deployStatus: "error",
 			deployError: "Verification failed",
+			deployCompleteEvent: {
+				payload: {
+					success: false,
+					error: "Deployment verification failed. Rolled back automatically to abc1234.",
+					finalStatus: "running",
+					hosted_subdomain: "restored",
+					deploymentTarget: "ecs",
+					cloudResources: null,
+					rolledBack: false,
+				},
+				receivedAt: Date.now(),
+			},
 			serviceLogs: [],
 			deployLogEntries: [],
-			setOnDeployFinished: vi.fn((handler) => {
-				if (handler) {
-					queueMicrotask(() => {
-						handler({
-							success: false,
-							error: "Deployment verification failed. Rolled back automatically to abc1234.",
-							finalStatus: "running",
-							hosted_subdomain: "restored",
-						});
-					});
-				}
-			}),
 		});
 
 		appState = {

@@ -398,7 +398,6 @@ function transformDeployment(deployment: any) {
 		id: deployment.id,
 		repoName: deployment.repoName,
 		serviceName: deployment.serviceName,
-		ownerID: deployment.ownerID,
 		status: resolveDeploymentStatus({
 			status: deployment.status,
 			hostedSubdomain,

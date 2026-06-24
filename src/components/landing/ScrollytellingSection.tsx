@@ -148,6 +148,16 @@ function getNodeStates(activeStep: number): Record<NodeId, NodeState> {
 	return states;
 }
 
+const flowSections: NodeId[] = ["overview", "setup", "scan", "blueprint", "logs", "history"];
+const flowSectionLabels: Record<NodeId, string> = {
+	overview: "Overview",
+	setup: "Setup",
+	scan: "Scan",
+	blueprint: "Preview",
+	logs: "Logs",
+	history: "History",
+};
+
 function StepItem({
 	index,
 	step,
@@ -516,15 +526,6 @@ function FlowUI({
 	isCompact?: boolean;
 }) {
 	const nodeStates = getNodeStates(activeStep);
-	const sections: NodeId[] = ["overview", "setup", "scan", "blueprint", "logs", "history"];
-	const sectionLabels: Record<NodeId, string> = {
-		overview: "Overview",
-		setup: "Setup",
-		scan: "Scan",
-		blueprint: "Preview",
-		logs: "Logs",
-		history: "History",
-	};
 
 	return (
 		<div
@@ -546,10 +547,10 @@ function FlowUI({
 				<div className="mt-2 flex flex-wrap gap-1.5">
 					{isCompact ? (
 						<span className="rounded-md border border-primary/35 bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary">
-							{sectionLabels[steps[activeStep]?.section ?? "overview"]}
+							{flowSectionLabels[steps[activeStep]?.section ?? "overview"]}
 						</span>
 					) : (
-						sections.map((section) => {
+						flowSections.map((section) => {
 							const state = nodeStates[section];
 							return (
 								<span
@@ -562,7 +563,7 @@ function FlowUI({
 												: "border-border/60 bg-card/70 text-muted-foreground"
 									}`}
 								>
-									{sectionLabels[section]}
+									{flowSectionLabels[section]}
 								</span>
 							);
 						})

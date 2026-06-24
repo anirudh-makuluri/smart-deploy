@@ -7,10 +7,8 @@ import {
 	initialDeployWorkspaceUiState,
 	type DeployWorkspaceUiAction,
 } from "@/components/deploy-workspace/deployWorkspaceState";
-import type { DeployStatus } from "@/components/deploy-workspace/DeployLogsView";
 import { formatRecentDeployLogs } from "@/components/deploy-workspace/deployLogsUtils";
 import type { FeedbackProgressPayload } from "@/components/FeedbackProgress";
-import type { DeployCompleteWsPayload } from "@/custom-hooks/useWorkerWebSocket";
 import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
@@ -71,7 +69,7 @@ export function useDeployWorkspace() {
 	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
 
 	const deployment = useActiveDeployment();
-	const { sendDeployConfig, liveDeployConfig, deployStatus, deployError, serviceLogs, deployLogEntries, setOnDeployFinished } = useWorkerWebSocket();
+	const { sendDeployConfig, liveDeployConfig, deployStatus, deployError, deployCompleteEvent, serviceLogs, deployLogEntries } = useWorkerWebSocket();
 
 	const hasHostedSubdomain = React.useMemo(() => Boolean(deployment.hostedSubdomain?.trim()), [deployment.hostedSubdomain]);
 	
@@ -156,10 +154,10 @@ export function useDeployWorkspace() {
 		},
 	});
 
-	
-	
-	const onDeployFinishedCallback = React.useCallback(
-		(p: DeployCompleteWsPayload) => {
+	React.useEffect(() => {
+		const p = deployCompleteEvent?.payload;
+		if (!p) return;
+
 			dispatch({ type: "set_deploying", value: false });
 			const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
 			const hostedSubdomain = p.hosted_subdomain ?? deployment.hostedSubdomain;
@@ -189,16 +187,7 @@ export function useDeployWorkspace() {
 					deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 				}),
 			});
-		},
-		[deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById]
-	);
-
-	React.useEffect(() => {
-		setOnDeployFinished(onDeployFinishedCallback);
-		return () => {
-			setOnDeployFinished(undefined);
-		};
-	}, [onDeployFinishedCallback, setOnDeployFinished]);
+	}, [deployCompleteEvent, deployment.firstDeployment, deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById]);
 
 	const canPauseResumeDeployment = effectiveDeploymentStatus === "running" || effectiveDeploymentStatus === "paused";
 	const pauseResumeAction = effectiveDeploymentStatus === "paused" ? "resume" : "pause";
@@ -259,7 +248,7 @@ export function useDeployWorkspace() {
 
 		dispatch({ type: "set_scan_results", value: results });
 		dispatch({ type: "set_scan_mode", value: "results" });
-	}, [deployment.commitSha, deployment.repoUrl, effectiveBranch, fetchRepoDeployments, repoIdentifier, repoName, repoUrl, serviceName, session?.user]);
+	}, [deployment.commitSha, deployment.repoUrl, effectiveBranch, repoName, repoUrl, serviceName, session?.user]);
 
 	const onScanComplete = React.useCallback(async (results: ScanResultsPayload, branchOverride?: string) => {
 		try {
@@ -565,7 +554,7 @@ export function useDeployWorkspace() {
 			serviceName: serviceName,
 			...partial,
 		});
-	}, [deployment, effectiveBranch, repoName, repoUrl, serviceName, updateDeploymentById]);
+	}, [repoName, serviceName, updateDeploymentById]);
 
 	const latestDeploymentRunId = React.useMemo(
 		() => deploymentHistory?.[0]?.id ?? null,

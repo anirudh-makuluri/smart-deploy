@@ -8,7 +8,7 @@ import type {
 
 function cloneJsonObject<T>(value: T): T {
 	if (!value || typeof value !== "object") return value;
-	return JSON.parse(JSON.stringify(value)) as T;
+	return structuredClone(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

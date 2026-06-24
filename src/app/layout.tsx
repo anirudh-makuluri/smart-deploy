@@ -14,6 +14,14 @@ const organizationJsonLd = {
 	logo: "https://smart-deploy.xyz/icon.svg",
 };
 
+function jsonLdString(value: unknown): string {
+	return JSON.stringify(value).replace(/[<>&]/g, (char) => {
+		if (char === "<") return "\\u003c";
+		if (char === ">") return "\\u003e";
+		return "\\u0026";
+	});
+}
+
 export const metadata: Metadata = {
 	metadataBase: new URL("https://smart-deploy.xyz"),
 	title: {
@@ -52,7 +60,7 @@ export default function RootLayout({
 				className="landing-bg text-foreground antialiased"
 				suppressHydrationWarning
 			>
-				<script type="application/ld+json">{JSON.stringify(organizationJsonLd)}</script>
+				<script type="application/ld+json">{jsonLdString(organizationJsonLd)}</script>
 				<Providers>
 					<AccentSync />
 					<blockquote className="sr-only">

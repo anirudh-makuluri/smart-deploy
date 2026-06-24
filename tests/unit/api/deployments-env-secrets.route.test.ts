@@ -17,6 +17,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
 		getDeployment: (...args: unknown[]) => getDeploymentMock(...args),
+		getDeploymentForUser: (...args: unknown[]) => getDeploymentMock(...args),
 		updateDeployments: (...args: unknown[]) => updateDeploymentsMock(...args),
 	},
 }));
@@ -27,11 +28,13 @@ vi.mock("@/lib/aws/deploymentSecrets", () => ({
 }));
 
 const baseDeployment = {
-	repoName: "acme",
-	serviceName: "web",
 	ownerID: "user-1",
-	region: "us-west-2",
-	secretsArn: "arn:aws:secretsmanager:us-west-2:123:secret:test",
+	config: {
+		repoName: "acme",
+		serviceName: "web",
+		region: "us-west-2",
+		secretsArn: "arn:aws:secretsmanager:us-west-2:123:secret:test",
+	},
 };
 
 describe("/api/deployments/env-secrets", () => {
@@ -48,21 +51,21 @@ describe("/api/deployments/env-secrets", () => {
 
 	it("GET returns stored entries for owned deployment", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "user-1" } });
-		getDeploymentMock.mockResolvedValue({ deployment: baseDeployment });
+		getDeploymentMock.mockResolvedValue({ deployment: baseDeployment.config });
 		getDeploymentEnvSecretEntriesMock.mockResolvedValue([{ name: "API_KEY", value: "secret" }]);
 
 		const { GET } = await import("@/app/api/deployments/env-secrets/route");
 		const res = await GET(new Request("http://localhost/api/deployments/env-secrets?repoName=acme&serviceName=web"));
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({
-			secretsArn: baseDeployment.secretsArn,
+			secretsArn: baseDeployment.config.secretsArn,
 			entries: [{ name: "API_KEY", value: "secret" }],
 		});
 	});
 
 	it("PUT saves secrets and persists secretsArn", async () => {
 		getSessionMock.mockResolvedValue({ user: { id: "user-1" } });
-		getDeploymentMock.mockResolvedValue({ deployment: { ...baseDeployment, secretsArn: null } });
+		getDeploymentMock.mockResolvedValue({ deployment: { ...baseDeployment.config, secretsArn: null } });
 		upsertDeploymentEnvSecretMock.mockResolvedValue({ secretsArn: "arn:new" });
 		updateDeploymentsMock.mockResolvedValue({ success: "ok" });
 

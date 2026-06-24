@@ -53,13 +53,15 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 						visibleRepositories={visibleRepositories}
 						repoSearch={ui.repoSearch}
 						onRepoSearchChange={(value) => dispatch({ type: "set_repo_search", value })}
-						showAddRepo={ui.showAddRepo}
+						ui={{
+							showAddRepo: ui.showAddRepo,
+							isLoadingRepo: ui.isLoadingRepo,
+							isRefreshing: ui.isRefreshing,
+							isLoading,
+						}}
 						onToggleAddRepo={() => dispatch({ type: "toggle_add_repo" })}
 						repoUrl={ui.repoUrl}
 						onRepoUrlChange={(value) => dispatch({ type: "set_repo_url", value })}
-						isLoadingRepo={ui.isLoadingRepo}
-						isRefreshing={ui.isRefreshing}
-						isLoading={isLoading}
 						onAddPublicRepo={handleAddPublicRepo}
 						onRefresh={handleRefresh}
 						onCancelAddRepo={() => dispatch({ type: "reset_add_repo" })}

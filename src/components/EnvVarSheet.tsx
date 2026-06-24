@@ -52,12 +52,7 @@ export default function EnvVarSheet({
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
 	const [rowIds, setRowIds] = React.useState<string[]>(() => createRowIds(entries.length));
-	const [trackedEntryCount, setTrackedEntryCount] = React.useState(entries.length);
-
-	if (entries.length !== trackedEntryCount) {
-		setTrackedEntryCount(entries.length);
-		setRowIds((prev) => syncRowIds(prev, entries.length));
-	}
+	const effectiveRowIds = React.useMemo(() => syncRowIds(rowIds, entries.length), [entries.length, rowIds]);
 
 	const handleAddVariable = () => {
 		onEntriesChange([...entries, { name: "", value: "" }]);
@@ -215,7 +210,7 @@ export default function EnvVarSheet({
 									</div>
 									<div className="space-y-2">
 										{entries.map((entry, index) => (
-											<div key={rowIds[index] ?? index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
+											<div key={effectiveRowIds[index] ?? index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
 												<Input
 													value={entry.name}
 													onPaste={(e) => handlePaste(index, e)}

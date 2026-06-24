@@ -93,7 +93,7 @@ export function AdminDataTable({ columns, rows, emptyMessage, initialSort }: Adm
 					return keys.some((key) => valueText(row[key]).toLowerCase().includes(normalizedQuery));
 				})
 			: rows;
-		return [...filtered].sort((a, b) => {
+		return filtered.toSorted((a, b) => {
 			const result = compareValues(a[sortColumn], b[sortColumn]);
 			return sortDirection === "asc" ? result : -result;
 		});
@@ -102,9 +102,10 @@ export function AdminDataTable({ columns, rows, emptyMessage, initialSort }: Adm
 	return (
 		<div className="space-y-4">
 			<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-black/20 p-3 md:flex-row md:items-center">
-				<label className="relative min-w-0 flex-1">
+				<label htmlFor="admin-table-filter" className="relative min-w-0 flex-1">
 					<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
+						id="admin-table-filter"
 						value={query}
 						onChange={(event) => setQuery(event.target.value)}
 						placeholder="Filter rows"

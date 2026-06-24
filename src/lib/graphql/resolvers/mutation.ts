@@ -492,13 +492,9 @@ export async function updateCustomDomain(
 			throw new Error("Invalid customUrl format");
 		}
 
-		const { deployment, error: getFetchError } = await dbHelper.getDeployment(repoNameTrimmed, serviceNameTrimmed);
+		const { deployment, error: getFetchError } = await dbHelper.getDeploymentForUser(repoNameTrimmed, serviceNameTrimmed, userID);
 		if (getFetchError || !deployment) {
 			throw new Error("Deployment not found");
-		}
-
-		if (deployment.ownerID !== userID) {
-			throw new Error("Unauthorized: deployment does not belong to you");
 		}
 
 		const hostedSubdomain = formattedCustomUrl
@@ -600,13 +596,18 @@ export async function verifyDns(
 			}
 		}
 
-		const alternatives: string[] = [];
-		for (let i = 1; i <= 5; i += 1) {
-			const alt = `${sanitized}-${i}`;
-			const altLookup = await lookupRoute53Subdomain(alt, baseDomain);
-			if (!altLookup.exists) alternatives.push(alt);
-			if (alternatives.length >= 3) break;
-		}
+		const alternatives = (
+			await Promise.all(
+				Array.from({ length: 5 }, (_, index) => {
+					const alt = `${sanitized}-${index + 1}`;
+					return lookupRoute53Subdomain(alt, baseDomain).then((altLookup) =>
+						altLookup.exists ? null : alt
+					);
+				})
+			)
+		)
+			.filter((alt): alt is string => Boolean(alt))
+			.slice(0, 3);
 
 		return {
 			available: false,

@@ -57,13 +57,14 @@ export async function probeDeploymentReachable(
 
 	const roundController = new AbortController();
 	let roundResolved = false;
-	const probes = candidates.map(async (candidate) => {
-		const response = await fetchWithTimeout(candidate, requestTimeoutMs, roundController.signal);
-		if (response.status < 500) {
-			return true;
-		}
-		throw new Error(`HTTP ${response.status}`);
-	});
+	const probes = candidates.map((candidate) =>
+		fetchWithTimeout(candidate, requestTimeoutMs, roundController.signal).then((response) => {
+			if (response.status < 500) {
+				return true;
+			}
+			throw new Error(`HTTP ${response.status}`);
+		})
+	);
 
 	try {
 		await Promise.any(probes);

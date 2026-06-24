@@ -113,6 +113,23 @@ vi.mock("@/lib/supabaseServer", () => ({
 	getSupabaseServer: getSupabaseServerMock,
 }));
 
+vi.mock("@/lib/dbPool", () => ({
+	getDbPool: () => ({
+		query: async (sql: string, values: unknown[]) => {
+			const columnsMatch = sql.match(/insert into deployments \((.+)\) values/i);
+			if (!columnsMatch) {
+				throw new Error(`Unexpected SQL: ${sql}`);
+			}
+			const columns = columnsMatch[1]
+				.split(",")
+				.map((column) => column.trim().replace(/^"|"$/g, ""));
+			const row = Object.fromEntries(columns.map((column, index) => [column, values[index]]));
+			deploymentsTable.push(row);
+			return { rowCount: 1 };
+		},
+	}),
+}));
+
 describe("dbHelper.updateDeployments partial updates", () => {
 	beforeEach(() => {
 		deploymentsTable = [
