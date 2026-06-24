@@ -5,6 +5,7 @@ import DeployWorkspaceActiveSection from "@/components/deploy-workspace/DeployWo
 import DeployWorkspaceDeployButton from "@/components/deploy-workspace/DeployWorkspaceDeployButton";
 import DeployWorkspaceDialogs from "@/components/deploy-workspace/DeployWorkspaceDialogs";
 import { useDeployWorkspace } from "@/components/deploy-workspace/useDeployWorkspace";
+import { resolveActiveDeployment } from "@/custom-hooks/useActiveDeployment";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useAppData } from "@/store/useAppData";
 
@@ -21,17 +22,10 @@ function ServiceNotFound() {
 	);
 }
 
-export default function DeployWorkspace({
+function DeployWorkspaceContent({
 	mobileNavOpen = false,
 	onMobileNavOpenChange,
 }: DeployWorkspaceProps = {}) {
-	const activeRepo = useAppData((s) => s.activeRepo);
-	const activeServiceName = useAppData((s) => s.activeServiceName);
-
-	if (!activeRepo || !activeServiceName) {
-		return <ServiceNotFound />;
-	}
-
 	const workspace = useDeployWorkspace();
 
 	const {
@@ -224,4 +218,22 @@ export default function DeployWorkspace({
 			/>
 		</div>
 	);
+}
+
+export default function DeployWorkspace(props: DeployWorkspaceProps = {}) {
+	const activeRepo = useAppData((s) => s.activeRepo);
+	const activeServiceName = useAppData((s) => s.activeServiceName);
+	const deployments = useAppData((s) => s.deployments);
+
+	const activeDeployment = resolveActiveDeployment({
+		activeRepo,
+		activeServiceName,
+		deployments,
+	});
+
+	if (!activeRepo || !activeServiceName || !activeDeployment) {
+		return <ServiceNotFound />;
+	}
+
+	return <DeployWorkspaceContent {...props} />;
 }

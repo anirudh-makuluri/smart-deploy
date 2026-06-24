@@ -119,10 +119,6 @@ export function useWorkerWebSocketSession({
 		setServiceLogs(logs);
 	}, []);
 
-	const appendServiceLogs = useCallback((logs: ServiceLogEntry[]) => {
-		setServiceLogs((prev) => [...prev, ...logs]);
-	}, []);
-
 	const deployLogs = useCallback(({ id, msg, time }: { id: string; msg: string; time?: string }) => {
 		setDeployStatus("running");
 		setDeployLogEntries((prev) => [
@@ -164,8 +160,7 @@ export function useWorkerWebSocketSession({
 				};
 
 				ws.onmessage = (event) => {
-					let data: { type: string; payload?: unknown };
-					data = JSON.parse(event.data);
+					const data = JSON.parse(event.data) as { type: string; payload?: unknown };
 
 					const payload = data.payload;
 					switch (data.type) {
@@ -218,7 +213,7 @@ export function useWorkerWebSocketSession({
 		})();
 
 		return null;
-	}, [appendServiceLogs, assignDeployConfig, deployLogs, initiateServiceLogs, replaceServiceLogs]);
+	}, [deployLogs, initiateServiceLogs, replaceServiceLogs]);
 
 	const openSocket = useCallback(() => {
 		const existing = wsRef.current;
@@ -234,7 +229,7 @@ export function useWorkerWebSocketSession({
 
 		openSocket();
 		return () => {};
-	}, [connectionEnabled]);
+	}, [connectionEnabled, openSocket]);
 
 	useEffect(() => {
 		return () => {

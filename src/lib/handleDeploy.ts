@@ -1,7 +1,3 @@
-import fs from "fs";
-import os from "os";
-import path from "path";
-import crypto from "crypto";
 import config from "../config";
 import {
 	DeploymentTarget,
@@ -13,7 +9,7 @@ import {
 	DeploymentReleaseArtifact,
 } from "../app/types";
 import { cloudResourcesFromDeployResult, isEcsCloudResources } from "./cloudResources";
-import { subdomainFromHostedUrl, getDeploymentHostedUrl } from "./hostedUrl";
+import { getDeploymentHostedUrl, hostedSubdomainOrDefault } from "./hostedUrl";
 import { buildVerificationCandidates, fetchWithTimeout } from "./deploymentHealthProbe";
 import { MultiServiceConfig } from "./multiServiceDetector";
 import { dbHelper } from "../db-helper";
@@ -93,7 +89,6 @@ import {
 	isLegacyEc2ConfigReleaseArtifact,
 	isEcrImageReleaseArtifact,
 	isStaticSiteReleaseArtifact,
-	serviceImageRefsFromArtifact,
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
 
@@ -101,7 +96,6 @@ type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
 	postPersistConfig?: DeployConfig | null;
 	finalStatus?: DeployConfig["status"] | null;
-	rolledBack?: boolean;
 	releaseArtifact?: DeploymentReleaseArtifact | Record<string, unknown> | null;
 	failure?: DeploymentFailureRecord | null;
 };
@@ -1060,6 +1054,7 @@ export async function handleManualRollback(args: {
 	const userID = args.userID;
 	const deploySteps: DeployStep[] = [];
 	let activeDeployRun: ActiveDeployRun | null = null;
+	let activeDeployment: DeployConfig | null = null;
 	const send = createTrackedDeployLogger(ws, deploySteps, args.options, () => activeDeployRun);
 	if (ws) {
 		(ws as any).__deploySend = send;
@@ -1080,6 +1075,7 @@ export async function handleManualRollback(args: {
 		if (deploymentResponse.error || !deployConfig) {
 			throw new Error("Deployment not found");
 		}
+		activeDeployment = deployConfig;
 		if (deployConfig.ownerID !== userID) {
 			throw new Error("Forbidden: deployment does not belong to user");
 		}
@@ -1200,7 +1196,6 @@ export async function handleManualRollback(args: {
 					errorMessage: verification.success ? "Rollback verification failed." : verification.errorMessage,
 					postPersistConfig: verification.success ? null : verification.postPersistConfig,
 					finalStatus: verification.success ? "failed" : (verification.postPersistConfig?.status ?? "failed"),
-					rolledBack: verification.success ? false : normalizeDeploymentStatus(verification.postPersistConfig?.status) === "running",
 					releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
 				}
 			);
@@ -1230,7 +1225,6 @@ export async function handleManualRollback(args: {
 			durationMs,
 			{
 				finalStatus: rollbackAttempt.restoredConfig.status,
-				rolledBack: true,
 				releaseArtifact: targetHistoryEntry.releaseArtifact ?? null,
 			}
 		);
@@ -1249,7 +1243,7 @@ export async function handleManualRollback(args: {
 				branch: "",
 				commitSha: null,
 				envVars: null,
-				hostedSubdomain: null,
+				hostedSubdomain: hostedSubdomainOrDefault(repoName, activeDeployment?.hostedSubdomain),
 				screenshotUrl: null,
 				status: "failed",
 				firstDeployment: null,
@@ -1392,13 +1386,11 @@ async function saveDeploymentToDB(
 
 	try {
 		// Prepare minimal deployment config for DB (omit scanResults — lifecycle updates must not re-upsert analysis)
-		const hostedFromDns = customUrl ? subdomainFromHostedUrl(customUrl) : null;
 		const minimalDeployment: DeployConfig = deployConfigForStatusPersist({
 			...deployConfig,
 			status: success
 				? transitionDeploymentStatus(deployConfig.status, "deployment_succeeded")
 				: transitionDeploymentStatus(deployConfig.status, "deployment_failed"),
-			...(hostedFromDns ? { hostedSubdomain: hostedFromDns } : {}),
 			...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
 		});
 
@@ -1554,7 +1546,7 @@ async function sendDeployComplete(
 		doneStep.status = success ? "success" : "error";
 	}
 
-	// Persist before notifying the client so refetches and retries see instanceId (e.g. failed EC2 deploy).
+	// Persist before notifying the client so refetches and retries see instanceId
 	console.log("Saving deployment result to database...");
 	const failure =
 		!success
@@ -1563,7 +1555,6 @@ async function sendDeployComplete(
 					deployConfig,
 					steps: deploySteps,
 					errorMessage: lifecycle?.errorMessage,
-					rolledBack: lifecycle?.rolledBack,
 					finalStatus: lifecycle?.finalStatus ?? null,
 				}))
 			: null;
@@ -1652,39 +1643,44 @@ async function sendDeployComplete(
 		});
 	}
 
+	const resolvedHostedSubdomain = hostedSubdomainOrDefault(
+		deployConfig.repoName,
+		lifecycle?.postPersistConfig?.hostedSubdomain ?? deployConfig.hostedSubdomain
+	);
+	if (!resolvedHostedSubdomain) {
+		throw new Error("Missing hosted subdomain for deploy completion payload.");
+	}
+	const resolvedFinalStatus =
+		lifecycle?.finalStatus ??
+		lifecycle?.postPersistConfig?.status ??
+		(success
+			? transitionDeploymentStatus(deployConfig.status, "deployment_succeeded")
+			: transitionDeploymentStatus(deployConfig.status, "deployment_failed"));
+
 	const payload: {
-		deployUrl: string | null;
 		success: boolean;
+		hosted_subdomain: string;
 		deploymentTarget: string | null;
-		finalStatus?: DeployConfig["status"] | null;
-		rolledBack?: boolean;
+		finalStatus: DeployConfig["status"];
 		customDnsAdded?: boolean;
 		customDnsError?: string | null;
-		customUrl?: string | null;
 		error?: string | null;
 		cloudResources?: CloudResources | null;
 	} = {
-		deployUrl: deployUrl ?? null,
 		success,
+		hosted_subdomain: resolvedHostedSubdomain,
 		deploymentTarget: deploymentTarget ?? null,
+		finalStatus: resolvedFinalStatus,
 	};
 	if (serviceDetails?.cloudResources) payload.cloudResources = serviceDetails.cloudResources;
 	if (customDns) {
 		payload.customDnsAdded = customDns.success;
-		if (customDns.success) {
-			payload.customUrl = customDns.customUrl ?? null;
-		} else {
+		if (!customDns.success) {
 			payload.customDnsError = customDns.error ?? null;
 		}
 	}
 	if (!success && lifecycle?.errorMessage) {
 		payload.error = lifecycle.errorMessage;
-	}
-	if (lifecycle?.finalStatus) {
-		payload.finalStatus = lifecycle.finalStatus;
-	}
-	if (lifecycle?.rolledBack) {
-		payload.rolledBack = true;
 	}
 
 	if (userID && deployConfig.repoName && deployConfig.serviceName) {
@@ -2236,7 +2232,6 @@ async function handleAWSCodeBuildDeploy(
 				errorMessage: verification.errorMessage,
 				postPersistConfig: verification.postPersistConfig,
 				finalStatus: verification.postPersistConfig?.status ?? 'failed',
-				rolledBack: normalizeDeploymentStatus(verification.postPersistConfig?.status) === 'running',
 				releaseArtifact,
 			};
 			result = 'error';

@@ -96,8 +96,10 @@ function useTypedText(words: string[]) {
 		if (!isDeleting && display === current) {
 			timeout = setTimeout(() => setIsDeleting(true), PAUSE_MS);
 		} else if (isDeleting && display === "") {
-			setIsDeleting(false);
-			setWordIndex((prev) => (prev + 1) % words.length);
+			timeout = setTimeout(() => {
+				setIsDeleting(false);
+				setWordIndex((prev) => (prev + 1) % words.length);
+			}, 0);
 		} else if (isDeleting) {
 			timeout = setTimeout(() => setDisplay((prev) => prev.slice(0, -1)), DELETE_SPEED_MS);
 		} else {
@@ -361,8 +363,8 @@ function LivePulseStats({ stats }: { stats: LandingPublicStats }) {
 		>
 			<div className="landing-stats-strip-track" aria-hidden />
 			<div className="relative z-10 grid w-full gap-4 sm:grid-cols-3">
-				{items.map((item, i) => (
-					<AnimatedCounter key={i} value={item.value} label={item.label} suffix={item.suffix} />
+				{items.map((item) => (
+					<AnimatedCounter key={item.label} value={item.value} label={item.label} suffix={item.suffix} />
 				))}
 			</div>
 		</m.div>

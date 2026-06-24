@@ -123,6 +123,18 @@ const historyEntries = [
 	{ sha: "9d3a7f2", branch: "main", status: "success" as const, ago: "2 days ago" },
 ];
 
+const DEPLOY_LOG_LINES: LogEntry[] = [
+	{ id: 1, text: "[build] pulling base image...", tone: "default" },
+	{ id: 2, text: "[build] layer 1/4 cached", tone: "default" },
+	{ id: 3, text: "[build] layer 2/4 cached", tone: "default" },
+	{ id: 4, text: "[build] layer 3/4 building...", tone: "default" },
+	{ id: 5, text: "[build] layer 4/4 complete", tone: "success" },
+	{ id: 6, text: "[deploy] pushing to ECR...", tone: "default" },
+	{ id: 7, text: "[deploy] updating ECS service...", tone: "default" },
+	{ id: 8, text: "[deploy] health check passed", tone: "success" },
+	{ id: 9, text: "[deploy] traffic shifted to new task", tone: "success" },
+];
+
 function getNodeStates(activeStep: number): Record<NodeId, NodeState> {
 	const sections: NodeId[] = ["overview", "setup", "scan", "blueprint", "logs", "history"];
 	const states: Record<NodeId, NodeState> = {
@@ -260,8 +272,6 @@ function ScanMock({ isVisible }: { isVisible: boolean }) {
 
 	React.useEffect(() => {
 		if (!isVisible) return;
-		setActiveLine(0);
-		setLogs([]);
 		let line = 0;
 		const interval = setInterval(() => {
 			line++;
@@ -412,18 +422,6 @@ function BlueprintMock() {
 }
 
 function LogsMock() {
-	const logLines: LogEntry[] = [
-		{ id: 1, text: "[build] pulling base image...", tone: "default" },
-		{ id: 2, text: "[build] layer 1/4 cached", tone: "default" },
-		{ id: 3, text: "[build] layer 2/4 cached", tone: "default" },
-		{ id: 4, text: "[build] layer 3/4 building...", tone: "default" },
-		{ id: 5, text: "[build] layer 4/4 complete", tone: "success" },
-		{ id: 6, text: "[deploy] pushing to ECR...", tone: "default" },
-		{ id: 7, text: "[deploy] updating ECS service...", tone: "default" },
-		{ id: 8, text: "[deploy] health check passed", tone: "success" },
-		{ id: 9, text: "[deploy] traffic shifted to new task", tone: "success" },
-	];
-
 	return (
 		<div className="space-y-3">
 			<div className="relative overflow-hidden rounded-xl border border-border/65 bg-background/70 p-3">
@@ -451,7 +449,7 @@ function LogsMock() {
 					<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Build & Deploy Logs</p>
 				</div>
 				<ul className="min-h-36 space-y-1 overflow-hidden p-2 font-mono text-[10px]">
-					{logLines.map((log) => (
+					{DEPLOY_LOG_LINES.map((log) => (
 						<li
 							key={log.id}
 							className={
@@ -584,7 +582,12 @@ function FlowUI({
 					>
 						{activeStep === 0 && <OverviewMock />}
 						{activeStep === 1 && <SetupMock />}
-						{activeStep === 2 && <ScanMock isVisible={isVisible && activeStep === 2} />}
+						{activeStep === 2 && (
+							<ScanMock
+								key={isVisible ? "scan-visible" : "scan-hidden"}
+								isVisible={isVisible && activeStep === 2}
+							/>
+						)}
 						{activeStep === 3 && <BlueprintMock />}
 						{activeStep === 4 && <LogsMock />}
 						{activeStep === 5 && <HistoryMock />}
