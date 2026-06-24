@@ -4,13 +4,12 @@ import * as React from "react";
 import { authClient } from "@/lib/auth-client";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
-import { Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
 import HelpAgentSheet from "@/components/HelpAgentSheet";
 import UserReportSheet from "@/components/UserReportSheet";
 import HeaderActions from "@/components/header/HeaderActions";
 import HeaderBreadcrumbs from "@/components/header/HeaderBreadcrumbs";
+import HeaderMobileDock from "@/components/header/HeaderMobileDock";
 import { useHeaderSystemHealth } from "@/components/header/useHeaderSystemHealth";
 import { cn } from "@/lib/utils";
 
@@ -49,54 +48,49 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	}
 
 	return (
-		<header className="sticky top-0 z-50 w-full shrink-0 border-b border-white/5 bg-background/50 backdrop-blur-md">
-			<div className="mx-auto flex max-w-400 flex-row items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
-				<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
-					<SmartDeployLogo href="/home" showText size="sm" className={cn(showMobileNavMenu && "hidden md:flex")} />
-					{showMobileNavMenu ? (
-						<div className="flex shrink-0 items-center gap-0.5">
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								className="h-9 w-9 shrink-0 md:hidden"
-								onClick={() => {
-									homeNav?.onOpenMobileSidebar();
-									workspaceNav?.onOpenMobileSidebar();
-								}}
-								aria-label="Open navigation menu"
-							>
-								<Menu className="size-5" />
-							</Button>
-						</div>
-					) : null}
-					<HeaderBreadcrumbs
-						isHome={isHome}
-						isRepoPage={isRepoPage}
-						sessionName={session?.user?.name}
-						owner={owner}
-						repo={repo}
-						activeServiceName={activeServiceName}
-						onRepoClick={() => setActiveServiceName(null)}
+		<>
+			<header className="sticky top-0 z-50 w-full shrink-0 border-b border-white/5 bg-background/50 backdrop-blur-md">
+				<div className="mx-auto flex max-w-400 flex-row items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
+					<div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+						<SmartDeployLogo href="/home" showText size="sm" className={cn(showMobileNavMenu && "hidden md:flex")} />
+						<HeaderBreadcrumbs
+							isHome={isHome}
+							isRepoPage={isRepoPage}
+							sessionName={session?.user?.name}
+							owner={owner}
+							repo={repo}
+							activeServiceName={activeServiceName}
+							onRepoClick={() => setActiveServiceName(null)}
+						/>
+					</div>
+					<HeaderActions
+						systemHealth={systemHealth}
+						session={session}
+						onOpenHelpAgent={() => setHelpAgentOpen(true)}
+						onOpenReport={() => setReportOpen(true)}
+						onSignOut={handleSignOut}
+						mobileDockEnabled={showMobileNavMenu}
 					/>
 				</div>
-				<HeaderActions
-					systemHealth={systemHealth}
-					session={session}
-					onOpenHelpAgent={() => setHelpAgentOpen(true)}
-					onOpenReport={() => setReportOpen(true)}
-					onSignOut={handleSignOut}
+				<UserReportSheet
+					open={reportOpen}
+					onOpenChange={setReportOpen}
+					pagePath={pathname || "/"}
+					repoOwner={owner || undefined}
+					repoName={repo || undefined}
+					serviceName={activeServiceName || null}
 				/>
-			</div>
-			<UserReportSheet
-				open={reportOpen}
-				onOpenChange={setReportOpen}
-				pagePath={pathname || "/"}
-				repoOwner={owner || undefined}
-				repoName={repo || undefined}
-				serviceName={activeServiceName || null}
-			/>
-			<HelpAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
-		</header>
+				<HelpAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
+			</header>
+			{showMobileNavMenu ? (
+				<HeaderMobileDock
+					onOpenHelpAgent={() => setHelpAgentOpen(true)}
+					onOpenMobileNavMenu={() => {
+						homeNav?.onOpenMobileSidebar();
+						workspaceNav?.onOpenMobileSidebar();
+					}}
+				/>
+			) : null}
+		</>
 	);
 }

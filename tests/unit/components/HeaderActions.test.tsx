@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,5 +69,20 @@ describe("HeaderActions", () => {
 		expect(screen.queryByRole("menuitem", { name: /report issue/i })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /open profile menu/i })).not.toBeInTheDocument();
 		expect(screen.getByRole("button", { name: /view system health/i })).toBeInTheDocument();
+	});
+
+	it("renders a compact system health indicator", () => {
+		render(
+			<HeaderActions
+				systemHealth={systemHealth}
+				session={null}
+				onOpenHelpAgent={vi.fn()}
+				onOpenReport={vi.fn()}
+				onSignOut={vi.fn()}
+			/>
+		);
+
+		expect(screen.getByTestId("system-health-indicator")).toBeInTheDocument();
+		expect(screen.queryByText("Systems Online")).not.toBeInTheDocument();
 	});
 });

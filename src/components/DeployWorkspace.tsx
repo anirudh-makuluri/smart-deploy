@@ -108,7 +108,7 @@ function DeployWorkspaceContent({
 				</aside>
 				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 					<main
-						className="min-h-0 flex-1 overflow-auto stealth-scrollbar"
+						className="min-h-0 flex-1 overflow-auto pb-[calc(6rem+env(safe-area-inset-bottom,0px))] stealth-scrollbar md:pb-0"
 					>
 						<DeployWorkspaceActiveSection
 							activeSection={ui.activeSection}

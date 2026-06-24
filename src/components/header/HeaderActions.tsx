@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import { Activity, Bot, Bug, LogOut, User } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { HeaderSystemHealth } from "@/components/header/useHeaderSystemHealth";
 import { systemHealthStatusClass } from "@/components/header/useHeaderSystemHealth";
+import { cn } from "@/lib/utils";
 
 function handleAvatarKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
 	if (event.key === "Enter" || event.key === " ") {
@@ -33,6 +33,7 @@ type HeaderActionsProps = {
 	onOpenHelpAgent: () => void;
 	onOpenReport: () => void;
 	onSignOut: () => void;
+	mobileDockEnabled?: boolean;
 };
 
 export default function HeaderActions({
@@ -41,12 +42,23 @@ export default function HeaderActions({
 	onOpenHelpAgent,
 	onOpenReport,
 	onSignOut,
+	mobileDockEnabled = false,
 }: HeaderActionsProps) {
 	const workerStatusClass = systemHealthStatusClass(systemHealth.status);
+	const healthIndicatorClassName =
+		systemHealth.status === "healthy"
+			? "border-border/60 bg-background/72 text-muted-foreground"
+			: workerStatusClass;
 
 	return (
 		<div className="flex shrink-0 flex-row items-center gap-2 sm:gap-3">
-			<Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 px-2.5 text-xs sm:text-sm" onClick={onOpenHelpAgent}>
+			<Button
+				type="button"
+				variant="outline"
+				size="sm"
+				className={cn("h-8 gap-1.5 px-2.5 text-xs sm:text-sm", mobileDockEnabled && "hidden md:inline-flex")}
+				onClick={onOpenHelpAgent}
+			>
 				<Bot className="size-3.5" />
 				<span>Agent</span>
 			</Button>
@@ -58,22 +70,25 @@ export default function HeaderActions({
 						aria-label="View system health"
 						title={systemHealth.message}
 					>
-						<Badge variant="outline" className={`gap-2 px-2.5 py-1 cursor-pointer ${workerStatusClass}`}>
+						<span
+							data-testid="system-health-indicator"
+							className={cn(
+								"relative inline-flex size-9 items-center justify-center rounded-full border bg-background/80 text-foreground",
+								healthIndicatorClassName,
+							)}
+						>
+							<Activity className="size-4" />
 							<span
-								className={`size-2 rounded-full ${
+								className={cn(
+									"absolute right-2 top-2 size-2 rounded-full ring-2 ring-background",
 									systemHealth.status === "healthy"
 										? "bg-emerald-400"
 										: systemHealth.status === "degraded" || systemHealth.status === "unavailable"
 											? "bg-destructive"
-											: "bg-muted-foreground/70"
-								}`}
+											: "bg-muted-foreground/70",
+								)}
 							/>
-							{systemHealth.status === "healthy"
-								? "Systems Online"
-								: systemHealth.status === "degraded" || systemHealth.status === "unavailable"
-									? "Systems Degraded"
-									: "Checking Systems"}
-						</Badge>
+						</span>
 					</button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end" className="w-80 mt-2 bg-card border-border shadow-2xl backdrop-blur-xl p-0">
