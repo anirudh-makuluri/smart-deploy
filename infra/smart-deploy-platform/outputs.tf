@@ -48,6 +48,16 @@ output "ecs_log_group_name" {
   value       = aws_cloudwatch_log_group.ecs.name
 }
 
+output "runtime_dynamodb_table_name" {
+  description = "DynamoDB runtime state table name"
+  value       = aws_dynamodb_table.runtime.name
+}
+
+output "runtime_dynamodb_table_arn" {
+  description = "DynamoDB runtime state table ARN"
+  value       = aws_dynamodb_table.runtime.arn
+}
+
 output "vpc_id" {
   description = "VPC used for Fargate / ALB"
   value       = local.vpc_id
@@ -71,6 +81,7 @@ output "smart_deploy_env_snippet" {
     ECS_EXECUTION_ROLE_ARN=${aws_iam_role.ecs_execution.arn}
     ECS_LOG_GROUP=${aws_cloudwatch_log_group.ecs.name}
     ECS_ASSIGN_PUBLIC_IP=ENABLED
+    RUNTIME_DYNAMODB_TABLE_NAME=${aws_dynamodb_table.runtime.name}
 
     # Route 53 (set deployment_domain / shared_alb_dns_name in tfvars when ready)
     # ROUTE53_HOSTED_ZONE_ID=${local.route53_zone_id}

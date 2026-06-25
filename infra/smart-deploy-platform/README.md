@@ -9,6 +9,7 @@ Provisions AWS resources required by Smart Deploy v2 deploy routing:
 | Fargate task execution role | `ECS_EXECUTION_ROLE_ARN` |
 | Fargate security group + subnets | `ECS_SECURITY_GROUP_IDS`, `ECS_SUBNET_IDS` |
 | CloudWatch log group | `ECS_LOG_GROUP` (optional; defaults match app) |
+| DynamoDB runtime table | `RUNTIME_DYNAMODB_TABLE_NAME` |
 
 **Not created here** (Smart Deploy creates at deploy time):
 
@@ -19,10 +20,12 @@ Provisions AWS resources required by Smart Deploy v2 deploy routing:
 ## Prerequisites
 
 - Terraform ≥ 1.6
-- AWS credentials with permission to create S3, CloudFront, ECS, IAM, EC2 (security groups), and CloudWatch Logs
+- AWS credentials with permission to create S3, CloudFront, ECS, IAM, EC2 (security groups), CloudWatch Logs, and DynamoDB
 - Default VPC (or set `vpc_id` + `ecs_subnet_ids`)
 
 Fargate subnets should be **public** (map public IP) unless you use private subnets with NAT and set `ECS_ASSIGN_PUBLIC_IP=DISABLED` in `.env`.
+
+The runtime DynamoDB table is a shared worker-state table keyed by `pk` + `sk`. Runtime health and runtime logs are intended to live as separate item types under the same deployment key, for example `runtime#health` and `runtime#logs`.
 
 ## Quick start
 

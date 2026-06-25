@@ -15,7 +15,7 @@ locals {
 
   name_prefix = "${var.project_name}-${var.environment}"
 
-  s3_bucket_id = var.create_s3_bucket ? aws_s3_bucket.static[0].id : data.aws_s3_bucket.existing[0].id
+  s3_bucket_id  = var.create_s3_bucket ? aws_s3_bucket.static[0].id : data.aws_s3_bucket.existing[0].id
   s3_bucket_arn = var.create_s3_bucket ? aws_s3_bucket.static[0].arn : data.aws_s3_bucket.existing[0].arn
 
   ecs_cluster_name = var.create_ecs_cluster ? aws_ecs_cluster.this[0].name : var.ecs_cluster_name
