@@ -3,6 +3,8 @@ import { dbHelper } from "@/db-helper";
 import { normalizeDeploymentStatus } from "@/lib/deploymentStatus";
 import { probeDeploymentReachable } from "@/lib/deploymentHealthProbe";
 import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
+import { emitToWorkerDeploymentRoom, emitToWorkerUserRoom } from "@/lib/workerSocketServer";
+import { WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 const RECONCILE_INTERVAL_MS = 10 * 60 * 1000;
 const PROBE_COUNT = 3;
@@ -77,7 +79,7 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 	let updated = 0;
 
 	const reconcileResults = await Promise.all(
-		deployments.map(async (deployment) => {
+		deployments.map(async ({ deployment, ownerID }) => {
 			const storedStatus = normalizeDeploymentStatus(deployment.status);
 			if (storedStatus !== "running" && storedStatus !== "failed") {
 				return false;
@@ -112,6 +114,22 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 				console.log(
 					`[health-reconcile] ${deployment.repoName}/${deployment.serviceName}: ${storedStatus} -> ${nextStatus} (probes=${probeResults.map((ok) => (ok ? "ok" : "fail")).join(",")})`
 				);
+				if (ownerID) {
+					const payload = {
+						ownerID,
+						repoName: deployment.repoName,
+						serviceName: deployment.serviceName,
+						status: nextStatus,
+					};
+					emitToWorkerUserRoom(ownerID, WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged, payload);
+					emitToWorkerDeploymentRoom(
+						ownerID,
+						deployment.repoName,
+						deployment.serviceName,
+						WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged,
+						payload
+					);
+				}
 				return true;
 			} catch (error) {
 				console.error(

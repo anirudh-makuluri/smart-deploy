@@ -107,10 +107,11 @@ Also see [Supabase Setup](./SUPABASE_SETUP.md).
 - Local dev: `NEXT_PUBLIC_WS_URL=ws://localhost:4001`
 - Production HTTPS: `NEXT_PUBLIC_WS_URL=wss://<your-domain>/ws`
 - Worker is running: `npm run ws` (dev) or container is healthy (Docker)
+- The configured path in `NEXT_PUBLIC_WS_URL` is the Socket.IO endpoint path. For `wss://<your-domain>/ws`, your proxy must forward `/ws`.
 
 ### Fix
 - Set correct `NEXT_PUBLIC_WS_URL` for your environment.
-- Ensure reverse proxy passes `/ws` to worker.
+- Ensure reverse proxy passes the configured Socket.IO path (commonly `/ws`) to the worker with websocket upgrade support.
 - If split deployment, verify `WS_ALLOWED_ORIGINS` on worker includes frontend origin.
 
 ---

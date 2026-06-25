@@ -652,7 +652,10 @@ export const dbHelper = {
 				(rows || []) as DeploymentDbRow[],
 				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
 			);
-			const deployments = hydratedRows.map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			const deployments = hydratedRows.map((row: Record<string, unknown>) => ({
+				deployment: rowToDeployConfig(row),
+				ownerID: toOptionalTrimmedString(row.owner_id),
+			}));
 			return { deployments };
 		} catch (error) {
 			console.error("listDeploymentsForHealthReconcile error:", error);

@@ -156,4 +156,4 @@ Both services read `.env` via `env_file` and also have explicit `environment` en
 | Containers exit immediately | Check `docker compose logs` for errors. Usually a missing env var. |
 | Port 3000 not reachable | Check security group inbound rules. Or use Nginx (port 80). |
 | Nginx 502 Bad Gateway | Containers might still be starting. Wait 30s and retry, or check `docker compose ps`. |
-| WebSocket not connecting | Verify `NEXT_PUBLIC_WS_URL` matches your setup (`ws://` for HTTP, `wss://` for HTTPS). |
+| WebSocket not connecting | Verify `NEXT_PUBLIC_WS_URL` matches your setup (`ws://` for HTTP, `wss://` for HTTPS) and points to the Socket.IO path, usually `/ws`. |
