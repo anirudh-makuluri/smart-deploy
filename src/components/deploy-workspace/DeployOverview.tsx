@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { ExternalLink, Link2, Pause, RefreshCw, Settings, Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DeployConfig, repoType, type SDArtifactsResponse } from "@/app/types";
+import { DeployConfig, repoType, type RuntimeHealthSample } from "@/app/types";
 import { isEcsCloudResources, isStaticS3CloudResources } from "@/lib/cloudResources";
 import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { canManageRuntimeDeploymentStatus, isLiveDeploymentStatus, resolveDeploymentStatus } from "@/lib/deploymentStatus";
@@ -17,20 +17,34 @@ import DeployOptions from "@/components/DeployOptions";
 type DeployOverviewProps = {
 	deployment: DeployConfig;
 	region?: string;
-	isDeploying?: boolean;
-	isRefreshingPreview?: boolean;
 	deployDisabled?: boolean;
 	deployDisabledReason?: string;
+	runtimeHealthEntries?: RuntimeHealthSample[];
+	viewState?: DeployOverviewViewState;
 	onRedeploy?: (commitSha?: string) => void;
 	onRefreshPreview?: () => void;
 	onEditConfiguration?: () => void;
 	onPauseResumeDeployment?: () => void;
 	onDeleteDeployment?: () => void;
-	isChangingDeploymentState?: boolean;
 	repo?: repoType;
 };
 
 const IPV4_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+const EMPTY_RUNTIME_HEALTH_ENTRIES: RuntimeHealthSample[] = [];
+
+type DeployOverviewViewState = {
+	isDeploying: boolean;
+	isRefreshingPreview: boolean;
+	isLoadingRuntimeHealth: boolean;
+	isChangingDeploymentState: boolean;
+};
+
+const DEFAULT_DEPLOY_OVERVIEW_VIEW_STATE: DeployOverviewViewState = {
+	isDeploying: false,
+	isRefreshingPreview: false,
+	isLoadingRuntimeHealth: false,
+	isChangingDeploymentState: false,
+};
 
 function hrefForEndpoint(raw: string): string | undefined {
 	const t = raw.trim();
@@ -73,6 +87,110 @@ function EndpointRow({ label, value }: { label: string; value: string | undefine
 	);
 }
 
+function healthToneClasses(status: RuntimeHealthSample["app"]["overallStatus"]): string {
+	if (status === "healthy") return "bg-emerald-500";
+	if (status === "degraded") return "bg-amber-500";
+	if (status === "unreachable") return "bg-destructive";
+	return "bg-muted-foreground";
+}
+
+function statusLabel(status: RuntimeHealthSample["app"]["overallStatus"]): string {
+	if (status === "healthy") return "Healthy";
+	if (status === "degraded") return "Degraded";
+	if (status === "unreachable") return "Unreachable";
+	return "Unknown";
+}
+
+function RuntimeHealthCard({
+	entries,
+	isLoading,
+}: {
+	entries: RuntimeHealthSample[];
+	isLoading: boolean;
+}) {
+	const latest = entries[entries.length - 1] ?? null;
+
+	return (
+		<div className="rounded-xl border border-border bg-card p-4">
+			<div className="flex items-start justify-between gap-4">
+				<div>
+					<p className="text-xs uppercase tracking-wider text-muted-foreground">Runtime Health</p>
+					<p className="mt-2 text-lg font-semibold text-foreground">
+						{latest ? statusLabel(latest.app.overallStatus) : "No samples yet"}
+					</p>
+				</div>
+				{latest ? (
+					<span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs font-semibold uppercase tracking-wide text-foreground">
+						<span className={`h-2 w-2 rounded-full ${healthToneClasses(latest.app.overallStatus)}`} />
+						{statusLabel(latest.app.overallStatus)}
+					</span>
+				) : null}
+			</div>
+
+			{isLoading ? (
+				<p className="mt-4 text-sm text-muted-foreground">Loading monitoring samples...</p>
+			) : latest ? (
+				<div className="mt-4 space-y-4">
+					<div className="grid gap-3 md:grid-cols-3">
+						<div className="rounded-lg border border-border/70 p-3">
+							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">App</p>
+							<p className="mt-2 text-sm font-medium text-foreground">
+								HTTP {latest.app.httpStatus ?? "-"} · {latest.app.latencyMs ?? "-"}ms
+							</p>
+							<p className="mt-1 text-xs text-muted-foreground">
+								{latest.app.probeResults.filter(Boolean).length}/{latest.app.probeResults.length} probes passed
+							</p>
+						</div>
+						<div className="rounded-lg border border-border/70 p-3">
+							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ECS</p>
+							<p className="mt-2 text-sm font-medium text-foreground">
+								{latest.ecs
+									? `${latest.ecs.runningCount ?? "-"} / ${latest.ecs.desiredCount ?? "-"} running`
+									: "Not available"}
+							</p>
+							<p className="mt-1 text-xs text-muted-foreground">
+								{latest.ecs?.rolloutState || latest.ecs?.status || "No ECS signal"}
+							</p>
+						</div>
+						<div className="rounded-lg border border-border/70 p-3">
+							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ALB</p>
+							<p className="mt-2 text-sm font-medium text-foreground">
+								{latest.alb
+									? `${latest.alb.healthyTargetCount} healthy / ${latest.alb.unhealthyTargetCount} unhealthy`
+									: "Not available"}
+							</p>
+							<p className="mt-1 text-xs text-muted-foreground">
+								{latest.alb
+									? `${latest.alb.initialTargetCount} initial · ${latest.alb.drainingTargetCount} draining`
+									: "No target group signal"}
+							</p>
+						</div>
+					</div>
+					<div>
+						<div className="flex items-center justify-between gap-3">
+							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recent Checks</p>
+							<p className="text-xs text-muted-foreground">{formatTimestamp(latest.checkedAt)}</p>
+						</div>
+						<div className="mt-3 flex flex-wrap gap-2">
+							{entries.map((entry) => (
+								<span
+									key={entry.checkedAt}
+									title={`${statusLabel(entry.app.overallStatus)} at ${entry.checkedAt}`}
+									className={`h-2.5 flex-1 basis-8 rounded-full ${healthToneClasses(entry.app.overallStatus)}`}
+								/>
+							))}
+						</div>
+					</div>
+				</div>
+			) : (
+				<p className="mt-4 text-sm text-muted-foreground">
+					Monitoring samples will appear after the health reconciler runs.
+				</p>
+			)}
+		</div>
+	);
+}
+
 function DeploymentTargetSummary({
 	deployDisabled,
 	deploymentTarget,
@@ -103,18 +221,18 @@ function DeploymentTargetSummary({
 export default function DeployOverview({
 	deployment,
 	region = "us-west-2",
-	isDeploying = false,
-	isRefreshingPreview = false,
 	deployDisabled: deployDisabledProp,
 	deployDisabledReason,
+	runtimeHealthEntries = EMPTY_RUNTIME_HEALTH_ENTRIES,
+	viewState = DEFAULT_DEPLOY_OVERVIEW_VIEW_STATE,
 	onRedeploy,
 	onRefreshPreview,
 	onEditConfiguration,
 	onPauseResumeDeployment,
 	onDeleteDeployment,
-	isChangingDeploymentState = false,
 	repo,
 }: DeployOverviewProps) {
+	const { isDeploying, isRefreshingPreview, isLoadingRuntimeHealth, isChangingDeploymentState } = viewState;
 	const hasHostedSubdomain = Boolean(deployment.hostedSubdomain?.trim());
 	const effectiveStatus =
 		resolveDeploymentStatus({
@@ -200,9 +318,11 @@ export default function DeployOverview({
 
 			<div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
 				<div className="space-y-6">
-					{/* <WorkloadInsightCard scanResults={deployment.scanResults as SDArtifactsResponse | Record<string, never>} /> */}
 
-					<div className="rounded-xl border border-border bg-card">
+					<RuntimeHealthCard entries={runtimeHealthEntries} isLoading={isLoadingRuntimeHealth} />
+
+					{/** Safely remove the entire screenshot code */}
+					<div className="rounded-xl hidden border border-border bg-card">
 						<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
 							<span>Front page preview</span>
 							<div className="flex items-center gap-2">

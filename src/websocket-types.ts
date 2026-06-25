@@ -5,6 +5,7 @@ import type { DeployLoggerOptions } from "@/lib/deployLoggerOptions";
 import { handleDeploy } from "@/lib/handleDeploy";
 import { dbHelper } from "./db-helper";
 import * as deployLogsStore from "./lib/deployLogsStore";
+import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID: string }, ws: any) {
 	const {
@@ -28,10 +29,17 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 
 	try {
 		await handleDeploy(deployConfig, token, ws, userID, options);
-		deployLogsStore.deleteEntry(userID, repoName, serviceName);
 	} catch (err: any) {
-		deployLogsStore.setStatus(userID, repoName, serviceName, "error", err?.message ?? "Deployment failed");
+		deployLogsStore.setStatus(
+			userID,
+			repoName,
+			serviceName,
+			"error",
+			err instanceof Error ? err.message : String(err)
+		);
 		throw err;
+	} finally {
+		deployLogsStore.deleteEntry(userID, repoName, serviceName);
 	}
 }
 
@@ -40,9 +48,7 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 	const repoName = payload?.repoName?.trim();
 
 	if (!serviceName && !repoName) {
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
-		}
+		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.serviceLogs, { logs: [] });
 		return;
 	}
 
@@ -59,13 +65,9 @@ export async function serviceLogs(payload: { serviceName?: string; repoName?: st
 			ecs: deployConfig.cloudResources,
 			limit: 50,
 		});
-		if (ws?.readyState === ws?.OPEN) {
-			ws.send(JSON.stringify({ type: "initial_logs", payload: { logs } }));
-		}
+		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.serviceLogs, { logs });
 		return;
 	}
 
-	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "initial_logs", payload: { logs: [] } }));
-	}
+	emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.serviceLogs, { logs: [] });
 }

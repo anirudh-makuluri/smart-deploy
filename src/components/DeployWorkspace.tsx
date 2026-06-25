@@ -48,6 +48,8 @@ function DeployWorkspaceContent({
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		runtimeHealthEntries,
+		isLoadingRuntimeHealth,
 		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,
@@ -108,7 +110,7 @@ function DeployWorkspaceContent({
 				</aside>
 				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 					<main
-						className="min-h-0 flex-1 overflow-auto stealth-scrollbar"
+						className="min-h-0 flex-1 overflow-auto pb-[calc(6rem+env(safe-area-inset-bottom,0px))] stealth-scrollbar md:pb-0"
 					>
 						<DeployWorkspaceActiveSection
 							activeSection={ui.activeSection}
@@ -133,6 +135,7 @@ function DeployWorkspaceContent({
 							onStartScan={startScan}
 							deploymentHistory={deploymentHistory}
 							historyTotal={historyTotal}
+							runtimeHealthEntries={runtimeHealthEntries}
 							onRollbackEntrySelect={handleRollbackEntrySelect}
 							rollbackingEntryId={ui.isChangingDeploymentState ? ui.rollbackEntry?.id ?? null : null}
 							effectiveDeploymentStatus={effectiveDeploymentStatus}
@@ -160,6 +163,7 @@ function DeployWorkspaceContent({
 							viewState={{
 								hasScanResults,
 								isLoadingHistory,
+								isLoadingRuntimeHealth,
 								showDeployLogs,
 								isDeploying: ui.isDeploying,
 								isRefreshingPreview,

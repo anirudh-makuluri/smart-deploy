@@ -2,7 +2,7 @@ aws_region   = "us-west-2"
 project_name = "smart-deploy"
 environment  = "prod"
 
-# Static sites — private S3 + CloudFront OAC
+# Static sites - private S3 + CloudFront OAC
 s3_bucket_name          = "smart-deploy-static-site"
 create_s3_bucket        = true
 cloudfront_spa_fallback = true
@@ -24,10 +24,13 @@ ecs_execution_role_name = "smartdeploy-ecs-execution"
 vpc_id         = ""
 ecs_subnet_ids = []
 
-# Optional: pin subnets (need ≥2 in different AZs for the shared ALB)
+# Optional: pin subnets (need >=2 in different AZs for the shared ALB)
 # ecs_subnet_ids = ["subnet-aaa", "subnet-bbb"]
 
-# Route 53 — wildcard DNS for ECS deploy URLs (*.domain → shared ALB)
-# deployment_domain     = "smart-deploy.xyz"
+# Runtime state (worker-owned deploy logs, health history, and similar short-lived state)
+runtime_dynamodb_table_name = "smart-deploy-runtime"
+
+# Route 53 - wildcard DNS for ECS deploy URLs (*.domain -> shared ALB)
+# deployment_domain      = "smart-deploy.xyz"
 # route53_hosted_zone_id = "Z0123456789ABC"
-# shared_alb_dns_name   = "smartdeploy-419078-alb-1393676891.us-west-2.elb.amazonaws.com"
+# shared_alb_dns_name    = "smartdeploy-419078-alb-1393676891.us-west-2.elb.amazonaws.com"

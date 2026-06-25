@@ -23,12 +23,20 @@ variable "vpc_id" {
 }
 
 variable "ecs_subnet_ids" {
-  description = "Subnet IDs for Fargate + shared ALB (≥2 AZs recommended). Empty = auto-pick public subnets in the VPC."
+  description = "Subnet IDs for Fargate + shared ALB (>=2 AZs recommended). Empty = auto-pick public subnets in the VPC."
   type        = list(string)
   default     = []
 }
 
-# ── Static sites (S3 + CloudFront) ───────────────────────────────────────────
+# Runtime state (DynamoDB)
+
+variable "runtime_dynamodb_table_name" {
+  description = "DynamoDB table for Smart Deploy runtime state (deploy logs, health history, and other worker-owned state)"
+  type        = string
+  default     = "smart-deploy-runtime"
+}
+
+# Static sites (S3 + CloudFront)
 
 variable "s3_bucket_name" {
   description = "Globally unique S3 bucket for static_build deploy output"
@@ -54,7 +62,7 @@ variable "cloudfront_price_class" {
   default     = "PriceClass_100"
 }
 
-# ── ECS Fargate ──────────────────────────────────────────────────────────────
+# ECS Fargate
 
 variable "ecs_cluster_name" {
   description = "ECS cluster name (Smart Deploy ECS_CLUSTER_NAME)"
@@ -86,7 +94,7 @@ variable "ecs_log_retention_days" {
   default     = 14
 }
 
-# ── Route 53 (deployment subdomains) ───────────────────────────────────────────
+# Route 53 (deployment subdomains)
 
 variable "deployment_domain" {
   description = "Base domain for deploy URLs (NEXT_PUBLIC_DEPLOYMENT_DOMAIN), e.g. smart-deploy.xyz"

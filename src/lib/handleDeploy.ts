@@ -75,6 +75,7 @@ import {
 } from "./deploymentReleaseArtifacts";
 import { classifyDeploymentFailure, type DeploymentFailureRecord } from "./deploymentFailureClassification";
 import type { DeployLoggerOptions } from "@/lib/deployLoggerOptions";
+import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 type DeploymentLifecycleOptions = {
 	errorMessage?: string | null;
@@ -601,9 +602,9 @@ function getTransportDeploySteps(
 }
 
 function sendDeploySteps(ws: any, steps: { id: string; label: string }[], preset?: string) {
-	if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "deploy_steps", payload: { steps: getTransportDeploySteps(steps, preset) } }));
-	}
+	emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deploySteps, {
+		steps: getTransportDeploySteps(steps, preset),
+	});
 }
 
 /**
@@ -755,18 +756,11 @@ function emitPersistenceWarningToDeployLogs(ws: any, deploySteps: DeployStep[], 
 	if (doneStep) {
 		doneStep.logs.push(message);
 	}
-	if (ws?.readyState === ws?.OPEN) {
-		ws.send(
-			JSON.stringify({
-				type: "deploy_logs",
-				payload: {
-					id: doneStep?.id ?? "done",
-					msg: message,
-					time: new Date().toISOString(),
-				},
-			})
-		);
-	}
+	emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployLog, {
+		id: doneStep?.id ?? "done",
+		msg: message,
+		time: new Date().toISOString(),
+	});
 }
 
 /** Per-service details to persist after deploy */
@@ -913,8 +907,8 @@ async function sendDeployComplete(
 			deployConfig.serviceName,
 			payload
 		);
-	} else if (ws?.readyState === ws?.OPEN) {
-		ws.send(JSON.stringify({ type: "deploy_complete", payload }));
+	} else {
+		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
 	}
 }
 

@@ -37,7 +37,7 @@ The script does the following:
 
 1. Installs certbot and nginx tools.
 2. Writes nginx config for your worker domain.
-3. Proxies traffic to http://127.0.0.1:4001.
+3. Proxies Socket.IO/websocket traffic to http://127.0.0.1:4001.
 4. Obtains certificate and enables HTTPS redirect.
 5. Reloads nginx.
 
@@ -72,7 +72,7 @@ Expected result for health call: HTTP 200 JSON from worker.
 When worker TLS is active, app env should use:
 
 ```env
-NEXT_PUBLIC_WS_URL=wss://ws.smart-deploy.xyz
+NEXT_PUBLIC_WS_URL=wss://ws.smart-deploy.xyz/ws
 ```
 
 Auth base URL in app should use Better Auth naming, not NextAuth naming:
@@ -106,6 +106,7 @@ sudo certbot certificates
 
 Check app and worker env alignment:
 
-1. NEXT_PUBLIC_WS_URL points to wss worker domain.
-2. BETTER_AUTH_SECRET matches between app and worker.
-3. WS_ALLOWED_ORIGINS includes the frontend origin.
+1. NEXT_PUBLIC_WS_URL points to the wss worker domain and Socket.IO path, for example `wss://ws.smart-deploy.xyz/ws`.
+2. If NEXT_PUBLIC_WS_URL includes a path such as `/ws`, nginx forwards that exact path to the worker.
+3. BETTER_AUTH_SECRET matches between app and worker.
+4. WS_ALLOWED_ORIGINS includes the frontend origin.

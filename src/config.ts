@@ -18,7 +18,7 @@ const config = {
 	AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || "",
 	AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || "",
 	AWS_REGION: process.env.AWS_REGION || "us-west-2",
-	// Shared ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP→HTTPS redirect are enabled.
+	// Shared ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP->HTTPS redirect are enabled.
 	DEPLOYMENT_ACM_CERTIFICATE_ARN: process.env.DEPLOYMENT_ACM_CERTIFICATE_ARN || "",
 	// ECS Fargate (Railpack / sd-artifacts server units).
 	ECS_CLUSTER_NAME: process.env.ECS_CLUSTER_NAME || "",
@@ -50,7 +50,7 @@ const config = {
 	ROUTE53_DOMAIN: process.env.ROUTE53_DOMAIN || "",
 	/** When true (default), shared-ALB deploys use a wildcard record instead of per-service records. */
 	ROUTE53_USE_WILDCARD: process.env.ROUTE53_USE_WILDCARD || "true",
-	/** Upsert `*.domain` → ALB on deploy when wildcard mode is active. */
+	/** Upsert `*.domain` -> ALB on deploy when wildcard mode is active. */
 	ROUTE53_ENSURE_WILDCARD: process.env.ROUTE53_ENSURE_WILDCARD || "true",
 
 	// AI
@@ -72,7 +72,10 @@ const config = {
 	// S3 bucket for deploy-run pipeline logs (JSONL per run)
 	LOGS_BUCKET: process.env.LOGS_BUCKET || "",
 
-	// static_build → S3 (+ optional CloudFront invalidation) via CodeBuild; see `staticSiteCodebuild.ts`.
+	// DynamoDB table for runtime worker state (health history, live log buffers, and similar ephemeral state)
+	RUNTIME_DYNAMODB_TABLE_NAME: process.env.RUNTIME_DYNAMODB_TABLE_NAME || "smart-deploy-runtime",
+
+	// static_build -> S3 (+ optional CloudFront invalidation) via CodeBuild; see `staticSiteCodebuild.ts`.
 	STATIC_SITE_BUCKET: process.env.STATIC_SITE_BUCKET || "",
 	STATIC_SITE_PUBLIC_BASE_URL: process.env.STATIC_SITE_PUBLIC_BASE_URL || "",
 	/** Optional; prefix before per-service segment (no leading slash). */

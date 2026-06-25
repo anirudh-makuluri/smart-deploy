@@ -93,6 +93,7 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof DeployWorkspac
 		onStartScan: vi.fn(),
 		deploymentHistory: null,
 		historyTotal: 0,
+		runtimeHealthEntries: [],
 		onRollbackEntrySelect: vi.fn(),
 		rollbackingEntryId: null,
 		effectiveDeploymentStatus: "running",
@@ -120,6 +121,7 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof DeployWorkspac
 		viewState: {
 			hasScanResults: false,
 			isLoadingHistory: false,
+			isLoadingRuntimeHealth: false,
 			showDeployLogs: false,
 			isDeploying: false,
 			isRefreshingPreview: false,

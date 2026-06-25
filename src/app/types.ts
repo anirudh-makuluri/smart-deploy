@@ -215,6 +215,40 @@ export type DeployStep = {
 	endedAt?: string,
 }
 
+export type RuntimeHealthState = "healthy" | "degraded" | "unreachable" | "unknown";
+
+export type RuntimeHealthAppEntry = {
+	checkedUrl: string | null;
+	httpStatus: number | null;
+	latencyMs: number | null;
+	probeResults: boolean[];
+	overallStatus: RuntimeHealthState;
+};
+
+export type RuntimeHealthEcsEntry = {
+	status: string | null;
+	rolloutState: string | null;
+	desiredCount: number | null;
+	runningCount: number | null;
+	pendingCount: number | null;
+};
+
+export type RuntimeHealthAlbEntry = {
+	healthyTargetCount: number;
+	unhealthyTargetCount: number;
+	initialTargetCount: number;
+	drainingTargetCount: number;
+	unusedTargetCount: number;
+	unavailableTargetCount: number;
+};
+
+export type RuntimeHealthSample = {
+	checkedAt: string;
+	app: RuntimeHealthAppEntry;
+	ecs: RuntimeHealthEcsEntry | null;
+	alb: RuntimeHealthAlbEntry | null;
+};
+
 
 /** Service info detected via GraphQL detectServices and persisted in repo_services. */
 export type DetectedServiceInfo = {

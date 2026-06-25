@@ -1,13 +1,19 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { WebSocketServer, WebSocket } from "ws";
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import * as deployLogsStore from "./lib/deployLogsStore";
-import { verifyWebSocketAuthToken } from "./lib/wsAuth";
-import { getAllowedOriginHeader, isOriginAllowed, parseAllowedOrigins } from "./lib/wsOrigin";
+import { getAllowedOriginHeader, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
+import { createWorkerSocketServer, type WorkerServerSocket } from "./lib/workerSocketServer";
+import {
+	emitWorkerSocketEvent,
+	getWorkerDeploymentRoom,
+	getWorkerUserRoom,
+	WORKER_SOCKET_CLIENT_EVENTS,
+	WORKER_SOCKET_SERVER_EVENTS,
+} from "./lib/workerSocketEvents";
 
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
@@ -15,12 +21,7 @@ const environment = process.env.NODE_ENV || "development";
 const version = "0.1.0";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
-type AuthenticatedSocket = WebSocket & {
-	authUserID?: string;
-	authUserLabel?: string;
-};
-
-// Setup HTTP server to attach WebSocket to
+// Setup HTTP server to attach Socket.IO to
 const server = http.createServer((req, res) => {
 	const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
 	const allowedOrigin = getAllowedOriginHeader(requestOrigin, allowedOrigins);
@@ -57,141 +58,124 @@ const server = http.createServer((req, res) => {
 		return;
 	}
 
-	if (req.url?.startsWith("/healthz")) {
-		const requestUrl = new URL(req.url, "http://localhost");
-		const authToken = requestUrl.searchParams.get("auth") || "";
-		const authPayload = verifyWebSocketAuthToken(authToken);
-
-		if (!authPayload?.userID) {
-			res.writeHead(401, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
-			return;
-		}
-
-		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(JSON.stringify({ ok: true, service: "websocket", port, environment, authenticated: true }));
-		return;
-	}
-
 	res.writeHead(200, { "Content-Type": "text/plain" });
 	res.end("SmartDeploy WebSocket server is running");
 });
-const wss = new WebSocketServer({ server });
 
-function sendDeployComplete(ws: any, success: boolean, hostedSubdomain: string, error?: string) {
-	if (ws?.readyState === 1) {
-		const payload: Record<string, unknown> = {
-			success,
-			time: new Date().toISOString(),
-			hosted_subdomain: hostedSubdomain,
-		};
-		if (error) payload.error = error;
-		ws.send(
-			JSON.stringify({
-				type: "deploy_complete",
-				payload,
-			})
-		);
-	}
+const io = createWorkerSocketServer(server, allowedOrigins);
+
+function emitActiveDeployments(socket: WorkerServerSocket) {
+	const running = deployLogsStore.listRunningDeploymentsForUser(socket.data.userID);
+	if (running.length === 0) return;
+
+	emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.activeDeployments, {
+		deployments: running,
+	});
 }
 
-function sendSocketError(ws: any, error?: string) {
-	if (ws?.readyState === 1) {
-		ws.send(
-			JSON.stringify({
-				type: "worker_error",
-				payload: {
-					error: error ?? "Request failed",
-					time: new Date().toISOString(),
-				},
-			})
-		);
-	}
+function emitDeployFailure(
+	socket: WorkerServerSocket,
+	hostedSubdomain: string,
+	error: string
+) {
+	emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.deployComplete, {
+		success: false,
+		time: new Date().toISOString(),
+		hosted_subdomain: hostedSubdomain,
+		error,
+	});
 }
 
-wss.on("connection", (ws: AuthenticatedSocket, req) => {
-	const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
-	const requestUrl = new URL(req.url || "/", "http://localhost");
-	const hasAuthParam = requestUrl.searchParams.has("auth");
-	console.log(`[ws] incoming connection origin=${requestOrigin || "none"} hasAuth=${hasAuthParam}`);
+function emitSocketError(socket: WorkerServerSocket, error?: string) {
+	emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.workerError, {
+		error: error ?? "Request failed",
+		time: new Date().toISOString(),
+	});
+}
 
-	if (!isOriginAllowed(requestOrigin, allowedOrigins)) {
-		console.warn(`[ws] rejected connection: forbidden origin (${requestOrigin || "none"})`);
-		ws.close(1008, "Forbidden origin");
-		return;
+async function subscribeWorkspace(
+	socket: WorkerServerSocket,
+	payload: { serviceName?: string; repoName?: string } | null | undefined
+) {
+	const serviceName = payload?.serviceName?.trim();
+	const repoName = payload?.repoName?.trim();
+	if (!serviceName || !repoName) return;
+
+	socket.join(getWorkerDeploymentRoom(socket.data.userID, repoName, serviceName));
+	const snapshot = deployLogsStore.getSocketSnapshot(socket.data.userID, repoName, serviceName);
+	if (snapshot) {
+		emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.deploySnapshot, snapshot);
 	}
 
-	const authToken = requestUrl.searchParams.get("auth") || "";
-	const authPayload = verifyWebSocketAuthToken(authToken);
+	await serviceLogs({ serviceName, repoName }, socket);
+}
 
-	if (!authPayload?.userID) {
-		console.warn("[ws] rejected connection: unauthorized (missing/invalid auth token)");
-		ws.close(1008, "Unauthorized");
-		return;
-	}
+function unsubscribeWorkspace(
+	socket: WorkerServerSocket,
+	payload: { serviceName?: string; repoName?: string } | null | undefined
+) {
+	const serviceName = payload?.serviceName?.trim();
+	const repoName = payload?.repoName?.trim();
+	if (!serviceName || !repoName) return;
 
-	ws.authUserID = authPayload.userID;
-	ws.authUserLabel = (authPayload.userID || "user").slice(0, 4);
-	console.log(`Client connected [${ws.authUserLabel}]`);
+	socket.leave(getWorkerDeploymentRoom(socket.data.userID, repoName, serviceName));
+}
 
-	// Defer so the browser has time to attach `onmessage` before this fires.
-	queueMicrotask(() => {
-		if (ws.readyState !== 1) return;
-		const running = deployLogsStore.listRunningDeploymentsForUser(authPayload.userID);
-		if (running.length === 0) return;
-		try {
-			ws.send(
-				JSON.stringify({
-					type: "active_deployments",
-					payload: { deployments: running },
-				})
-			);
-		} catch {
-			// ignore
-		}
+io.on("connection", (socket) => {
+	const requestOrigin = typeof socket.handshake.headers.origin === "string" ? socket.handshake.headers.origin : undefined;
+	const hasAuth = typeof socket.handshake.auth.token === "string" && socket.handshake.auth.token.trim().length > 0;
+	console.log(`[ws] incoming connection origin=${requestOrigin || "none"} hasAuth=${hasAuth}`);
+
+	socket.join(getWorkerUserRoom(socket.data.userID));
+	console.log(`Client connected [${socket.data.userLabel}]`);
+	emitActiveDeployments(socket);
+
+	socket.on(WORKER_SOCKET_CLIENT_EVENTS.workspaceSubscribe, (payload: unknown) => {
+		void subscribeWorkspace(socket, payload as { serviceName?: string; repoName?: string });
 	});
 
-	ws.on("message", async (data) => {
-		try {
-			const response = JSON.parse(data.toString());
-			const type = response.type;
+	socket.on(WORKER_SOCKET_CLIENT_EVENTS.workspaceUnsubscribe, (payload: unknown) => {
+		unsubscribeWorkspace(socket, payload as { serviceName?: string; repoName?: string });
+	});
 
-			switch (type) {
-				case "deploy":
-					try {
-						await deploy(
-							{
-								...response.payload,
-								userID: ws.authUserID,
-							},
-							ws
-						);
-					} catch (err: any) {
-						console.error("Deploy error:", err);
-						const hostedSubdomain = response.payload.hostedSubdomain;
-						sendDeployComplete(
-							ws,
-							false,
-							hostedSubdomain,
-							err?.message ?? "Deployment failed"
-						);
-					}
-					break;
-				case "service_logs":
-					await serviceLogs(response.payload, ws);
-					break;
-				default:
-					break;
+	socket.on(WORKER_SOCKET_CLIENT_EVENTS.deploy, async (payload: unknown) => {
+		try {
+			const deployPayload = payload as {
+				deployConfig?: { repoName?: string; serviceName?: string; hostedSubdomain?: string };
+				token?: string;
+			};
+			const repoName = deployPayload.deployConfig?.repoName?.trim() || "";
+			const serviceName = deployPayload.deployConfig?.serviceName?.trim() || "";
+			if (repoName && serviceName) {
+				socket.join(getWorkerDeploymentRoom(socket.data.userID, repoName, serviceName));
 			}
-		} catch (err: any) {
-			sendSocketError(ws, err?.message ?? "Request failed");
+
+			await deploy(
+				{
+					...(payload as object),
+					userID: socket.data.userID,
+				} as never,
+				socket
+			);
+		} catch (err) {
+			console.error("Deploy error:", err);
+			const deployPayload = payload as {
+				deployConfig?: { hostedSubdomain?: string };
+			};
+			emitDeployFailure(
+				socket,
+				deployPayload.deployConfig?.hostedSubdomain || "",
+				err instanceof Error ? err.message : "Deployment failed"
+			);
 		}
 	});
 
-	ws.on("close", () => {
-		const userLabel = ws.authUserLabel || ws.authUserID || "unknown";
-		console.log(`Client disconnected [${userLabel}]`);
-		deployLogsStore.removeSubscriberFromAll(ws);
+	socket.on("disconnect", () => {
+		console.log(`Client disconnected [${socket.data.userLabel}]`);
+	});
+
+	socket.on("error", (error) => {
+		emitSocketError(socket, error instanceof Error ? error.message : "Request failed");
 	});
 });
 

@@ -1,28 +1,34 @@
 import type { DeployStep } from "../app/types";
-
-type Status = "running" | "success" | "error";
+import { emitToWorkerDeploymentRoom } from "@/lib/workerSocketServer";
+import {
+	type DeployLogEntry,
+	type DeploySnapshotPayload,
+	type WorkerSocketStatus,
+	WORKER_SOCKET_SERVER_EVENTS,
+} from "@/lib/workerSocketEvents";
+import { makeRuntimeStoreKey } from "@/lib/runtimeStoreKey";
 
 type Entry = {
 	steps: DeployStep[];
-	status: Status;
+	logEntries: DeployLogEntry[];
+	status: WorkerSocketStatus;
 	error?: string | null;
-	subscribedClients: Set<{ send: (data: string) => void; readyState: number }>;
 };
 
-const OPEN = 1;
 const store = new Map<string, Entry>();
 
+
 function key(userID: string | undefined, repoName: string, serviceName: string): string {
-	return `${userID ?? "anonymous"}:${repoName}:${serviceName}`;
+	return makeRuntimeStoreKey(userID, repoName, serviceName);
 }
 
 export function createEntry(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
 	const k = key(userID, repoName, serviceName);
 	store.set(k, {
 		steps: [],
+		logEntries: [],
 		status: "running",
 		error: null,
-		subscribedClients: new Set([ws]),
 	});
 }
 
@@ -50,16 +56,14 @@ export function broadcastLog(
 	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return;
 	const time = new Date().toISOString();
-	const payload = JSON.stringify({ type: "deploy_logs", payload: { id, msg, time } });
-	for (const client of entry.subscribedClients) {
-		if (client.readyState === OPEN) {
-			try {
-				client.send(payload);
-			} catch (_) {
-				// ignore
-			}
-		}
-	}
+	const payload = { id, msg, time };
+	entry.logEntries.push({
+		id,
+		message: msg,
+		timestamp: time,
+	});
+	if (!userID) return;
+	emitToWorkerDeploymentRoom(userID, repoName, serviceName, WORKER_SOCKET_SERVER_EVENTS.deployLog, payload);
 }
 
 export function broadcastCompletion(
@@ -70,26 +74,15 @@ export function broadcastCompletion(
 ): void {
 	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return;
-	const message = JSON.stringify({
-		type: "deploy_complete",
-		payload,
-	});
-	for (const client of entry.subscribedClients) {
-		if (client.readyState === OPEN) {
-			try {
-				client.send(message);
-			} catch (_) {
-				// ignore
-			}
-		}
-	}
+	if (!userID) return;
+	emitToWorkerDeploymentRoom(userID, repoName, serviceName, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
 }
 
 export function setStatus(
 	userID: string | undefined,
 	repoName: string,
 	serviceName: string,
-	status: Status,
+	status: WorkerSocketStatus,
 	error?: string | null
 ): void {
 	const entry = store.get(key(userID, repoName, serviceName));
@@ -99,34 +92,35 @@ export function setStatus(
 	}
 }
 
-export function addSubscriber(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
-	const entry = store.get(key(userID, repoName, serviceName));
-	if (entry) entry.subscribedClients.add(ws);
-}
-
-export function removeSubscriber(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
-	const entry = store.get(key(userID, repoName, serviceName));
-	if (entry) entry.subscribedClients.delete(ws);
-}
-
-/** Remove this ws from every entry (e.g. on client disconnect). */
-export function removeSubscriberFromAll(ws: any): void {
-	for (const entry of store.values()) {
-		entry.subscribedClients.delete(ws);
-	}
-}
-
 export function getSnapshot(userID: string | undefined, repoName: string, serviceName: string): {
-	steps: DeployStep[];
-	status: Status;
+	logEntries: DeployLogEntry[];
+	status: WorkerSocketStatus;
 	error?: string | null;
 } | null {
 	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return null;
 	return {
-		steps: entry.steps,
+		logEntries: entry.logEntries,
 		status: entry.status,
 		error: entry.error,
+	};
+}
+
+export function getSocketSnapshot(
+	userID: string | undefined,
+	repoName: string,
+	serviceName: string
+): DeploySnapshotPayload | null {
+	if (!userID) return null;
+	const snapshot = getSnapshot(userID, repoName, serviceName);
+	if (!snapshot) return null;
+
+	return {
+		repoName,
+		serviceName,
+		logEntries: snapshot.logEntries,
+		status: snapshot.status,
+		error: snapshot.error ?? null,
 	};
 }
 

@@ -95,9 +95,7 @@ describe("websocket-types deploy", () => {
 
 		const { serviceLogs } = await import("@/websocket-types");
 		const ws = {
-			OPEN: 1,
-			readyState: 1,
-			send: vi.fn(),
+			emit: vi.fn(),
 		};
 
 		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
@@ -109,12 +107,9 @@ describe("websocket-types deploy", () => {
 			}),
 			limit: 50,
 		});
-		expect(ws.send).toHaveBeenCalledWith(
-			JSON.stringify({
-				type: "initial_logs",
-				payload: { logs: [{ message: "GLIBC_2.38 not found" }] },
-			})
-		);
+		expect(ws.emit).toHaveBeenCalledWith("service_logs:initial", {
+			logs: [{ message: "GLIBC_2.38 not found" }],
+		});
 	});
 
 	it("returns empty logs when the deployment is not ECS-backed", async () => {
@@ -127,19 +122,12 @@ describe("websocket-types deploy", () => {
 
 		const { serviceLogs } = await import("@/websocket-types");
 		const ws = {
-			OPEN: 1,
-			readyState: 1,
-			send: vi.fn(),
+			emit: vi.fn(),
 		};
 
 		await serviceLogs({ repoName: "smart-deploy", serviceName: "web" }, ws);
 
 		expect(getEcsServiceLogsMock).not.toHaveBeenCalled();
-		expect(ws.send).toHaveBeenCalledWith(
-			JSON.stringify({
-				type: "initial_logs",
-				payload: { logs: [] },
-			})
-		);
+		expect(ws.emit).toHaveBeenCalledWith("service_logs:initial", { logs: [] });
 	});
 });

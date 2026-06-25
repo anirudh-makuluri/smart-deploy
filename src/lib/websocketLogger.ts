@@ -1,4 +1,5 @@
 import { DeployStep } from "../app/types";
+import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 /**
  * Creates a simple WebSocket logger function that sends messages to the client.
@@ -11,13 +12,11 @@ export function createWebSocketLogger(ws: any) {
 			return;
 		}
 
-		if (ws && ws.readyState === ws.OPEN) {
-			const object = {
-				type: "deploy_logs",
-				payload: { id, msg, time: new Date().toISOString() },
-			};
-			ws.send(JSON.stringify(object));
-		}
+		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployLog, {
+			id,
+			msg,
+			time: new Date().toISOString(),
+		});
 	};
 }
 

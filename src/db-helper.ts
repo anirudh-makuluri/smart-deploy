@@ -25,9 +25,9 @@ function isValidUuid(value: string): boolean {
 }
 
 function resolveAnalysisResponseId(
-	explicitResponseId: string | null,
-	payloadResponseId: string | null,
-	existingResponseId: string | null
+	explicitResponseId: string | null | undefined,
+	payloadResponseId: string | null | undefined,
+	existingResponseId: string | null | undefined
 ): string {
 	const candidates = [explicitResponseId, payloadResponseId, existingResponseId];
 	for (const candidate of candidates) {
@@ -333,9 +333,6 @@ function deployConfigToRow(
 	}
 	if (hasOwnKey(config, "cloudResources")) row.cloud_resources = config.cloudResources;
 	if (hasOwnKey(config, "secretsArn")) row.secrets_arn = config.secretsArn ?? null;
-	if (hasOwnKey(config, "responseId")) {
-		row.response_id = config.responseId;
-	}
 	return row;
 }
 
@@ -485,7 +482,10 @@ export const dbHelper = {
 			const hasScanResultsInput = hasOwnKey(configRecord, "scanResults");
 			const rawScanResultsInput = configRecord.scanResults;
 			const rawScanResults = hasScanResultsInput ? normalizeScanResults(configRecord.scanResults) : null;
-			const explicitResponseId = toOptionalTrimmedString(configRecord.responseId);
+			const hasResponseIdInput = hasOwnKey(configRecord, "responseId");
+			const explicitResponseId = hasResponseIdInput
+				? toOptionalTrimmedString(configRecord.responseId)
+				: undefined;
 
 			if (explicitStatus === "stopped") {
 				await supabase.from("deployments").delete()
@@ -508,7 +508,10 @@ export const dbHelper = {
 			const currentStatus = normalizeDeploymentStatus(existing?.status as string | null | undefined);
 			const nextStatus = explicitStatus ?? currentStatus ?? "didnt_deploy";
 
-			let nextResponseId: string | null = explicitResponseId ?? toOptionalTrimmedString(existing?.response_id);
+			let nextResponseId: string | null =
+				explicitResponseId === undefined
+					? toOptionalTrimmedString(existing?.response_id)
+					: (explicitResponseId ?? toOptionalTrimmedString(existing?.response_id));
 			if (hasScanResultsInput) {
 				if (!rawScanResults) {
 					const isExplicitClear =
@@ -581,7 +584,7 @@ export const dbHelper = {
 					resolvedStatus: nextStatus,
 				}),
 			};
-			if (hasScanResultsInput || explicitResponseId) {
+			if (hasScanResultsInput || hasResponseIdInput) {
 				updatePayload.response_id = nextResponseId;
 			}
 
@@ -652,7 +655,10 @@ export const dbHelper = {
 				(rows || []) as DeploymentDbRow[],
 				await fetchAnalysisPayloadMap((rows || []) as DeploymentDbRow[])
 			);
-			const deployments = hydratedRows.map((row: Record<string, unknown>) => rowToDeployConfig(row));
+			const deployments = hydratedRows.map((row: Record<string, unknown>) => ({
+				deployment: rowToDeployConfig(row),
+				ownerID: toOptionalTrimmedString(row.owner_id),
+			}));
 			return { deployments };
 		} catch (error) {
 			console.error("listDeploymentsForHealthReconcile error:", error);

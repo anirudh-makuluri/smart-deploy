@@ -13,6 +13,7 @@ import type {
 	DeploymentHistoryEntry,
 	DeployStep,
 	repoType,
+	RuntimeHealthSample,
 	ScanResultsPayload,
 	SDArtifactsResponse,
 } from "@/app/types";
@@ -44,6 +45,7 @@ type DeployWorkspaceActiveSectionProps = {
 	onStartScan: () => void;
 	deploymentHistory: DeploymentHistoryEntry[] | null | undefined;
 	historyTotal: number;
+	runtimeHealthEntries: RuntimeHealthSample[];
 	onRollbackEntrySelect: (entry: DeploymentHistoryEntry) => void;
 	rollbackingEntryId: string | null;
 	effectiveDeploymentStatus: DeployConfig["status"];
@@ -71,6 +73,7 @@ type DeployWorkspaceActiveSectionProps = {
 	viewState: {
 		hasScanResults: boolean;
 		isLoadingHistory: boolean;
+		isLoadingRuntimeHealth: boolean;
 		showDeployLogs: boolean;
 		isDeploying: boolean;
 		isRefreshingPreview: boolean;
@@ -102,6 +105,7 @@ export default function DeployWorkspaceActiveSection({
 	onStartScan,
 	deploymentHistory,
 	historyTotal,
+	runtimeHealthEntries,
 	onRollbackEntrySelect,
 	rollbackingEntryId,
 	effectiveDeploymentStatus,
@@ -246,14 +250,18 @@ export default function DeployWorkspaceActiveSection({
 			<div className="w-full mx-auto p-6 flex-1 max-w-6xl">
 				<DeployOverview
 					deployment={deployment}
-					isDeploying={viewState.isDeploying}
-					isRefreshingPreview={viewState.isRefreshingPreview}
+					runtimeHealthEntries={runtimeHealthEntries}
+					viewState={{
+						isDeploying: viewState.isDeploying,
+						isLoadingRuntimeHealth: viewState.isLoadingRuntimeHealth,
+						isRefreshingPreview: viewState.isRefreshingPreview,
+						isChangingDeploymentState: viewState.isChangingDeploymentState,
+					}}
 					onRedeploy={onRedeploy}
 					onRefreshPreview={onRefreshPreview}
 					onEditConfiguration={onEditConfiguration}
 					onPauseResumeDeployment={onPauseResumeDeployment}
 					onDeleteDeployment={onDeleteDeployment}
-					isChangingDeploymentState={viewState.isChangingDeploymentState}
 					repo={activeRepo}
 					deployDisabled={viewState.deployDisabled}
 					deployDisabledReason={deployDisabledMessage}

@@ -13,6 +13,7 @@ import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
+import { useRuntimeHealthHistory } from "@/custom-hooks/useRuntimeHealthHistory";
 import { useActiveDeployment, createDefaultDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
 import {
@@ -45,8 +46,11 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 	return p;
 }
 
+const lastHandledDeployCompletionEventByWorkspace = new Map<string, number>();
+
 export function useDeployWorkspace() {
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
+	const mergeDeployments = useAppData((s) => s.mergeDeployments);
 	const activeRepo = useAppData((s) => s.activeRepo)!;
 	const serviceName = useAppData((s) => s.activeServiceName)!;
 	const isLoading = useAppData((s) => s.isLoading);
@@ -128,6 +132,10 @@ export function useDeployWorkspace() {
 		serviceName: serviceName,
 		deployStatus: deployStatus,
 	});
+	const { entries: runtimeHealthEntries, isLoading: isLoadingRuntimeHealth } = useRuntimeHealthHistory({
+		repoName,
+		serviceName,
+	});
 
 	useDocumentTitleSync({
 		repoName: repoName,
@@ -157,36 +165,40 @@ export function useDeployWorkspace() {
 	React.useEffect(() => {
 		const p = deployCompleteEvent?.payload;
 		if (!p) return;
+		const workspaceKey = `${repoName}:${serviceName}`;
+		const lastHandledEventAt = lastHandledDeployCompletionEventByWorkspace.get(workspaceKey);
+		if (lastHandledEventAt === deployCompleteEvent.receivedAt) return;
+		lastHandledDeployCompletionEventByWorkspace.set(workspaceKey, deployCompleteEvent.receivedAt);
 
-			dispatch({ type: "set_deploying", value: false });
-			const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
-			const hostedSubdomain = p.hosted_subdomain ?? deployment.hostedSubdomain;
-			const url = hostedUrlFromSubdomain(hostedSubdomain);
-			if (p.success) {
-				toast.success("Deployment successful", {
-					description: `Live at ${url}`,
-					duration: 8000,
-				});
-			} else {
-				toast.error("Deployment failed", {
-					description: p.error || "Check the deploy logs for details.",
-					duration: 10000,
-				});
-			}
-
-			updateDeploymentById({
-				repoName,
-				serviceName,
-				repoUrl: deployment.repoUrl || repoUrl || "",
-				status: finalStatus,
-				firstDeployment: deployment.firstDeployment ?? new Date().toISOString(),
-				lastDeployment: new Date().toISOString(),
-				...(finalStatus === "running" && hostedSubdomain ? { hostedSubdomain } : {}),
-				...(p.cloudResources != null ? { cloudResources: p.cloudResources } : {}),
-				...(p.deploymentTarget && {
-					deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
-				}),
+		dispatch({ type: "set_deploying", value: false });
+		const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
+		const hostedSubdomain = p.hosted_subdomain ?? deployment.hostedSubdomain;
+		const url = hostedUrlFromSubdomain(hostedSubdomain);
+		if (p.success) {
+			toast.success("Deployment successful", {
+				description: `Live at ${url}`,
+				duration: 8000,
 			});
+		} else {
+			toast.error("Deployment failed", {
+				description: p.error || "Check the deploy logs for details.",
+				duration: 10000,
+			});
+		}
+
+		updateDeploymentById({
+			repoName,
+			serviceName,
+			repoUrl: deployment.repoUrl || repoUrl || "",
+			status: finalStatus,
+			firstDeployment: deployment.firstDeployment ?? new Date().toISOString(),
+			lastDeployment: new Date().toISOString(),
+			...(finalStatus === "running" && hostedSubdomain ? { hostedSubdomain } : {}),
+			...(p.cloudResources != null ? { cloudResources: p.cloudResources } : {}),
+			...(p.deploymentTarget && {
+				deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
+			}),
+		});
 	}, [deployCompleteEvent, deployment.firstDeployment, deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById]);
 
 	const canPauseResumeDeployment = effectiveDeploymentStatus === "running" || effectiveDeploymentStatus === "paused";
@@ -236,7 +248,7 @@ export function useDeployWorkspace() {
 		const branchToSave = branchOverride || effectiveBranch || "main";
 		const responseId = isSdArtifactsAnalyzeScan(results) ? results.response_id?.trim() || null : null;
 
-		await saveDeploymentAnalysis({
+		const { responseId: savedResponseId } = await saveDeploymentAnalysis({
 			repoName,
 			serviceName,
 			repoUrl: deployment.repoUrl || repoUrl || "",
@@ -246,9 +258,19 @@ export function useDeployWorkspace() {
 			scanResults: results,
 		});
 
+		mergeDeployments([
+			withDeployInfraDefaults({
+				...deployment,
+				branch: branchToSave,
+				commitSha: results.commit_sha ?? deployment.commitSha ?? null,
+				responseId: savedResponseId ?? responseId,
+				scanResults: results,
+			} as DeployConfig),
+		]);
+
 		dispatch({ type: "set_scan_results", value: results });
 		dispatch({ type: "set_scan_mode", value: "results" });
-	}, [deployment.commitSha, deployment.repoUrl, effectiveBranch, repoName, repoUrl, serviceName, session?.user]);
+	}, [deployment, effectiveBranch, mergeDeployments, repoName, repoUrl, serviceName, session?.user]);
 
 	const onScanComplete = React.useCallback(async (results: ScanResultsPayload, branchOverride?: string) => {
 		try {
@@ -496,6 +518,7 @@ export function useDeployWorkspace() {
 					deployment.branch
 				),
 				responseId: deployment.responseId ?? null,
+				hostedSubdomain: deployment.hostedSubdomain ?? null,
 				envVars: deployment.envVars ?? null,
 				revision: 0,
 				cloudProvider: deployment.cloudProvider,
@@ -589,6 +612,8 @@ export function useDeployWorkspace() {
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		runtimeHealthEntries,
+		isLoadingRuntimeHealth,
 		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,

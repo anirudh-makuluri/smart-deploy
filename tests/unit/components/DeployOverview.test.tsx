@@ -21,6 +21,13 @@ vi.mock("@/lib/utils", async (importOriginal) => {
 	};
 });
 
+const defaultViewState = {
+	isDeploying: false,
+	isRefreshingPreview: false,
+	isLoadingRuntimeHealth: false,
+	isChangingDeploymentState: false,
+};
+
 function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
 	return {
 		id: "dep-1",
@@ -114,6 +121,7 @@ describe("DeployOverview", () => {
 		render(
 			<DeployOverview
 				deployment={makeDeployment()}
+				viewState={defaultViewState}
 				onRefreshPreview={onRefreshPreview}
 			/>
 		);
@@ -124,6 +132,47 @@ describe("DeployOverview", () => {
 		expect(onRefreshPreview).toHaveBeenCalledTimes(1);
 	});
 
+	it("renders runtime health samples when provided", () => {
+		const { container } = render(
+			<DeployOverview
+				deployment={makeDeployment()}
+				runtimeHealthEntries={[
+					{
+						checkedAt: "2026-06-25T00:00:00.000Z",
+						app: {
+							checkedUrl: "https://web.example.com/health",
+							httpStatus: 200,
+							latencyMs: 95,
+							probeResults: [true, true, false],
+							overallStatus: "degraded",
+						},
+						ecs: {
+							status: "ACTIVE",
+							rolloutState: "COMPLETED",
+							desiredCount: 1,
+							runningCount: 1,
+							pendingCount: 0,
+						},
+						alb: {
+							healthyTargetCount: 1,
+							unhealthyTargetCount: 0,
+							initialTargetCount: 0,
+							drainingTargetCount: 0,
+							unusedTargetCount: 0,
+							unavailableTargetCount: 0,
+						},
+					},
+				]}
+			/>
+		);
+
+		expect(within(container).getAllByText("Runtime Health").length).toBeGreaterThan(0);
+		expect(within(container).getAllByText("Degraded").length).toBeGreaterThan(0);
+		expect(within(container).getByText(/HTTP 200 .* 95ms/)).toBeInTheDocument();
+		expect(within(container).getByText("1 / 1 running")).toBeInTheDocument();
+		expect(within(container).getByText("1 healthy / 0 unhealthy")).toBeInTheDocument();
+	});
+
 	it("renders deployment controls in overview and triggers handlers", () => {
 		const onPauseResumeDeployment = vi.fn();
 		const onDeleteDeployment = vi.fn();
@@ -131,6 +180,7 @@ describe("DeployOverview", () => {
 		render(
 			<DeployOverview
 				deployment={makeDeployment()}
+				viewState={defaultViewState}
 				onPauseResumeDeployment={onPauseResumeDeployment}
 				onDeleteDeployment={onDeleteDeployment}
 			/>

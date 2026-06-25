@@ -27,11 +27,27 @@ function getErrorMessage(error: Error | { message?: string } | string | null | u
 	return fallback;
 }
 
+function matchesRepoRoute(repo: repoType | null, owner: string, repoName: string): boolean {
+	if (!repo) return false;
+	return repo.full_name.toLowerCase() === `${owner}/${repoName}`.toLowerCase();
+}
+
+function matchesRepoRecordRoute(repoRecord: {
+	repo_owner: string;
+	repo_name: string;
+} | null, owner: string, repoName: string): boolean {
+	if (!repoRecord) return false;
+	return (
+		repoRecord.repo_owner.toLowerCase() === owner.toLowerCase() &&
+		repoRecord.repo_name.toLowerCase() === repoName.toLowerCase()
+	);
+}
+
 export function useRepoPageClient(owner: string, repoName: string) {
 	const queryClient = useQueryClient();
 	const {
-		activeRepo : repo,
-		activeRepoRecord: repoRecord,
+		activeRepo,
+		activeRepoRecord,
 		activeServiceName: serviceName,
 		deployments,
 		mergeRepoRecords,
@@ -46,31 +62,26 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const [mobileWorkspaceNavOpen, setMobileWorkspaceNavOpen] = React.useState(false);
 
 	const repoUrl = `https://github.com/${owner}/${repoName}`;
+	const routeKey = `${owner}/${repoName}`.toLowerCase();
+	const activeRepoMatchesRoute = matchesRepoRoute(activeRepo, owner, repoName);
+	const activeRepoRecordMatchesRoute = matchesRepoRecordRoute(activeRepoRecord, owner, repoName);
 
-	const services = React.useMemo(() => { return repoRecord?.services || [] }, [repoRecord]);
-	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments, repoUrl]);
-
-	React.useEffect(() => {
-		return () => {
-			setActiveServiceName(null);
-			setActiveRepo(null);
-		};
-	}, [setActiveRepo, setActiveServiceName]);
-	
-	const { isLoading : isLoadingRepo } = useQuery({
-		queryKey: [`${owner}/${repoName}`, "repo"],
-		enabled: !repo,
+	const { data: repoQueryData, isLoading : isLoadingRepo } = useQuery({
+		queryKey: [routeKey, "repo"],
+		enabled: !activeRepoMatchesRoute,
 		staleTime: 60_000,
 		queryFn: async () => {
 			const resolved = await resolveRepo(owner, repoName);
 			setActiveRepo(resolved);
 			return resolved;
 		}
-	})
+	});
 
-	const { isLoading: isLoadingRepoRecord } = useQuery({
-		queryKey: [`${owner}/${repoName}`, "repo-record"],
-		enabled: !repoRecord,
+	const repo = activeRepoMatchesRoute ? activeRepo : (repoQueryData ?? null);
+
+	const { data: repoRecordQueryData, isLoading: isLoadingRepoRecord } = useQuery({
+		queryKey: [routeKey, "repo-record"],
+		enabled: !activeRepoRecordMatchesRoute,
 		staleTime: 60_000,
 		queryFn: async () => {
 			const record = await fetchRepoRecord(owner, repoName);
@@ -79,8 +90,21 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		},
 	});
 
+	const repoRecord = activeRepoRecordMatchesRoute ? activeRepoRecord : (repoRecordQueryData ?? null);
+	const services = React.useMemo(() => { return repoRecord?.services || [] }, [repoRecord]);
+	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments, repoUrl]);
+	const hasRepoDeployments = repoDeployments.length > 0;
+
+	React.useEffect(() => {
+		return () => {
+			setActiveServiceName(null);
+			setActiveRepo(null);
+			setActiveRepoRecord(null);
+		};
+	}, [setActiveRepo, setActiveRepoRecord, setActiveServiceName]);
+
 	const { isLoading: isLoadingServices, error: errorServices } = useQuery({
-		queryKey: [`${owner}/${repoName}`, "repo-services"],
+		queryKey: [routeKey, "repo-services"],
 		enabled: !isLoadingRepoRecord && (!repoRecord || repoRecord.services.length === 0),
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
@@ -101,9 +125,12 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		},
 	});
 
-	const { isLoading: isLoadingDeployments } = useQuery({
-		queryKey: [`${owner}/${repoName}`, "repo-deployments"],
-		enabled: repoDeployments.length == 0,
+	const {
+		isFetched: hasFetchedDeployments,
+		isError: hasDeploymentsError,
+	} = useQuery({
+		queryKey: [routeKey, "repo-deployments"],
+		enabled: Boolean(repo) && !hasRepoDeployments,
 		queryFn: async () => {
 			if (!repo) return [];
 			const newDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
@@ -111,6 +138,8 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			return newDeployments
 		},
 	});
+
+	const repoDeploymentsReady = hasRepoDeployments || !repo || hasFetchedDeployments || hasDeploymentsError;
 
 	const applyCatalogResult = React.useCallback(
 		(data: DetectServicesResult) => {
@@ -127,7 +156,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			mergeRepoRecords([nextRecord]);
 			setActiveRepoRecord(nextRecord);
 			void queryClient.invalidateQueries({
-				queryKey: [`${owner}/${repoName}`, "repo-services"],
+				queryKey: [routeKey, "repo-services"],
 			});
 		},
 		[
@@ -137,6 +166,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			repo,
 			owner,
 			repoName,
+			routeKey,
 			setActiveRepoRecord,
 		]
 	);
@@ -179,7 +209,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		[catalogBusy, repoUrl, repo, applyCatalogResult]
 	);
 
-	const loading = (isLoadingRepoRecord || isLoadingServices || isLoadingRepo || isLoadingDeployments);
+	const loading = (isLoadingRepoRecord || isLoadingServices || isLoadingRepo || !repoDeploymentsReady);
 	const error = errorServices
 		? getErrorMessage(errorServices as Error | { message?: string } | string, "Failed to load services")
 		: null;
@@ -195,19 +225,29 @@ export function useRepoPageClient(owner: string, repoName: string) {
 
 	const openWorkspaceForService = React.useCallback(async (svc: DetectedServiceInfo) => {
 		const normalizedServiceName = svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
-		const existingDeployment = repoDeployments.find(dep => dep.serviceName == normalizedServiceName);
 
 		if(!repo) {
 			toast.error("An error occured. Refresh the page and try again.")
 			return
 		}
 
+		if (!repoDeploymentsReady) {
+			toast.info("Loading deployment data. Please try again in a moment.");
+			return;
+		}
+
+		const existingDeployment = repoDeployments.find(dep => dep.serviceName == normalizedServiceName);
+
 		if(!existingDeployment) {
 			const newDeployment = createDefaultDeployment(repoName, normalizedServiceName, repoUrl, repo.default_branch)
 			await updateDeploymentById(newDeployment);
 		}
+		setActiveRepo(repo);
+		if (repoRecord) {
+			setActiveRepoRecord(repoRecord);
+		}
 		setActiveServiceName(normalizedServiceName);
-	}, [repo, repoDeployments, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);
+	}, [repo, repoDeployments, repoDeploymentsReady, repoName, repoRecord, repoUrl, services, setActiveRepo, setActiveRepoRecord, setActiveServiceName, updateDeploymentById]);
 	
 	
 	return {

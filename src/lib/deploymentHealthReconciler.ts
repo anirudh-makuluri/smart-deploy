@@ -1,8 +1,13 @@
-import type { DeployConfig } from "@/app/types";
+import type { DeployConfig, RuntimeHealthAppEntry, RuntimeHealthState, RuntimeHealthSample } from "@/app/types";
 import { dbHelper } from "@/db-helper";
+import { getRuntimeAlbHealth, getRuntimeEcsHealth } from "@/lib/aws/runtimeHealthSignals";
+import { isEcsCloudResources } from "@/lib/cloudResources";
 import { normalizeDeploymentStatus } from "@/lib/deploymentStatus";
-import { probeDeploymentReachable } from "@/lib/deploymentHealthProbe";
+import { probeDeploymentHealth } from "@/lib/deploymentHealthProbe";
 import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
+import { appendRuntimeHealthSample } from "@/lib/runtimeHealthStore";
+import { emitToWorkerDeploymentRoom, emitToWorkerUserRoom } from "@/lib/workerSocketServer";
+import { WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 const RECONCILE_INTERVAL_MS = 10 * 60 * 1000;
 const PROBE_COUNT = 3;
@@ -42,17 +47,53 @@ export function msUntilNextTenMinuteMark(now = new Date()): number {
 	return minutesToWait * 60_000 - sec * 1000 - ms;
 }
 
-async function probeBurst(baseUrl: string): Promise<boolean[]> {
-	const probeAttempt = async (attempt: number): Promise<boolean[]> => {
-		const result = await probeDeploymentReachable(baseUrl, REQUEST_TIMEOUT_MS);
-		if (attempt >= PROBE_COUNT - 1) {
-			return [result];
-		}
-		await sleep(PROBE_GAP_MS);
-		return [result, ...(await probeAttempt(attempt + 1))];
-	};
+function summarizeProbeHealth(probeResults: boolean[]): RuntimeHealthState {
+	if (probeResults.length === 0) return "unknown";
+	const healthyCount = probeResults.filter(Boolean).length;
+	if (healthyCount === probeResults.length) return "healthy";
+	if (healthyCount === 0) return "unreachable";
+	return "degraded";
+}
 
-	return probeAttempt(0);
+async function collectRuntimeHealthAttempts(
+	baseUrl: string,
+	remainingAttempts: number,
+	attempts: Array<Awaited<ReturnType<typeof probeDeploymentHealth>>> = []
+): Promise<Array<Awaited<ReturnType<typeof probeDeploymentHealth>>>> {
+	if (remainingAttempts <= 0) {
+		return attempts;
+	}
+
+	const result = await probeDeploymentHealth(baseUrl, REQUEST_TIMEOUT_MS);
+	const nextAttempts = [...attempts, result];
+	if (remainingAttempts === 1) {
+		return nextAttempts;
+	}
+
+	await sleep(PROBE_GAP_MS);
+	return collectRuntimeHealthAttempts(baseUrl, remainingAttempts - 1, nextAttempts);
+}
+
+async function buildRuntimeAppHealth(baseUrl: string): Promise<RuntimeHealthAppEntry> {
+	const attempts = await collectRuntimeHealthAttempts(baseUrl, PROBE_COUNT);
+
+	const probeResults = attempts.map((attempt) => attempt.reachable);
+	const representative =
+		[...attempts].reverse().find((attempt) => attempt.reachable) ??
+		attempts[attempts.length - 1] ?? {
+			reachable: false,
+			checkedUrl: null,
+			httpStatus: null,
+			latencyMs: null,
+		};
+
+	return {
+		checkedUrl: representative.checkedUrl,
+		httpStatus: representative.httpStatus,
+		latencyMs: representative.latencyMs,
+		probeResults,
+		overallStatus: summarizeProbeHealth(probeResults),
+	};
 }
 
 function deployConfigForStatusUpdate(deployment: DeployConfig): DeployConfig {
@@ -77,7 +118,7 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 	let updated = 0;
 
 	const reconcileResults = await Promise.all(
-		deployments.map(async (deployment) => {
+		deployments.map(async ({ deployment, ownerID }) => {
 			const storedStatus = normalizeDeploymentStatus(deployment.status);
 			if (storedStatus !== "running" && storedStatus !== "failed") {
 				return false;
@@ -89,7 +130,47 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 			}
 
 			try {
-				const probeResults = await probeBurst(baseUrl);
+				const appHealth = await buildRuntimeAppHealth(baseUrl);
+				const probeResults = appHealth.probeResults;
+				const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+				const [ecsResult, albResult] = await Promise.allSettled([
+					ecsResources ? getRuntimeEcsHealth(ecsResources) : Promise.resolve(null),
+					ecsResources ? getRuntimeAlbHealth(ecsResources) : Promise.resolve(null),
+				]);
+				const healthSample: RuntimeHealthSample = {
+					checkedAt: new Date().toISOString(),
+					app: appHealth,
+					ecs: ecsResult.status === "fulfilled" ? ecsResult.value : null,
+					alb: albResult.status === "fulfilled" ? albResult.value : null,
+				};
+
+				if (ecsResult.status === "rejected") {
+					console.warn(
+						`[health-reconcile] failed to read ECS health for ${deployment.repoName}/${deployment.serviceName}:`,
+						ecsResult.reason
+					);
+				}
+				if (albResult.status === "rejected") {
+					console.warn(
+						`[health-reconcile] failed to read ALB health for ${deployment.repoName}/${deployment.serviceName}:`,
+						albResult.reason
+					);
+				}
+
+				try {
+					await appendRuntimeHealthSample({
+						userID: ownerID ?? undefined,
+						repoName: deployment.repoName,
+						serviceName: deployment.serviceName,
+						entry: healthSample,
+					});
+				} catch (error) {
+					console.error(
+						`[health-reconcile] failed to persist runtime health for ${deployment.repoName}/${deployment.serviceName}:`,
+						error
+					);
+				}
+
 				const nextStatus = resolveReconciledStatus(storedStatus, probeResults);
 				if (!nextStatus || nextStatus === storedStatus) {
 					return false;
@@ -112,6 +193,22 @@ export async function reconcileDeploymentsHealth(): Promise<void> {
 				console.log(
 					`[health-reconcile] ${deployment.repoName}/${deployment.serviceName}: ${storedStatus} -> ${nextStatus} (probes=${probeResults.map((ok) => (ok ? "ok" : "fail")).join(",")})`
 				);
+				if (ownerID) {
+					const payload = {
+						ownerID,
+						repoName: deployment.repoName,
+						serviceName: deployment.serviceName,
+						status: nextStatus,
+					};
+					emitToWorkerUserRoom(ownerID, WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged, payload);
+					emitToWorkerDeploymentRoom(
+						ownerID,
+						deployment.repoName,
+						deployment.serviceName,
+						WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged,
+						payload
+					);
+				}
 				return true;
 			} catch (error) {
 				console.error(

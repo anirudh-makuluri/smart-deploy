@@ -40,7 +40,7 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 					</div>
 				</div>
 			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+			<div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pt-6 sm:pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] md:p-6">
 				<div className={activeView === "overview" ? "" : "hidden"}>
 					<DashboardOverviewView repoCards={repoCards} isLoading={isLoading} />
 				</div>
