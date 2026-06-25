@@ -20,7 +20,7 @@ import {
 	resolveDeploymentStatus,
 } from "@/lib/deploymentStatus";
 import { getDeploymentDisplayUrl, getDeploymentForService } from "@/lib/utils";
-import ServiceTypeIcon, { ServiceTypeBadge } from "@/components/ServiceTypeIcon";
+import RepoRecordIcon from "@/components/RepoRecordIcon";
 
 export type RepoCatalogActions = {
 	busy: boolean;
@@ -167,7 +167,7 @@ export default function RepoServicesList({
 									}`}
 							>
 								<div className="flex items-center gap-3">
-									<ServiceTypeIcon deployMode={svc.deployMode} serviceType={svc.serviceType} />
+									<RepoRecordIcon deployMode={svc.deployMode} serviceType={svc.serviceType} framework={svc.framework} />
 									<div className="min-w-0 flex-1">
 										<div className="font-semibold text-foreground truncate">
 											{svc.name}
@@ -177,9 +177,6 @@ export default function RepoServicesList({
 								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
 									{svc.path === "." ? "Root directory" : svc.path}
 								</div>
-								{/* <div className="mt-2">
-									<ServiceTypeBadge deployMode={svc.deployMode} serviceType={svc.serviceType} />
-								</div> */}
 								<div className="mt-3 flex flex-col gap-2">
 									<div className="flex items-center gap-2">
 										{isDraft && (

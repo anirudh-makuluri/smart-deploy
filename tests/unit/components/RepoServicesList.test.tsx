@@ -5,9 +5,8 @@ import RepoServicesList from "@/components/RepoServicesList";
 import type { DetectedServiceInfo, repoType } from "@/app/types";
 import { makeDeployment } from "../helpers/deployConfigFixture";
 
-vi.mock("@/components/ServiceTypeIcon", () => ({
+vi.mock("@/components/RepoRecordIcon", () => ({
 	default: () => <div data-testid="service-icon" />,
-	ServiceTypeBadge: () => <div data-testid="service-badge" />,
 }));
 
 const repo = {
