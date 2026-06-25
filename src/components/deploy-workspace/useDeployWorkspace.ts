@@ -513,6 +513,7 @@ export function useDeployWorkspace() {
 					deployment.branch
 				),
 				responseId: deployment.responseId ?? null,
+				hostedSubdomain: deployment.hostedSubdomain ?? null,
 				envVars: deployment.envVars ?? null,
 				revision: 0,
 				cloudProvider: deployment.cloudProvider,

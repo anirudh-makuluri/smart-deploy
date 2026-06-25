@@ -120,7 +120,7 @@ export function isProblemDeploymentStatus(status: string | null | undefined): bo
 
 export function canManageRuntimeDeploymentStatus(status: string | null | undefined): boolean {
 	const normalized = normalizeDeploymentStatus(status);
-	return normalized === "running" || normalized === "paused";
+	return normalized === "running" || normalized === "paused" || normalized === "failed";
 }
 
 export function getDeploymentStatusRank(status: string | null | undefined): number {
