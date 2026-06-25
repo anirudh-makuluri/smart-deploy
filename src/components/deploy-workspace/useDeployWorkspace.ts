@@ -13,6 +13,7 @@ import { useWorkerWebSocket } from "@/components/WorkerWebSocketProvider";
 import { useDeploymentHistoryWithSync } from "@/custom-hooks/useDeploymentHistoryWithSync";
 import { useDocumentTitleSync } from "@/custom-hooks/useDocumentTitleSync";
 import { usePreviewScreenshot } from "@/custom-hooks/usePreviewScreenshot";
+import { useRuntimeHealthHistory } from "@/custom-hooks/useRuntimeHealthHistory";
 import { useActiveDeployment, createDefaultDeployment } from "@/custom-hooks/useActiveDeployment";
 import { toast } from "sonner";
 import {
@@ -130,6 +131,10 @@ export function useDeployWorkspace() {
 		repoName,
 		serviceName: serviceName,
 		deployStatus: deployStatus,
+	});
+	const { entries: runtimeHealthEntries, isLoading: isLoadingRuntimeHealth } = useRuntimeHealthHistory({
+		repoName,
+		serviceName,
 	});
 
 	useDocumentTitleSync({
@@ -607,6 +612,8 @@ export function useDeployWorkspace() {
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		runtimeHealthEntries,
+		isLoadingRuntimeHealth,
 		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,

@@ -96,18 +96,6 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const hasRepoDeployments = repoDeployments.length > 0;
 
 	React.useEffect(() => {
-		if (repo && !activeRepoMatchesRoute) {
-			setActiveRepo(repo);
-		}
-	}, [activeRepoMatchesRoute, repo, setActiveRepo]);
-
-	React.useEffect(() => {
-		if (repoRecord && !activeRepoRecordMatchesRoute) {
-			setActiveRepoRecord(repoRecord);
-		}
-	}, [activeRepoRecordMatchesRoute, repoRecord, setActiveRepoRecord]);
-
-	React.useEffect(() => {
 		return () => {
 			setActiveServiceName(null);
 			setActiveRepo(null);
@@ -254,8 +242,12 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			const newDeployment = createDefaultDeployment(repoName, normalizedServiceName, repoUrl, repo.default_branch)
 			await updateDeploymentById(newDeployment);
 		}
+		setActiveRepo(repo);
+		if (repoRecord) {
+			setActiveRepoRecord(repoRecord);
+		}
 		setActiveServiceName(normalizedServiceName);
-	}, [repo, repoDeployments, repoDeploymentsReady, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);
+	}, [repo, repoDeployments, repoDeploymentsReady, repoName, repoRecord, repoUrl, services, setActiveRepo, setActiveRepoRecord, setActiveServiceName, updateDeploymentById]);
 	
 	
 	return {

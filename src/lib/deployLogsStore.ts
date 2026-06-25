@@ -6,6 +6,7 @@ import {
 	type WorkerSocketStatus,
 	WORKER_SOCKET_SERVER_EVENTS,
 } from "@/lib/workerSocketEvents";
+import { makeRuntimeStoreKey } from "@/lib/runtimeStoreKey";
 
 type Entry = {
 	steps: DeployStep[];
@@ -18,7 +19,7 @@ const store = new Map<string, Entry>();
 
 
 function key(userID: string | undefined, repoName: string, serviceName: string): string {
-	return `${userID ?? "anonymous"}:${repoName}:${serviceName}`;
+	return makeRuntimeStoreKey(userID, repoName, serviceName);
 }
 
 export function createEntry(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {

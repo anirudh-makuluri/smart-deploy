@@ -48,6 +48,8 @@ function DeployWorkspaceContent({
 		deploymentHistory,
 		historyTotal,
 		isLoadingHistory,
+		runtimeHealthEntries,
+		isLoadingRuntimeHealth,
 		latestDeploymentRunId,
 		showDeployLogs,
 		deployLogEntries,
@@ -133,6 +135,7 @@ function DeployWorkspaceContent({
 							onStartScan={startScan}
 							deploymentHistory={deploymentHistory}
 							historyTotal={historyTotal}
+							runtimeHealthEntries={runtimeHealthEntries}
 							onRollbackEntrySelect={handleRollbackEntrySelect}
 							rollbackingEntryId={ui.isChangingDeploymentState ? ui.rollbackEntry?.id ?? null : null}
 							effectiveDeploymentStatus={effectiveDeploymentStatus}
@@ -160,6 +163,7 @@ function DeployWorkspaceContent({
 							viewState={{
 								hasScanResults,
 								isLoadingHistory,
+								isLoadingRuntimeHealth,
 								showDeployLogs,
 								isDeploying: ui.isDeploying,
 								isRefreshingPreview,
