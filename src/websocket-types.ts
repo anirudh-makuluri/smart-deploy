@@ -30,6 +30,13 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 	try {
 		await handleDeploy(deployConfig, token, ws, userID, options);
 	} catch (err: any) {
+		deployLogsStore.setStatus(
+			userID,
+			repoName,
+			serviceName,
+			"error",
+			err instanceof Error ? err.message : String(err)
+		);
 		throw err;
 	} finally {
 		deployLogsStore.deleteEntry(userID, repoName, serviceName);

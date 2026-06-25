@@ -665,7 +665,7 @@ describe("DeployWorkspace", () => {
 		);
 	});
 
-	it("restores a draft with a generated hosted subdomain after delete", async () => {
+	it("restores a draft with the same hosted subdomain after delete", async () => {
 		appState = {
 			...appState,
 			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
@@ -691,7 +691,7 @@ describe("DeployWorkspace", () => {
 					repoName: "smart-deploy",
 					serviceName: "web",
 					status: "didnt_deploy",
-					hostedSubdomain: expect.stringMatching(/^smart-deploy[a-z0-9]{5}$/),
+					hostedSubdomain: "current-subdomain",
 				})
 			);
 		});
