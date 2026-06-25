@@ -1,90 +1,143 @@
 "use client";
 
 import { Github } from "lucide-react";
+import type { SimpleIcon } from "simple-icons";
+import {
+	siC,
+	siCplusplus,
+	siDart,
+	siDotnet,
+	siGo,
+	siJavascript,
+	siKotlin,
+	siOpenjdk,
+	siPhp,
+	siPython,
+	siRuby,
+	siRust,
+	siSwift,
+	siTypescript,
+} from "simple-icons";
 
 type LanguageIconProps = {
 	language?: string | null;
 	className?: string;
 };
 
-const languageStyles: Record<string, { label: string; className: string }> = {
-	typescript: {
-		label: "TS",
-		className: "bg-[#3178c6]/15 text-[#3178c6] border-[#3178c6]/25",
-	},
-	javascript: {
-		label: "JS",
-		className: "bg-[#f7df1e]/20 text-[#c3a600] border-[#f7df1e]/30",
-	},
-	python: {
-		label: "PY",
-		className: "bg-[#3776ab]/15 text-[#3776ab] border-[#3776ab]/25",
-	},
-	java: {
-		label: "JV",
-		className: "bg-[#f89820]/15 text-[#f89820] border-[#f89820]/25",
-	},
-	go: {
-		label: "GO",
-		className: "bg-[#00add8]/15 text-[#00add8] border-[#00add8]/25",
-	},
-	rust: {
-		label: "RS",
-		className: "bg-[#dea584]/15 text-[#a8632e] border-[#dea584]/25",
-	},
-	php: {
-		label: "PHP",
-		className: "bg-[#777bb4]/15 text-[#777bb4] border-[#777bb4]/25",
-	},
-	"c#": {
-		label: "C#",
-		className: "bg-[#68217a]/15 text-[#68217a] border-[#68217a]/25",
-	},
-	"c++": {
-		label: "C++",
-		className: "bg-[#00599c]/15 text-[#00599c] border-[#00599c]/25",
-	},
-	c: {
-		label: "C",
-		className: "bg-[#a8b9cc]/20 text-[#5c7085] border-[#a8b9cc]/30",
-	},
-	ruby: {
-		label: "RB",
-		className: "bg-[#cc342d]/15 text-[#cc342d] border-[#cc342d]/25",
-	},
-	kotlin: {
-		label: "KT",
-		className: "bg-[#7f52ff]/15 text-[#7f52ff] border-[#7f52ff]/25",
-	},
-	swift: {
-		label: "SW",
-		className: "bg-[#f05138]/15 text-[#f05138] border-[#f05138]/25",
-	},
-	dart: {
-		label: "DT",
-		className: "bg-[#0175c2]/15 text-[#0175c2] border-[#0175c2]/25",
-	},
+const languageIcons: Record<string, SimpleIcon> = {
+	c: siC,
+	"c++": siCplusplus,
+	dart: siDart,
+	dotnet: siDotnet,
+	go: siGo,
+	java: siOpenjdk,
+	javascript: siJavascript,
+	kotlin: siKotlin,
+	php: siPhp,
+	python: siPython,
+	ruby: siRuby,
+	rust: siRust,
+	swift: siSwift,
+	typescript: siTypescript,
 };
 
-function normalizeLanguage(language?: string | null) {
+const languageLabels: Record<string, string> = {
+	"c#": "C#",
+	"c++": "C++",
+	dotnet: ".NET",
+	go: "Go",
+	java: "Java",
+	javascript: "JavaScript",
+	php: "PHP",
+	python: "Python",
+	ruby: "Ruby",
+	rust: "Rust",
+	swift: "Swift",
+	typescript: "TypeScript",
+};
+
+function normalizeLanguage(language?: string | null): string {
 	return language?.trim().toLowerCase() ?? "";
+}
+
+function toReadableLabel(language: string): string {
+	return languageLabels[language] ?? language.replace(/[-_]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function toAbbreviation(language: string): string {
+	const compact = language.replace(/[^a-z0-9]/gi, "").toUpperCase();
+	return compact.slice(0, 2) || "??";
+}
+
+function hexToRgb(hex: string): string {
+	const normalized = hex.trim().replace(/^#/, "");
+	if (normalized.length !== 6) return "255 255 255";
+	const pairs = normalized.match(/.{1,2}/g);
+	if (!pairs || pairs.length !== 3) return "255 255 255";
+	return pairs.map((pair) => Number.parseInt(pair, 16)).join(" ");
+}
+
+function isDarkHex(hex: string): boolean {
+	const normalized = hex.trim().replace(/^#/, "");
+	if (normalized.length !== 6) return false;
+	const pairs = normalized.match(/.{1,2}/g);
+	if (!pairs || pairs.length !== 3) return false;
+	const [red, green, blue] = pairs.map((pair) => Number.parseInt(pair, 16) / 255);
+	const luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+	return luminance < 0.32;
+}
+
+function BrandGlyph({ icon, label, className = "" }: { icon: SimpleIcon; label: string; className?: string }) {
+	const darkBrand = isDarkHex(icon.hex);
+	const rgb = hexToRgb(icon.hex);
+	const colorStyle = darkBrand ? undefined : { color: `#${icon.hex}` };
+	const backgroundStyle = {
+		backgroundColor: darkBrand ? "rgba(255,255,255,0.04)" : `rgb(${rgb} / 0.14)`,
+		borderColor: darkBrand ? "rgba(255,255,255,0.12)" : `rgb(${rgb} / 0.24)`,
+	};
+
+	return (
+		<div
+			className={`flex size-6 shrink-0 items-center justify-center rounded-md border ${darkBrand ? "text-foreground" : ""} ${className}`.trim()}
+			style={{ ...backgroundStyle, ...colorStyle }}
+			title={label}
+			aria-label={label}
+		>
+			<svg
+				viewBox="0 0 24 24"
+				className="size-3.5 fill-current"
+				aria-hidden="true"
+			>
+				<path d={icon.path} />
+			</svg>
+		</div>
+	);
+}
+
+function TextGlyph({ abbreviation, label, className = "" }: { abbreviation: string; label: string; className?: string }) {
+	return (
+		<div
+			className={`flex size-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03] text-[9px] font-semibold tracking-tight text-foreground ${className}`.trim()}
+			title={label}
+			aria-label={label}
+		>
+			{abbreviation}
+		</div>
+	);
 }
 
 export default function LanguageIcon({ language, className = "" }: LanguageIconProps) {
 	const normalizedLanguage = normalizeLanguage(language);
-	const style = normalizedLanguage ? languageStyles[normalizedLanguage] : null;
-
-	if (!style) {
+	if (!normalizedLanguage) {
 		return <Github className={`size-6 shrink-0 text-muted-foreground ${className}`.trim()} aria-hidden="true" />;
 	}
 
-	return (
-		<div
-			className={`flex size-6 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold tracking-tight ${style.className} ${className}`.trim()}
-			title={language ?? undefined}
-			aria-label={language ?? "Repository"}
-		>
-			{style.label}
-		</div>
-	);
+	const icon = languageIcons[normalizedLanguage];
+	const label = toReadableLabel(normalizedLanguage);
+
+	if (icon) {
+		return <BrandGlyph icon={icon} label={label} className={className} />;
+	}
+
+	return <TextGlyph abbreviation={toAbbreviation(normalizedLanguage)} label={label} className={className} />;
 }
