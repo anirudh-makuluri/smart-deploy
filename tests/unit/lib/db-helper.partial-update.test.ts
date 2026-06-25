@@ -217,4 +217,22 @@ describe("dbHelper.updateDeployments partial updates", () => {
 		expect((deploymentsTable[0]?.response_id as string).length).toBeGreaterThan(0);
 		expect(analysisResponsesTable[0]?.id).toBe(deploymentsTable[0]?.response_id);
 	});
+
+	it("preserves the existing response_id when a non-analysis update carries a null responseId", async () => {
+		const { dbHelper } = await import("@/db-helper");
+
+		const result = await dbHelper.updateDeployments(
+			{
+				repoName: "shop",
+				serviceName: "web",
+				status: "deploying",
+				responseId: null,
+			} as never,
+			"user-1"
+		);
+
+		expect(result.error).toBeUndefined();
+		expect(deploymentsTable[0]?.response_id).toBe("resp-1");
+		expect(deploymentsTable[0]?.status).toBe("deploying");
+	});
 });

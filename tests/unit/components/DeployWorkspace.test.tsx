@@ -4,6 +4,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import DeployWorkspace from "@/components/DeployWorkspace";
 import type { DeployConfig } from "@/app/types";
+import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { makeDeployment } from "../helpers/deployConfigFixture";
 
 const mockUseSession = vi.fn();
@@ -22,6 +23,7 @@ const mockSendDeployConfig = vi.fn();
 const mockControlDeployment = vi.fn();
 const mockDeleteDeployment = vi.fn();
 const mockFetchLatestCommit = vi.fn();
+const mockSaveDeploymentAnalysis = vi.fn();
 
 let appState: Record<string, unknown> = {};
 
@@ -76,6 +78,7 @@ vi.mock("@/components/deploy-workspace/DeployWorkspaceMenu", () => ({
 		<div>
 			<div>DeployWorkspaceMenu</div>
 			<button type="button" onClick={() => onChange?.("history")}>OpenHistory</button>
+			<button type="button" onClick={() => onChange?.("scan")}>OpenScan</button>
 		</div>
 	),
 }));
@@ -101,7 +104,59 @@ vi.mock("@/components/deploy-workspace/DeployLogsView", () => ({
 	default: () => <div>DeployLogsView</div>,
 }));
 vi.mock("@/components/ScanProgress", () => ({
-	default: () => <div>ScanProgress</div>,
+	default: ({
+		onComplete,
+	}: {
+		onComplete?: (data: {
+			response_id: string;
+			commit_sha: string;
+			package_path: string;
+			deploy_shape: "server";
+			build_status: "passed";
+			railpack_version: string;
+			workflow_version: string;
+			deploy_briefing: string;
+			deploy_units: [];
+			remote_builds: Record<string, never>;
+			build_verification: Record<string, never>;
+			repair_history: [];
+			pipeline_trace: [];
+			errors: [];
+			llm_outputs: Record<string, never>;
+			inputs_snapshot: Record<string, never>;
+			token_usage: { input_tokens: number; output_tokens: number; total_tokens: number };
+		}) => void;
+	}) => (
+		<div>
+			<div>ScanProgress</div>
+			<button
+				type="button"
+				onClick={() =>
+					onComplete?.({
+						response_id: "resp-new",
+						commit_sha: "abcdef123456",
+						package_path: ".",
+						deploy_shape: "server",
+						build_status: "passed",
+						railpack_version: "0.1.0",
+						workflow_version: "1",
+						deploy_briefing: "API service",
+						deploy_units: [],
+						remote_builds: {},
+						build_verification: {},
+						repair_history: [],
+						pipeline_trace: [],
+						errors: [],
+						llm_outputs: {},
+						inputs_snapshot: {},
+						token_usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+					})
+				}
+			>
+				FinishScan
+			</button>
+		</div>
+	),
 }));
 vi.mock("@/components/FeedbackProgress", () => ({
 	default: () => <div>FeedbackProgress</div>,
@@ -130,6 +185,7 @@ vi.mock("@/lib/graphqlClient", () => ({
 	controlDeployment: (...args: unknown[]) => mockControlDeployment(...args),
 	deleteDeployment: (...args: unknown[]) => mockDeleteDeployment(...args),
 	fetchLatestCommit: (...args: unknown[]) => mockFetchLatestCommit(...args),
+	saveDeploymentAnalysis: (...args: unknown[]) => mockSaveDeploymentAnalysis(...args),
 	prefillInfra: vi.fn(),
 }));
 
@@ -175,6 +231,7 @@ describe("DeployWorkspace", () => {
 		mockFetchLatestCommit.mockResolvedValue(null);
 		mockControlDeployment.mockResolvedValue({ ok: true });
 		mockDeleteDeployment.mockResolvedValue(undefined);
+		mockSaveDeploymentAnalysis.mockResolvedValue({ responseId: "resp-new" });
 		removeDeployment.mockImplementation((repoName: string, serviceName: string) => {
 			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
 			appState = {
@@ -182,6 +239,21 @@ describe("DeployWorkspace", () => {
 				deployments: deployments.filter(
 					(dep) => dep.repoName !== repoName || dep.serviceName !== serviceName
 				),
+			};
+		});
+		const mergeDeployments = vi.fn((incoming: DeployConfig[]) => {
+			const deployments = ((appState.deployments as DeployConfig[] | undefined) ?? []);
+			const next = [...deployments];
+			for (const deployment of incoming) {
+				const index = next.findIndex(
+					(dep) => dep.repoName === deployment.repoName && dep.serviceName === deployment.serviceName
+				);
+				if (index === -1) next.push(deployment);
+				else next[index] = deployment;
+			}
+			appState = {
+				...appState,
+				deployments: next,
 			};
 		});
 		updateDeploymentById.mockImplementation(async (partial: Partial<DeployConfig> & { repoName: string; serviceName: string }) => {
@@ -201,6 +273,7 @@ describe("DeployWorkspace", () => {
 		});
 		appState = {
 			deployments: [],
+			mergeDeployments,
 			updateDeploymentById,
 			activeRepo: null,
 			activeServiceName: null,
@@ -333,6 +406,93 @@ describe("DeployWorkspace", () => {
 			);
 		});
 		expect(document.title).toContain("Deployment succeeded");
+	});
+
+	it("does not replay the deployment success toast when the workspace remounts", async () => {
+		mockUseWorkerWebSocket.mockReturnValue({
+			steps: [],
+			sendDeployConfig: vi.fn(),
+			deployConfigRef: { current: null },
+			deployStatus: "success",
+			deployError: null,
+			deployCompleteEvent: {
+				payload: {
+					success: true,
+					hosted_subdomain: "web",
+					deploymentTarget: "ecs",
+					finalStatus: "running",
+					cloudResources: null,
+					rolledBack: false,
+				},
+				receivedAt: 1_717_000_000_000,
+			},
+			serviceLogs: [],
+			deployLogEntries: [],
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [baseDeployment],
+		};
+
+		const firstView = renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(mockToastSuccess).toHaveBeenCalledWith(
+				"Deployment successful",
+				expect.objectContaining({
+					description: `Live at ${hostedUrlFromSubdomain("web")}`,
+				})
+			);
+		});
+
+		firstView.unmount();
+		renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("stores the saved responseId locally after smart analysis completes", async () => {
+		appState = {
+			...appState,
+			activeRepo: { name: "smart-deploy", default_branch: "main", full_name: "acme/smart-deploy", html_url: "https://github.com/acme/smart-deploy" },
+			activeServiceName: "web",
+			deployments: [{ ...baseDeployment, status: "didnt_deploy", responseId: null, scanResults: {} }],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+
+		fireEvent.click(within(view.container).getByText("OpenScan"));
+		const startAnalysisButton = screen
+			.getAllByText("Start Smart Analysis")
+			.find((element) => !element.closest("[hidden]"));
+		expect(startAnalysisButton).toBeDefined();
+		fireEvent.click(startAnalysisButton!);
+		fireEvent.click(screen.getByText("FinishScan"));
+
+		await waitFor(() => {
+			expect(mockSaveDeploymentAnalysis).toHaveBeenCalledWith(
+				expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					responseId: "resp-new",
+				})
+			);
+		});
+
+		await waitFor(() => {
+			const deployment = (appState.deployments as DeployConfig[])[0];
+			expect(deployment?.responseId).toBe("resp-new");
+			expect(deployment?.scanResults).toEqual(
+				expect.objectContaining({
+					response_id: "resp-new",
+				})
+			);
+		});
 	});
 
 	it("marks deployment failed when deploy completes with error even without EC2 metadata", async () => {

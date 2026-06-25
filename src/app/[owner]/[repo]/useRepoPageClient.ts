@@ -93,6 +93,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const repoRecord = activeRepoRecordMatchesRoute ? activeRepoRecord : (repoRecordQueryData ?? null);
 	const services = React.useMemo(() => { return repoRecord?.services || [] }, [repoRecord]);
 	const repoDeployments = React.useMemo(() => { return deployments.filter(dep => (dep.repoUrl == repoUrl))}, [deployments, repoUrl]);
+	const hasRepoDeployments = repoDeployments.length > 0;
 
 	React.useEffect(() => {
 		if (repo && !activeRepoMatchesRoute) {
@@ -136,9 +137,12 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		},
 	});
 
-	const { isLoading: isLoadingDeployments } = useQuery({
+	const {
+		isFetched: hasFetchedDeployments,
+		isError: hasDeploymentsError,
+	} = useQuery({
 		queryKey: [routeKey, "repo-deployments"],
-		enabled: repoDeployments.length == 0,
+		enabled: Boolean(repo) && !hasRepoDeployments,
 		queryFn: async () => {
 			if (!repo) return [];
 			const newDeployments = await fetchRepoDeploymentsGraphql(repo.full_name);
@@ -146,6 +150,8 @@ export function useRepoPageClient(owner: string, repoName: string) {
 			return newDeployments
 		},
 	});
+
+	const repoDeploymentsReady = hasRepoDeployments || !repo || hasFetchedDeployments || hasDeploymentsError;
 
 	const applyCatalogResult = React.useCallback(
 		(data: DetectServicesResult) => {
@@ -215,7 +221,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		[catalogBusy, repoUrl, repo, applyCatalogResult]
 	);
 
-	const loading = (isLoadingRepoRecord || isLoadingServices || isLoadingRepo || isLoadingDeployments);
+	const loading = (isLoadingRepoRecord || isLoadingServices || isLoadingRepo || !repoDeploymentsReady);
 	const error = errorServices
 		? getErrorMessage(errorServices as Error | { message?: string } | string, "Failed to load services")
 		: null;
@@ -231,19 +237,25 @@ export function useRepoPageClient(owner: string, repoName: string) {
 
 	const openWorkspaceForService = React.useCallback(async (svc: DetectedServiceInfo) => {
 		const normalizedServiceName = svc.name === "." && services.length === 1 ? services[0]?.name ?? "." : svc.name;
-		const existingDeployment = repoDeployments.find(dep => dep.serviceName == normalizedServiceName);
 
 		if(!repo) {
 			toast.error("An error occured. Refresh the page and try again.")
 			return
 		}
 
+		if (!repoDeploymentsReady) {
+			toast.info("Loading deployment data. Please try again in a moment.");
+			return;
+		}
+
+		const existingDeployment = repoDeployments.find(dep => dep.serviceName == normalizedServiceName);
+
 		if(!existingDeployment) {
 			const newDeployment = createDefaultDeployment(repoName, normalizedServiceName, repoUrl, repo.default_branch)
 			await updateDeploymentById(newDeployment);
 		}
 		setActiveServiceName(normalizedServiceName);
-	}, [repo, repoDeployments, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);
+	}, [repo, repoDeployments, repoDeploymentsReady, repoName, repoUrl, services, setActiveServiceName, updateDeploymentById]);
 	
 	
 	return {

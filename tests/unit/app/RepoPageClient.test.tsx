@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RepoPageClient from "@/app/[owner]/[repo]/RepoPageClient";
@@ -11,6 +11,15 @@ const fetchRepoRecord = vi.fn();
 const fetchRepoDeployments = vi.fn();
 const detectRepoServices = vi.fn();
 const addRepoServiceRoot = vi.fn();
+const mockToastInfo = vi.fn();
+
+vi.mock("sonner", () => ({
+	toast: {
+		info: (...args: unknown[]) => mockToastInfo(...args),
+		success: vi.fn(),
+		error: vi.fn(),
+	},
+}));
 
 vi.mock("@/lib/graphqlClient", () => ({
 	resolveRepo: (...args: unknown[]) => resolveRepo(...args),
@@ -32,13 +41,23 @@ vi.mock("@/components/RepoServicesList", () => ({
 	default: ({
 		resolvedRepo,
 		services,
+		loading,
+		openWorkspaceForService,
 	}: {
 		resolvedRepo: repoType;
 		services: Array<{ name: string }>;
+		loading: boolean;
+		openWorkspaceForService: (service: { name: string; path: string; language: string; deployMode: string }) => void | Promise<void>;
 	}) => (
 		<div>
 			<div>{resolvedRepo.full_name}</div>
+			<div>{loading ? "loading" : "ready"}</div>
 			<div>{services.map((service) => service.name).join(",")}</div>
+			{services[0] ? (
+				<button type="button" onClick={() => void openWorkspaceForService(services[0] as { name: string; path: string; language: string; deployMode: string })}>
+					Open service
+				</button>
+			) : null}
 		</div>
 	),
 }));
@@ -82,7 +101,10 @@ const repoRecord: RepoRecord = {
 
 describe("RepoPageClient", () => {
 	beforeEach(() => {
+		cleanup();
 		vi.clearAllMocks();
+		const updateDeploymentById = vi.fn().mockResolvedValue(undefined);
+		const setActiveServiceName = vi.fn();
 		useAppData.setState({
 			repoList: [],
 			deployments: [],
@@ -93,6 +115,8 @@ describe("RepoPageClient", () => {
 			detectedRepoCache: {},
 			isLoading: false,
 			hasFetched: true,
+			updateDeploymentById,
+			setActiveServiceName,
 		});
 
 		resolveRepo.mockResolvedValue(repo);
@@ -153,5 +177,58 @@ describe("RepoPageClient", () => {
 		expect(screen.queryByText("Repository Not Found")).not.toBeInTheDocument();
 		expect(resolveRepo).toHaveBeenCalledTimes(1);
 		expect(fetchRepoRecord).toHaveBeenCalledTimes(1);
+	});
+
+	it("waits for repo deployments to load before allowing a new draft deployment to be created", async () => {
+		let resolveDeployments: ((value: []) => void) | null = null;
+		fetchRepoDeployments.mockImplementation(
+			() =>
+				new Promise<[]>((
+					resolve,
+				) => {
+					resolveDeployments = resolve;
+				})
+		);
+
+		const queryClient = new QueryClient({
+			defaultOptions: {
+				queries: {
+					retry: false,
+				},
+			},
+		});
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<RepoPageClient owner="acme" repoName="shop" />
+			</QueryClientProvider>
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("acme/shop")).toBeInTheDocument();
+			expect(screen.getByText("loading")).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Open service" }));
+
+		await waitFor(() => {
+			expect(mockToastInfo).toHaveBeenCalledWith("Loading deployment data. Please try again in a moment.");
+		});
+
+		expect(useAppData.getState().updateDeploymentById).not.toHaveBeenCalled();
+		expect(useAppData.getState().setActiveServiceName).not.toHaveBeenCalled();
+
+		resolveDeployments?.([]);
+
+		await waitFor(() => {
+			expect(screen.getByText("ready")).toBeInTheDocument();
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "Open service" }));
+
+		await waitFor(() => {
+			expect(useAppData.getState().updateDeploymentById).toHaveBeenCalledTimes(1);
+		});
+		expect(useAppData.getState().setActiveServiceName).toHaveBeenCalledWith("web");
 	});
 });
