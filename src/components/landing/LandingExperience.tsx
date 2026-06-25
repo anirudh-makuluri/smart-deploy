@@ -158,10 +158,16 @@ function HeroSection({
 					transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.08 }}
 					className="max-w-4xl text-5xl font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-6xl lg:text-7xl"
 				>
-					Deploy your{" "}
-					<span className="relative inline-block min-w-[3ch] text-left">
-						<span className="landing-hero-typed-text">{typedText}</span>
-						<span className="landing-hero-cursor" />
+					<span className="block sm:inline" data-testid="landing-hero-prefix">Deploy your</span>
+					<span className="hidden sm:inline">&nbsp;</span>
+					<span
+						className="mt-2 block min-h-[1.1em] sm:mt-0 sm:inline-block sm:min-h-0"
+						data-testid="landing-typed-line"
+					>
+						<span className="relative inline-flex min-w-[3ch] items-baseline justify-center whitespace-nowrap text-left sm:justify-start">
+							<span className="landing-hero-typed-text">{typedText}</span>
+							<span className="landing-hero-cursor" />
+						</span>
 					</span>
 					<br />
 					<span className="bg-linear-to-r from-white via-white/90 to-white/60 bg-clip-text text-transparent">

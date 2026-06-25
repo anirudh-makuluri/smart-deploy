@@ -12,9 +12,26 @@ async function expectNoHorizontalOverflow(page: Page) {
 test("landing page renders premium hero and has no horizontal overflow", async ({ page }) => {
 	await page.goto("/");
 
-	await expect(page.getByRole("heading", { name: "Deploy anything. Inspect everything." })).toBeVisible();
+	const heroHeading = page.locator("main h1").first();
+	await expect(heroHeading).toBeVisible();
+	await expect(heroHeading).toContainText("Deploy your");
+	await expect(heroHeading).toContainText("without the black box.");
 	await expect(page.getByRole("banner").getByRole("link", { name: "Docs" })).toBeVisible();
 	await expect(page.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Changelog" })).toBeVisible();
+	await expect(page.getByTestId("landing-typed-line")).toHaveCSS("display", "inline-block");
+	await expectNoHorizontalOverflow(page);
+
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.reload();
+
+	await expect(heroHeading).toBeVisible();
+	await expect(page.getByTestId("landing-typed-line")).toHaveCSS("display", "block");
+
+	const prefixBox = await page.getByTestId("landing-hero-prefix").boundingBox();
+	const typedLineBox = await page.getByTestId("landing-typed-line").boundingBox();
+	expect(prefixBox).not.toBeNull();
+	expect(typedLineBox).not.toBeNull();
+	expect(typedLineBox!.y).toBeGreaterThan(prefixBox!.y);
 	await expectNoHorizontalOverflow(page);
 });
 
