@@ -29,7 +29,7 @@ export function useDeploymentAgentSheet() {
 	);
 	const endRef = React.useRef<HTMLDivElement | null>(null);
 	const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const conversationIdRef = React.useRef<string>(createConversationId());
+	const [conversationId] = React.useState(createConversationId);
 
 	React.useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -105,7 +105,7 @@ export function useDeploymentAgentSheet() {
 			};
 
 			dispatch({ type: "submit_question", userMessage, assistantMessage });
-			const result = runAgent(conversationIdRef.current, cleaned);
+			const result = runAgent(conversationId, cleaned);
 			if (!result.ok) {
 				dispatch({
 					type: "complete_agent_message",
@@ -114,7 +114,7 @@ export function useDeploymentAgentSheet() {
 				});
 			}
 		},
-		[runAgent, state.pending]
+		[conversationId, runAgent, state.pending]
 	);
 
 	const submitInput = React.useCallback(() => {

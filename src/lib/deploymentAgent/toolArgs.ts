@@ -1,10 +1,14 @@
 import { TOOL_HISTORY_LOG_LIMIT } from "@/lib/deploymentAgent/constants";
 
 export function summarizeLogs(logs: string[]): string[] {
-	return logs
-		.map((line) => String(line || "").trim())
-		.filter((line) => line.length > 0)
-		.slice(-TOOL_HISTORY_LOG_LIMIT);
+	const trimmed: string[] = [];
+	for (const line of logs) {
+		const value = String(line || "").trim();
+		if (value.length > 0) {
+			trimmed.push(value);
+		}
+	}
+	return trimmed.slice(-TOOL_HISTORY_LOG_LIMIT);
 }
 
 export function normalizeToolArguments(args: Record<string, unknown>) {

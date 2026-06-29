@@ -171,7 +171,7 @@ export async function runDeploymentAgent(args: {
 	emitAgentEvent(args.emit, "agent:status", runId, "Understanding your request.");
 
 	try {
-		for (let toolCallsUsed = 0; toolCallsUsed <= MAX_TOOL_CALLS; toolCallsUsed += 1) {
+		const runAgentToolLoop = async (toolCallsUsed: number): Promise<boolean> => {
 			const { decision, llm } = await requestAgentDecision({
 				message,
 				conversationHistory,
@@ -206,7 +206,7 @@ export async function runDeploymentAgent(args: {
 				});
 				emitAgentEvent(args.emit, "agent:message", runId, decision.message);
 				emitAgentEvent(args.emit, "agent:complete", runId, decision.message);
-				return;
+				return true;
 			}
 
 			emitAgentEvent(args.emit, "agent:status", runId, decision.message);
@@ -220,6 +220,12 @@ export async function runDeploymentAgent(args: {
 			);
 			toolResults.push(toolResult);
 			emitAgentEvent(args.emit, "agent:tool_completed", runId, buildToolCompletedMessage(toolCall.name));
+			return runAgentToolLoop(toolCallsUsed + 1);
+		};
+
+		const completed = await runAgentToolLoop(0);
+		if (completed) {
+			return;
 		}
 
 		const limitMessage = "I couldn't finish the inspection within the current tool-call limit.";
