@@ -49,17 +49,17 @@ test("docs page renders key sections and has no horizontal overflow on desktop/m
 	await expectNoHorizontalOverflow(page);
 });
 
-test("changelog page shows milestones and has no horizontal overflow on desktop/mobile", async ({ page }) => {
+test("changelog page shows release notes and has no horizontal overflow on desktop/mobile", async ({ page }) => {
 	await page.goto("/changelog");
 
-	await expect(page.getByRole("heading", { name: "Commit history" })).toBeVisible();
-	const dayHeadings = page.locator("h2").filter({ hasText: /^\d{4}-\d{2}-\d{2}$/ });
-	await expect(dayHeadings.first()).toBeVisible();
-	expect(await dayHeadings.count()).toBeGreaterThanOrEqual(3);
+	await expect(page.getByRole("heading", { name: "What's new" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Recent highlights" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Release notes" })).toBeVisible();
+	await expect(page.getByText("Commit history")).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.reload();
-	await expect(page.getByRole("heading", { name: "Commit history" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "What's new" })).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 });

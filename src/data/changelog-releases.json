@@ -1,0 +1,129 @@
+{
+	"updatedAt": "2026-06-29",
+	"recentHighlights": [
+		{
+			"title": "User-facing documentation",
+			"description": "New guides for deploying, debugging production issues, Railpack, and the Deployment Agent — browse at /docs.",
+			"docHref": "/docs"
+		},
+		{
+			"title": "Deployment Agent",
+			"description": "Ask the Agent in the header about your deployments, recent failures, and runtime health. Read-only inspection with live data.",
+			"docHref": "/docs/deployment-agent"
+		},
+		{
+			"title": "Runtime health in Overview",
+			"description": "See whether your app stays healthy after deploy with background checks and a sparkline on the deploy workspace.",
+			"docHref": "/docs/runtime-health"
+		},
+		{
+			"title": "Production debugging runbooks",
+			"description": "Step-by-step guides for build failures, verify timeouts, and domain issues — plus a searchable error catalog.",
+			"docHref": "/docs/debugging-deployments"
+		}
+	],
+	"releases": [
+		{
+			"date": "2026-06-29",
+			"label": "June 2026",
+			"title": "Docs, agent, and clearer debugging",
+			"summary": "Smart Deploy is easier to learn and faster to debug when something breaks in production.",
+			"highlights": [
+				{
+					"title": "Documentation overhaul",
+					"description": "25 user-facing guides covering getting started, the deploy pipeline, Railpack and Mise, monorepos, env vars, health checks, rollback, and an AI-friendly error catalog.",
+					"docHref": "/docs"
+				},
+				{
+					"title": "Deployment Agent",
+					"description": "Header Agent button opens a read-only copilot that lists your deployments, inspects history, and checks runtime health via tools.",
+					"docHref": "/docs/deployment-agent"
+				},
+				{
+					"title": "Analyze failure and Improve scan",
+					"description": "Deeper LLM analysis on failed deploy runs and feedback-driven re-scans when the Railpack plan needs repair.",
+					"docHref": "/docs/ai-assistance"
+				}
+			]
+		},
+		{
+			"date": "2026-06-25",
+			"label": "June 2026",
+			"title": "Runtime health and deploy workspace",
+			"summary": "More visibility into whether your app stays up after a successful deploy.",
+			"highlights": [
+				{
+					"title": "Runtime health monitoring",
+					"description": "Background probes of your URL, ECS tasks, and ALB targets with healthy, degraded, and unreachable states.",
+					"docHref": "/docs/runtime-health"
+				},
+				{
+					"title": "Deploy overview improvements",
+					"description": "Health sparkline, screenshots, and clearer status on the workspace Overview tab.",
+					"docHref": null
+				},
+				{
+					"title": "Delete failed deployments",
+					"description": "Remove deployments that never reached a healthy state without leaving orphaned UI rows.",
+					"docHref": null
+				},
+				{
+					"title": "Socket.IO worker",
+					"description": "More reliable live log streaming and workspace reconnection during long deploys.",
+					"docHref": "/docs/deployment-logs"
+				}
+			]
+		},
+		{
+			"date": "2026-06-07",
+			"label": "June 2026",
+			"title": "Secrets, health checks, and scan feedback",
+			"summary": "Safer runtime configuration and automated health reconciliation.",
+			"highlights": [
+				{
+					"title": "ECS runtime secrets",
+					"description": "Runtime environment variables stored in AWS Secrets Manager per deployment instead of only build-time injection.",
+					"docHref": "/docs/environment-variables"
+				},
+				{
+					"title": "Health reconciler",
+					"description": "Worker periodically re-checks running deployments so status reflects what is actually reachable.",
+					"docHref": "/docs/health-checks"
+				},
+				{
+					"title": "Improve scan",
+					"description": "Send failure context back to Smart Analysis to repair Railpack plans before redeploying.",
+					"docHref": "/docs/smart-analysis"
+				}
+			]
+		},
+		{
+			"date": "2026-04-26",
+			"label": "April 2026",
+			"title": "Public site and preview-first story",
+			"summary": "Landing page, changelog, and the core preview → deploy workflow.",
+			"highlights": [
+				{
+					"title": "Blueprint preview",
+					"description": "Inspect build units, Railpack plans, routing, and cloud targets before you deploy.",
+					"docHref": "/docs/blueprint-and-preview"
+				},
+				{
+					"title": "Railpack builds",
+					"description": "Automatic container builds from repo analysis with optional build verification.",
+					"docHref": "/docs/railpack"
+				},
+				{
+					"title": "ECS and static S3 targets",
+					"description": "Server apps on Fargate; static SPAs on S3 when no runtime is required.",
+					"docHref": "/docs/deployment-pipeline"
+				},
+				{
+					"title": "Landing page and changelog",
+					"description": "Public marketing site and transparent ship history for the platform.",
+					"docHref": null
+				}
+			]
+		}
+	]
+}

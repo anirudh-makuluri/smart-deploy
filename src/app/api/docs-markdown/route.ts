@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getChangelogCommits, getGithubRepoSlug, type GitChangelogCommit } from "@/lib/changelog-from-git";
+import { getChangelogReleases } from "@/lib/changelog-releases";
 import { readDocsMarkdownBySlug, readProjectReadme } from "@/lib/public-docs";
 
 const MARKDOWN_CONTENT_TYPE = "text/markdown; charset=utf-8";
@@ -10,15 +11,37 @@ function normalizeDocSlug(input: string): string {
 
 function renderChangelogMarkdown(commits: GitChangelogCommit[]): string {
 	const repo = getGithubRepoSlug();
+	const releases = getChangelogReleases();
 	const lines: string[] = [
 		"# Smart Deploy Changelog",
 		"",
-		"> Snapshot rendered from `src/data/changelog-commits.json`.",
+		"> Release notes from `src/data/changelog-releases.json` and commit log from `src/data/changelog-commits.json`.",
 		"",
 		`Repository: https://github.com/${repo}`,
 		"",
 	];
 
+	if (releases.recentHighlights.length > 0) {
+		lines.push("## Recent highlights", "");
+		for (const item of releases.recentHighlights) {
+			lines.push(`- **${item.title}** — ${item.description}${item.docHref ? ` (${item.docHref})` : ""}`);
+		}
+		lines.push("");
+	}
+
+	if (releases.releases.length > 0) {
+		lines.push("## Release notes", "");
+		for (const release of releases.releases) {
+			lines.push(`### ${release.label} — ${release.title} (${release.date})`, "");
+			lines.push(release.summary, "");
+			for (const highlight of release.highlights) {
+				lines.push(`- **${highlight.title}** — ${highlight.description}`);
+			}
+			lines.push("");
+		}
+	}
+
+	lines.push("## Commit history", "");
 	for (const commit of commits) {
 		lines.push(
 			`- ${commit.date} | \`${commit.shortHash}\` | ${commit.subject} (${`https://github.com/${repo}/commit/${commit.hash}`})`,

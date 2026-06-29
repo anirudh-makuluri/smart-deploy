@@ -1,103 +1,129 @@
 # FAQ
 
-## What is Smart Deploy?
-Smart Deploy is a deployment platform that helps you inspect infrastructure before deployment. It sits between a traditional PaaS and manual cloud setup.
+## Getting started
 
-See [README](../README.md).
+### What is Smart Deploy?
 
-## Which cloud providers are supported?
-AWS and GCP deployment paths are supported.
+A preview-driven deployment platform. Scan a repo, review a blueprint, edit config, then deploy to AWS (ECS or static S3).
 
-See [AWS Setup](./AWS_SETUP.md) and [GCP Setup](./GCP_SETUP.md).
+See [What is Smart Deploy](./WHAT_IS_SMART_DEPLOY.md).
 
-## Do I need Docker to use Smart Deploy?
-For local and self-hosted flows, Docker is commonly used, especially with `docker compose` and worker operations.
+### How do I deploy my first app?
 
-## Why do I need Supabase?
-Supabase provides the primary Postgres database for users, deployments, history, and repo metadata.
+Connect GitHub → open repo → detect services → Smart Analysis → review blueprint → deploy.
 
-See [Supabase Setup](./SUPABASE_SETUP.md).
+See [Getting Started](./GETTING_STARTED.md).
 
-## Why am I sent to `/waiting-list` after sign-in?
-Smart Deploy uses an allowlist. Your email must exist in `approved_users`.
+### Why am I sent to `/waiting-list` after sign-in?
 
-See [Troubleshooting](./TROUBLESHOOTING.md#sign-in-succeeds-but-redirected-to-waiting-list).
+Your email is not on the approved users list for this Smart Deploy instance. Contact the platform operator for access.
 
-## Can I sign in without GitHub?
-Yes, but GitHub-dependent features (repo scanning, syncing, deployments based on GitHub repos) require a linked GitHub account/token.
+## GitHub and repos
 
-See [Better Auth](./BETTER_AUTH.md#github-token-handling-important).
+### Can I deploy without GitHub?
 
-## What are the minimum environment variables to run locally?
-At minimum:
-- `BETTER_AUTH_SECRET`
-- `BETTER_AUTH_URL`
-- `DATABASE_URL`
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `NEXT_PUBLIC_WS_URL`
-- GitHub OAuth variables for GitHub sign-in
+GitHub is required for repo scanning, cloning, and deploys from Git repositories.
 
-See [README Quick Start](../README.md#4-configure-environment-variables).
+### "GitHub not connected" — what does that mean?
 
-## What is the WebSocket worker for?
-The worker handles long-running deploy jobs, log streaming, and related background operations.
+Your session has no linked GitHub OAuth token. Sign in with GitHub or link GitHub in account settings.
 
-See [README Architecture Overview](../README.md#architecture-overview).
+### Does Smart Deploy support monorepos?
 
-## Why are deploy logs not updating in real time?
-Usually a WebSocket configuration issue. Check worker status and `NEXT_PUBLIC_WS_URL`.
+Yes. It detects workspace packages, compose dirs, and multiple services. Each service can have its own deployment.
 
-See [Troubleshooting](./TROUBLESHOOTING.md#websocket-not-connecting).
+See [Monorepos and Multi-Service](./MONOREPOS_AND_MULTI_SERVICE.md).
 
-## How do I run app and worker together in development?
-Use:
-```bash
-npm run start-all
-```
+## Scan and Railpack
 
-## How do I self-host Smart Deploy?
-Use the EC2 self-hosting flow and provided scripts.
+### What is Smart Analysis?
 
-See [Self Hosting](./SELF_HOSTING.md).
+The repo scan that detects deploy shape, generates Railpack plans, and optionally verifies builds.
 
-## How do I enable HTTPS on self-hosted deployment?
-Use the SSL setup script on your host:
-```bash
-sudo ./scripts/setup-ssl.sh
-```
+See [Smart Analysis](./SMART_ANALYSIS.md).
 
-See [Self Hosting](./SELF_HOSTING.md#3-set-up-ssl-lets-encrypt).
+### What is Railpack?
 
-## Can Smart Deploy manage custom-domain DNS automatically?
-Yes, if your DNS is managed by Vercel and you configure `VERCEL_TOKEN` and related vars.
+The default build system that produces container images from your repo without a Dockerfile. It uses Mise for runtimes.
+
+See [Railpack](./RAILPACK.md).
+
+### Why did build verification fail?
+
+Dependency errors, wrong runtime version, or monorepo path issues. Review scan logs and `repair_history`, then try Improve scan.
+
+See [Build Failures](./BUILD_FAILURES.md).
+
+## Deploy and runtime
+
+### ECS vs static S3 — how is it chosen?
+
+Server apps and containers go to ECS. Plain static files and build-only SPAs (no Railpack start command) go to S3.
+
+See [How It Works](./HOW_IT_WORKS.md).
+
+### My app works locally but deploy fails — why?
+
+Common causes: missing env vars at build/runtime, wrong port binding, lockfile not committed, or Node/Python version mismatch.
+
+See [Debugging Deployments](./DEBUGGING_DEPLOYMENTS.md).
+
+### Deploy succeeded but URL returns 502/503
+
+Usually runtime startup failure — port, missing `DATABASE_URL`, or crash on boot. Check CloudWatch logs and health probes.
+
+See [Startup and Runtime Failures](./STARTUP_AND_RUNTIME_FAILURES.md).
+
+### Which port should my app listen on?
+
+Use `PORT` from the environment. Bind `0.0.0.0`, not `127.0.0.1`. Default depends on framework (often 3000 for Node).
+
+### How do env vars work?
+
+Build-time vars go to CodeBuild; runtime vars on ECS go to Secrets Manager. Redeploy after runtime changes.
+
+See [Environment Variables](./ENVIRONMENT_VARIABLES.md).
+
+## URLs and domains
+
+### How is my deployment URL generated?
+
+`https://{hosted-subdomain}.{deployment-domain}` — you pick the subdomain in config.
 
 See [Custom Domains](./CUSTOM_DOMAINS.md).
 
-## Does Smart Deploy support multi-service repositories?
-Yes. It detects service catalogs and deploy-time service structure using repo layout and tooling heuristics.
+### Domain not loading after deploy?
 
-See [Multi-service Detection](./MULTI_SERVICE_DETECTION.md).
+Wait for DNS propagation, confirm subdomain spelling, redeploy after DNS-related config changes.
 
-## What should I do if AWS deploy fails with IAM errors?
-Confirm IAM policy permissions and region/certificate alignment.
+See [Domain and TLS Issues](./DOMAIN_AND_TLS_ISSUES.md).
 
-See [AWS Setup](./AWS_SETUP.md#troubleshooting).
+## Debugging and AI
 
-## What should I do if GCP deploy fails?
-Verify required APIs, service account roles, and `gcloud` availability.
+### What does the Agent button do?
 
-See [GCP Setup](./GCP_SETUP.md#troubleshooting).
+Opens the **Deployment Agent** — read-only AI that inspects your deployments, history, and health.
 
-## Why do database migrations fail on local machines sometimes?
-On IPv4-only networks, direct Supabase DB host can fail. Session Pooler URI is usually more reliable for `DATABASE_URL`.
+See [Deployment Agent](./DEPLOYMENT_AGENT.md).
 
-See [Supabase Setup](./SUPABASE_SETUP.md#supabase-postgres-connection-string-for-better-auth).
+### Why is the Deployment Agent offline?
 
-## Where can I see all scripts and what they do?
-See the scripts section in:
-- [README](../README.md#scripts)
-- [Self Hosting](./SELF_HOSTING.md#helper-scripts)
+The WebSocket worker is disconnected. Refresh the page; check system health indicator in the header.
 
-## Is there a single place to start when I am stuck?
-Yes, start with [Troubleshooting](./TROUBLESHOOTING.md).
+### Agent says it hit the tool-call limit
+
+Ask a narrower question or open Deployment History for full logs. Use Analyze failure for one failed run.
+
+See [AI Assistance](./AI_ASSISTANCE.md).
+
+### How do I roll back?
+
+Pick a successful entry in Deployment History and confirm rollback. Redeploys that commit; keeps current env vars.
+
+See [Deployment History and Rollback](./DEPLOYMENT_HISTORY_AND_ROLLBACK.md).
+
+## Where to start when stuck
+
+1. [Debugging Deployments](./DEBUGGING_DEPLOYMENTS.md)
+2. [Error Catalog](./ERROR_CATALOG.md)
+3. Deployment Agent in the header

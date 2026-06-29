@@ -57,11 +57,13 @@ function tokenize(value: string): string[] {
 }
 
 function sourceWeight(source: string): number {
-	if (source.endsWith("TROUBLESHOOTING.md")) return 2.2;
+	if (source.endsWith("DEBUGGING_DEPLOYMENTS.md")) return 2.4;
+	if (source.endsWith("ERROR_CATALOG.md")) return 2.2;
 	if (source.endsWith("FAQ.md")) return 1.8;
+	if (source.endsWith("DEPLOYMENT_AGENT.md")) return 1.6;
 	if (source === "README.md") return 1.4;
-	if (source.endsWith("_SETUP.md") || source.endsWith("SELF_HOSTING.md")) return 1.2;
-	if (source.endsWith("FIELD_AUDIT.md") || source.endsWith("GRAPHQL_YOGA_MIGRATION.md")) return 0.7;
+	if (source.endsWith("BUILD_FAILURES.md") || source.endsWith("STARTUP_AND_RUNTIME_FAILURES.md")) return 1.3;
+	if (source.includes("/internal/")) return 0.5;
 	return 1;
 }
 

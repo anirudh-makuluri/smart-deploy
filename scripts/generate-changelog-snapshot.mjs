@@ -39,6 +39,8 @@ const LOW_SIGNAL_SUBJECT_RE = [
 	/^updated$/i,
 	/^fix$/i,
 	/^changes$/i,
+	/^\d+$/,
+	/^refactoring-\d+$/i,
 ];
 
 const TYPE_LABEL = {
