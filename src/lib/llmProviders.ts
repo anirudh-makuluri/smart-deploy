@@ -20,7 +20,7 @@ export type LLMFallbackOptions = {
 };
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
-const DEFAULT_BEDROCK_MODEL = "anthropic.claude-haiku-4-5-20251001-v1:0";
+const DEFAULT_BEDROCK_MODEL = "global.anthropic.claude-haiku-4-5-20251001-v1:0";
 
 export async function callLLMWithFallback(
 	prompt: string,

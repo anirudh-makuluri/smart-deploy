@@ -43,8 +43,20 @@ export type DeploymentStatusChangedPayload = {
 	status: DeployConfig["status"];
 };
 
+export type AgentSocketMessagePayload = {
+	runId: string;
+	message: string;
+};
+
 export const WORKER_SOCKET_SERVER_EVENTS = {
 	activeDeployments: "active_deployments",
+	agentAccepted: "agent:accepted",
+	agentComplete: "agent:complete",
+	agentError: "agent:error",
+	agentMessage: "agent:message",
+	agentStatus: "agent:status",
+	agentToolCompleted: "agent:tool_completed",
+	agentToolStarted: "agent:tool_started",
 	deployComplete: "deploy:complete",
 	deployLog: "deploy:log",
 	deploySnapshot: "deploy:snapshot",
@@ -55,6 +67,7 @@ export const WORKER_SOCKET_SERVER_EVENTS = {
 } as const;
 
 export const WORKER_SOCKET_CLIENT_EVENTS = {
+	agentRun: "agent:run",
 	deploy: "deploy:run",
 	workspaceSubscribe: "workspace:subscribe",
 	workspaceUnsubscribe: "workspace:unsubscribe",
