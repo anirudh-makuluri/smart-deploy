@@ -14,6 +14,13 @@ export const DEPLOYMENT_AGENT_STARTER_PROMPTS = [
 	"Is my service healthy right now?",
 ];
 
+function createConversationId(): string {
+	if (typeof globalThis.crypto?.randomUUID === "function") {
+		return globalThis.crypto.randomUUID();
+	}
+	return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function useDeploymentAgentSheet() {
 	const { latestAgentEvent, runAgent } = useWorkerWebSocket();
 	const [state, dispatch] = React.useReducer(
@@ -21,6 +28,7 @@ export function useDeploymentAgentSheet() {
 		initialDeploymentAgentSheetState
 	);
 	const endRef = React.useRef<HTMLDivElement | null>(null);
+	const conversationIdRef = React.useRef<string>(createConversationId());
 
 	React.useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,7 +39,11 @@ export function useDeploymentAgentSheet() {
 
 		const { kind, payload } = latestAgentEvent;
 		if (kind === "complete") {
-			dispatch({ type: "complete_agent_message", runId: payload.runId });
+			dispatch({
+				type: "complete_agent_message",
+				runId: payload.runId,
+				content: payload.message,
+			});
 			return;
 		}
 
@@ -89,7 +101,7 @@ export function useDeploymentAgentSheet() {
 			};
 
 			dispatch({ type: "submit_question", userMessage, assistantMessage });
-			const result = runAgent(cleaned);
+			const result = runAgent(conversationIdRef.current, cleaned);
 			if (!result.ok) {
 				dispatch({
 					type: "complete_agent_message",

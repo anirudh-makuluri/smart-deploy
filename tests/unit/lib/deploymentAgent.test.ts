@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeHealthSample } from "@/app/types";
 
+const appendConversationTurnMock = vi.fn();
 const getUserDeploymentsMock = vi.fn();
+const getConversationTurnsMock = vi.fn();
 const getDeploymentForUserMock = vi.fn();
 const getDeploymentHistoryMock = vi.fn();
 const callLLMWithFallbackMock = vi.fn();
@@ -17,6 +19,11 @@ vi.mock("@/db-helper", () => ({
 
 vi.mock("@/lib/llmProviders", () => ({
 	callLLMWithFallback: callLLMWithFallbackMock,
+}));
+
+vi.mock("@/lib/deploymentAgentConversationStore", () => ({
+	appendDeploymentAgentConversationTurn: appendConversationTurnMock,
+	getDeploymentAgentConversationTurns: getConversationTurnsMock,
 }));
 
 vi.mock("@/lib/runtimeHealthStore", () => ({
@@ -78,9 +85,22 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 	beforeEach(() => {
 		vi.resetModules();
 		vi.clearAllMocks();
+		getConversationTurnsMock.mockResolvedValue([]);
 	});
 
 	it("inspects deployments with list_deployments", async () => {
+		getConversationTurnsMock.mockResolvedValue([
+			{
+				role: "assistant",
+				content: "Earlier context from the conversation.",
+				timestamp: "2026-06-20T00:00:00.000Z",
+			},
+			{
+				role: "user",
+				content: "Show me the latest status again.",
+				timestamp: "2026-06-20T00:01:00.000Z",
+			},
+		]);
 		getUserDeploymentsMock.mockResolvedValue({
 			deployments: [createMockDeployment()],
 		});
@@ -104,6 +124,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		const events: Array<{ event: string; payload: { runId: string; message: string } }> = [];
 
 		await runDeploymentAgent({
+			conversationId: "conversation-1",
 			userID: "user-1",
 			message: "Show me my deployments",
 			emit: (event, payload) => {
@@ -112,6 +133,27 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		});
 
 		expect(getUserDeploymentsMock).toHaveBeenCalledWith("user-1");
+		expect(getConversationTurnsMock).toHaveBeenCalledWith({
+			userID: "user-1",
+			conversationId: "conversation-1",
+			limit: 6,
+		});
+		expect(appendConversationTurnMock).toHaveBeenNthCalledWith(1, {
+			userID: "user-1",
+			conversationId: "conversation-1",
+			turn: expect.objectContaining({
+				role: "user",
+				content: "Show me my deployments",
+			}),
+		});
+		expect(appendConversationTurnMock).toHaveBeenNthCalledWith(2, {
+			userID: "user-1",
+			conversationId: "conversation-1",
+			turn: expect.objectContaining({
+				role: "assistant",
+				content: "You have 1 deployment: smart-deploy / web is running.",
+			}),
+		});
 		expect(callLLMWithFallbackMock).toHaveBeenCalledTimes(2);
 		expect(events.map((event) => event.event)).toEqual([
 			"agent:accepted",
@@ -124,6 +166,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		]);
 		expect(events[0]?.payload.runId).toBeTruthy();
 		expect(events[5]?.payload.message).toContain("1 deployment");
+		expect(events[6]?.payload.message).toContain("1 deployment");
 		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
 			'repoName is the deployment repo name only, such as "smart-deploy" or "shop". It is the "repo" in the full GitHub path "owner/repo".'
 		);
@@ -132,6 +175,12 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		);
 		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
 			'serviceName is the exact deployed service name inside that repo, such as "web", "api", "worker", or another detected service name.'
+		);
+		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
+			"[TURN 1] ASSISTANT: Earlier context from the conversation."
+		);
+		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
+			"[TURN 2] USER: Show me the latest status again."
 		);
 	});
 
@@ -163,6 +212,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
 
 		await runDeploymentAgent({
+			conversationId: "conversation-1",
 			userID: "user-1",
 			message: "Show me the current deployment details for web",
 			emit: vi.fn(),
@@ -218,6 +268,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
 
 		await runDeploymentAgent({
+			conversationId: "conversation-1",
 			userID: "user-1",
 			message: "Why did the last deployment fail?",
 			emit: vi.fn(),
@@ -282,6 +333,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
 
 		await runDeploymentAgent({
+			conversationId: "conversation-1",
 			userID: "user-1",
 			message: "Is the web service healthy?",
 			emit: vi.fn(),
@@ -291,6 +343,45 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			userID: "user-1",
 			repoName: "smart-deploy",
 			serviceName: "web",
+		});
+	});
+
+	it("emits a run-scoped agent error when a later model step fails", async () => {
+		getUserDeploymentsMock.mockResolvedValue({
+			deployments: [createMockDeployment()],
+		});
+		callLLMWithFallbackMock
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Checking your deployments.",
+					tool_calls: [{ name: "list_deployments", arguments: {} }],
+					completed: false,
+				})
+			)
+			.mockRejectedValueOnce(new Error("Model unavailable"));
+
+		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
+		const events: Array<{ event: string; payload: { runId: string; message: string } }> = [];
+
+		await runDeploymentAgent({
+			conversationId: "conversation-1",
+			userID: "user-1",
+			message: "Show me my deployments",
+			emit: (event, payload) => {
+				events.push({ event, payload });
+			},
+		});
+
+		expect(events.at(-1)?.event).toBe("agent:error");
+		expect(events.at(-1)?.payload.runId).toBe(events[0]?.payload.runId);
+		expect(events.at(-1)?.payload.message).toBe("Model unavailable");
+		expect(appendConversationTurnMock).toHaveBeenLastCalledWith({
+			userID: "user-1",
+			conversationId: "conversation-1",
+			turn: expect.objectContaining({
+				role: "assistant",
+				content: "Model unavailable",
+			}),
 		});
 	});
 });

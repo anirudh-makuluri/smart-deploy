@@ -141,10 +141,22 @@ io.on("connection", (socket) => {
 
 	socket.on(WORKER_SOCKET_CLIENT_EVENTS.agentRun, async (payload: unknown) => {
 		try {
+			const conversationId =
+				typeof (payload as { conversationId?: unknown } | null | undefined)?.conversationId === "string"
+					? (payload as { conversationId: string }).conversationId.trim()
+					: "";
 			const message =
 				typeof (payload as { message?: unknown } | null | undefined)?.message === "string"
 					? (payload as { message: string }).message.trim()
 					: "";
+
+			if (!conversationId) {
+				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
+					runId: "",
+					message: "Agent conversationId is required.",
+				});
+				return;
+			}
 
 			if (!message) {
 				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
@@ -155,6 +167,7 @@ io.on("connection", (socket) => {
 			}
 
 			await runDeploymentAgent({
+				conversationId,
 				userID: socket.data.userID,
 				message,
 				emit: (event, eventPayload) => {

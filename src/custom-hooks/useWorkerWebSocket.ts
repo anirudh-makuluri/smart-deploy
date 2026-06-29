@@ -2,6 +2,7 @@ import { DeployConfig } from "@/app/types";
 import { authClient } from "@/lib/auth-client";
 import {
 	type AgentSocketMessagePayload,
+	type AgentRunPayload,
 	type DeployCompleteWsPayload,
 	type DeployLogEntry,
 	type DeploySnapshotPayload,
@@ -539,8 +540,12 @@ export function useWorkerWebSocketSession() {
 		};
 	}, [disconnectSocket]);
 
-	const runAgent = useCallback((message: string) => {
+	const runAgent = useCallback((conversationId: string, message: string) => {
+		const trimmedConversationId = conversationId.trim();
 		const trimmed = message.trim();
+		if (!trimmedConversationId) {
+			return { ok: false as const, error: "Agent conversationId is required." };
+		}
 		if (!trimmed) {
 			return { ok: false as const, error: "Agent message is required." };
 		}
@@ -555,7 +560,10 @@ export function useWorkerWebSocketSession() {
 
 		activeAgentRunIdRef.current = null;
 		pendingAgentRequestRef.current = true;
-		socket.emit(WORKER_SOCKET_CLIENT_EVENTS.agentRun, { message: trimmed });
+		socket.emit(WORKER_SOCKET_CLIENT_EVENTS.agentRun, {
+			conversationId: trimmedConversationId,
+			message: trimmed,
+		} satisfies AgentRunPayload);
 		return { ok: true as const };
 	}, []);
 

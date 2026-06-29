@@ -1,11 +1,17 @@
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { dbHelper } from "@/db-helper";
+import {
+	appendDeploymentAgentConversationTurn,
+	getDeploymentAgentConversationTurns,
+	type DeploymentAgentConversationTurn,
+} from "@/lib/deploymentAgentConversationStore";
 import { getDeploymentHostedUrl } from "@/lib/hostedUrl";
 import { callLLMWithFallback } from "@/lib/llmProviders";
 import { listRuntimeHealthSamples } from "@/lib/runtimeHealthStore";
 
 const MAX_TOOL_CALLS = 2;
+const MAX_PROMPT_TURNS = 6;
 const TOOL_HISTORY_LOG_LIMIT = 3;
 const TOOL_HISTORY_RESULT_LIMIT = 5;
 const JSON_FENCE_REGEX = /```(?:json)?\s*([\s\S]*?)```/i;
@@ -392,12 +398,22 @@ function buildEntityInstructions() {
 	].join("\n");
 }
 
+function buildConversationHistoryBlock(turns: DeploymentAgentConversationTurn[]): string {
+	if (turns.length === 0) return "(no prior conversation)";
+
+	return turns
+		.map((turn, index) => `[TURN ${index + 1}] ${turn.role.toUpperCase()}: ${turn.content}`)
+		.join("\n");
+}
+
 function buildAgentPrompt(args: {
 	message: string;
+	conversationHistory: DeploymentAgentConversationTurn[];
 	toolCallsUsed: number;
 	toolResults: ToolExecutionResult[];
 }): string {
 	const remainingToolCalls = MAX_TOOL_CALLS - args.toolCallsUsed;
+	const conversationHistoryBlock = buildConversationHistoryBlock(args.conversationHistory);
 	const toolResultsBlock =
 		args.toolResults.length > 0
 			? args.toolResults
@@ -444,6 +460,9 @@ Rules:
 - When remaining tool calls is 0, you must set completed=true and tool_calls=[].
 - If repoName or serviceName is unknown, ask for clarification with completed=true and tool_calls=[].
 
+RECENT CONVERSATION HISTORY:
+${conversationHistoryBlock}
+
 USER MESSAGE:
 ${args.message}
 
@@ -479,6 +498,7 @@ function buildToolCompletedMessage(toolName: AgentToolCall["name"]): string {
 
 async function requestAgentDecision(args: {
 	message: string;
+	conversationHistory: DeploymentAgentConversationTurn[];
 	toolCallsUsed: number;
 	toolResults: ToolExecutionResult[];
 }): Promise<AgentLlmResponse> {
@@ -489,7 +509,6 @@ async function requestAgentDecision(args: {
 		temperature: 0.1,
 		localModelDefault: "mistral",
 	});
-	console.log(`Used ${llm.model} for the response`);
 	const parsed = parseModelJson(llm.text);
 	if (!parsed) {
 		throw new Error("Deployment agent returned invalid JSON");
@@ -518,54 +537,101 @@ function emitAgentEvent(
 }
 
 export async function runDeploymentAgent(args: {
+	conversationId: string;
 	userID: string;
 	message: string;
 	emit: AgentEmitter;
 }): Promise<void> {
+	const conversationId = args.conversationId.trim();
 	const message = args.message.trim();
+	if (!conversationId) {
+		throw new Error("Agent conversationId is required");
+	}
 	if (!message) {
 		throw new Error("Agent message is required");
 	}
 
 	const runId = randomUUID();
 	const toolResults: ToolExecutionResult[] = [];
+	const userTurn: DeploymentAgentConversationTurn = {
+		role: "user",
+		content: message,
+		timestamp: new Date().toISOString(),
+	};
 
-	emitAgentEvent(args.emit, "agent:accepted", runId, "I’m looking into that now.");
+	await appendDeploymentAgentConversationTurn({
+		userID: args.userID,
+		conversationId,
+		turn: userTurn,
+	});
+	const conversationHistory = await getDeploymentAgentConversationTurns({
+		userID: args.userID,
+		conversationId,
+		limit: MAX_PROMPT_TURNS,
+	});
+
+	emitAgentEvent(args.emit, "agent:accepted", runId, "I'm looking into that now.");
 	emitAgentEvent(args.emit, "agent:status", runId, "Understanding your request.");
 
-	for (let toolCallsUsed = 0; toolCallsUsed <= MAX_TOOL_CALLS; toolCallsUsed += 1) {
-		const decision = await requestAgentDecision({
-			message,
-			toolCallsUsed,
-			toolResults,
-		});
+	try {
+		for (let toolCallsUsed = 0; toolCallsUsed <= MAX_TOOL_CALLS; toolCallsUsed += 1) {
+			const decision = await requestAgentDecision({
+				message,
+				conversationHistory,
+				toolCallsUsed,
+				toolResults,
+			});
 
-		if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
-			emitAgentEvent(args.emit, "agent:message", runId, decision.message);
-			emitAgentEvent(args.emit, "agent:complete", runId, "Completed.");
-			return;
+			if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
+				await appendDeploymentAgentConversationTurn({
+					userID: args.userID,
+					conversationId,
+					turn: {
+						role: "assistant",
+						content: decision.message,
+						timestamp: new Date().toISOString(),
+					},
+				});
+				emitAgentEvent(args.emit, "agent:message", runId, decision.message);
+				emitAgentEvent(args.emit, "agent:complete", runId, decision.message);
+				return;
+			}
+
+			emitAgentEvent(args.emit, "agent:status", runId, decision.message);
+			const toolCall = decision.tool_calls[0];
+			emitAgentEvent(args.emit, "agent:tool_started", runId, buildToolStartedMessage(toolCall.name));
+			const toolResult = await executeToolCall(
+				{
+					userID: args.userID,
+				},
+				toolCall
+			);
+			toolResults.push(toolResult);
+			emitAgentEvent(args.emit, "agent:tool_completed", runId, buildToolCompletedMessage(toolCall.name));
 		}
 
-		emitAgentEvent(args.emit, "agent:status", runId, decision.message);
-		const toolCall = decision.tool_calls[0];
-		emitAgentEvent(args.emit, "agent:tool_started", runId, buildToolStartedMessage(toolCall.name));
-		const toolResult = await executeToolCall(
-			{
-				userID: args.userID,
+		const limitMessage = "I couldn't finish the inspection within the current tool-call limit.";
+		await appendDeploymentAgentConversationTurn({
+			userID: args.userID,
+			conversationId,
+			turn: {
+				role: "assistant",
+				content: limitMessage,
+				timestamp: new Date().toISOString(),
 			},
-			toolCall
-		);
-		console.log(decision);
-		console.log(toolCall);
-		console.log(toolResult);
-		toolResults.push(toolResult);
-		emitAgentEvent(args.emit, "agent:tool_completed", runId, buildToolCompletedMessage(toolCall.name));
+		});
+		emitAgentEvent(args.emit, "agent:error", runId, limitMessage);
+	} catch (error) {
+		const errorMessage = error instanceof Error ? error.message : "Agent request failed";
+		await appendDeploymentAgentConversationTurn({
+			userID: args.userID,
+			conversationId,
+			turn: {
+				role: "assistant",
+				content: errorMessage,
+				timestamp: new Date().toISOString(),
+			},
+		});
+		emitAgentEvent(args.emit, "agent:error", runId, errorMessage);
 	}
-
-	emitAgentEvent(
-		args.emit,
-		"agent:error",
-		runId,
-		"I couldn’t finish the inspection within the current tool-call limit."
-	);
 }

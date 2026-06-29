@@ -48,6 +48,11 @@ export type AgentSocketMessagePayload = {
 	message: string;
 };
 
+export type AgentRunPayload = {
+	conversationId: string;
+	message: string;
+};
+
 export const WORKER_SOCKET_SERVER_EVENTS = {
 	activeDeployments: "active_deployments",
 	agentAccepted: "agent:accepted",

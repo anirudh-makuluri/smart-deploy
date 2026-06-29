@@ -189,7 +189,7 @@ function HarnessWithAgent() {
 			<div data-testid="socket-status">{socketStatus}</div>
 			<div data-testid="agent-kind">{latestKind}</div>
 			<div data-testid="agent-message">{latestMessage}</div>
-			<button type="button" onClick={() => runAgent("Show me my deployments")}>
+			<button type="button" onClick={() => runAgent("conversation-1", "Show me my deployments")}>
 				Run agent
 			</button>
 		</>
@@ -348,7 +348,7 @@ describe("useWorkerWebSocketSession", () => {
 
 		expect(socket?.emittedEvents).toContainEqual({
 			event: "agent:run",
-			payload: { message: "Show me my deployments" },
+			payload: { conversationId: "conversation-1", message: "Show me my deployments" },
 		});
 
 		await act(async () => {
@@ -366,11 +366,11 @@ describe("useWorkerWebSocketSession", () => {
 			});
 			socket?.emitServer("agent:complete", {
 				runId: "run-1",
-				message: "Completed.",
+				message: "You have 1 deployment.",
 			});
 		});
 
 		expect(screen.getByTestId("agent-kind").textContent).toBe("complete");
-		expect(screen.getByTestId("agent-message").textContent).toBe("Completed.");
+		expect(screen.getByTestId("agent-message").textContent).toBe("You have 1 deployment.");
 	});
 });
