@@ -28,6 +28,7 @@ export function useDeploymentAgentSheet() {
 		initialDeploymentAgentSheetState
 	);
 	const endRef = React.useRef<HTMLDivElement | null>(null);
+	const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const conversationIdRef = React.useRef<string>(createConversationId());
 
 	React.useEffect(() => {
@@ -44,6 +45,9 @@ export function useDeploymentAgentSheet() {
 				runId: payload.runId,
 				content: payload.message,
 			});
+			window.setTimeout(() => {
+				inputRef.current?.focus();
+			}, 0);
 			return;
 		}
 
@@ -121,6 +125,7 @@ export function useDeploymentAgentSheet() {
 		state,
 		dispatch,
 		endRef,
+		inputRef,
 		copyAssistantMessage,
 		askDeploymentAgent,
 		submitInput,

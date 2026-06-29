@@ -26,7 +26,7 @@ export default function DeploymentAgentSheet({
 	open,
 	onOpenChange,
 }: DeploymentAgentSheetProps) {
-	const { state, dispatch, endRef, copyAssistantMessage, askDeploymentAgent, submitInput } =
+	const { state, dispatch, endRef, inputRef, copyAssistantMessage, askDeploymentAgent, submitInput } =
 		useDeploymentAgentSheet();
 	const { copiedMessageId, input, messages, pending } = state;
 
@@ -130,6 +130,7 @@ export default function DeploymentAgentSheet({
 					<div className="border-t border-border/60 p-4">
 						<div className="space-y-2">
 							<Textarea
+								ref={inputRef}
 								value={input}
 								onChange={(event) => dispatch({ type: "set_input", value: event.target.value })}
 								onKeyDown={(event) => {
