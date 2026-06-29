@@ -3,6 +3,7 @@ dotenv.config();
 
 import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
+import { runDeploymentAgent } from "./lib/deploymentAgent";
 import * as deployLogsStore from "./lib/deployLogsStore";
 import { getAllowedOriginHeader, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
@@ -18,7 +19,7 @@ import {
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.1.1";
+const version = "0.1.2";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 // Setup HTTP server to attach Socket.IO to
@@ -136,6 +137,50 @@ io.on("connection", (socket) => {
 
 	socket.on(WORKER_SOCKET_CLIENT_EVENTS.workspaceUnsubscribe, (payload: unknown) => {
 		unsubscribeWorkspace(socket, payload as { serviceName?: string; repoName?: string });
+	});
+
+	socket.on(WORKER_SOCKET_CLIENT_EVENTS.agentRun, async (payload: unknown) => {
+		try {
+			const conversationId =
+				typeof (payload as { conversationId?: unknown } | null | undefined)?.conversationId === "string"
+					? (payload as { conversationId: string }).conversationId.trim()
+					: "";
+			const message =
+				typeof (payload as { message?: unknown } | null | undefined)?.message === "string"
+					? (payload as { message: string }).message.trim()
+					: "";
+
+			if (!conversationId) {
+				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
+					runId: "",
+					message: "Agent conversationId is required.",
+				});
+				return;
+			}
+
+			if (!message) {
+				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
+					runId: "",
+					message: "Agent message is required.",
+				});
+				return;
+			}
+
+			await runDeploymentAgent({
+				conversationId,
+				userID: socket.data.userID,
+				message,
+				emit: (event, eventPayload) => {
+					emitWorkerSocketEvent(socket, event, eventPayload);
+				},
+			});
+		} catch (err) {
+			console.error("Deployment agent error:", err);
+			emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
+				runId: "",
+				message: err instanceof Error ? err.message : "Agent request failed",
+			});
+		}
 	});
 
 	socket.on(WORKER_SOCKET_CLIENT_EVENTS.deploy, async (payload: unknown) => {

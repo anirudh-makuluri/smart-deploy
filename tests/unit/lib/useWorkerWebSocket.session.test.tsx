@@ -179,6 +179,23 @@ function HarnessWithLogs() {
 	);
 }
 
+function HarnessWithAgent() {
+	const { latestAgentEvent, runAgent, socketStatus } = useWorkerWebSocketSession();
+	const latestMessage = latestAgentEvent?.payload.message ?? "";
+	const latestKind = latestAgentEvent?.kind ?? "";
+
+	return (
+		<>
+			<div data-testid="socket-status">{socketStatus}</div>
+			<div data-testid="agent-kind">{latestKind}</div>
+			<div data-testid="agent-message">{latestMessage}</div>
+			<button type="button" onClick={() => runAgent("conversation-1", "Show me my deployments")}>
+				Run agent
+			</button>
+		</>
+	);
+}
+
 describe("useWorkerWebSocketSession", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
@@ -306,5 +323,54 @@ describe("useWorkerWebSocketSession", () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(screen.getByTestId("socket-status").textContent).toBe("open");
+	});
+
+	it("emits agent runs and receives streamed agent events", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 5 * 60 * 1000) }),
+		} as Response);
+
+		render(<HarnessWithAgent />);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		expect(screen.getByTestId("socket-status").textContent).toBe("open");
+
+		const socket = MockSocket.instances[0];
+		expect(socket).toBeDefined();
+
+		await act(async () => {
+			screen.getByRole("button", { name: "Run agent" }).click();
+		});
+
+		expect(socket?.emittedEvents).toContainEqual({
+			event: "agent:run",
+			payload: { conversationId: "conversation-1", message: "Show me my deployments" },
+		});
+
+		await act(async () => {
+			socket?.emitServer("agent:accepted", {
+				runId: "run-1",
+				message: "I’m looking into that now.",
+			});
+			socket?.emitServer("agent:status", {
+				runId: "run-1",
+				message: "Checking your deployments.",
+			});
+			socket?.emitServer("agent:message", {
+				runId: "run-1",
+				message: "You have 1 deployment.",
+			});
+			socket?.emitServer("agent:complete", {
+				runId: "run-1",
+				message: "You have 1 deployment.",
+			});
+		});
+
+		expect(screen.getByTestId("agent-kind").textContent).toBe("complete");
+		expect(screen.getByTestId("agent-message").textContent).toBe("You have 1 deployment.");
 	});
 });

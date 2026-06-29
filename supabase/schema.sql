@@ -102,6 +102,25 @@ create index if not exists idx_deployment_runs_user_started
 create index if not exists idx_deployment_runs_latest_success
   on public.deployment_runs(user_id, repo_name, service_name, success, started_at desc);
 
+-- Deployment agent messages: append-only log for eval / LLMOps (live sessions stay in-memory on the WS server).
+create table if not exists public.deployment_agent_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  conversation_id text not null,
+  run_id uuid not null,
+  role text not null check (role in ('user', 'assistant')),
+  content text not null,
+  metadata jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_deployment_agent_messages_conversation
+  on public.deployment_agent_messages(user_id, conversation_id, created_at asc);
+create index if not exists idx_deployment_agent_messages_user_created
+  on public.deployment_agent_messages(user_id, created_at desc);
+create index if not exists idx_deployment_agent_messages_run
+  on public.deployment_agent_messages(run_id);
+
 -- Help-agent chats: one row per completed Q/A exchange.
 create table if not exists public.help_agent_chats (
   id uuid primary key default gen_random_uuid(),
@@ -241,6 +260,7 @@ insert into public._health (id) values (1) on conflict (id) do nothing;
 alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;
 alter table public.deployment_runs enable row level security;
+alter table public.deployment_agent_messages enable row level security;
 alter table public.help_agent_chats enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
@@ -260,6 +280,13 @@ create policy "Users can view their own reports" on public.user_reports
   for select using (auth.uid()::text = user_id);
 
 create policy "Users can insert their own reports" on public.user_reports
+  for insert with check (auth.uid()::text = user_id);
+
+-- RLS Policies for deployment_agent_messages
+create policy "Users can view their own deployment agent messages" on public.deployment_agent_messages
+  for select using (auth.uid()::text = user_id);
+
+create policy "Users can insert their own deployment agent messages" on public.deployment_agent_messages
   for insert with check (auth.uid()::text = user_id);
 
 -- RLS Policies for help_agent_chats

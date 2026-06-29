@@ -1,0 +1,12 @@
+{
+  "name": "browser_eval",
+  "description": "Set up and use browser automation for this project via the agent-browser CLI.\n\nThis tool does NOT drive the browser itself. It points you at `agent-browser` — a fast, native browser-automation CLI built for agents (https://github.com/vercel-labs/agent-browser) — and tells you how to install it (if needed) and where to start. You then run its commands directly (you have shell access), which is faster and more capable than proxying automation through MCP.\n\nCall this when you need to open pages, click, type, screenshot, or capture console errors in a real browser.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "task": {
+        "type": "string"
+      }
+    }
+  }
+}

@@ -1,6 +1,8 @@
 import { DeployConfig } from "@/app/types";
 import { authClient } from "@/lib/auth-client";
 import {
+	type AgentSocketMessagePayload,
+	type AgentRunPayload,
 	type DeployCompleteWsPayload,
 	type DeployLogEntry,
 	type DeploySnapshotPayload,
@@ -25,6 +27,19 @@ type DeployCompleteEvent = {
 	payload: DeployCompleteWsPayload;
 	receivedAt: number;
 };
+type AgentEventKind =
+	| "accepted"
+	| "status"
+	| "tool_started"
+	| "tool_completed"
+	| "message"
+	| "complete"
+	| "error";
+type AgentEvent = {
+	kind: AgentEventKind;
+	payload: AgentSocketMessagePayload;
+	receivedAt: number;
+};
 type CachedWebSocketAuthToken = {
 	token: string;
 	expiresAt: number;
@@ -40,6 +55,7 @@ type WorkerWebSocketState = {
 	serviceLogs: ServiceLogEntry[];
 	liveDeployConfig: DeployConfig | null;
 	deployCompleteEvent: DeployCompleteEvent | null;
+	latestAgentEvent: AgentEvent | null;
 };
 
 const WORKER_RECONNECT_BASE_DELAY_MS = 1000;
@@ -53,6 +69,7 @@ const INITIAL_WORKER_WEBSOCKET_STATE: WorkerWebSocketState = {
 	serviceLogs: [],
 	liveDeployConfig: null,
 	deployCompleteEvent: null,
+	latestAgentEvent: null,
 };
 
 function deployStatusFromSocketStatus(status: WorkerSocketStatus): DeployStatus {
@@ -70,6 +87,7 @@ function workerWebSocketReducer(
 		| { type: "set_service_logs"; logs: ServiceLogEntry[] }
 		| { type: "set_live_deploy_config"; deployConfig: DeployConfig | null }
 		| { type: "set_deploy_complete"; event: DeployCompleteEvent }
+		| { type: "set_agent_event"; event: AgentEvent }
 		| { type: "set_status"; status: DeployStatus }
 		| { type: "set_error"; error: string | null; status?: DeployStatus }
 ): WorkerWebSocketState {
@@ -116,6 +134,11 @@ function workerWebSocketReducer(
 					? null
 					: action.event.payload.error ?? "Deployment failed",
 				deployCompleteEvent: action.event,
+			};
+		case "set_agent_event":
+			return {
+				...state,
+				latestAgentEvent: action.event,
 			};
 		case "set_status":
 			return {
@@ -247,6 +270,8 @@ export function useWorkerWebSocketSession() {
 	const manualDisconnectRef = useRef(false);
 	const authTokenRef = useRef<CachedWebSocketAuthToken | null>(null);
 	const subscribedWorkspaceRef = useRef<WorkspaceSubscription | null>(null);
+	const activeAgentRunIdRef = useRef<string | null>(null);
+	const pendingAgentRequestRef = useRef(false);
 
 	const getWebSocketAuthToken = useCallback(async () => {
 		const cachedToken = authTokenRef.current;
@@ -368,6 +393,20 @@ export function useWorkerWebSocketSession() {
 					status: "error",
 				});
 			}
+			if (pendingAgentRequestRef.current) {
+				dispatchWorkerState({
+					type: "set_agent_event",
+					event: {
+						kind: "error",
+						payload: {
+							runId: activeAgentRunIdRef.current ?? "",
+							message: disconnectMessage,
+						},
+						receivedAt: Date.now(),
+					},
+				});
+				pendingAgentRequestRef.current = false;
+			}
 			isDeployingRef.current = false;
 			setSocketStatus(manualDisconnectRef.current ? "closed" : "connecting");
 		});
@@ -382,6 +421,20 @@ export function useWorkerWebSocketSession() {
 				error: message,
 				...(isDeployingRef.current ? { status: "error" as const } : {}),
 			});
+			if (pendingAgentRequestRef.current) {
+				dispatchWorkerState({
+					type: "set_agent_event",
+					event: {
+						kind: "error",
+						payload: {
+							runId: activeAgentRunIdRef.current ?? "",
+							message,
+						},
+						receivedAt: Date.now(),
+					},
+				});
+				pendingAgentRequestRef.current = false;
+			}
 			setSocketStatus("error");
 		});
 
@@ -427,6 +480,35 @@ export function useWorkerWebSocketSession() {
 			}
 		});
 
+		const handleAgentEvent = (kind: AgentEventKind) => (payload: unknown) => {
+			const typedPayload = (payload as AgentSocketMessagePayload | undefined) ?? {
+				runId: "",
+				message: "",
+			};
+			if (typedPayload.runId) {
+				activeAgentRunIdRef.current = typedPayload.runId;
+			}
+			if (kind === "complete" || kind === "error") {
+				pendingAgentRequestRef.current = false;
+			}
+			dispatchWorkerState({
+				type: "set_agent_event",
+				event: {
+					kind,
+					payload: typedPayload,
+					receivedAt: Date.now(),
+				},
+			});
+		};
+
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentAccepted, handleAgentEvent("accepted"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentStatus, handleAgentEvent("status"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentToolStarted, handleAgentEvent("tool_started"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentToolCompleted, handleAgentEvent("tool_completed"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentMessage, handleAgentEvent("message"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentComplete, handleAgentEvent("complete"));
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentError, handleAgentEvent("error"));
+
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.workerError, (payload) => {
 			const message = (payload as { error?: string } | undefined)?.error ?? "Request failed";
 			dispatchWorkerState({
@@ -458,6 +540,33 @@ export function useWorkerWebSocketSession() {
 		};
 	}, [disconnectSocket]);
 
+	const runAgent = useCallback((conversationId: string, message: string) => {
+		const trimmedConversationId = conversationId.trim();
+		const trimmed = message.trim();
+		if (!trimmedConversationId) {
+			return { ok: false as const, error: "Agent conversationId is required." };
+		}
+		if (!trimmed) {
+			return { ok: false as const, error: "Agent message is required." };
+		}
+
+		const socket = socketRef.current;
+		if (!socket?.connected) {
+			return {
+				ok: false as const,
+				error: "The deployment agent is offline right now. Refresh the page and try again.",
+			};
+		}
+
+		activeAgentRunIdRef.current = null;
+		pendingAgentRequestRef.current = true;
+		socket.emit(WORKER_SOCKET_CLIENT_EVENTS.agentRun, {
+			conversationId: trimmedConversationId,
+			message: trimmed,
+		} satisfies AgentRunPayload);
+		return { ok: true as const };
+	}, []);
+
 	const sendDeployConfig = (deployConfig: DeployConfig, token: string, userID: string) => {
 		isDeployingRef.current = true;
 		dispatchWorkerState({ type: "start_deploy", deployConfig });
@@ -487,6 +596,7 @@ export function useWorkerWebSocketSession() {
 	return {
 		deployLogEntries: workerState.deployLogEntries,
 		socketStatus,
+		runAgent,
 		sendDeployConfig,
 		liveDeployConfig: workerState.liveDeployConfig,
 		deployStatus: workerState.deployStatus,
@@ -494,5 +604,6 @@ export function useWorkerWebSocketSession() {
 		deployCompleteEvent: workerState.deployCompleteEvent,
 		initiateServiceLogs,
 		serviceLogs: workerState.serviceLogs,
+		latestAgentEvent: workerState.latestAgentEvent,
 	};
 }

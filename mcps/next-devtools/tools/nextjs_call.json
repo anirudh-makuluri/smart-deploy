@@ -1,0 +1,20 @@
+{
+  "name": "nextjs_call",
+  "description": "Call a specific MCP tool on a running Next.js development server.\n\nREQUIREMENTS:\n- Port number of the target Next.js dev server\n- Tool name to execute\n- Optional arguments object (if the tool requires parameters)\n\nUse 'nextjs_index' first to discover available servers, tools, and their input schemas.\nIf 'nextjs_index' auto-discovery fails, ask the user for the port and call 'nextjs_index' again with the 'port' parameter.\n\nIMPORTANT: When calling tools:\n- The 'args' parameter MUST be an object (e.g., {key: \"value\"}), NOT a string\n- If a tool doesn't require arguments, OMIT the 'args' parameter entirely - do NOT pass {} or \"{}\"\n- Check the tool's inputSchema from 'nextjs_index' to see what arguments are required\n\nCommon Next.js MCP tools include:\n- Error diagnostics (get compilation/runtime errors)\n- Route information (list all routes)\n- Build status (check compilation state)\n- Cache management (clear caches)\n- And more (varies by Next.js version)\n\nExample usage:\n1. Call 'nextjs_index' to see servers and tools\n2. Call 'nextjs_call' with port=3000, toolName=\"get_errors\" to get errors from server on port 3000",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "port": {
+        "type": "string",
+        "description": "Port number of the Next.js dev server (required)."
+      },
+      "toolName": {
+        "type": "string",
+        "description": "Name of the Next.js MCP tool to call (required). Use 'nextjs_index' first to discover available tool names."
+      },
+      "args": {
+        "type": "string"
+      }
+    }
+  }
+}

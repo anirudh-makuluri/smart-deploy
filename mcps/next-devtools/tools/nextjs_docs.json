@@ -1,0 +1,15 @@
+{
+  "name": "nextjs_docs",
+  "description": "Find the version-accurate Next.js documentation for THIS project.\n\nThis tool does NOT fetch documentation. Next.js 16+ ships its full docs inside the installed package at `node_modules/next/dist/docs/` (markdown), kept in sync with the exact version you have installed. This tool tells you where those docs are and how to read them — so you read the docs that match this project, not a generic or outdated copy.\n\nCall this before answering Next.js questions or writing Next.js code. Then read the relevant guide from the path it returns. If the project is on an older Next.js, it will tell you how to upgrade.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "topic": {
+        "type": "string"
+      },
+      "project_path": {
+        "type": "string"
+      }
+    }
+  }
+}

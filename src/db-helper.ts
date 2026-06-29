@@ -975,6 +975,45 @@ export const dbHelper = {
 		}
 	},
 
+	recordDeploymentAgentMessage: async function (args: {
+		userID: string;
+		conversationId: string;
+		runId: string;
+		role: "user" | "assistant";
+		content: string;
+		metadata: Record<string, unknown>;
+	}) {
+		try {
+			const { userID, conversationId, runId, role, content } = args;
+			if (!userID || !conversationId.trim() || !runId || !content.trim()) {
+				return { error: "userID, conversationId, runId, and content are required" };
+			}
+			if (role !== "user" && role !== "assistant") {
+				return { error: "role must be user or assistant" };
+			}
+			if (!isValidUuid(runId)) {
+				return { error: "runId must be a valid uuid" };
+			}
+
+			const inserted = await insertTableRow(
+				"deployment_agent_messages",
+				{
+					user_id: userID,
+					conversation_id: conversationId.trim(),
+					run_id: runId,
+					role,
+					content: content.trim(),
+					metadata: args.metadata ?? {},
+				},
+				{ returning: ["id"] }
+			);
+			return { success: true, id: inserted?.id };
+		} catch (error) {
+			console.error("recordDeploymentAgentMessage error:", error);
+			return { error };
+		}
+	},
+
 	recordHelpAgentChat: async function (args: {
 		userID: string;
 		question: string;

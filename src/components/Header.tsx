@@ -4,8 +4,8 @@ import * as React from "react";
 import { authClient } from "@/lib/auth-client";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useAppData } from "@/store/useAppData";
+import DeploymentAgentSheet from "@/components/DeploymentAgentSheet";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
-import HelpAgentSheet from "@/components/HelpAgentSheet";
 import UserReportSheet from "@/components/UserReportSheet";
 import HeaderActions from "@/components/header/HeaderActions";
 import HeaderBreadcrumbs from "@/components/header/HeaderBreadcrumbs";
@@ -80,7 +80,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 					repoName={repo || undefined}
 					serviceName={activeServiceName || null}
 				/>
-				<HelpAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
+				<DeploymentAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
 			</header>
 			{showMobileNavMenu ? (
 				<HeaderMobileDock

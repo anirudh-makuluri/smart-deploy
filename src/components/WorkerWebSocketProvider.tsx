@@ -12,6 +12,8 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 
 	const {
 		deployLogEntries,
+		latestAgentEvent,
+		runAgent,
 		socketStatus,
 		sendDeployConfig,
 		liveDeployConfig,
@@ -25,6 +27,8 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 	const value = React.useMemo(
 		() => ({
 			deployLogEntries,
+			latestAgentEvent,
+			runAgent,
 			socketStatus,
 			sendDeployConfig,
 			liveDeployConfig,
@@ -36,6 +40,8 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 		}),
 		[
 			deployLogEntries,
+			latestAgentEvent,
+			runAgent,
 			socketStatus,
 			sendDeployConfig,
 			liveDeployConfig,
