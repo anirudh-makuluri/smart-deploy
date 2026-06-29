@@ -29,7 +29,7 @@ const welcomeMessage: ChatMessage = {
 	role: "assistant",
 	content:
 		"I can help you troubleshoot Smart Deploy using the project docs. Ask what you're stuck on and include exact errors when possible.",
-	citations: ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
+	citations: ["docs/DEBUGGING_DEPLOYMENTS.md", "docs/FAQ.md"],
 };
 
 export const initialHelpAgentSheetState: HelpAgentSheetState = {

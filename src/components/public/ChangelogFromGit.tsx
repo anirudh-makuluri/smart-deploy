@@ -4,8 +4,8 @@ import { commitUrl, groupCommitsByDate, pullRequestUrl, type GitChangelogCommit 
 export function ChangelogFromGit({ commits }: { commits: GitChangelogCommit[] }) {
 	if (commits.length === 0) {
 		return (
-			<div className="mt-10 rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm leading-6 text-muted-foreground">
-				<p className="font-medium text-foreground">Changelog snapshot missing or empty</p>
+			<div className="mt-6 rounded-md border border-dashed border-border bg-muted/20 px-4 py-6 text-sm leading-6 text-muted-foreground">
+				<p className="font-medium text-foreground">Commit snapshot missing or empty</p>
 				<p className="mt-2">
 					Expected <code className="font-mono text-xs">src/data/changelog-commits.json</code>. From a clone with{" "}
 					<code className="font-mono text-xs">git</code>, run{" "}
@@ -18,15 +18,15 @@ export function ChangelogFromGit({ commits }: { commits: GitChangelogCommit[] })
 	const groups = groupCommitsByDate(commits);
 
 	return (
-		<div className="mt-10 space-y-12">
+		<div className="mt-6 space-y-12">
 			{groups.map(({ date, commits: dayCommits }) => (
 				<section key={date} aria-labelledby={`changelog-${date}`}>
-					<h2
+					<h3
 						id={`changelog-${date}`}
 						className="border-b border-border pb-2 font-mono text-xs font-semibold uppercase tracking-wider text-muted-foreground"
 					>
 						{date}
-					</h2>
+					</h3>
 					<ul className="mt-4 space-y-5">
 						{dayCommits.map((c) => (
 							<li key={c.hash} className="text-sm leading-relaxed">

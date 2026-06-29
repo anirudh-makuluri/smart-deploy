@@ -2,26 +2,44 @@ import { NextResponse } from "next/server";
 
 const LLMSTXT_CONTENT = `# Smart Deploy Documentation
 
-> Smart Deploy docs index for AI agents. Start at /docs for the overview, then use the links below for setup, troubleshooting, and deployment behavior.
+> User-facing docs for deploying and debugging apps on Smart Deploy. Start at /docs or docs/README.md.
 
 ## Entry Points
 - [Documentation Home](/docs)
+- [Docs Index (markdown)](/docs/readme)
 - [Changelog](/changelog)
 
-## Core Guides
-- [AWS Setup](/docs/aws-setup)
-- [Better Auth](/docs/better-auth)
+## Learn
+- [What is Smart Deploy](/docs/what-is-smart-deploy)
+- [How It Works](/docs/how-it-works)
+- [Getting Started](/docs/getting-started)
+- [Glossary](/docs/glossary)
+
+## Deploy
+- [Deployment Pipeline](/docs/deployment-pipeline)
+- [Blueprint and Preview](/docs/blueprint-and-preview)
+- [Smart Analysis](/docs/smart-analysis)
+- [Railpack](/docs/railpack)
+- [Monorepos and Multi-Service](/docs/monorepos-and-multi-service)
+- [Environment Variables](/docs/environment-variables)
 - [Custom Domains](/docs/custom-domains)
-- [Error Catalog](/docs/error-catalog)
+
+## Debug
+- [Debugging Deployments](/docs/debugging-deployments)
+- [Deployment Agent](/docs/deployment-agent)
+- [AI Assistance](/docs/ai-assistance)
+- [Deployment Logs](/docs/deployment-logs)
+- [Health Checks](/docs/health-checks)
+- [Runtime Health](/docs/runtime-health)
+- [Deployment History and Rollback](/docs/deployment-history-and-rollback)
+- [Build Failures](/docs/build-failures)
+- [Startup and Runtime Failures](/docs/startup-and-runtime-failures)
+- [Domain and TLS Issues](/docs/domain-and-tls-issues)
+
+## Reference
 - [FAQ](/docs/faq)
-- [Field Audit](/docs/field-audit)
-- [GCP Setup](/docs/gcp-setup)
-- [GraphQL Yoga Migration](/docs/graphql-yoga-migration)
-- [Help Agent Benchmark](/docs/help-agent-benchmark)
-- [Multi Service Detection](/docs/multi-service-detection)
-- [Self Hosting](/docs/self-hosting)
-- [Supabase Setup](/docs/supabase-setup)
-- [Troubleshooting](/docs/troubleshooting)
+- [Error Catalog](/docs/error-catalog)
+- [Deployment Status Reference](/docs/deployment-status-reference)
 
 ## Agent Files
 - [llms-full.txt](/llms-full.txt)

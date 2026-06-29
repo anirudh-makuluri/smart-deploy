@@ -1,445 +1,237 @@
 # Error Catalog
 
-This catalog maps common Smart Deploy errors and symptoms to likely causes and verified fixes.
+Symptom-first reference for deployment and runtime issues. Match your error text, run quick checks, apply the fix.
 
-How to use:
-1. Match your exact error text or closest symptom.
-2. Run the quick checks in order.
-3. Apply the fix and retry.
+**Agent retrieval notes:** Each entry includes exact strings, `stage`, `retryable`, and `agent_signals` for automated matching.
 
 ---
 
-## Common deployment failures (high frequency)
+## How to use
+
+1. Match exact error text or closest symptom
+2. Run quick checks in order
+3. Apply fix and redeploy
+4. Escalate via [Debugging Deployments](./DEBUGGING_DEPLOYMENTS.md) or [Deployment Agent](./DEPLOYMENT_AGENT.md)
+
+---
+
+## Deployment failure codes
 
 ### DEPLOYMENT_FAILED_GENERIC
 
-- Error or symptom:
-  - `Deployment failed`
-  - UI deploy state becomes `error`
-- Likely cause:
-  - Generic deploy wrapper failure with missing root-cause details in the current view
-- Quick checks:
-  - Inspect latest deploy step logs for first `❌` or `error` line
-  - Check whether failure occurred in build, setup, or DNS step
-- Fix:
-  - Follow the specific mapped entries below (`CODEBUILD_DOCKER_IMAGE_BUILD_FAILED`, `AWS_ALB_CERTIFICATE_INVALID_OR_REGION_MISMATCH`, `AWS_CODEBUILD_ROLE_DOES_NOT_EXIST`)
-- Sources:
-  - `src/websocket-types.ts`
-  - `src/websocket-server.ts`
-  - `src/custom-hooks/useWorkerWebSocket.ts`
+- **Stage:** unknown
+- **Retryable:** no
+- **Exact strings:** `Deployment failed`
+- **Symptoms:** Deploy ends in `failed` without a specific code in UI
+- **Likely cause:** Wrapper failure — root cause is in step logs
+- **Quick checks:**
+  1. Deployment History → first step with `error` status
+  2. First `❌` or `error` line in that step's logs
+  3. Map to a specific code below
+- **Fix:** Address the underlying step failure; redeploy
+- **Related:** [Deployment Logs](./DEPLOYMENT_LOGS.md)
+- **Agent signals:** `failed`, `error`, `step logs`
 
 ### CODEBUILD_DOCKER_IMAGE_BUILD_FAILED
 
-- Error or symptom:
+- **Stage:** build
+- **Retryable:** no
+- **Exact strings:**
   - `Docker image build failed. Check build logs above.`
   - `CodeBuild failed: Docker image build did not succeed`
-- Likely cause:
-  - Docker build failed in CodeBuild (Dockerfile/build context/dependency/auth issue)
-- Quick checks:
-  - Review CodeBuild logs for first failing command
-  - Verify Dockerfile path and build context are correct for selected service
-  - Check image pull limits/credentials (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`)
-- Fix:
-  - Correct build command or Dockerfile issue, then redeploy
-  - Add Docker Hub credentials if logs show rate limiting
-- Sources:
-  - `src/lib/handleDeploy.ts`
-  - `docs/AWS_SETUP.md`
+- **Symptoms:** Pipeline stops at Build; `failed` status
+- **Likely cause:** Railpack/Dockerfile build failed — deps, version, context
+- **Quick checks:**
+  1. Build step logs for first failing npm/pip/docker command
+  2. Scan `build_status` — did verification pass?
+  3. Correct package path for monorepo service?
+- **Fix:** Fix Dockerfile/plan/deps; Improve scan if plan wrong; redeploy
+- **Related:** [Build Failures](./BUILD_FAILURES.md), [Railpack](./RAILPACK.md)
+- **Agent signals:** `build`, `CodeBuild`, `Dockerfile`, `Railpack`, `npm`, `pip`
 
-### VERCEL_DNS_UPDATE_FAILED
+### DEPLOYMENT_VERIFICATION_FAILED
 
-- Error or symptom:
-  - `Vercel DNS failed: <error>` after otherwise successful deploy
-- Likely cause:
-  - DNS automation failed due to token/domain/team config or API permission issue
-- Quick checks:
-  - Verify `VERCEL_TOKEN`, `VERCEL_DOMAIN`, and optional `VERCEL_TEAM_ID`
-  - Confirm domain is managed by Vercel and token has DNS permissions
-- Fix:
-  - Correct Vercel credentials/config and retry DNS update or add CNAME manually
-- Sources:
-  - `src/lib/handleDeploy.ts`
-  - `docs/CUSTOM_DOMAINS.md`
+- **Stage:** verify
+- **Retryable:** no
+- **Exact strings:** `Deployment verification failed`, health probe timeout messages
+- **Symptoms:** Build/deploy succeed; Verify step fails; URL unhealthy
+- **Likely cause:** App not listening on PORT, crash on start, no 2xx on probed paths
+- **Quick checks:**
+  1. Verify step logs and ECS diagnostics
+  2. CloudWatch runtime logs for crash stack trace
+  3. App binds `0.0.0.0` and `PORT`
+  4. `/health` returns 200
+- **Fix:** Fix startup/port/env; redeploy
+- **Related:** [Health Checks](./HEALTH_CHECKS.md), [Startup and Runtime Failures](./STARTUP_AND_RUNTIME_FAILURES.md)
+- **Agent signals:** `verify`, `health`, `502`, `503`, `unreachable`
 
-### WEBSOCKET_ORIGIN_NOT_ALLOWED
+### AUTHENTICATION_FAILED
 
-- Error or symptom:
-  - `Origin not allowed`
-  - WebSocket/API connection rejected with 403 from worker server
-- Likely cause:
-  - `WS_ALLOWED_ORIGINS` does not include frontend origin
-- Quick checks:
-  - Compare request origin with configured allow-list
-  - Ensure exact protocol + host + port match
-- Fix:
-  - Update `WS_ALLOWED_ORIGINS` to include frontend origin and restart worker
-- Sources:
-  - `src/websocket-server.ts`
-  - `docs/TROUBLESHOOTING.md`
+- **Stage:** auth
+- **Retryable:** no
+- **Exact strings:** `unauthorized`, `GitHub not connected`, `access denied`, `invalid token`
+- **Symptoms:** Early pipeline failure at auth or clone
+- **Likely cause:** GitHub token expired or cloud credentials invalid
+- **Quick checks:**
+  1. Re-link GitHub account
+  2. Retry deploy after fresh sign-in
+- **Fix:** Restore GitHub connection; retry
+- **Related:** [FAQ](./FAQ.md)
+- **Agent signals:** `auth`, `GitHub`, `token`, `unauthorized`
 
----
+### INFRASTRUCTURE_NETWORK_FAILURE
 
-## Application startup and local environment
+- **Stage:** deploy
+- **Retryable:** yes
+- **Exact strings:** `ECONNREFUSED`, `timed out`, `ENOTFOUND`, `socket hang up`
+- **Symptoms:** Intermittent deploy failure mid-pipeline
+- **Likely cause:** Transient AWS or network reachability
+- **Quick checks:**
+  1. Retry deploy
+  2. If persistent, check AWS service health
+- **Fix:** Retry; contact operator if repeated
+- **Agent signals:** `timeout`, `network`, `ECONNREFUSED`
 
-### APP_STARTUP_FAILED_LOCAL
+### MANUAL_ROLLBACK_FAILED
 
-- Error or symptom:
-  - `npm run dev` fails
-  - `npm run start-all` exits immediately
-  - `localhost:3000` unavailable
-- Likely cause:
-  - Missing required environment variables
-  - Dependency install is incomplete or out of sync
-- Quick checks:
-  - `npm install`
-  - Confirm `.env` has:
-    - `BETTER_AUTH_SECRET`
-    - `BETTER_AUTH_URL`
-    - `DATABASE_URL`
-    - `SUPABASE_URL`
-    - `SUPABASE_SERVICE_ROLE_KEY`
-    - `NEXT_PUBLIC_WS_URL`
-- Fix:
-  - Copy `.env.example` to `.env` and fill all required values.
-  - Reinstall dependencies if needed.
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/FAQ.md`
+- **Stage:** rollback
+- **Retryable:** no
+- **Exact strings:** `Rollback failed`, `could not restore the selected release`
+- **Symptoms:** Rollback action errors in UI
+- **Likely cause:** Missing release artifact or redeploy of old commit failed
+- **Quick checks:**
+  1. Select a different successful history entry
+  2. Confirm entry has commit SHA and success=true
+- **Fix:** Pick another rollback target or fix forward with new deploy
+- **Related:** [Deployment History and Rollback](./DEPLOYMENT_HISTORY_AND_ROLLBACK.md)
+- **Agent signals:** `rollback`, `restore`, `artifact`
 
-### ENV_SUPABASE_REQUIRED_MISSING
+### AUTOMATIC_ROLLBACK_FAILED / AUTOMATIC_ROLLBACK_NO_CANDIDATE
 
-- Error or symptom:
-  - `SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment`
-- Likely cause:
-  - Supabase env vars missing on server runtime
-- Quick checks:
-  - Confirm values are present and non-empty in `.env`
-  - Ensure process that runs API/server has loaded env vars
-- Fix:
-  - Set both variables and restart the app process
-- Sources:
-  - `src/lib/supabaseServer.ts`
-  - `docs/SUPABASE_SETUP.md`
+- **Stage:** rollback
+- **Retryable:** no
+- **Note:** Classification codes exist; automatic rollback is not active in deploy handler. Treat as verify failure and use manual rollback.
+- **Related:** [Deployment History and Rollback](./DEPLOYMENT_HISTORY_AND_ROLLBACK.md)
 
 ---
 
-## Authentication and access
+## Runtime symptoms (no deploy failure)
 
-### REDIRECTED_TO_WAITING_LIST
+### APP_RETURNS_502_503
 
-- Error or symptom:
-  - Sign-in succeeds, then user lands on `/waiting-list`
-- Likely cause:
-  - Email not present in `approved_users`
-- Quick checks:
-  - Query `approved_users` for the signed-in email
-- Fix:
-  - Insert or upsert user email into `public.approved_users`
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/FAQ.md`
+- **Stage:** verify / runtime
+- **Retryable:** no
+- **Symptoms:** URL loads but ALB returns 502 or 503
+- **Likely cause:** ECS tasks unhealthy or not listening on correct port
+- **Quick checks:**
+  1. Runtime health in Overview
+  2. CloudWatch logs
+  3. `PORT` and bind address
+- **Fix:** [Startup and Runtime Failures](./STARTUP_AND_RUNTIME_FAILURES.md)
+- **Agent signals:** `502`, `503`, `unhealthy`, `ALB`
+
+### RUNTIME_DEGRADED
+
+- **Stage:** runtime
+- **Symptoms:** Status `running` but health `degraded`
+- **Likely cause:** Partial infrastructure or app probe failure
+- **Quick checks:** Deployment Agent → runtime health; ECS vs ALB signals
+- **Fix:** [Runtime Health](./RUNTIME_HEALTH.md)
+- **Agent signals:** `degraded`, `health`, `ECS`, `ALB`
+
+---
+
+## Scan and build verification
+
+### SCAN_BUILD_VERIFICATION_FAILED
+
+- **Stage:** build (scan)
+- **Symptoms:** Smart Analysis completes with `build_status: failed`
+- **Likely cause:** Railpack plan does not build at scanned commit
+- **Quick checks:** `build_verification.log_excerpt`, `repair_history`
+- **Fix:** Improve scan; fix repo; re-scan before deploy
+- **Related:** [Smart Analysis](./SMART_ANALYSIS.md), [Build Failures](./BUILD_FAILURES.md)
+- **Agent signals:** `scan`, `verification`, `repair`, `Railpack`
+
+### MISSING_RAILPACK_PLAN
+
+- **Stage:** build (preview)
+- **Exact strings:** `Missing Railpack plan for`
+- **Symptoms:** Blueprint warning; deploy may fail at buildspec generation
+- **Likely cause:** Scan incomplete or wrong service path
+- **Fix:** Re-run Smart Analysis on correct service
+- **Related:** [Railpack](./RAILPACK.md)
+
+---
+
+## GitHub and access
 
 ### GITHUB_NOT_CONNECTED
 
-- Error or symptom:
-  - `GitHub not connected`
-  - Repo scan or deploy actions fail for non-GitHub sessions
-- Likely cause:
-  - Missing linked GitHub OAuth account or token
-- Quick checks:
-  - Confirm user signed in with GitHub or linked GitHub account
-- Fix:
-  - Link GitHub account and retry action
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/FAQ.md`
-  - `docs/BETTER_AUTH.md`
+- **Exact strings:** `GitHub not connected`
+- **Symptoms:** Scan or deploy actions blocked
+- **Fix:** Sign in with GitHub or link GitHub account
+- **Agent signals:** `GitHub`, `connected`, `OAuth`
+
+### REDIRECTED_TO_WAITING_LIST
+
+- **Symptoms:** Sign-in succeeds then `/waiting-list`
+- **Likely cause:** Email not approved on this instance
+- **Fix:** Request access from platform operator
+- **Agent signals:** `waiting list`, `approved`
 
 ---
 
-## Supabase and database
+## Domain and DNS
 
-### SUPABASE_DB_ENOTFOUND_OR_UNREACHABLE
+### CUSTOM_DOMAIN_NOT_RESOLVING
 
-- Error or symptom:
-  - `getaddrinfo ENOTFOUND`
-  - DB unreachable for `db.<project-ref>.supabase.co`
-  - Intermittent connection timeouts
-- Likely cause:
-  - Using direct Supabase host on IPv4-only or constrained network
-- Quick checks:
-  - Inspect `DATABASE_URL` host and port
-  - Confirm whether direct host is used instead of session pooler
-- Fix:
-  - Use Supabase Session Pooler URI for `DATABASE_URL`
-- Sources:
-  - `docs/SUPABASE_SETUP.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### DB_RELATION_DOES_NOT_EXIST
-
-- Error or symptom:
-  - `relation does not exist`
-- Likely cause:
-  - `supabase/schema.sql` not executed after auth migration
-- Quick checks:
-  - Verify Better Auth tables exist (`user`, `session`, `account`, `verification`)
-  - Verify app tables exist (`deployments`, `deployment_history`, etc.)
-- Fix:
-  - Run `npm run auth:migrate`
-  - Execute `supabase/schema.sql` in Supabase SQL editor
-- Sources:
-  - `docs/SUPABASE_SETUP.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### DB_FK_OWNER_ID_NOT_IN_USER
-
-- Error or symptom:
-  - FK error like `Key (owner_id)=(...) not in table "user"`
-- Likely cause:
-  - Legacy rows still reference old GitHub numeric owner id
-- Quick checks:
-  - Inspect affected rows for legacy `owner_id` values
-- Fix:
-  - Run `supabase/remap_legacy_owner_ids_to_better_auth.sql`
-  - Remove or repair remaining orphans
-- Sources:
-  - `docs/SUPABASE_SETUP.md`
-
-### SUPABASE_RLS_PERMISSION_DENIED
-
-- Error or symptom:
-  - Permission denied or RLS errors on server operations
-- Likely cause:
-  - Using anon key instead of service role key
-- Quick checks:
-  - Confirm key value belongs to `service_role`
-- Fix:
-  - Set `SUPABASE_SERVICE_ROLE_KEY` correctly and restart
-- Sources:
-  - `docs/SUPABASE_SETUP.md`
+- **Symptoms:** Visit URL does not resolve or wrong site
+- **Quick checks:**
+  1. Subdomain spelling in config
+  2. `dig` / `nslookup` for hostname
+  3. Redeploy after subdomain change
+- **Fix:** [Domain and TLS Issues](./DOMAIN_AND_TLS_ISSUES.md)
+- **Agent signals:** `DNS`, `domain`, `resolve`, `TLS`
 
 ---
 
-## WebSocket and deploy log streaming
+## Deployment Agent
 
-### WEBSOCKET_NOT_CONNECTING
+### DEPLOYMENT_AGENT_OFFLINE
 
-- Error or symptom:
-  - UI status degraded
-  - Deploy logs not streaming
-  - Worker appears offline
-- Likely cause:
-  - Wrong WebSocket URL for environment
-  - Worker unavailable
-  - Reverse proxy missing `/ws` route
-- Quick checks:
-  - Dev URL: `ws://localhost:4001`
-  - HTTPS URL: `wss://<domain>/ws`
-  - Worker process/container is healthy
-- Fix:
-  - Set correct `NEXT_PUBLIC_WS_URL`
-  - Ensure reverse proxy forwards `/ws` to worker
-  - For split deployments, set `WS_ALLOWED_ORIGINS` to frontend origin
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/SELF_HOSTING.md`
-  - `docs/FAQ.md`
+- **Exact strings:** `The deployment agent is offline right now`
+- **Symptoms:** Agent button returns immediately with offline message
+- **Likely cause:** WebSocket worker disconnected
+- **Quick checks:** System health indicator in header
+- **Fix:** Refresh page; wait for worker recovery
+- **Agent signals:** `agent offline`, `WebSocket`, `worker`
+
+### DEPLOYMENT_AGENT_TOOL_LIMIT
+
+- **Exact strings:** `couldn't finish the inspection within the current tool-call limit`
+- **Symptoms:** Agent stops after partial answer
+- **Fix:** Ask narrower question; use History + Analyze failure
+- **Related:** [Deployment Agent](./DEPLOYMENT_AGENT.md)
+- **Agent signals:** `tool limit`, `inspection`
 
 ---
 
-## AWS deployment
+## Docker registry
 
-### AWS_UNAUTHORIZED_OPERATION_RUN_INSTANCES
+### DOCKERHUB_RATE_LIMIT_429
 
-- Error or symptom:
-  - `UnauthorizedOperation: ec2:RunInstances`
-- Likely cause:
-  - IAM principal missing required EC2 permissions
-- Quick checks:
-  - Confirm policy attached to active user/role includes EC2 actions
-- Fix:
-  - Attach or update IAM policy with required actions from AWS setup guide
-- Sources:
-  - `docs/AWS_SETUP.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### AWS_EC2_CREATETAGS_DENIED
-
-- Error or symptom:
-  - `ec2:CreateTags denied`
-- Likely cause:
-  - IAM policy missing `ec2:CreateTags`
-- Quick checks:
-  - Review policy statements for EC2 action list
-- Fix:
-  - Add `ec2:CreateTags` permission
-- Sources:
-  - `docs/AWS_SETUP.md`
-
-### AWS_ALB_CERTIFICATE_INVALID_OR_REGION_MISMATCH
-
-- Error or symptom:
-  - ALB HTTPS setup fails
-  - Certificate errors around `DEPLOYMENT_ACM_CERTIFICATE_ARN`
-- Likely cause:
-  - Certificate pending/not issued or not in deployment region
-- Quick checks:
-  - Certificate status is `Issued`
-  - ACM cert region equals `AWS_REGION`
-- Fix:
-  - Use issued cert in same region and redeploy
-- Sources:
-  - `docs/AWS_SETUP.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### AWS_SSM_SENDCOMMAND_FAILURE
-
-- Error or symptom:
-  - SSM `SendCommand` failures during instance bootstrap or commands
-- Likely cause:
-  - Instance missing SSM agent or correct instance profile
-- Quick checks:
-  - Validate SSM agent installed/running
-  - Validate IAM instance profile includes SSM permissions
-- Fix:
-  - Attach correct role and ensure agent health
-- Sources:
-  - `docs/AWS_SETUP.md`
-
-### AWS_CODEBUILD_ROLE_DOES_NOT_EXIST
-
-- Error or symptom:
-  - CodeBuild fails with role creation or missing role errors
-- Likely cause:
-  - IAM policy missing role management actions
-- Quick checks:
-  - Verify IAM permissions include create/get/pass/attach role actions
-- Fix:
-  - Update IAM policy to include required IAM actions
-- Sources:
-  - `docs/AWS_SETUP.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### AWS_DOCKERHUB_RATE_LIMIT_429
-
-- Error or symptom:
-  - Docker Hub 429 during CodeBuild image pull/build
-- Likely cause:
-  - Anonymous pull rate limit exceeded
-- Quick checks:
-  - Check build logs for 429 pull failures
-- Fix:
-  - Set `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
-- Sources:
-  - `docs/AWS_SETUP.md`
-
----
-
-## GCP deployment
-
-### GCP_DEPLOY_DENIED_OR_API_NOT_ENABLED
-
-- Error or symptom:
-  - Cloud Run deploy denied
-  - Cloud SQL API errors
-- Likely cause:
-  - Required GCP APIs not enabled
-  - Service account role gaps
-- Quick checks:
-  - Confirm required APIs are enabled:
-    - `run.googleapis.com`
-    - `cloudbuild.googleapis.com`
-    - `artifactregistry.googleapis.com`
-    - `logging.googleapis.com`
-    - `sqladmin.googleapis.com` (if Cloud SQL is used)
-  - Validate service account roles
-- Fix:
-  - Enable missing APIs and grant required roles
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/GCP_SETUP.md`
-
-### GCP_GCLOUD_NOT_FOUND
-
-- Error or symptom:
-  - `gcloud: command not found`
-- Likely cause:
-  - Google Cloud CLI not installed in runner/worker environment
-- Quick checks:
-  - `gcloud --version`
-- Fix:
-  - Install Google Cloud CLI in host/image
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/GCP_SETUP.md`
-
----
-
-## Domains, TLS, and self-hosting runtime
-
-### CUSTOM_DOMAIN_NOT_RESOLVING_OR_TLS_FAILED
-
-- Error or symptom:
-  - Domain does not load
-  - DNS record missing
-  - HTTPS/TLS errors
-- Likely cause:
-  - Missing or incorrect DNS records
-  - Vercel or certificate variables not configured
-- Quick checks:
-  - `NEXT_PUBLIC_DEPLOYMENT_DOMAIN` present
-  - If Vercel-managed DNS: `VERCEL_TOKEN` and `VERCEL_DOMAIN` set
-  - AWS HTTPS: certificate ARN valid and issued
-- Fix:
-  - Correct DNS records, wait for propagation, redeploy after cert is valid
-- Sources:
-  - `docs/TROUBLESHOOTING.md`
-  - `docs/CUSTOM_DOMAINS.md`
-
-### SELF_HOST_BUILD_OOM
-
-- Error or symptom:
-  - Docker or Next.js build is killed on small instances
-- Likely cause:
-  - Insufficient memory during build
-- Quick checks:
-  - Instance size and available RAM/swap
-- Fix:
-  - Run `sudo ./scripts/setup-swap.sh`
-  - Set `NODE_MAX_OLD_SPACE_SIZE` in `.env` (for example `2048` or `4096`)
-- Sources:
-  - `docs/SELF_HOSTING.md`
-  - `docs/TROUBLESHOOTING.md`
-
-### NGINX_502_BAD_GATEWAY
-
-- Error or symptom:
-  - Nginx returns 502
-- Likely cause:
-  - App containers are still booting
-  - Upstream app failed due to env/config issues
-- Quick checks:
-  - `docker compose ps`
-  - `docker compose logs`
-- Fix:
-  - Wait for startup completion
-  - Fix env/config issues and restart services
-- Sources:
-  - `docs/SELF_HOSTING.md`
-  - `docs/TROUBLESHOOTING.md`
+- **Exact strings:** `429`, `toomanyrequests`, rate limit in CodeBuild logs
+- **Symptoms:** Build fails pulling base images
+- **Fix:** Retry later; use authenticated registry pulls
+- **Related:** [Build Failures](./BUILD_FAILURES.md)
+- **Agent signals:** `429`, `Docker Hub`, `rate limit`
 
 ---
 
 ## Notes for retrieval quality
 
-- Keep each error entry stable and append-only where possible.
-- Prefer exact error text in entries (quoted strings) to improve matching.
-- When adding new incidents, include:
-  - exact message
-  - environment (local, AWS, GCP, self-hosted)
-  - root cause
-  - verified fix
-  - source file reference
-
-
+- Prefer exact quoted error strings in search indexes
+- Tag entries with `user_facing: true` and `stage`
+- Append new incidents; avoid renaming stable codes
+- Cross-link to deep guides for fixes

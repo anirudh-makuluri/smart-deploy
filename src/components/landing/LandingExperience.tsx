@@ -438,7 +438,7 @@ export function LandingExperience({ isSignedIn, publicStats }: LandingExperience
 					</nav>
 					<div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
 						<Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
-							<Link href="/docs">Docs</Link>
+							<Link href="https://docs.smart-deploy.xyz">Docs</Link>
 						</Button>
 						<Button asChild size="sm" className="shadow-[0_18px_40px_-20px_rgba(37,244,106,0.45)] sm:h-9 sm:px-4 sm:text-sm">
 							<Link href={primaryHref}>

@@ -30,7 +30,7 @@ type RecentDeploymentSummary = {
 };
 
 const JSON_FENCE_REGEX = /```(?:json)?\s*([\s\S]*?)```/i;
-const DEFAULT_HELP_CITATIONS = ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"];
+const DEFAULT_HELP_CITATIONS = ["docs/DEBUGGING_DEPLOYMENTS.md", "docs/FAQ.md"];
 const LOW_CONFIDENCE = "low" as const;
 
 function parseModelJson(raw: string): HelpAgentResponse | null {
@@ -154,7 +154,7 @@ Prefer concise steps.
 Return ONLY valid JSON:
 {
   "answer": "string",
-	"citations": ["docs/TROUBLESHOOTING.md", "docs/FAQ.md"],
+	"citations": ["docs/DEBUGGING_DEPLOYMENTS.md", "docs/FAQ.md"],
   "confidence": "high" | "medium" | "low"
 }
 
@@ -263,7 +263,7 @@ export async function POST(req: Request) {
 
 	if (chunks.length === 0 && recentDeployments.length === 0) {
 		const answer =
-			"I couldn't find this in the current docs yet. Start with docs/TROUBLESHOOTING.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.";
+			"I couldn't find this in the current docs yet. Start with docs/DEBUGGING_DEPLOYMENTS.md and docs/FAQ.md, and share the exact error text so I can guide you precisely.";
 		const citations = DEFAULT_HELP_CITATIONS;
 		const confidence = LOW_CONFIDENCE;
 		const responseTimeMs = Date.now() - startedAt;
@@ -343,7 +343,7 @@ export async function POST(req: Request) {
 	} catch (error) {
 		console.error("Help agent request failed:", error);
 		const answer =
-			"I found relevant docs, but the help model is unavailable right now. You can still check docs/TROUBLESHOOTING.md first, then docs/FAQ.md.";
+			"I found relevant docs, but the help model is unavailable right now. You can still check docs/DEBUGGING_DEPLOYMENTS.md first, then docs/FAQ.md.";
 		const citations = DEFAULT_HELP_CITATIONS;
 		const confidence = LOW_CONFIDENCE;
 		const responseTimeMs = Date.now() - startedAt;
