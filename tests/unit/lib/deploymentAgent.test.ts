@@ -8,6 +8,7 @@ const getDeploymentForUserMock = vi.fn();
 const getDeploymentHistoryMock = vi.fn();
 const callLLMWithFallbackMock = vi.fn();
 const listRuntimeHealthSamplesMock = vi.fn();
+const persistDeploymentAgentMessageMock = vi.fn();
 
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
@@ -24,6 +25,13 @@ vi.mock("@/lib/llmProviders", () => ({
 vi.mock("@/lib/deploymentAgentConversationStore", () => ({
 	appendDeploymentAgentConversationTurn: appendConversationTurnMock,
 	getDeploymentAgentConversationTurns: getConversationTurnsMock,
+}));
+
+vi.mock("@/lib/deploymentAgent/messagePersistence", () => ({
+	buildDeploymentAgentAssistantMetadata: vi.fn((metadata) => metadata),
+	buildDeploymentAgentLlmTurn: vi.fn((turn) => turn),
+	buildDeploymentAgentUserMetadata: vi.fn((metadata) => metadata),
+	persistDeploymentAgentMessage: persistDeploymentAgentMessageMock,
 }));
 
 vi.mock("@/lib/runtimeHealthStore", () => ({
@@ -154,6 +162,37 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 				content: "You have 1 deployment: smart-deploy / web is running.",
 			}),
 		});
+		expect(persistDeploymentAgentMessageMock).toHaveBeenCalledTimes(2);
+		expect(persistDeploymentAgentMessageMock).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				userID: "user-1",
+				conversationId: "conversation-1",
+				role: "user",
+				content: "Show me my deployments",
+				metadata: { promptTurnCount: 2 },
+			})
+		);
+		const assistantPersistCall = persistDeploymentAgentMessageMock.mock.calls[1]?.[0] as {
+			role: string;
+			metadata: {
+				outcome: string;
+				completed: boolean;
+				toolCallsUsed: number;
+				promptTurnCount: number;
+				llmTurns: Array<{ decision: { message: string; completed: boolean } }>;
+				toolResults: Array<{ name: string }>;
+			};
+		};
+		expect(assistantPersistCall.role).toBe("assistant");
+		expect(assistantPersistCall.metadata.outcome).toBe("complete");
+		expect(assistantPersistCall.metadata.completed).toBe(true);
+		expect(assistantPersistCall.metadata.toolCallsUsed).toBe(1);
+		expect(assistantPersistCall.metadata.promptTurnCount).toBe(2);
+		expect(assistantPersistCall.metadata.llmTurns).toHaveLength(2);
+		expect(assistantPersistCall.metadata.llmTurns[0]?.decision.message).toBe("Checking your deployments.");
+		expect(assistantPersistCall.metadata.llmTurns[1]?.decision.completed).toBe(true);
+		expect(assistantPersistCall.metadata.toolResults[0]?.name).toBe("list_deployments");
 		expect(callLLMWithFallbackMock).toHaveBeenCalledTimes(2);
 		expect(events.map((event) => event.event)).toEqual([
 			"agent:accepted",
@@ -383,5 +422,19 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 				content: "Model unavailable",
 			}),
 		});
+		const errorPersistCall = persistDeploymentAgentMessageMock.mock.calls.at(-1)?.[0] as {
+			role: string;
+			content: string;
+			metadata: {
+				outcome: string;
+				errorMessage: string;
+				llmTurns: Array<{ decision: { message: string } }>;
+			};
+		};
+		expect(errorPersistCall.role).toBe("assistant");
+		expect(errorPersistCall.content).toBe("Model unavailable");
+		expect(errorPersistCall.metadata.outcome).toBe("error");
+		expect(errorPersistCall.metadata.errorMessage).toBe("Model unavailable");
+		expect(errorPersistCall.metadata.llmTurns[0]?.decision.message).toBe("Checking your deployments.");
 	});
 });
