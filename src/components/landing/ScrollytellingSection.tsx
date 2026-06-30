@@ -598,48 +598,63 @@ function FlowUI({
 	);
 }
 
+function StepMock({ section, isVisible }: { section: NodeId; isVisible: boolean }) {
+	switch (section) {
+		case "overview":
+			return <OverviewMock />;
+		case "setup":
+			return <SetupMock />;
+		case "scan":
+			return <ScanMock isVisible={isVisible} />;
+		case "blueprint":
+			return <BlueprintMock />;
+		case "logs":
+			return <LogsMock />;
+		case "history":
+			return <HistoryMock />;
+	}
+}
+
+function MobileFlowStep({ index, step, isLast }: { index: number; step: Step; isLast: boolean }) {
+	const Icon = MENU_ICONS[step.section];
+
+	return (
+		<div className="relative pl-9">
+			{!isLast && (
+				<span
+					className="absolute left-[14px] top-10 -bottom-6 w-px bg-linear-to-b from-border/70 to-transparent"
+					aria-hidden
+				/>
+			)}
+			<span className="absolute left-0 top-1 flex size-7 items-center justify-center rounded-full border border-primary/35 bg-primary/10 text-primary">
+				<Icon className="size-3.5" />
+			</span>
+			<article className="landing-panel landing-shell rounded-2xl border border-border/70 bg-card/85 p-4 sm:p-5">
+				<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+					{step.section} &middot; {index + 1} of {steps.length}
+				</p>
+				<h3 className="mt-1.5 text-lg font-bold tracking-tight text-foreground sm:text-xl">{step.title}</h3>
+				<p className="mt-1.5 text-sm leading-6 text-muted-foreground">{step.description}</p>
+				<div className="mt-4">
+					<StepMock section={step.section} isVisible />
+				</div>
+			</article>
+		</div>
+	);
+}
+
 export function ScrollytellingSection() {
 	const [activeStep, setActiveStep] = React.useState(0);
-	const [isDesktop, setIsDesktop] = React.useState(
-		() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
-	);
 	const [isSectionVisible, setIsSectionVisible] = React.useState(false);
 	const stepRefs = React.useRef<Array<HTMLDivElement | null>>([]);
 	const sectionRef = React.useRef<HTMLElement | null>(null);
 	const visibilityObserverRef = React.useRef<IntersectionObserver | null>(null);
+	const stepObserverRef = React.useRef<IntersectionObserver | null>(null);
 
-	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
-		sectionRef.current = node;
-		visibilityObserverRef.current?.disconnect();
-		visibilityObserverRef.current = null;
-		if (!node) return;
+	const getStepObserver = React.useCallback((): IntersectionObserver => {
+		const existing = stepObserverRef.current;
+		if (existing) return existing;
 
-		const observer = new IntersectionObserver(
-			([entry]) => {
-				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
-			},
-			{ threshold: [0, 0.12, 0.3] }
-		);
-		visibilityObserverRef.current = observer;
-		observer.observe(node);
-	}, []);
-
-	const setStepRef = React.useCallback((index: number, node: HTMLDivElement | null) => {
-		stepRefs.current[index] = node;
-	}, []);
-
-	React.useEffect(() => {
-		const mediaQuery = window.matchMedia("(min-width: 1024px)");
-		const syncLayout = () => setIsDesktop(mediaQuery.matches);
-		if (typeof mediaQuery.addEventListener === "function") {
-			mediaQuery.addEventListener("change", syncLayout);
-			return () => mediaQuery.removeEventListener("change", syncLayout);
-		}
-		mediaQuery.addListener(syncLayout);
-		return () => mediaQuery.removeListener(syncLayout);
-	}, []);
-
-	React.useEffect(() => {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				let nextIndex = 0;
@@ -663,15 +678,45 @@ export function ScrollytellingSection() {
 				rootMargin: "-30% 0px -30% 0px",
 			}
 		);
+		stepObserverRef.current = observer;
+		return observer;
+	}, []);
 
-		for (const node of stepRefs.current) {
+	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
+		sectionRef.current = node;
+		visibilityObserverRef.current?.disconnect();
+		visibilityObserverRef.current = null;
+		if (!node) return;
+
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
+			},
+			{ threshold: [0, 0.12, 0.3] }
+		);
+		visibilityObserverRef.current = observer;
+		observer.observe(node);
+	}, []);
+
+	const setStepRef = React.useCallback(
+		(index: number, node: HTMLDivElement | null) => {
+			const observer = getStepObserver();
+			const previous = stepRefs.current[index];
+			if (previous) observer.unobserve(previous);
+			stepRefs.current[index] = node;
 			if (node) observer.observe(node);
-		}
+		},
+		[getStepObserver]
+	);
 
-		return () => observer.disconnect();
-	}, [isDesktop]);
-
-	React.useEffect(() => () => visibilityObserverRef.current?.disconnect(), []);
+	React.useEffect(
+		() => () => {
+			visibilityObserverRef.current?.disconnect();
+			stepObserverRef.current?.disconnect();
+			stepObserverRef.current = null;
+		},
+		[]
+	);
 
 	return (
 		<LazyMotion features={domAnimation} strict>
@@ -691,63 +736,36 @@ export function ScrollytellingSection() {
 					</p>
 				</div>
 
-				{isDesktop ? (
-					<div className="mt-12 grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
-						<div>
-							{steps.map((step, index) => (
-								<StepItem
-									key={`${index}-${step.title}`}
-									index={index}
-									step={step}
-									isActive={activeStep === index}
-									onRef={setStepRef}
-								/>
-							))}
-						</div>
+				<div className="mt-12 hidden gap-8 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
+					<div>
+						{steps.map((step, index) => (
+							<StepItem
+								key={`${index}-${step.title}`}
+								index={index}
+								step={step}
+								isActive={activeStep === index}
+								onRef={setStepRef}
+							/>
+						))}
+					</div>
 
-						<div className="lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
-							<div className="flex h-full items-start justify-center pt-1">
-								<FlowUI activeStep={activeStep} isVisible={isSectionVisible} />
-							</div>
+					<div className="lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
+						<div className="flex h-full items-start justify-center pt-1">
+							<FlowUI activeStep={activeStep} isVisible={isSectionVisible} />
 						</div>
 					</div>
-				) : (
-					<div className="mt-8 lg:hidden">
-						<div className="sticky top-16 z-10 h-[calc(100svh-5.5rem)]">
-							<div className="grid h-full grid-rows-[minmax(7rem,18svh)_minmax(0,1fr)] gap-3">
-								<m.article
-									key={`mobile-step-${activeStep}`}
-									initial={{ opacity: 0, y: 10 }}
-									animate={{ opacity: 1, y: 0 }}
-									transition={{ duration: 0.2, ease: "easeOut" }}
-									className="landing-panel landing-shell rounded-2xl border border-border/70 bg-card/90 p-4"
-								>
-									<p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-										{steps[activeStep]?.section} &middot; {activeStep + 1} of {steps.length}
-									</p>
-									<h3 className="mt-1.5 text-lg font-bold tracking-tight text-foreground">{steps[activeStep]?.title}</h3>
-									<p className="mt-1 text-xs leading-5 text-muted-foreground">{steps[activeStep]?.description}</p>
-								</m.article>
+				</div>
 
-								<div className="min-h-0 overflow-y-auto pb-2">
-									<FlowUI activeStep={activeStep} isVisible={isSectionVisible} isCompact />
-								</div>
-							</div>
-						</div>
-
-						<div className="mt-3">
-							{steps.map((step, index) => (
-								<div
-									key={`mobile-tracker-${step.title}`}
-									ref={(node) => setStepRef(index, node)}
-									data-step-index={index}
-									className="h-[72svh]"
-									aria-hidden
-								/>
-							))}
-						</div>
-					</div>
-				)}
+				<div className="mt-8 flex flex-col gap-6 lg:hidden">
+					{steps.map((step, index) => (
+						<MobileFlowStep
+							key={`mobile-${step.title}`}
+							index={index}
+							step={step}
+							isLast={index === steps.length - 1}
+						/>
+					))}
+				</div>
 			</div>
 		</section>
 		</LazyMotion>

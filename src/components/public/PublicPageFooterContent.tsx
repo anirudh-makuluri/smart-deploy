@@ -38,7 +38,7 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 				<div>
 					<SmartDeployLogo href="/" className="mb-3" />
 					<p className="max-w-xl text-sm leading-6 text-muted-foreground">
-						Smart Deploy is a transparent deployment platform for solo developers who want to ship quickly without hiding Docker, Compose, Nginx, or the deploy path.
+						Smart Deploy is a transparent deployment platform for solo developers — scan a repo, preview the full deploy blueprint, and ship to AWS without a black-box deploy path.
 					</p>
 				</div>
 				<nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground" aria-label="Footer">
@@ -48,11 +48,14 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 					<Link href="/#flow" className={navLinkClass}>
 						Flow
 					</Link>
+					<Link href="/#agent" className={navLinkClass}>
+						Agent
+					</Link>
 					<Link href="/#why-smartdeploy" className={navLinkClass}>
 						Why
 					</Link>
 					<Link href="/#cloud" className={navLinkClass}>
-						Cloud
+						Deploy
 					</Link>
 					<Link href="/#stats" className={navLinkClass}>
 						Stats
