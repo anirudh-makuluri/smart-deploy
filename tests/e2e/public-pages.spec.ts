@@ -40,7 +40,7 @@ test("docs page renders key sections and has no horizontal overflow on desktop/m
 
 	await expect(page.getByRole("heading", { name: "Repository docs" })).toBeVisible();
 	await expect(page.getByRole("heading", { name: "Smart Deploy", exact: true })).toBeVisible();
-	await expect(page.getByRole("heading", { name: "The problem" })).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Highlights" })).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 
 	await page.setViewportSize({ width: 390, height: 844 });

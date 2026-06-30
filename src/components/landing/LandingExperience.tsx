@@ -17,6 +17,7 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import { SmartDeployLogo } from "@/components/SmartDeployLogo";
+import { LandingBackground } from "@/components/landing/LandingBackground";
 import { ScrollytellingSection } from "@/components/landing/ScrollytellingSection";
 import { PublicBottomNav, type MobileNavLink } from "@/components/public/PublicBottomNav";
 import { PublicPageFooterContent } from "@/components/public/PublicPageFooterContent";
@@ -137,7 +138,10 @@ const PAUSE_MS = 2200;
 const DELETE_SPEED_MS = 40;
 
 function useTypedText(words: string[]) {
-	const [display, setDisplay] = React.useState("");
+	// Seed with the first full word so server-rendered HTML (and any crawler that
+	// reads it) shows "Deploy your <word> without the black box." instead of a gap.
+	// The client picks up from this state and animates normally.
+	const [display, setDisplay] = React.useState(words[0] ?? "");
 	const [wordIndex, setWordIndex] = React.useState(0);
 	const [isDeleting, setIsDeleting] = React.useState(false);
 
@@ -167,17 +171,6 @@ function useTypedText(words: string[]) {
 	return display;
 }
 
-function HeroOrb() {
-	return (
-		<div className="landing-hero-orb-container" aria-hidden>
-			<div className="landing-hero-orb" />
-			<div className="landing-hero-orb-ring landing-hero-orb-ring-1" />
-			<div className="landing-hero-orb-ring landing-hero-orb-ring-2" />
-			<div className="landing-hero-orb-ring landing-hero-orb-ring-3" />
-		</div>
-	);
-}
-
 function HeroSection({
 	primaryHref,
 	primaryCopy,
@@ -190,10 +183,8 @@ function HeroSection({
 	const typedText = useTypedText(TYPED_WORDS);
 
 	return (
-		<section className="landing-hero-bg relative overflow-hidden px-6 sm:px-8 lg:px-10">
-			<HeroOrb />
-			<div className="landing-hero-grid-bg" aria-hidden />
-			<div className="relative z-10 mx-auto flex min-h-[calc(92svh-4.5rem)] w-full max-w-5xl flex-col items-center justify-center py-14 text-center sm:py-16 lg:min-h-[calc(88svh-4.5rem)] lg:py-20">
+		<section className="relative overflow-hidden px-6 sm:px-8 lg:px-10">
+			<div className="relative z-10 mx-auto flex min-h-[calc(100svh-3.75rem)] w-full max-w-5xl flex-col items-center justify-center py-14 text-center sm:min-h-[calc(100svh-4.25rem)] sm:py-16 lg:py-20">
 				<m.div
 					initial={prefersReducedMotion ? false : { opacity: 0, y: 32 }}
 					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
@@ -208,7 +199,7 @@ function HeroSection({
 					initial={prefersReducedMotion ? false : { opacity: 0, y: 28 }}
 					animate={prefersReducedMotion ? undefined : { opacity: 1, y: 0 }}
 					transition={prefersReducedMotion ? undefined : { duration: 0.65, ease: "easeOut", delay: 0.08 }}
-					className="max-w-4xl text-5xl font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-6xl lg:text-7xl"
+					className="max-w-4xl text-[2.6rem] font-bold leading-[1.05] tracking-[-0.04em] text-white sm:text-6xl"
 				>
 					<span className="block sm:inline" data-testid="landing-hero-prefix">Deploy your</span>
 					<span className="hidden sm:inline">&nbsp;</span>
@@ -390,12 +381,20 @@ function SupportedFrameworks() {
 }
 
 function AnimatedCounter({ value, label, suffix = "" }: { value: number; label: string; suffix?: string }) {
-	const [displayed, setDisplayed] = React.useState(0);
-	const ref = React.useRef<HTMLDivElement>(null);
+	const cardRef = React.useRef<HTMLDivElement>(null);
+	const numberRef = React.useRef<HTMLParagraphElement>(null);
 	const hasAnimated = React.useRef(false);
 
+	// The real value is rendered directly in JSX (so server HTML and crawlers see
+	// it). When the card nears the viewport we count up imperatively via a ref —
+	// no React state, so there are no extra renders and the number is never stale.
 	React.useEffect(() => {
-		if (!ref.current || hasAnimated.current) return;
+		const card = cardRef.current;
+		const number = numberRef.current;
+		if (!card || !number || hasAnimated.current) return;
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+		const format = (current: number) => `${current.toLocaleString()}${suffix}`;
 		const observer = new IntersectionObserver(
 			([entry]) => {
 				if (!entry.isIntersecting || hasAnimated.current) return;
@@ -405,25 +404,29 @@ function AnimatedCounter({ value, label, suffix = "" }: { value: number; label: 
 				const duration = 1600;
 				const start = performance.now();
 				const animate = (now: number) => {
-					const elapsed = now - start;
-					const progress = Math.min(elapsed / duration, 1);
+					const progress = Math.min((now - start) / duration, 1);
 					const eased = 1 - Math.pow(1 - progress, 3);
-					setDisplayed(Math.round(eased * value));
+					number.textContent = format(Math.round(eased * value));
 					if (progress < 1) requestAnimationFrame(animate);
 				};
 				requestAnimationFrame(animate);
 			},
-			{ threshold: 0.3 }
+			// The bottom rootMargin starts the count-up just before the card scrolls
+			// into view, so the reset to 0 happens off-screen with no flash.
+			{ threshold: 0, rootMargin: "0px 0px 240px 0px" }
 		);
-		observer.observe(ref.current);
+		observer.observe(card);
 		return () => observer.disconnect();
-	}, [value]);
+	}, [value, suffix]);
 
 	return (
-		<div ref={ref} className="landing-stat-card group">
+		<div ref={cardRef} className="landing-stat-card group">
 			<div className="landing-stat-glow" aria-hidden />
-			<p className="relative z-10 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-				{displayed.toLocaleString()}{suffix}
+			<p
+				ref={numberRef}
+				className="relative z-10 font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl"
+			>
+				{value.toLocaleString()}{suffix}
 			</p>
 			<p className="relative z-10 mt-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
 				{label}
@@ -635,7 +638,9 @@ export function LandingExperience({ isSignedIn, publicStats }: LandingExperience
 	return (
 		<LazyMotion features={domAnimation} strict>
 		<div className="landing-bg h-svh overflow-x-hidden overflow-y-auto stealth-scrollbar pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] text-foreground md:pb-0">
-			<header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-xl">
+			<LandingBackground />
+			<div className="relative z-10">
+			<header className="sticky top-0 z-50 border-b border-border/55 bg-background/70 backdrop-blur-xl">
 				<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
 					<div className="min-w-0 shrink">
 						<SmartDeployLogo href="/" />
@@ -730,6 +735,7 @@ export function LandingExperience({ isSignedIn, publicStats }: LandingExperience
 
 			<PublicPageFooterContent primaryHref={primaryHref} />
 			<PublicBottomNav links={landingMobileNavLinks} />
+			</div>
 		</div>
 		</LazyMotion>
 	);

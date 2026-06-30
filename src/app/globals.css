@@ -300,6 +300,11 @@ button {
 }
 
 .landing-hero-typed-text {
+  display: inline-block;
+  /* Extra bottom room (offset by negative margin) so background-clip: text does not
+     clip glyph descenders like the tail of "j" under the tight heading line-height. */
+  padding-bottom: 0.26em;
+  margin-bottom: -0.26em;
   background: linear-gradient(90deg, var(--primary), color-mix(in srgb, var(--primary) 70%, white));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
