@@ -30,7 +30,7 @@ type HeaderActionsProps = {
 			image?: string | null;
 		} | null;
 	} | null;
-	onOpenHelpAgent: () => void;
+	onOpenDeploymentAgent: () => void;
 	onOpenReport: () => void;
 	onSignOut: () => void;
 	mobileDockEnabled?: boolean;
@@ -39,7 +39,7 @@ type HeaderActionsProps = {
 export default function HeaderActions({
 	systemHealth,
 	session,
-	onOpenHelpAgent,
+	onOpenDeploymentAgent,
 	onOpenReport,
 	onSignOut,
 	mobileDockEnabled = false,
@@ -57,7 +57,7 @@ export default function HeaderActions({
 				variant="outline"
 				size="sm"
 				className={cn("h-8 gap-1.5 px-2.5 text-xs sm:text-sm", mobileDockEnabled && "hidden md:inline-flex")}
-				onClick={onOpenHelpAgent}
+				onClick={onOpenDeploymentAgent}
 			>
 				<Bot className="size-3.5" />
 				<span>Agent</span>

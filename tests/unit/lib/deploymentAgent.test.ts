@@ -9,6 +9,7 @@ const getDeploymentHistoryMock = vi.fn();
 const callLLMWithFallbackMock = vi.fn();
 const listRuntimeHealthSamplesMock = vi.fn();
 const persistDeploymentAgentMessageMock = vi.fn();
+const retrievePlatformDocChunksMock = vi.fn();
 
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
@@ -36,6 +37,10 @@ vi.mock("@/lib/deploymentAgent/messagePersistence", () => ({
 
 vi.mock("@/lib/runtimeHealthStore", () => ({
 	listRuntimeHealthSamples: listRuntimeHealthSamplesMock,
+}));
+
+vi.mock("@/lib/platformDocsRetrieval", () => ({
+	retrievePlatformDocChunks: retrievePlatformDocChunksMock,
 }));
 
 function llmJsonResponse(payload: Record<string, unknown>) {
@@ -314,6 +319,93 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		});
 
 		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
+	});
+
+	it("pairs deployment history with search_docs for troubleshooting guidance", async () => {
+		getDeploymentHistoryMock.mockResolvedValue({
+			history: [
+				{
+					id: "run-1",
+					timestamp: "2026-06-20T00:00:00.000Z",
+					success: false,
+					branch: "main",
+					commitSha: "abc123",
+					steps: [
+						{
+							id: "build",
+							label: "Build",
+							status: "error",
+							logs: ["npm install", "Build failed: missing lockfile"],
+						},
+					],
+					failureClassification: {
+						summary: "Build failed",
+					},
+				},
+			],
+		});
+		retrievePlatformDocChunksMock.mockResolvedValue({
+			chunks: [
+				{
+					id: "docs/BUILD_FAILURES.md#0",
+					source: "docs/BUILD_FAILURES.md",
+					section: "Missing lockfile",
+					content: "Regenerate the lockfile locally and redeploy.",
+					score: 2.8,
+				},
+			],
+			mossEnabled: true,
+			mossRetrievalMs: 30,
+		});
+		callLLMWithFallbackMock
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Reviewing recent deployment history.",
+					tool_calls: [
+						{
+							name: "get_deployment_history",
+							arguments: { repoName: "smart-deploy", serviceName: "web", limit: 3 },
+						},
+					],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Searching docs for build failure guidance.",
+					tool_calls: [
+						{
+							name: "search_docs",
+							arguments: { query: "Railpack build failed missing lockfile" },
+						},
+					],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message:
+						"The latest deploy failed during Build. See docs/BUILD_FAILURES.md to regenerate the lockfile and redeploy.",
+					tool_calls: [],
+					completed: true,
+				})
+			);
+
+		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
+
+		await runDeploymentAgent({
+			conversationId: "conversation-1",
+			userID: "user-1",
+			message: "Why did the last deployment fail and how do I fix it?",
+			emit: vi.fn(),
+		});
+
+		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("Railpack build failed missing lockfile", {
+			deterministicLimit: 4,
+			mossLimit: 4,
+			mergedLimit: 4,
+		});
 	});
 
 	it("inspects runtime health with get_runtime_health", async () => {

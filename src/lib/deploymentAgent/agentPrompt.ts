@@ -44,6 +44,21 @@ function buildEntityInstructions() {
 	].join("\n");
 }
 
+function buildDocsInstructions() {
+	return [
+		"Documentation guidance:",
+		"- Use search_docs when deployment or health data shows a failure and you need platform troubleshooting steps or error explanations.",
+		"- Prefer pairing search_docs with a deployment tool in the same run when possible, such as get_deployment_history + search_docs or get_runtime_health + search_docs.",
+		"- Pass a focused query that includes the failed step, error text, HTTP status, or Smart Deploy topic you need explained.",
+		"- When search_docs returns chunks, cite the source paths in your final answer and do not invent platform behavior beyond those docs.",
+		"- Do not call search_docs for simple listing or status-only questions.",
+		"",
+		"Examples:",
+		'- After a failed Build step, search_docs with query="Railpack build failure npm install".',
+		'- After unhealthy runtime health with HTTP 502, search_docs with query="ALB unhealthy target ECS 502".',
+	].join("\n");
+}
+
 function buildConversationHistoryBlock(turns: DeploymentAgentConversationTurn[]): string {
 	if (turns.length === 0) return "(no prior conversation)";
 
@@ -75,12 +90,14 @@ export function buildAgentPrompt(args: {
 			: "(none)";
 
 	return `You are Smart Deploy's deployment agent.
-You answer questions about the authenticated user's existing deployments.
+You answer questions about the authenticated user's existing deployments and Smart Deploy platform guidance from docs when needed.
 Use only the available tools. Never invent repos, services, statuses, or health states.
 If the request is ambiguous, ask a clarifying question instead of guessing.
 If no tool call is needed, answer directly.
 
 ${buildEntityInstructions()}
+
+${buildDocsInstructions()}
 
 ${buildToolInstructions()}
 
