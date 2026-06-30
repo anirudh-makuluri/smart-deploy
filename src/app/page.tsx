@@ -7,10 +7,12 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+const LANDING_DESCRIPTION =
+	"Deploy without the black box. Smart Deploy scans your GitHub repo, generates a Railpack build plan (or uses your Dockerfile), previews the full deploy blueprint, then ships to AWS with live logs, runtime health, and a read-only AI deployment agent.";
+
 export const metadata: Metadata = {
 	title: "Deploy anything. Inspect everything.",
-	description:
-		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+	description: LANDING_DESCRIPTION,
 };
 
 const webApplicationJsonLd = {
@@ -20,8 +22,7 @@ const webApplicationJsonLd = {
 	applicationCategory: "DeveloperApplication",
 	operatingSystem: "Web",
 	url: "https://smart-deploy.xyz",
-	description:
-		"Deploy without the black box. Generate or bring Docker, Compose, and Nginx, preview routing and services as a blueprint, then ship with confidence.",
+	description: LANDING_DESCRIPTION,
 };
 
 function jsonLdString(value: unknown): string {
