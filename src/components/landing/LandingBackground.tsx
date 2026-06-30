@@ -32,8 +32,9 @@ export function LandingBackground() {
 	React.useEffect(() => {
 		const canvas = canvasRef.current;
 		if (!canvas) return;
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return;
+		const context = canvas.getContext("2d");
+		if (!context) return;
+		const ctx: CanvasRenderingContext2D = context;
 
 		const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 		const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -112,10 +113,10 @@ export function LandingBackground() {
 		function resize() {
 			width = window.innerWidth;
 			height = window.innerHeight;
-			canvas.width = Math.floor(width * dpr);
-			canvas.height = Math.floor(height * dpr);
-			canvas.style.width = `${width}px`;
-			canvas.style.height = `${height}px`;
+			ctx.canvas.width = Math.floor(width * dpr);
+			ctx.canvas.height = Math.floor(height * dpr);
+			ctx.canvas.style.width = `${width}px`;
+			ctx.canvas.style.height = `${height}px`;
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			buildScene();
 		}

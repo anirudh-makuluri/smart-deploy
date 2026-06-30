@@ -649,28 +649,12 @@ export function ScrollytellingSection() {
 	const stepRefs = React.useRef<Array<HTMLDivElement | null>>([]);
 	const sectionRef = React.useRef<HTMLElement | null>(null);
 	const visibilityObserverRef = React.useRef<IntersectionObserver | null>(null);
+	const stepObserverRef = React.useRef<IntersectionObserver | null>(null);
 
-	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
-		sectionRef.current = node;
-		visibilityObserverRef.current?.disconnect();
-		visibilityObserverRef.current = null;
-		if (!node) return;
+	const getStepObserver = React.useCallback((): IntersectionObserver => {
+		const existing = stepObserverRef.current;
+		if (existing) return existing;
 
-		const observer = new IntersectionObserver(
-			([entry]) => {
-				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
-			},
-			{ threshold: [0, 0.12, 0.3] }
-		);
-		visibilityObserverRef.current = observer;
-		observer.observe(node);
-	}, []);
-
-	const setStepRef = React.useCallback((index: number, node: HTMLDivElement | null) => {
-		stepRefs.current[index] = node;
-	}, []);
-
-	React.useEffect(() => {
 		const observer = new IntersectionObserver(
 			(entries) => {
 				let nextIndex = 0;
@@ -694,15 +678,45 @@ export function ScrollytellingSection() {
 				rootMargin: "-30% 0px -30% 0px",
 			}
 		);
-
-		for (const node of stepRefs.current) {
-			if (node) observer.observe(node);
-		}
-
-		return () => observer.disconnect();
+		stepObserverRef.current = observer;
+		return observer;
 	}, []);
 
-	React.useEffect(() => () => visibilityObserverRef.current?.disconnect(), []);
+	const setSectionNode = React.useCallback((node: HTMLElement | null) => {
+		sectionRef.current = node;
+		visibilityObserverRef.current?.disconnect();
+		visibilityObserverRef.current = null;
+		if (!node) return;
+
+		const observer = new IntersectionObserver(
+			([entry]) => {
+				setIsSectionVisible(entry.isIntersecting && entry.intersectionRatio > 0.12);
+			},
+			{ threshold: [0, 0.12, 0.3] }
+		);
+		visibilityObserverRef.current = observer;
+		observer.observe(node);
+	}, []);
+
+	const setStepRef = React.useCallback(
+		(index: number, node: HTMLDivElement | null) => {
+			const observer = getStepObserver();
+			const previous = stepRefs.current[index];
+			if (previous) observer.unobserve(previous);
+			stepRefs.current[index] = node;
+			if (node) observer.observe(node);
+		},
+		[getStepObserver]
+	);
+
+	React.useEffect(
+		() => () => {
+			visibilityObserverRef.current?.disconnect();
+			stepObserverRef.current?.disconnect();
+			stepObserverRef.current = null;
+		},
+		[]
+	);
 
 	return (
 		<LazyMotion features={domAnimation} strict>
