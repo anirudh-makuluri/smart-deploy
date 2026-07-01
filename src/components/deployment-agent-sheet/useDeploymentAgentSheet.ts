@@ -7,12 +7,7 @@ import {
 	initialDeploymentAgentSheetState,
 	type DeploymentAgentMessage,
 } from "@/components/deployment-agent-sheet/types";
-
-export const DEPLOYMENT_AGENT_STARTER_PROMPTS = [
-	"Show me my deployments",
-	"Why did my last deployment fail?",
-	"Is my service healthy right now?",
-];
+import { EMPTY_AGENT_STRUCTURED_DATA } from "@/lib/deploymentAgent/structuredData";
 
 function createConversationId(): string {
 	if (typeof globalThis.crypto?.randomUUID === "function") {
@@ -22,14 +17,14 @@ function createConversationId(): string {
 }
 
 export function useDeploymentAgentSheet() {
-	const { latestAgentEvent, runAgent } = useWorkerWebSocket();
+	const { latestAgentEvent, runAgent, socketStatus } = useWorkerWebSocket();
 	const [state, dispatch] = React.useReducer(
 		deploymentAgentSheetReducer,
 		initialDeploymentAgentSheetState
 	);
 	const endRef = React.useRef<HTMLDivElement | null>(null);
 	const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
-	const [conversationId] = React.useState(createConversationId);
+	const [conversationId, setConversationId] = React.useState(createConversationId);
 
 	React.useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,6 +40,7 @@ export function useDeploymentAgentSheet() {
 				runId: payload.runId,
 				content: payload.message,
 				docCitations: payload.docCitations,
+				structuredData: payload.structuredData,
 			});
 			window.setTimeout(() => {
 				inputRef.current?.focus();
@@ -58,6 +54,7 @@ export function useDeploymentAgentSheet() {
 				runId: payload.runId,
 				content: payload.message,
 				docCitations: payload.docCitations,
+				structuredData: payload.structuredData,
 			});
 			return;
 		}
@@ -72,6 +69,7 @@ export function useDeploymentAgentSheet() {
 			dispatch({
 				type: "sync_agent_progress",
 				runId: payload.runId,
+				kind,
 				content: payload.message,
 			});
 		}
@@ -94,18 +92,25 @@ export function useDeploymentAgentSheet() {
 			const cleaned = question.trim();
 			if (!cleaned || state.pending) return;
 
+			const now = Date.now();
 			const userMessage: DeploymentAgentMessage = {
-				id: `${Date.now()}-user`,
+				id: `${now}-user`,
 				role: "user",
 				content: cleaned,
+				createdAt: now,
+				activity: [],
 				docCitations: [],
+				structuredData: EMPTY_AGENT_STRUCTURED_DATA,
 			};
 			const assistantMessage: DeploymentAgentMessage = {
-				id: `${Date.now()}-assistant`,
+				id: `${now}-assistant`,
 				role: "assistant",
-				content: "Starting deployment agent...",
+				content: "",
+				createdAt: now,
 				pending: true,
+				activity: [],
 				docCitations: [],
+				structuredData: EMPTY_AGENT_STRUCTURED_DATA,
 			};
 
 			dispatch({ type: "submit_question", userMessage, assistantMessage });
@@ -125,13 +130,27 @@ export function useDeploymentAgentSheet() {
 		askDeploymentAgent(state.input);
 	}, [askDeploymentAgent, state.input]);
 
+	const resetConversation = React.useCallback(() => {
+		if (state.pending) return;
+		dispatch({ type: "reset_conversation" });
+		setConversationId(createConversationId());
+		window.setTimeout(() => {
+			inputRef.current?.focus();
+		}, 0);
+	}, [state.pending]);
+
+	const hasConversation = state.messages.some((message) => message.role === "user");
+
 	return {
 		state,
 		dispatch,
 		endRef,
 		inputRef,
+		socketStatus,
+		hasConversation,
 		copyAssistantMessage,
 		askDeploymentAgent,
 		submitInput,
+		resetConversation,
 	};
 }

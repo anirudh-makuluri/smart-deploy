@@ -23,6 +23,8 @@ import {
 } from "@/lib/deploymentAgent/messagePersistence";
 import type { AgentToolName } from "@/lib/deploymentAgent/registry";
 import type { AgentEmitter, AgentSocketDocCitation, ToolExecutionResult } from "@/lib/deploymentAgent/types";
+import { buildStructuredDataFromToolResults } from "@/lib/deploymentAgent/buildStructuredData";
+import { EMPTY_AGENT_STRUCTURED_DATA, type AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
 import { collectDocCitationsFromSearchDocsToolResults } from "@/lib/agentDocCitations";
 import { callLLMWithFallback, type LLMFallbackResult } from "@/lib/llmProviders";
 
@@ -107,12 +109,14 @@ function emitAgentEvent(
 	event: Parameters<AgentEmitter>[0],
 	runId: string,
 	message: string,
-	docCitations: AgentSocketDocCitation[] = []
+	docCitations: AgentSocketDocCitation[] = [],
+	structuredData: AgentStructuredData = EMPTY_AGENT_STRUCTURED_DATA
 ) {
 	emit(event, {
 		runId,
 		message,
 		docCitations,
+		structuredData,
 	});
 }
 
@@ -177,6 +181,7 @@ export async function runDeploymentAgent(args: {
 
 			if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
 				const docCitations = collectDocCitationsFromSearchDocsToolResults(toolResults);
+				const structuredData = buildStructuredDataFromToolResults(toolResults);
 				await appendDeploymentAgentConversationTurn({
 					userID: args.userID,
 					conversationId,
@@ -200,8 +205,8 @@ export async function runDeploymentAgent(args: {
 					promptTurnCount,
 					errorMessage: null,
 				});
-				emitAgentEvent(args.emit, "agent:message", runId, decision.message, docCitations);
-				emitAgentEvent(args.emit, "agent:complete", runId, decision.message, docCitations);
+				emitAgentEvent(args.emit, "agent:message", runId, decision.message, docCitations, structuredData);
+				emitAgentEvent(args.emit, "agent:complete", runId, decision.message, docCitations, structuredData);
 				return true;
 			}
 

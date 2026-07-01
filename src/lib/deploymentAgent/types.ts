@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
 
 export type AgentToolDefinition = {
 	name: string;
@@ -31,6 +32,7 @@ export type AgentSocketMessage = {
 	runId: string;
 	message: string;
 	docCitations: AgentSocketDocCitation[];
+	structuredData: AgentStructuredData;
 };
 
 export type AgentEventName =

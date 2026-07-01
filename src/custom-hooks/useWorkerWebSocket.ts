@@ -1,5 +1,6 @@
 import { DeployConfig } from "@/app/types";
 import { authClient } from "@/lib/auth-client";
+import { EMPTY_AGENT_STRUCTURED_DATA } from "@/lib/deploymentAgent/structuredData";
 import {
 	type AgentSocketMessagePayload,
 	type AgentRunPayload,
@@ -402,6 +403,7 @@ export function useWorkerWebSocketSession() {
 							runId: activeAgentRunIdRef.current ?? "",
 							message: disconnectMessage,
 							docCitations: [],
+							structuredData: EMPTY_AGENT_STRUCTURED_DATA,
 						},
 						receivedAt: Date.now(),
 					},
@@ -431,6 +433,7 @@ export function useWorkerWebSocketSession() {
 							runId: activeAgentRunIdRef.current ?? "",
 							message,
 							docCitations: [],
+							structuredData: EMPTY_AGENT_STRUCTURED_DATA,
 						},
 						receivedAt: Date.now(),
 					},
@@ -487,9 +490,13 @@ export function useWorkerWebSocketSession() {
 				runId: "",
 				message: "",
 				docCitations: [],
+				structuredData: EMPTY_AGENT_STRUCTURED_DATA,
 			};
 			if (!Array.isArray(typedPayload.docCitations)) {
 				typedPayload.docCitations = [];
+			}
+			if (!typedPayload.structuredData || !Array.isArray(typedPayload.structuredData.blocks)) {
+				typedPayload.structuredData = EMPTY_AGENT_STRUCTURED_DATA;
 			}
 			if (typedPayload.runId) {
 				activeAgentRunIdRef.current = typedPayload.runId;

@@ -211,6 +211,18 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		expect(events[0]?.payload.runId).toBeTruthy();
 		expect(events[5]?.payload.message).toContain("1 deployment");
 		expect(events[6]?.payload.message).toContain("1 deployment");
+		expect(events[6]?.payload.structuredData?.blocks).toEqual([
+			expect.objectContaining({
+				kind: "deployment_list",
+				deployments: [
+					expect.objectContaining({
+						repoName: "smart-deploy",
+						serviceName: "web",
+						status: "running",
+					}),
+				],
+			}),
+		]);
 		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
 			'repoName is the deployment repo name only, such as "smart-deploy" or "shop". It is the "repo" in the full GitHub path "owner/repo".'
 		);
