@@ -37,17 +37,22 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
 	InvokeModelCommand: InvokeModelCommandMock,
 }));
 
-function makeGeminiResponse(text: string) {
+function makeGeminiResponse(text: string, usage?: { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount?: number }) {
 	return {
 		response: Promise.resolve({
 			text: () => text,
+			usageMetadata: usage,
 		}),
 	};
 }
 
-function makeBedrockResponse(text: string) {
+function makeBedrockResponse(
+	text: string,
+	usage?: { input_tokens: number; output_tokens: number }
+) {
 	const payload = {
 		content: [{ text }],
+		...(usage ? { usage } : {}),
 	};
 	return {
 		body: new TextEncoder().encode(JSON.stringify(payload)),
@@ -90,7 +95,13 @@ describe("llmProviders.callLLMWithFallback", () => {
 
 	it("uses Gemini when available and successful", async () => {
 		process.env.GEMINI_API_KEY = "test-key";
-		generateContentMock.mockResolvedValue(makeGeminiResponse("gemini-ok"));
+		generateContentMock.mockResolvedValue(
+			makeGeminiResponse("gemini-ok", {
+				promptTokenCount: 120,
+				candidatesTokenCount: 45,
+				totalTokenCount: 165,
+			})
+		);
 
 		const { callLLMWithFallback } = await import("@/lib/llmProviders");
 		const result = await callLLMWithFallback("hello", { maxTokens: 1234 });
@@ -99,6 +110,11 @@ describe("llmProviders.callLLMWithFallback", () => {
 			text: "gemini-ok",
 			provider: "gemini",
 			model: "gemini-2.5-flash",
+			token_usage: {
+				input_tokens: 120,
+				output_tokens: 45,
+				total_tokens: 165,
+			},
 		});
 		expect(googleGenerativeAIMock).toHaveBeenCalledWith("test-key");
 		expect(getGenerativeModelMock).toHaveBeenCalledWith(
@@ -113,7 +129,9 @@ describe("llmProviders.callLLMWithFallback", () => {
 		process.env.AWS_BEDROCK_ACCESS_KEY_ID = "bedrock-key";
 		process.env.AWS_BEDROCK_SECRET_ACCESS_KEY = "bedrock-secret";
 		generateContentMock.mockRejectedValue(new Error("gemini down"));
-		bedrockSendMock.mockResolvedValue(makeBedrockResponse("bedrock-ok"));
+		bedrockSendMock.mockResolvedValue(
+			makeBedrockResponse("bedrock-ok", { input_tokens: 200, output_tokens: 80 })
+		);
 
 		const { callLLMWithFallback } = await import("@/lib/llmProviders");
 		const result = await callLLMWithFallback("hello");
@@ -121,6 +139,11 @@ describe("llmProviders.callLLMWithFallback", () => {
 		expect(result).toMatchObject({
 			text: "bedrock-ok",
 			provider: "bedrock",
+			token_usage: {
+				input_tokens: 200,
+				output_tokens: 80,
+				total_tokens: 280,
+			},
 		});
 		expect(bedrockSendMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock).not.toHaveBeenCalled();
@@ -145,6 +168,7 @@ describe("llmProviders.callLLMWithFallback", () => {
 			text: "local-ok",
 			provider: "local",
 			model: "llama3.2",
+			token_usage: null,
 		});
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
@@ -179,6 +203,7 @@ describe("llmProviders.callLLMWithFallback", () => {
 			text: "local-only-ok",
 			provider: "local",
 			model: "mistral",
+			token_usage: null,
 		});
 		expect(googleGenerativeAIMock).not.toHaveBeenCalled();
 		expect(bedrockSendMock).not.toHaveBeenCalled();

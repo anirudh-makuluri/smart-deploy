@@ -177,7 +177,14 @@ export async function runDeploymentAgent(args: {
 				toolCallsUsed,
 				toolResults,
 			});
-			llmTurns.push(buildDeploymentAgentLlmTurn({ decision, model: llm.model, provider: llm.provider }));
+			llmTurns.push(
+				buildDeploymentAgentLlmTurn({
+					decision,
+					model: llm.model,
+					provider: llm.provider,
+					token_usage: llm.token_usage,
+				})
+			);
 
 			if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
 				const docCitations = collectDocCitationsFromSearchDocsToolResults(toolResults);

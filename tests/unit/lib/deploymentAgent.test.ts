@@ -48,6 +48,7 @@ function llmJsonResponse(payload: Record<string, unknown>) {
 		text: JSON.stringify(payload),
 		model: "test-model",
 		provider: "local" as const,
+		token_usage: null,
 	};
 }
 

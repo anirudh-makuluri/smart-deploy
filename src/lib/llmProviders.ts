@@ -3,10 +3,17 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export type LLMProvider = "gemini" | "bedrock" | "local";
 
+export type LlmTokenUsage = {
+	input_tokens: number;
+	output_tokens: number;
+	total_tokens: number;
+};
+
 export type LLMFallbackResult = {
 	text: string;
 	model: string;
 	provider: LLMProvider;
+	token_usage: LlmTokenUsage | null;
 };
 
 export type LLMFallbackOptions = {
@@ -114,6 +121,7 @@ async function callGemini(prompt: string, options: LLMFallbackOptions): Promise<
 		text: response.text(),
 		model: modelName,
 		provider: "gemini",
+		token_usage: parseGeminiTokenUsage(response.usageMetadata),
 	};
 }
 
@@ -156,6 +164,7 @@ async function callBedrock(prompt: string, options: LLMFallbackOptions): Promise
 		text,
 		model: modelId,
 		provider: "bedrock",
+		token_usage: parseBedrockTokenUsage(responseBody?.usage),
 	};
 }
 
@@ -243,6 +252,50 @@ async function callLocalLLM(prompt: string, options: LLMFallbackOptions): Promis
 		text: data.response,
 		model,
 		provider: "local",
+		token_usage: null,
+	};
+}
+
+function parseGeminiTokenUsage(
+	usageMetadata: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } | undefined
+): LlmTokenUsage | null {
+	if (!usageMetadata) {
+		return null;
+	}
+
+	const inputTokens = usageMetadata.promptTokenCount;
+	const outputTokens = usageMetadata.candidatesTokenCount;
+	if (typeof inputTokens !== "number" || typeof outputTokens !== "number") {
+		return null;
+	}
+
+	const totalTokens =
+		typeof usageMetadata.totalTokenCount === "number"
+			? usageMetadata.totalTokenCount
+			: inputTokens + outputTokens;
+
+	return {
+		input_tokens: inputTokens,
+		output_tokens: outputTokens,
+		total_tokens: totalTokens,
+	};
+}
+
+function parseBedrockTokenUsage(usage: { input_tokens?: number; output_tokens?: number } | undefined): LlmTokenUsage | null {
+	if (!usage) {
+		return null;
+	}
+
+	const inputTokens = usage.input_tokens;
+	const outputTokens = usage.output_tokens;
+	if (typeof inputTokens !== "number" || typeof outputTokens !== "number") {
+		return null;
+	}
+
+	return {
+		input_tokens: inputTokens,
+		output_tokens: outputTokens,
+		total_tokens: inputTokens + outputTokens,
 	};
 }
 
