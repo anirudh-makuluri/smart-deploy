@@ -43,6 +43,7 @@ describe("deploymentAgent search_docs tool", () => {
 		expect(result).toMatchObject({
 			query: "ALB unhealthy target 502",
 			mossEnabled: true,
+			mossRetrievalMs: 55,
 			citations: ["docs/FAQ.md", "docs/DEBUGGING_DEPLOYMENTS.md"],
 		});
 		expect(result.chunks[0]?.content.endsWith("...")).toBe(true);

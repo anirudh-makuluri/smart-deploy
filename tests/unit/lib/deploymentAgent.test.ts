@@ -402,6 +402,20 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 
 		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
 		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("Railpack build failed missing lockfile", 4);
+
+		const assistantPersistCall = persistDeploymentAgentMessageMock.mock.calls.at(-1)?.[0] as {
+			metadata: {
+				toolResults: Array<{
+					name: string;
+					result: { mossEnabled: boolean; mossRetrievalMs: number | null };
+				}>;
+			};
+		};
+		const searchDocsResult = assistantPersistCall.metadata.toolResults.find(
+			(toolResult) => toolResult.name === "search_docs"
+		);
+		expect(searchDocsResult?.result.mossEnabled).toBe(true);
+		expect(searchDocsResult?.result.mossRetrievalMs).toBe(30);
 	});
 
 	it("inspects runtime health with get_runtime_health", async () => {

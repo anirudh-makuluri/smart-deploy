@@ -6,6 +6,7 @@ import { retrievePlatformDocChunks } from "@/lib/platformDocsRetrieval";
 type SearchDocsResult = {
 	query: string;
 	mossEnabled: boolean;
+	mossRetrievalMs: number | null;
 	chunks: Array<{
 		source: string;
 		section: string;
@@ -44,6 +45,7 @@ async function executeSearchDocs(
 	return {
 		query,
 		mossEnabled: retrieval.mossEnabled,
+		mossRetrievalMs: retrieval.mossRetrievalMs,
 		chunks,
 		citations,
 	};
