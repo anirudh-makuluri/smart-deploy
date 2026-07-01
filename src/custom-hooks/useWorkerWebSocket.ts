@@ -401,6 +401,7 @@ export function useWorkerWebSocketSession() {
 						payload: {
 							runId: activeAgentRunIdRef.current ?? "",
 							message: disconnectMessage,
+							docCitations: [],
 						},
 						receivedAt: Date.now(),
 					},
@@ -429,6 +430,7 @@ export function useWorkerWebSocketSession() {
 						payload: {
 							runId: activeAgentRunIdRef.current ?? "",
 							message,
+							docCitations: [],
 						},
 						receivedAt: Date.now(),
 					},

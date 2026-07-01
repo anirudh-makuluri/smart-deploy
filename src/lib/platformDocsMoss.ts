@@ -3,6 +3,7 @@ import {
 	getMossIndexName,
 	isMossConfigured,
 	PlatformMossRuntime,
+	runSequentialTasks,
 	type PlatformMossDoc,
 } from "@/lib/platformMossRuntime";
 
@@ -92,9 +93,7 @@ async function initializeMoss(): Promise<PlatformMossRuntime | null> {
 			for (let i = seedCount; i < docs.length; i += 40) {
 				batches.push(docs.slice(i, i + 40));
 			}
-			for (const batch of batches) {
-				await runtime.addDocs(mossIndexName, batch, { upsert: true });
-			}
+			await runSequentialTasks(batches, (batch) => runtime.addDocs(mossIndexName, batch, { upsert: true }));
 		}
 
 		await runtime.loadIndex(mossIndexName);

@@ -27,6 +27,13 @@ export function isMossConfigured(): boolean {
 	return Boolean(process.env.MOSS_PROJECT_ID?.trim() && process.env.MOSS_PROJECT_KEY?.trim());
 }
 
+export async function runSequentialTasks<T>(items: T[], run: (item: T) => Promise<void>): Promise<void> {
+	await items.reduce(
+		(promise, item) => promise.then(() => run(item)),
+		Promise.resolve()
+	);
+}
+
 export class PlatformMossRuntime {
 	private readonly manageClient: ManageClient;
 	private readonly indexManager: IndexManager;
@@ -45,20 +52,23 @@ export class PlatformMossRuntime {
 		return new PlatformMossRuntime(projectId, projectKey);
 	}
 
-	private async waitForJob(jobId: string): Promise<void> {
-		for (let attempt = 0; attempt < JOB_POLL_MAX_ATTEMPTS; attempt += 1) {
-			const status = await this.manageClient.getJobStatus(jobId);
-			if (status.status === "completed") {
-				return;
-			}
-			if (status.status === "failed") {
-				throw new Error(status.error || `Moss job ${jobId} failed`);
-			}
-			await new Promise((resolve) => {
-				setTimeout(resolve, JOB_POLL_INTERVAL_MS);
-			});
+	private async waitForJob(jobId: string, attempt = 0): Promise<void> {
+		if (attempt >= JOB_POLL_MAX_ATTEMPTS) {
+			throw new Error(`Moss job ${jobId} timed out`);
 		}
-		throw new Error(`Moss job ${jobId} timed out`);
+
+		const status = await this.manageClient.getJobStatus(jobId);
+		if (status.status === "completed") {
+			return;
+		}
+		if (status.status === "failed") {
+			throw new Error(status.error || `Moss job ${jobId} failed`);
+		}
+
+		await new Promise((resolve) => {
+			setTimeout(resolve, JOB_POLL_INTERVAL_MS);
+		});
+		return this.waitForJob(jobId, attempt + 1);
 	}
 
 	private toDocumentInfos(docs: PlatformMossDoc[]): DocumentInfo[] {
