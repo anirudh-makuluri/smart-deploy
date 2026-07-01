@@ -61,6 +61,6 @@ export const searchDocsTool = {
 		query: z.string().trim().min(1),
 	}),
 	execute: async (ctx, args) => executeSearchDocs(ctx, args),
-	startedMessage: "Searching Smart Deploy docs for relevant guidance.",
+	startedMessage: "Using Moss to search Smart Deploy docs for relevant guidance.",
 	completedMessage: "Finished searching Smart Deploy docs.",
 } satisfies AgentToolDefinition;
