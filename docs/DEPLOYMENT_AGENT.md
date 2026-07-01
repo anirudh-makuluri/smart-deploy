@@ -2,7 +2,7 @@
 
 The **Deployment Agent** is a read-only AI inspector for your live deployments. Open it from the header **Agent** button.
 
-It answers questions by fetching **your** deployment data — status, history, health — through tools. It does not guess repos, services, or health states.
+It answers questions by fetching **your** deployment data — status, history, health — through tools, and can pull **platform docs** (via Moss search) when troubleshooting guidance is needed. It does not guess repos, services, or health states.
 
 ## What it can do
 
@@ -12,6 +12,7 @@ It answers questions by fetching **your** deployment data — status, history, h
 | Inspect current state | "What's the status of my api service?" |
 | Review history | "Why did my last deployment fail?" |
 | Check health | "Is my service healthy right now?" |
+| Search platform docs | "What does an ALB unhealthy target mean?" (often paired with a deployment tool) |
 
 ## What it cannot do
 
@@ -49,6 +50,7 @@ For actions, use the deploy workspace UI.
 | `get_deployment_details` | Status, commit, revision, region, cloud resources, scan summary |
 | `get_deployment_history` | Recent attempts: success/fail, failed step, log excerpts |
 | `get_runtime_health` | Recent probes: app status, HTTP code, latency, ECS/ALB signals |
+| `search_docs` | Relevant Smart Deploy doc excerpts (Moss + deterministic search) for troubleshooting and how-to |
 
 ## Live status updates
 

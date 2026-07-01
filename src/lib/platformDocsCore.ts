@@ -1,6 +1,6 @@
 import { listDocMarkdownFiles, readDocsMarkdownBySlug, readProjectReadme } from "@/lib/public-docsCore";
 
-export type HelpDocChunk = {
+export type PlatformDocChunk = {
 	id: string;
 	source: string;
 	section: string;
@@ -8,7 +8,7 @@ export type HelpDocChunk = {
 	score?: number;
 };
 
-type InternalChunk = HelpDocChunk & {
+type InternalChunk = PlatformDocChunk & {
 	tokens: string[];
 };
 
@@ -107,17 +107,11 @@ async function buildCorpus(): Promise<InternalChunk[]> {
 	const chunks: InternalChunk[] = buildChunksFromMarkdown(readme, "README.md");
 
 	const docChunks = await Promise.all(
-		docFiles.flatMap((docFile) =>
-			docFile.filename === "HELP_AGENT_BENCHMARK.md"
-				? []
-				: [
-						(async () => {
-							const doc = await readDocsMarkdownBySlug(docFile.slug);
-							if (!doc) return [] as InternalChunk[];
-							return buildChunksFromMarkdown(doc.content, `docs/${doc.filename}`);
-						})(),
-					]
-		)
+		docFiles.map(async (docFile) => {
+			const doc = await readDocsMarkdownBySlug(docFile.slug);
+			if (!doc) return [] as InternalChunk[];
+			return buildChunksFromMarkdown(doc.content, `docs/${doc.filename}`);
+		})
 	);
 	chunks.push(...docChunks.flat());
 
@@ -144,7 +138,7 @@ function scoreChunk(queryTokens: string[], queryLower: string, chunk: InternalCh
 	return overlap * sourceWeight(chunk.source) + sectionBoost + phraseBoost;
 }
 
-export async function getHelpContext(question: string, limit = 6): Promise<HelpDocChunk[]> {
+export async function searchPlatformDocs(question: string, limit = 6): Promise<PlatformDocChunk[]> {
 	const corpus = await getCorpus();
 	const queryTokens = tokenize(question);
 	const queryLower = question.toLowerCase().trim();
@@ -161,7 +155,7 @@ export async function getHelpContext(question: string, limit = 6): Promise<HelpD
 	return ranked;
 }
 
-export async function getAllHelpDocChunks(): Promise<HelpDocChunk[]> {
+export async function getAllPlatformDocChunks(): Promise<PlatformDocChunk[]> {
 	const corpus = await getCorpus();
 	return corpus.map(({ tokens: _tokens, ...chunk }) => chunk);
 }

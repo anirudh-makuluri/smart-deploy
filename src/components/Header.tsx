@@ -33,7 +33,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const { activeServiceName, setActiveServiceName } = useAppData();
 	const systemHealth = useHeaderSystemHealth();
 	const [reportOpen, setReportOpen] = React.useState(false);
-	const [helpAgentOpen, setHelpAgentOpen] = React.useState(false);
+	const [deploymentAgentOpen, setDeploymentAgentOpen] = React.useState(false);
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;
@@ -66,7 +66,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 					<HeaderActions
 						systemHealth={systemHealth}
 						session={session}
-						onOpenHelpAgent={() => setHelpAgentOpen(true)}
+						onOpenDeploymentAgent={() => setDeploymentAgentOpen(true)}
 						onOpenReport={() => setReportOpen(true)}
 						onSignOut={handleSignOut}
 						mobileDockEnabled={showMobileNavMenu}
@@ -80,11 +80,11 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 					repoName={repo || undefined}
 					serviceName={activeServiceName || null}
 				/>
-				<DeploymentAgentSheet open={helpAgentOpen} onOpenChange={setHelpAgentOpen} />
+				<DeploymentAgentSheet open={deploymentAgentOpen} onOpenChange={setDeploymentAgentOpen} />
 			</header>
 			{showMobileNavMenu ? (
 				<HeaderMobileDock
-					onOpenHelpAgent={() => setHelpAgentOpen(true)}
+					onOpenDeploymentAgent={() => setDeploymentAgentOpen(true)}
 					onOpenMobileNavMenu={() => {
 						homeNav?.onOpenMobileSidebar();
 						workspaceNav?.onOpenMobileSidebar();

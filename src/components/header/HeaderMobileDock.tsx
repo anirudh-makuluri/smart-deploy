@@ -4,7 +4,7 @@ import { Bot, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type HeaderMobileDockProps = {
-	onOpenHelpAgent: () => void;
+	onOpenDeploymentAgent: () => void;
 	onOpenMobileNavMenu: () => void;
 	className?: string;
 };
@@ -13,7 +13,7 @@ const dockButtonClassName =
 	"group flex min-w-[6.5rem] items-center justify-center gap-2 rounded-[1rem] px-3.5 py-3 text-sm font-medium text-foreground/88 transition-all hover:bg-white/[0.06] active:scale-[0.985]";
 
 export default function HeaderMobileDock({
-	onOpenHelpAgent,
+	onOpenDeploymentAgent,
 	onOpenMobileNavMenu,
 	className,
 }: HeaderMobileDockProps) {
@@ -27,7 +27,7 @@ export default function HeaderMobileDock({
 			<div className="pointer-events-auto flex items-center gap-1 rounded-[1.4rem] border border-white/10 bg-background/76 p-1.5 shadow-[0_24px_80px_-28px_rgba(0,0,0,0.75)] ring-1 ring-white/6 backdrop-blur-2xl">
 				<button
 					type="button"
-					onClick={onOpenHelpAgent}
+					onClick={onOpenDeploymentAgent}
 					className={dockButtonClassName}
 					aria-label="Open agent"
 				>

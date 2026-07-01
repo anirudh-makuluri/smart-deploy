@@ -2,6 +2,7 @@ import { getDeploymentDetailsTool } from "@/lib/deploymentAgent/tools/getDeploym
 import { getDeploymentHistoryTool } from "@/lib/deploymentAgent/tools/getDeploymentHistory";
 import { getRuntimeHealthTool } from "@/lib/deploymentAgent/tools/getRuntimeHealth";
 import { listDeploymentsTool } from "@/lib/deploymentAgent/tools/listDeployments";
+import { searchDocsTool } from "@/lib/deploymentAgent/tools/searchDocs";
 import type { AgentToolDefinition } from "@/lib/deploymentAgent/types";
 
 export const deploymentAgentTools = {
@@ -9,6 +10,7 @@ export const deploymentAgentTools = {
 	get_deployment_details: getDeploymentDetailsTool,
 	get_deployment_history: getDeploymentHistoryTool,
 	get_runtime_health: getRuntimeHealthTool,
+	search_docs: searchDocsTool,
 } as const satisfies Record<string, AgentToolDefinition>;
 
 export type AgentToolName = keyof typeof deploymentAgentTools;

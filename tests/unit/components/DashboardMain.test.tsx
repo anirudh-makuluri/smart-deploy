@@ -1,6 +1,6 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardMain from "@/components/DashboardMain";
 
 const mockUseSession = vi.fn();
@@ -36,7 +36,24 @@ vi.mock("@/lib/utils", async () => {
 	};
 });
 
+vi.mock("next/link", () => ({
+	default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+		<a href={href}>{children}</a>
+	),
+}));
+
+vi.mock("sonner", () => ({
+	toast: {
+		error: vi.fn(),
+		success: vi.fn(),
+	},
+}));
+
 describe("DashboardMain", () => {
+	afterEach(() => {
+		cleanup();
+	});
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockUseSession.mockReturnValue({

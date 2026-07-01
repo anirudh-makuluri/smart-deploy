@@ -12,5 +12,4 @@ Operator and maintainer guides moved out of the public docs index. End users sho
 | `MULTI_SERVICE_DETECTION.md` | Maintainer reference for detection code |
 | `FIELD_AUDIT.md` | GraphQL field audit |
 | `GRAPHQL_YOGA_MIGRATION.md` | GraphQL migration notes |
-| `HELP_AGENT_BENCHMARK.md` | Help agent retrieval benchmark |
 | `TROUBLESHOOTING.md` | Legacy operator troubleshooting (superseded by user debug docs) |

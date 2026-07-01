@@ -22,7 +22,7 @@ describe("HeaderActions", () => {
 	});
 
 	it("moves feedback into the profile dropdown for signed-in users", async () => {
-		const onOpenHelpAgent = vi.fn();
+		const onOpenDeploymentAgent = vi.fn();
 		const onOpenReport = vi.fn();
 		const onSignOut = vi.fn();
 
@@ -36,7 +36,7 @@ describe("HeaderActions", () => {
 						image: null,
 					},
 				}}
-				onOpenHelpAgent={onOpenHelpAgent}
+				onOpenDeploymentAgent={onOpenDeploymentAgent}
 				onOpenReport={onOpenReport}
 				onSignOut={onSignOut}
 			/>
@@ -59,7 +59,7 @@ describe("HeaderActions", () => {
 			<HeaderActions
 				systemHealth={systemHealth}
 				session={null}
-				onOpenHelpAgent={vi.fn()}
+				onOpenDeploymentAgent={vi.fn()}
 				onOpenReport={vi.fn()}
 				onSignOut={vi.fn()}
 			/>
@@ -76,7 +76,7 @@ describe("HeaderActions", () => {
 			<HeaderActions
 				systemHealth={systemHealth}
 				session={null}
-				onOpenHelpAgent={vi.fn()}
+				onOpenDeploymentAgent={vi.fn()}
 				onOpenReport={vi.fn()}
 				onSignOut={vi.fn()}
 			/>

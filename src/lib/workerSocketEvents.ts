@@ -1,4 +1,5 @@
 import { CloudResources, DeployConfig, DeploymentTarget } from "@/app/types";
+import type { AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
 
 export type WorkerSocketStatus = "running" | "success" | "error";
 
@@ -46,6 +47,12 @@ export type DeploymentStatusChangedPayload = {
 export type AgentSocketMessagePayload = {
 	runId: string;
 	message: string;
+	docCitations: Array<{
+		source: string;
+		href: string;
+		label: string;
+	}>;
+	structuredData: AgentStructuredData;
 };
 
 export type AgentRunPayload = {

@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
 
 export type AgentToolDefinition = {
 	name: string;
@@ -21,9 +22,17 @@ export type ToolExecutionResult<TToolName extends string = string> = {
 	result: unknown;
 };
 
+export type AgentSocketDocCitation = {
+	source: string;
+	href: string;
+	label: string;
+};
+
 export type AgentSocketMessage = {
 	runId: string;
 	message: string;
+	docCitations: AgentSocketDocCitation[];
+	structuredData: AgentStructuredData;
 };
 
 export type AgentEventName =

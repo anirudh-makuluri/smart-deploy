@@ -9,6 +9,7 @@ const getDeploymentHistoryMock = vi.fn();
 const callLLMWithFallbackMock = vi.fn();
 const listRuntimeHealthSamplesMock = vi.fn();
 const persistDeploymentAgentMessageMock = vi.fn();
+const retrievePlatformDocChunksMock = vi.fn();
 
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
@@ -36,6 +37,10 @@ vi.mock("@/lib/deploymentAgent/messagePersistence", () => ({
 
 vi.mock("@/lib/runtimeHealthStore", () => ({
 	listRuntimeHealthSamples: listRuntimeHealthSamplesMock,
+}));
+
+vi.mock("@/lib/platformDocsRetrieval", () => ({
+	retrievePlatformDocChunks: retrievePlatformDocChunksMock,
 }));
 
 function llmJsonResponse(payload: Record<string, unknown>) {
@@ -206,6 +211,18 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		expect(events[0]?.payload.runId).toBeTruthy();
 		expect(events[5]?.payload.message).toContain("1 deployment");
 		expect(events[6]?.payload.message).toContain("1 deployment");
+		expect(events[6]?.payload.structuredData?.blocks).toEqual([
+			expect.objectContaining({
+				kind: "deployment_list",
+				deployments: [
+					expect.objectContaining({
+						repoName: "smart-deploy",
+						serviceName: "web",
+						status: "running",
+					}),
+				],
+			}),
+		]);
 		expect(callLLMWithFallbackMock.mock.calls[0]?.[0]).toContain(
 			'repoName is the deployment repo name only, such as "smart-deploy" or "shop". It is the "repo" in the full GitHub path "owner/repo".'
 		);
@@ -316,6 +333,103 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
 	});
 
+	it("pairs deployment history with search_docs for troubleshooting guidance", async () => {
+		getDeploymentHistoryMock.mockResolvedValue({
+			history: [
+				{
+					id: "run-1",
+					timestamp: "2026-06-20T00:00:00.000Z",
+					success: false,
+					branch: "main",
+					commitSha: "abc123",
+					steps: [
+						{
+							id: "build",
+							label: "Build",
+							status: "error",
+							logs: ["npm install", "Build failed: missing lockfile"],
+						},
+					],
+					failureClassification: {
+						summary: "Build failed",
+					},
+				},
+			],
+		});
+		retrievePlatformDocChunksMock.mockResolvedValue({
+			chunks: [
+				{
+					id: "docs/BUILD_FAILURES.md#0",
+					source: "docs/BUILD_FAILURES.md",
+					section: "Missing lockfile",
+					content: "Regenerate the lockfile locally and redeploy.",
+					score: 2.8,
+				},
+			],
+			mossEnabled: true,
+			mossRetrievalMs: 30,
+		});
+		callLLMWithFallbackMock
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Reviewing recent deployment history.",
+					tool_calls: [
+						{
+							name: "get_deployment_history",
+							arguments: { repoName: "smart-deploy", serviceName: "web", limit: 3 },
+						},
+					],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Searching docs for build failure guidance.",
+					tool_calls: [
+						{
+							name: "search_docs",
+							arguments: { query: "Railpack build failed missing lockfile" },
+						},
+					],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message:
+						"The latest deploy failed during Build. See docs/BUILD_FAILURES.md to regenerate the lockfile and redeploy.",
+					tool_calls: [],
+					completed: true,
+				})
+			);
+
+		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
+
+		await runDeploymentAgent({
+			conversationId: "conversation-1",
+			userID: "user-1",
+			message: "Why did the last deployment fail and how do I fix it?",
+			emit: vi.fn(),
+		});
+
+		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("Railpack build failed missing lockfile", 4);
+
+		const assistantPersistCall = persistDeploymentAgentMessageMock.mock.calls.at(-1)?.[0] as {
+			metadata: {
+				toolResults: Array<{
+					name: string;
+					result: { mossEnabled: boolean; mossRetrievalMs: number | null };
+				}>;
+			};
+		};
+		const searchDocsResult = assistantPersistCall.metadata.toolResults.find(
+			(toolResult) => toolResult.name === "search_docs"
+		);
+		expect(searchDocsResult?.result.mossEnabled).toBe(true);
+		expect(searchDocsResult?.result.mossRetrievalMs).toBe(30);
+	});
+
 	it("inspects runtime health with get_runtime_health", async () => {
 		const healthEntries: RuntimeHealthSample[] = [
 			{
@@ -383,6 +497,51 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			repoName: "smart-deploy",
 			serviceName: "web",
 		});
+	});
+
+	it("emits invalid JSON error when the synthesis turn is not parseable", async () => {
+		retrievePlatformDocChunksMock.mockResolvedValue({
+			chunks: [
+				{
+					id: "docs/RAILPACK.md#0",
+					source: "docs/RAILPACK.md",
+					section: "Railpack",
+					content: "Railpack is the default build system for most apps.",
+					score: 0.95,
+				},
+			],
+			mossEnabled: true,
+			mossRetrievalMs: 12,
+		});
+		callLLMWithFallbackMock
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Looking up Railpack docs.",
+					tool_calls: [{ name: "search_docs", arguments: { query: "railpack" } }],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce({
+				text: "Railpack is Smart Deploy's default build system and runs during deploy.",
+				model: "gemini-2.5-flash",
+				provider: "gemini" as const,
+			});
+
+		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
+		const events: Array<{ event: string; payload: { message: string } }> = [];
+
+		await runDeploymentAgent({
+			conversationId: "conversation-1",
+			userID: "user-1",
+			message: "How is Railpack used?",
+			emit: (event, payload) => {
+				events.push({ event, payload });
+			},
+		});
+
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("railpack", 4);
+		expect(events.at(-1)?.event).toBe("agent:error");
+		expect(events.at(-1)?.payload.message).toBe("Deployment agent returned invalid JSON");
 	});
 
 	it("emits a run-scoped agent error when a later model step fails", async () => {

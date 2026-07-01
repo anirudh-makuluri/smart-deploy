@@ -19,7 +19,7 @@ import {
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.1.2";
+const version = "0.1.3";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 
 // Setup HTTP server to attach Socket.IO to
@@ -154,6 +154,7 @@ io.on("connection", (socket) => {
 				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 					runId: "",
 					message: "Agent conversationId is required.",
+					docCitations: [],
 				});
 				return;
 			}
@@ -162,6 +163,7 @@ io.on("connection", (socket) => {
 				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 					runId: "",
 					message: "Agent message is required.",
+					docCitations: [],
 				});
 				return;
 			}
@@ -179,6 +181,7 @@ io.on("connection", (socket) => {
 			emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 				runId: "",
 				message: err instanceof Error ? err.message : "Agent request failed",
+				docCitations: [],
 			});
 		}
 	});
