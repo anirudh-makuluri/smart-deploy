@@ -62,6 +62,24 @@ function dedupeChunks(chunks: PlatformDocChunk[]): PlatformDocChunk[] {
 	return result;
 }
 
+function isMossNativeBindingError(error: unknown): boolean {
+	if (!(error instanceof Error)) {
+		return false;
+	}
+
+	const messages = [error.message];
+	const cause = "cause" in error ? error.cause : undefined;
+	if (cause instanceof Error) {
+		messages.push(cause.message);
+	}
+
+	return messages.some((message) =>
+		message.includes("ERR_DLOPEN_FAILED") ||
+		message.includes("Cannot find native binding") ||
+		message.includes("GLIBC_2.38")
+	);
+}
+
 async function initializeMoss(): Promise<PlatformMossRuntime | null> {
 	if (!isMossEnabled()) return null;
 
@@ -74,7 +92,11 @@ async function initializeMoss(): Promise<PlatformMossRuntime | null> {
 		try {
 			await runtime.loadIndex(mossIndexName);
 			return runtime;
-		} catch {
+		} catch (error) {
+			if (isMossNativeBindingError(error)) {
+				throw error;
+			}
+
 			// Index does not exist yet; create it from docs corpus.
 		}
 

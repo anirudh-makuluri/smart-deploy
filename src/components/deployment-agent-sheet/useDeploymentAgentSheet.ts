@@ -25,10 +25,19 @@ export function useDeploymentAgentSheet() {
 	const endRef = React.useRef<HTMLDivElement | null>(null);
 	const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
 	const [conversationId, setConversationId] = React.useState(createConversationId);
+	const wasPendingRef = React.useRef(state.pending);
 
 	React.useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [state.messages, state.pending]);
+
+	React.useEffect(() => {
+		if (wasPendingRef.current && !state.pending) {
+			inputRef.current?.focus();
+		}
+
+		wasPendingRef.current = state.pending;
+	}, [state.pending]);
 
 	React.useEffect(() => {
 		if (!latestAgentEvent) return;
@@ -42,9 +51,6 @@ export function useDeploymentAgentSheet() {
 				docCitations: payload.docCitations,
 				structuredData: payload.structuredData,
 			});
-			window.setTimeout(() => {
-				inputRef.current?.focus();
-			}, 0);
 			return;
 		}
 

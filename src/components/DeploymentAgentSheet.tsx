@@ -108,7 +108,7 @@ function AssistantMessage({
 		!message.pending && message.structuredData.blocks.length > 0;
 
 	return (
-		<div className="flex min-w-0 w-full items-start gap-2.5">
+		<div className="flex min-w-0 max-w-4/5 items-start gap-2.5">
 			<span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
 				<Bot className="size-4" />
 			</span>
@@ -214,7 +214,7 @@ export default function DeploymentAgentSheet({ open, onOpenChange }: DeploymentA
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent
 				side="right"
-				className="z-70 flex h-dvh max-h-dvh w-full max-w-full flex-col gap-0 overflow-hidden border-l border-border bg-card p-0 sm:h-svh sm:max-h-svh sm:w-176 sm:max-w-176"
+				className="z-70 flex h-dvh max-h-dvh w-full max-w-full flex-col gap-0 overflow-hidden border-l border-border bg-card p-0 sm:h-svh sm:max-h-svh sm:w-160 sm:max-w-160"
 			>
 				<SheetHeader className="shrink-0 flex-row items-center gap-3 space-y-0 border-b border-border/60 px-5 pb-4 pt-[max(1rem,env(safe-area-inset-top))] pr-14 text-left">
 					<span className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-xs">

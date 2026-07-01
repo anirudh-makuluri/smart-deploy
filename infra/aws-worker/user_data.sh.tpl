@@ -111,7 +111,9 @@ Requires=docker.service
 [Service]
 Restart=always
 RestartSec=5
+TimeoutStartSec=0
 ExecStartPre=-/usr/bin/docker rm -f smart-deploy-worker
+ExecStartPre=/usr/bin/docker pull ${worker_image}
 ExecStartPre=/usr/local/bin/smart-deploy-worker-write-env "${worker_secret_arn}" "/run/smart-deploy-worker.env" "/opt/smart-deploy/.env"
 ExecStart=/usr/bin/docker run --name smart-deploy-worker \
   -p ${worker_port}:${worker_port} \

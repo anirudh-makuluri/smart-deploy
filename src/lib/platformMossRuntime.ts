@@ -1,14 +1,23 @@
-import {
-	IndexManager,
-	ManageClient,
-	type DocumentInfo,
-	type MutationOptions,
-	type SearchResult,
+import type {
+	DocumentInfo,
+	IndexManager as MossIndexManager,
+	ManageClient as MossManageClient,
+	MutationOptions,
+	SearchResult,
 } from "@moss-dev/moss-core";
 
 const DEFAULT_MODEL = "moss-minilm";
 const JOB_POLL_INTERVAL_MS = 2000;
 const JOB_POLL_MAX_ATTEMPTS = 90;
+
+let mossCoreModulePromise: Promise<typeof import("@moss-dev/moss-core")> | null = null;
+
+async function loadMossCoreModule(): Promise<typeof import("@moss-dev/moss-core")> {
+	if (!mossCoreModulePromise) {
+		mossCoreModulePromise = import("@moss-dev/moss-core");
+	}
+	return mossCoreModulePromise;
+}
 
 export type PlatformMossDoc = {
 	id: string;
@@ -35,12 +44,16 @@ export async function runSequentialTasks<T>(items: T[], run: (item: T) => Promis
 }
 
 export class PlatformMossRuntime {
-	private readonly manageClient: ManageClient;
-	private readonly indexManager: IndexManager;
+	private readonly projectId: string;
+	private readonly projectKey: string;
+	private manageClient: MossManageClient | null;
+	private indexManager: MossIndexManager | null;
 
 	constructor(projectId: string, projectKey: string) {
-		this.manageClient = new ManageClient(projectId, projectKey);
-		this.indexManager = new IndexManager(projectId, projectKey);
+		this.projectId = projectId;
+		this.projectKey = projectKey;
+		this.manageClient = null;
+		this.indexManager = null;
 	}
 
 	static createFromEnv(): PlatformMossRuntime | null {
@@ -52,12 +65,39 @@ export class PlatformMossRuntime {
 		return new PlatformMossRuntime(projectId, projectKey);
 	}
 
+	private async ensureClients(): Promise<void> {
+		if (this.manageClient && this.indexManager) {
+			return;
+		}
+
+		const { ManageClient, IndexManager } = await loadMossCoreModule();
+		this.manageClient = new ManageClient(this.projectId, this.projectKey);
+		this.indexManager = new IndexManager(this.projectId, this.projectKey);
+	}
+
+	private async getManageClient(): Promise<MossManageClient> {
+		await this.ensureClients();
+		if (!this.manageClient) {
+			throw new Error("Moss manage client is unavailable");
+		}
+		return this.manageClient;
+	}
+
+	private async getIndexManager(): Promise<MossIndexManager> {
+		await this.ensureClients();
+		if (!this.indexManager) {
+			throw new Error("Moss index manager is unavailable");
+		}
+		return this.indexManager;
+	}
+
 	private async waitForJob(jobId: string, attempt = 0): Promise<void> {
 		if (attempt >= JOB_POLL_MAX_ATTEMPTS) {
 			throw new Error(`Moss job ${jobId} timed out`);
 		}
 
-		const status = await this.manageClient.getJobStatus(jobId);
+		const manageClient = await this.getManageClient();
+		const status = await manageClient.getJobStatus(jobId);
 		if (status.status === "completed") {
 			return;
 		}
@@ -79,28 +119,33 @@ export class PlatformMossRuntime {
 	}
 
 	async loadIndex(indexName: string): Promise<void> {
-		await this.indexManager.loadIndex(indexName);
+		const indexManager = await this.getIndexManager();
+		await indexManager.loadIndex(indexName);
 	}
 
 	async hasLoadedIndex(indexName: string): Promise<boolean> {
-		return this.indexManager.hasIndex(indexName);
+		const indexManager = await this.getIndexManager();
+		return indexManager.hasIndex(indexName);
 	}
 
 	async createIndex(indexName: string, docs: PlatformMossDoc[]): Promise<void> {
-		const result = await this.manageClient.createIndex(indexName, this.toDocumentInfos(docs), DEFAULT_MODEL);
+		const manageClient = await this.getManageClient();
+		const result = await manageClient.createIndex(indexName, this.toDocumentInfos(docs), DEFAULT_MODEL);
 		await this.waitForJob(result.jobId);
 	}
 
 	async addDocs(indexName: string, docs: PlatformMossDoc[], options?: MutationOptions): Promise<void> {
-		const result = await this.manageClient.addDocs(indexName, this.toDocumentInfos(docs), options);
+		const manageClient = await this.getManageClient();
+		const result = await manageClient.addDocs(indexName, this.toDocumentInfos(docs), options);
 		await this.waitForJob(result.jobId);
 	}
 
 	async query(indexName: string, question: string, topK: number): Promise<SearchResult> {
-		const hasIndex = await this.indexManager.hasIndex(indexName);
+		const indexManager = await this.getIndexManager();
+		const hasIndex = await indexManager.hasIndex(indexName);
 		if (!hasIndex) {
 			await this.loadIndex(indexName);
 		}
-		return this.indexManager.queryText(indexName, question, topK);
+		return indexManager.queryText(indexName, question, topK);
 	}
 }
