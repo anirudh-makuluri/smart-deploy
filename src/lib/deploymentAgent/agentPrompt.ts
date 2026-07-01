@@ -50,7 +50,8 @@ function buildDocsInstructions() {
 		"- Use search_docs when deployment or health data shows a failure and you need platform troubleshooting steps or error explanations.",
 		"- Prefer pairing search_docs with a deployment tool in the same run when possible, such as get_deployment_history + search_docs or get_runtime_health + search_docs.",
 		"- Pass a focused query that includes the failed step, error text, HTTP status, or Smart Deploy topic you need explained.",
-		"- When search_docs returns chunks, cite the source paths in your final answer and do not invent platform behavior beyond those docs.",
+		"- When search_docs returns chunks, reference relevant doc paths inline when helpful and do not invent platform behavior beyond those docs.",
+		"- Do not append a separate Sources list; the UI links cited docs automatically.",
 		"- Do not call search_docs for simple listing or status-only questions.",
 		"",
 		"Examples:",
@@ -101,7 +102,9 @@ ${buildDocsInstructions()}
 
 ${buildToolInstructions()}
 
-Return ONLY valid JSON with this shape:
+Return ONLY a single JSON object. No text, explanation, or markdown before or after. No code fences. No comments inside the JSON. No trailing commas. The response must be parseable by JSON.parse().
+
+Required JSON shape:
 {
   "message": "string",
   "tool_calls": [

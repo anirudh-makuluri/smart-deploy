@@ -17,6 +17,7 @@ export type LLMFallbackOptions = {
 	localModelDefault?: string;
 	localTimeoutMs?: number;
 	contextLabel?: string;
+	responseMimeType?: string;
 };
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -90,12 +91,21 @@ async function callGemini(prompt: string, options: LLMFallbackOptions): Promise<
 
 	const modelName = options.geminiModel?.trim() || process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
 	const genAI = new GoogleGenerativeAI(geminiApiKey);
+	const generationConfig: {
+		temperature: number;
+		maxOutputTokens: number;
+		responseMimeType?: string;
+	} = {
+		temperature: options.temperature ?? 0.2,
+		maxOutputTokens: options.maxTokens ?? 4096,
+	};
+	if (options.responseMimeType?.trim()) {
+		generationConfig.responseMimeType = options.responseMimeType.trim();
+	}
+
 	const model = genAI.getGenerativeModel({
 		model: modelName,
-		generationConfig: {
-			temperature: options.temperature ?? 0.2,
-			maxOutputTokens: options.maxTokens ?? 4096,
-		},
+		generationConfig,
 	});
 
 	const result = await model.generateContent(prompt);

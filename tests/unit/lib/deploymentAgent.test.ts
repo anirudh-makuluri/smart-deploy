@@ -401,11 +401,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 		});
 
 		expect(getDeploymentHistoryMock).toHaveBeenCalledWith("smart-deploy", "web", "user-1", 1, 3);
-		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("Railpack build failed missing lockfile", {
-			deterministicLimit: 4,
-			mossLimit: 4,
-			mergedLimit: 4,
-		});
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("Railpack build failed missing lockfile", 4);
 	});
 
 	it("inspects runtime health with get_runtime_health", async () => {
@@ -475,6 +471,51 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			repoName: "smart-deploy",
 			serviceName: "web",
 		});
+	});
+
+	it("emits invalid JSON error when the synthesis turn is not parseable", async () => {
+		retrievePlatformDocChunksMock.mockResolvedValue({
+			chunks: [
+				{
+					id: "docs/RAILPACK.md#0",
+					source: "docs/RAILPACK.md",
+					section: "Railpack",
+					content: "Railpack is the default build system for most apps.",
+					score: 0.95,
+				},
+			],
+			mossEnabled: true,
+			mossRetrievalMs: 12,
+		});
+		callLLMWithFallbackMock
+			.mockResolvedValueOnce(
+				llmJsonResponse({
+					message: "Looking up Railpack docs.",
+					tool_calls: [{ name: "search_docs", arguments: { query: "railpack" } }],
+					completed: false,
+				})
+			)
+			.mockResolvedValueOnce({
+				text: "Railpack is Smart Deploy's default build system and runs during deploy.",
+				model: "gemini-2.5-flash",
+				provider: "gemini" as const,
+			});
+
+		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
+		const events: Array<{ event: string; payload: { message: string } }> = [];
+
+		await runDeploymentAgent({
+			conversationId: "conversation-1",
+			userID: "user-1",
+			message: "How is Railpack used?",
+			emit: (event, payload) => {
+				events.push({ event, payload });
+			},
+		});
+
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("railpack", 4);
+		expect(events.at(-1)?.event).toBe("agent:error");
+		expect(events.at(-1)?.payload.message).toBe("Deployment agent returned invalid JSON");
 	});
 
 	it("emits a run-scoped agent error when a later model step fails", async () => {

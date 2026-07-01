@@ -31,11 +31,7 @@ async function executeSearchDocs(
 		throw new Error("Tool argument `query` is required");
 	}
 
-	const retrieval = await retrievePlatformDocChunks(query, {
-		deterministicLimit: TOOL_DOCS_RESULT_LIMIT,
-		mossLimit: TOOL_DOCS_RESULT_LIMIT,
-		mergedLimit: TOOL_DOCS_RESULT_LIMIT,
-	});
+	const retrieval = await retrievePlatformDocChunks(query, TOOL_DOCS_RESULT_LIMIT);
 
 	const chunks = retrieval.chunks.map((chunk) => ({
 		source: chunk.source,

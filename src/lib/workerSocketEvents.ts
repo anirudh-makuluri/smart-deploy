@@ -46,6 +46,11 @@ export type DeploymentStatusChangedPayload = {
 export type AgentSocketMessagePayload = {
 	runId: string;
 	message: string;
+	docCitations: Array<{
+		source: string;
+		href: string;
+		label: string;
+	}>;
 };
 
 export type AgentRunPayload = {

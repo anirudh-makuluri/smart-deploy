@@ -4,7 +4,9 @@ import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Bot, Check, Copy, Loader2, Send } from "lucide-react";
+import { DeploymentAgentDocBadges } from "@/components/deployment-agent-sheet/DeploymentAgentDocBadges";
 import { useDeploymentAgentSheet, DEPLOYMENT_AGENT_STARTER_PROMPTS } from "@/components/deployment-agent-sheet/useDeploymentAgentSheet";
+import { prepareAgentAssistantMessage } from "@/lib/agentDocCitations";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -65,7 +67,13 @@ export default function DeploymentAgentSheet({
 								))}
 							</div>
 
-							{messages.map((message) => (
+							{messages.map((message) => {
+								const preparedAssistantMessage =
+									message.role === "assistant" && !message.pending
+										? prepareAgentAssistantMessage(message.content, message.docCitations)
+										: null;
+
+								return (
 								<div
 									key={message.id}
 									className={cn(
@@ -89,11 +97,15 @@ export default function DeploymentAgentSheet({
 												),
 											}}
 										>
-											{message.content}
+											{preparedAssistantMessage?.displayContent ?? message.content}
 										</ReactMarkdown>
 									) : (
 										<p className="whitespace-pre-wrap">{message.content}</p>
 									)}
+
+									{preparedAssistantMessage ? (
+										<DeploymentAgentDocBadges citations={preparedAssistantMessage.docCitations} />
+									) : null}
 
 									{message.role === "assistant" ? (
 										<div className="mt-3 flex items-center justify-between gap-3">
@@ -122,7 +134,8 @@ export default function DeploymentAgentSheet({
 										</div>
 									) : null}
 								</div>
-							))}
+								);
+							})}
 							<div ref={endRef} />
 						</div>
 					</ScrollArea>

@@ -44,6 +44,7 @@ export function useDeploymentAgentSheet() {
 				type: "complete_agent_message",
 				runId: payload.runId,
 				content: payload.message,
+				docCitations: payload.docCitations,
 			});
 			window.setTimeout(() => {
 				inputRef.current?.focus();
@@ -56,6 +57,7 @@ export function useDeploymentAgentSheet() {
 				type: "complete_agent_message",
 				runId: payload.runId,
 				content: payload.message,
+				docCitations: payload.docCitations,
 			});
 			return;
 		}
@@ -96,12 +98,14 @@ export function useDeploymentAgentSheet() {
 				id: `${Date.now()}-user`,
 				role: "user",
 				content: cleaned,
+				docCitations: [],
 			};
 			const assistantMessage: DeploymentAgentMessage = {
 				id: `${Date.now()}-assistant`,
 				role: "assistant",
 				content: "Starting deployment agent...",
 				pending: true,
+				docCitations: [],
 			};
 
 			dispatch({ type: "submit_question", userMessage, assistantMessage });

@@ -21,9 +21,16 @@ export type ToolExecutionResult<TToolName extends string = string> = {
 	result: unknown;
 };
 
+export type AgentSocketDocCitation = {
+	source: string;
+	href: string;
+	label: string;
+};
+
 export type AgentSocketMessage = {
 	runId: string;
 	message: string;
+	docCitations: AgentSocketDocCitation[];
 };
 
 export type AgentEventName =

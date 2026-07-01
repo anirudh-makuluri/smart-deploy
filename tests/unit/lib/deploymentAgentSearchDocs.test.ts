@@ -39,11 +39,7 @@ describe("deploymentAgent search_docs tool", () => {
 			{ query: "ALB unhealthy target 502" }
 		);
 
-		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("ALB unhealthy target 502", {
-			deterministicLimit: 4,
-			mossLimit: 4,
-			mergedLimit: 4,
-		});
+		expect(retrievePlatformDocChunksMock).toHaveBeenCalledWith("ALB unhealthy target 502", 4);
 		expect(result).toMatchObject({
 			query: "ALB unhealthy target 502",
 			mossEnabled: true,

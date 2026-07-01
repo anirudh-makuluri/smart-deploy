@@ -154,6 +154,7 @@ io.on("connection", (socket) => {
 				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 					runId: "",
 					message: "Agent conversationId is required.",
+					docCitations: [],
 				});
 				return;
 			}
@@ -162,6 +163,7 @@ io.on("connection", (socket) => {
 				emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 					runId: "",
 					message: "Agent message is required.",
+					docCitations: [],
 				});
 				return;
 			}
@@ -179,6 +181,7 @@ io.on("connection", (socket) => {
 			emitWorkerSocketEvent(socket, WORKER_SOCKET_SERVER_EVENTS.agentError, {
 				runId: "",
 				message: err instanceof Error ? err.message : "Agent request failed",
+				docCitations: [],
 			});
 		}
 	});

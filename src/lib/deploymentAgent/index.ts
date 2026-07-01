@@ -9,12 +9,9 @@ import {
 	buildToolCompletedMessage,
 	buildToolStartedMessage,
 } from "@/lib/deploymentAgent/agentPrompt";
-import { AgentResponseSchema, type AgentLlmResponse } from "@/lib/deploymentAgent/agentSchemas";
-import {
-	JSON_FENCE_REGEX,
-	MAX_PROMPT_TURNS,
-	MAX_TOOL_CALLS,
-} from "@/lib/deploymentAgent/constants";
+import type { AgentLlmResponse } from "@/lib/deploymentAgent/agentSchemas";
+import { MAX_PROMPT_TURNS, MAX_TOOL_CALLS } from "@/lib/deploymentAgent/constants";
+import { parseAgentResponseJson } from "@/lib/deploymentAgent/parseAgentResponse";
 import { executeToolCall } from "@/lib/deploymentAgent/executeToolCall";
 import {
 	buildDeploymentAgentAssistantMetadata,
@@ -25,20 +22,9 @@ import {
 	type DeploymentAgentRunOutcome,
 } from "@/lib/deploymentAgent/messagePersistence";
 import type { AgentToolName } from "@/lib/deploymentAgent/registry";
-import type { AgentEmitter, ToolExecutionResult } from "@/lib/deploymentAgent/types";
+import type { AgentEmitter, AgentSocketDocCitation, ToolExecutionResult } from "@/lib/deploymentAgent/types";
+import { collectDocCitationsFromSearchDocsToolResults } from "@/lib/agentDocCitations";
 import { callLLMWithFallback, type LLMFallbackResult } from "@/lib/llmProviders";
-
-function parseModelJson(raw: string): AgentLlmResponse | null {
-	const fenced = JSON_FENCE_REGEX.exec(raw);
-	const candidate = (fenced?.[1] ?? raw).trim();
-
-	try {
-		const parsed = JSON.parse(candidate) as unknown;
-		return AgentResponseSchema.parse(parsed);
-	} catch {
-		return null;
-	}
-}
 
 type AgentDecisionResult = {
 	decision: AgentLlmResponse;
@@ -57,9 +43,16 @@ async function requestAgentDecision(args: {
 		maxTokens: 2048,
 		temperature: 0.1,
 		localModelDefault: "mistral",
+		responseMimeType: "application/json",
 	});
-	const parsed = parseModelJson(llm.text);
+	const parsed = parseAgentResponseJson(llm.text);
 	if (!parsed) {
+		const preview = llm.text.trim().slice(0, 400);
+		console.warn("Deployment agent returned invalid JSON", {
+			provider: llm.provider,
+			model: llm.model,
+			preview,
+		});
 		throw new Error("Deployment agent returned invalid JSON");
 	}
 
@@ -113,11 +106,13 @@ function emitAgentEvent(
 	emit: AgentEmitter,
 	event: Parameters<AgentEmitter>[0],
 	runId: string,
-	message: string
+	message: string,
+	docCitations: AgentSocketDocCitation[] = []
 ) {
 	emit(event, {
 		runId,
 		message,
+		docCitations,
 	});
 }
 
@@ -181,6 +176,7 @@ export async function runDeploymentAgent(args: {
 			llmTurns.push(buildDeploymentAgentLlmTurn({ decision, model: llm.model, provider: llm.provider }));
 
 			if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
+				const docCitations = collectDocCitationsFromSearchDocsToolResults(toolResults);
 				await appendDeploymentAgentConversationTurn({
 					userID: args.userID,
 					conversationId,
@@ -204,8 +200,8 @@ export async function runDeploymentAgent(args: {
 					promptTurnCount,
 					errorMessage: null,
 				});
-				emitAgentEvent(args.emit, "agent:message", runId, decision.message);
-				emitAgentEvent(args.emit, "agent:complete", runId, decision.message);
+				emitAgentEvent(args.emit, "agent:message", runId, decision.message, docCitations);
+				emitAgentEvent(args.emit, "agent:complete", runId, decision.message, docCitations);
 				return true;
 			}
 

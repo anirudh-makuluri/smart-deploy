@@ -74,3 +74,4 @@ smartdeploy-key.pub
 *.tfvars
 
 /temp-docs
+/mcps

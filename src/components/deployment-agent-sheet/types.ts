@@ -1,9 +1,12 @@
+import type { AgentDocCitation } from "@/lib/agentDocCitations";
+
 export type DeploymentAgentMessage = {
 	id: string;
 	role: "user" | "assistant";
 	content: string;
 	runId?: string;
 	pending?: boolean;
+	docCitations: AgentDocCitation[];
 };
 
 export type DeploymentAgentSheetState = {
@@ -18,13 +21,14 @@ export type DeploymentAgentSheetAction =
 	| { type: "set_copied_message_id"; value: string | null }
 	| { type: "submit_question"; userMessage: DeploymentAgentMessage; assistantMessage: DeploymentAgentMessage }
 	| { type: "sync_agent_progress"; runId: string; content: string }
-	| { type: "complete_agent_message"; runId: string; content?: string };
+	| { type: "complete_agent_message"; runId: string; content?: string; docCitations?: AgentDocCitation[] };
 
 const welcomeMessage: DeploymentAgentMessage = {
 	id: "welcome",
 	role: "assistant",
 	content:
 		"I can inspect your existing deployments, recent deployment history, and runtime health. Ask what you want me to check.",
+	docCitations: [],
 };
 
 export const initialDeploymentAgentSheetState: DeploymentAgentSheetState = {
@@ -91,6 +95,7 @@ export function deploymentAgentSheetReducer(
 				...nextMessages[index],
 				runId: action.runId,
 				content: action.content ?? nextMessages[index].content,
+				docCitations: action.docCitations ?? nextMessages[index].docCitations,
 				pending: false,
 			};
 

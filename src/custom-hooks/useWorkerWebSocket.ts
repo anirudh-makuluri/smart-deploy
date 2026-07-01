@@ -484,7 +484,11 @@ export function useWorkerWebSocketSession() {
 			const typedPayload = (payload as AgentSocketMessagePayload | undefined) ?? {
 				runId: "",
 				message: "",
+				docCitations: [],
 			};
+			if (!Array.isArray(typedPayload.docCitations)) {
+				typedPayload.docCitations = [];
+			}
 			if (typedPayload.runId) {
 				activeAgentRunIdRef.current = typedPayload.runId;
 			}
