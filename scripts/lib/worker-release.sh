@@ -13,8 +13,9 @@ DOCKERFILE_PATH="${DOCKERFILE_PATH:-${REPO_ROOT}/Dockerfile.websocket}"
 AWS_REGION="${AWS_REGION:-us-west-2}"
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-328342419078}"
 ECR_REPO="${ECR_REPO:-smart-deploy-worker}"
+ECR_REGISTRY="${ECR_REGISTRY:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
-WORKER_IMAGE="${WORKER_IMAGE:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}}"
+WORKER_IMAGE="${WORKER_IMAGE:-${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}}"
 WORKER_PORT="${WORKER_PORT:-4001}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 ROLLOUT_MODE="${ROLLOUT_MODE:-ssm}"
@@ -28,6 +29,10 @@ require_cmd() {
 
 worker_release_log() {
 	echo "[worker-release] $*"
+}
+
+worker_release_get_caller_account_id() {
+	aws sts get-caller-identity --query Account --output text 2>/dev/null || true
 }
 
 worker_release_require_prereqs() {
@@ -71,20 +76,30 @@ worker_release_prepare() {
 	worker_release_require_prereqs
 	worker_release_check_docker_daemon
 	worker_release_validate_paths
+
+	local caller_account_id
+	caller_account_id="$(worker_release_get_caller_account_id)"
+	if [[ -n "${caller_account_id}" ]]; then
+		worker_release_log "AWS caller account: ${caller_account_id}"
+	fi
+	worker_release_log "Target ECR registry: ${ECR_REGISTRY}"
+	if [[ -n "${caller_account_id}" && "${caller_account_id}" != "${AWS_ACCOUNT_ID}" ]]; then
+		worker_release_log "Caller account differs from target ECR account (${AWS_ACCOUNT_ID}); cross-account ECR permissions are required"
+	fi
 }
 
 worker_release_ensure_ecr_repo() {
 	worker_release_log "Using worker image: ${WORKER_IMAGE}"
-	worker_release_log "Ensuring ECR repo exists: ${ECR_REPO}"
-	if ! aws ecr describe-repositories --repository-names "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null 2>&1; then
-		aws ecr create-repository --repository-name "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null
+	worker_release_log "Ensuring ECR repo exists in ${AWS_ACCOUNT_ID}: ${ECR_REPO}"
+	if ! aws ecr describe-repositories --registry-id "${AWS_ACCOUNT_ID}" --repository-names "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+		aws ecr create-repository --registry-id "${AWS_ACCOUNT_ID}" --repository-name "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null
 	fi
 }
 
 worker_release_login_ecr() {
 	worker_release_log "Logging into ECR"
 	aws ecr get-login-password --region "${AWS_REGION}" | \
-		docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+		docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 }
 
 worker_release_build_and_push() {
@@ -274,7 +289,7 @@ exit 1
 SCRIPT
 chmod +x /usr/local/bin/smart-deploy-worker-write-env
 
-aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
 if [[ ! -f /etc/nginx/conf.d/smart-deploy-worker.conf ]]; then
 	cat >/etc/nginx/conf.d/smart-deploy-worker.conf <<'NGINX'

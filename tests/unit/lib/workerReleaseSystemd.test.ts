@@ -15,10 +15,19 @@ describe("worker systemd service definitions", () => {
 
 	it("supports env overrides so CI can roll out without local terraform state", () => {
 		const script = readRepoFile("scripts/lib/worker-release.sh");
+		expect(script).toContain('ECR_REGISTRY="${ECR_REGISTRY:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com}"');
 		expect(script).toContain("WORKER_INSTANCE_ID");
 		expect(script).toContain("WORKER_SECRET_ARN");
 		expect(script).toContain("WORKER_DNS_RECORD");
 		expect(script).toContain("worker_release_read_output");
+	});
+
+	it("targets the configured ECR account consistently during worker releases", () => {
+		const script = readRepoFile("scripts/lib/worker-release.sh");
+		expect(script).toContain('aws sts get-caller-identity --query Account --output text');
+		expect(script).toContain('describe-repositories --registry-id "${AWS_ACCOUNT_ID}"');
+		expect(script).toContain('create-repository --registry-id "${AWS_ACCOUNT_ID}"');
+		expect(script).toContain('docker login --username AWS --password-stdin "${ECR_REGISTRY}"');
 	});
 
 	it("boots existing-worker instances with the same startup safeguards", () => {
