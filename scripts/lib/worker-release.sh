@@ -36,6 +36,26 @@ worker_release_get_caller_account_id() {
 	aws sts get-caller-identity --query Account --output text 2>/dev/null || true
 }
 
+worker_release_init_docker_config() {
+	if [[ -n "${WORKER_RELEASE_DOCKER_CONFIG_DIR:-}" ]]; then
+		export DOCKER_CONFIG="${WORKER_RELEASE_DOCKER_CONFIG_DIR}"
+		return 0
+	fi
+
+	WORKER_RELEASE_DOCKER_CONFIG_DIR="$(mktemp -d)"
+	export DOCKER_CONFIG="${WORKER_RELEASE_DOCKER_CONFIG_DIR}"
+}
+
+worker_release_cleanup_docker_config() {
+	if [[ -z "${WORKER_RELEASE_DOCKER_CONFIG_DIR:-}" ]]; then
+		return 0
+	fi
+
+	rm -rf "${WORKER_RELEASE_DOCKER_CONFIG_DIR}"
+	unset WORKER_RELEASE_DOCKER_CONFIG_DIR
+	unset DOCKER_CONFIG
+}
+
 worker_release_require_prereqs() {
 	require_cmd aws
 	require_cmd docker
@@ -99,8 +119,17 @@ worker_release_ensure_ecr_repo() {
 
 worker_release_login_ecr() {
 	worker_release_log "Logging into ECR"
-	aws ecr get-login-password --region "${AWS_REGION}" | \
-		docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+	local login_output
+	login_output="$(
+		aws ecr get-login-password --region "${AWS_REGION}" | \
+			docker login --username AWS --password-stdin "${ECR_REGISTRY}" 2>&1
+	)"
+
+	printf '%s\n' "${login_output}" | sed \
+		-e '/^WARNING! Your credentials are stored unencrypted in /d' \
+		-e '/^Configure a credential helper to remove this warning\. See$/d' \
+		-e '/^https:\/\/docs\.docker\.com\/go\/credential-store\/$/d'
 }
 
 worker_release_preflight_ecr_push_permissions() {
@@ -120,6 +149,7 @@ worker_release_preflight_ecr_push_permissions() {
 
 worker_release_build_and_push() {
 	worker_release_ensure_ecr_repo
+	worker_release_init_docker_config
 	worker_release_login_ecr
 	worker_release_preflight_ecr_push_permissions
 
@@ -127,7 +157,12 @@ worker_release_build_and_push() {
 	docker build -f "${DOCKERFILE_PATH}" -t "${WORKER_IMAGE}" "${REPO_ROOT}"
 
 	worker_release_log "Pushing worker image"
-	docker push "${WORKER_IMAGE}"
+	local push_status=0
+	docker push "${WORKER_IMAGE}" || push_status=$?
+	worker_release_cleanup_docker_config
+	if [[ "${push_status}" -ne 0 ]]; then
+		return "${push_status}"
+	fi
 }
 
 worker_release_terraform_init() {

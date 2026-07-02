@@ -30,6 +30,9 @@ describe("worker systemd service definitions", () => {
 		expect(script).toContain('docker login --username AWS --password-stdin "${ECR_REGISTRY}"');
 		expect(script).toContain('batch-check-layer-availability');
 		expect(script).toContain('initiate-layer-upload');
+		expect(script).toContain('WORKER_RELEASE_DOCKER_CONFIG_DIR="$(mktemp -d)"');
+		expect(script).toContain('worker_release_cleanup_docker_config');
+		expect(script).toContain('/^WARNING! Your credentials are stored unencrypted in /d');
 		expect(script).toContain("worker_release_preflight_ecr_push_permissions");
 	});
 
