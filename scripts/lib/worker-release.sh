@@ -14,6 +14,7 @@ AWS_REGION="${AWS_REGION:-us-west-2}"
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-328342419078}"
 ECR_REPO="${ECR_REPO:-smart-deploy-worker}"
 ECR_REGISTRY="${ECR_REGISTRY:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com}"
+ECR_PERMISSION_CHECK_DIGEST="${ECR_PERMISSION_CHECK_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 WORKER_IMAGE="${WORKER_IMAGE:-${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}}"
 WORKER_PORT="${WORKER_PORT:-4001}"
@@ -102,9 +103,25 @@ worker_release_login_ecr() {
 		docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 }
 
+worker_release_preflight_ecr_push_permissions() {
+	worker_release_log "Preflighting ECR push permissions with BatchCheckLayerAvailability"
+	aws ecr batch-check-layer-availability \
+		--registry-id "${AWS_ACCOUNT_ID}" \
+		--repository-name "${ECR_REPO}" \
+		--region "${AWS_REGION}" \
+		--layer-digests "${ECR_PERMISSION_CHECK_DIGEST}" >/dev/null
+
+	worker_release_log "Preflighting ECR push permissions with InitiateLayerUpload"
+	aws ecr initiate-layer-upload \
+		--registry-id "${AWS_ACCOUNT_ID}" \
+		--repository-name "${ECR_REPO}" \
+		--region "${AWS_REGION}" >/dev/null
+}
+
 worker_release_build_and_push() {
 	worker_release_ensure_ecr_repo
 	worker_release_login_ecr
+	worker_release_preflight_ecr_push_permissions
 
 	worker_release_log "Building worker image"
 	docker build -f "${DOCKERFILE_PATH}" -t "${WORKER_IMAGE}" "${REPO_ROOT}"

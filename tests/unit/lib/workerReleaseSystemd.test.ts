@@ -28,6 +28,9 @@ describe("worker systemd service definitions", () => {
 		expect(script).toContain('describe-repositories --registry-id "${AWS_ACCOUNT_ID}"');
 		expect(script).toContain('create-repository --registry-id "${AWS_ACCOUNT_ID}"');
 		expect(script).toContain('docker login --username AWS --password-stdin "${ECR_REGISTRY}"');
+		expect(script).toContain('batch-check-layer-availability');
+		expect(script).toContain('initiate-layer-upload');
+		expect(script).toContain("worker_release_preflight_ecr_push_permissions");
 	});
 
 	it("boots existing-worker instances with the same startup safeguards", () => {
