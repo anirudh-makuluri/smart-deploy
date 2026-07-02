@@ -14,8 +14,8 @@ on:
   # and catching regressions that slipped past PR review. PR-specific steps
   # (the sticky summary comment) are skipped automatically on `push` events.
   # Comment this block out if you only want PR-time scans.
-  push:
-    branches: [main]
+  # push:
+  #   branches: [main]
 
 permissions:
   # `actions/checkout` needs this to read the repo source.
