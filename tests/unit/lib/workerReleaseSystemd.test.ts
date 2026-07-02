@@ -13,6 +13,14 @@ describe("worker systemd service definitions", () => {
 		expect(script).toContain("ExecStartPre=/usr/bin/docker pull ${WORKER_IMAGE}");
 	});
 
+	it("supports env overrides so CI can roll out without local terraform state", () => {
+		const script = readRepoFile("scripts/lib/worker-release.sh");
+		expect(script).toContain("WORKER_INSTANCE_ID");
+		expect(script).toContain("WORKER_SECRET_ARN");
+		expect(script).toContain("WORKER_DNS_RECORD");
+		expect(script).toContain("worker_release_read_output");
+	});
+
 	it("boots existing-worker instances with the same startup safeguards", () => {
 		const template = readRepoFile("infra/aws-worker/user_data.sh.tpl");
 		expect(template).toContain("TimeoutStartSec=0");

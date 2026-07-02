@@ -99,8 +99,26 @@ worker_release_build_and_push() {
 }
 
 worker_release_terraform_init() {
+	if [[ -n "${WORKER_INSTANCE_ID:-}" ]]; then
+		worker_release_log "Skipping terraform init (WORKER_INSTANCE_ID is set)"
+		return 0
+	fi
+
 	worker_release_log "Running terraform init"
 	terraform -chdir="${STACK_DIR}" init
+}
+
+worker_release_read_output() {
+	local output_name="$1"
+	local env_override_name="$2"
+	local env_override_value="${!env_override_name:-}"
+
+	if [[ -n "${env_override_value}" ]]; then
+		printf '%s' "${env_override_value}"
+		return 0
+	fi
+
+	terraform -chdir="${STACK_DIR}" output -raw "${output_name}" 2>/dev/null || true
 }
 
 worker_release_terraform_plan() {
@@ -132,7 +150,7 @@ worker_release_rollout_existing_instance() {
 	fi
 
 	local instance_id
-	instance_id="$(terraform -chdir="${STACK_DIR}" output -raw instance_id 2>/dev/null || true)"
+	instance_id="$(worker_release_read_output instance_id WORKER_INSTANCE_ID)"
 	if [[ -z "${instance_id}" ]]; then
 		if [[ "${require_instance_id}" == "true" ]]; then
 			echo "No instance_id output is available in ${STACK_DIR}; cannot update an existing worker instance."
@@ -144,9 +162,9 @@ worker_release_rollout_existing_instance() {
 	fi
 
 	local worker_secret_arn
-	worker_secret_arn="$(terraform -chdir="${STACK_DIR}" output -raw worker_secret_arn 2>/dev/null || true)"
+	worker_secret_arn="$(worker_release_read_output worker_secret_arn WORKER_SECRET_ARN)"
 	local worker_dns_record
-	worker_dns_record="$(terraform -chdir="${STACK_DIR}" output -raw worker_dns_record 2>/dev/null || true)"
+	worker_dns_record="$(worker_release_read_output worker_dns_record WORKER_DNS_RECORD)"
 	worker_dns_record="${worker_dns_record%.}"
 	if [[ -z "${worker_dns_record}" ]]; then
 		worker_dns_record="_"
