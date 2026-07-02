@@ -46,6 +46,7 @@ describe("deploymentAgent messagePersistence", () => {
 					completed: false,
 					model: "mistral",
 					provider: "local",
+					token_usage: null,
 				},
 				{
 					message: "You have no deployments yet.",
@@ -53,6 +54,7 @@ describe("deploymentAgent messagePersistence", () => {
 					completed: true,
 					model: "mistral",
 					provider: "local",
+					token_usage: null,
 				},
 			],
 			durationMs: 1200,
@@ -63,6 +65,45 @@ describe("deploymentAgent messagePersistence", () => {
 		expect(metadata.kind).toBe("assistant");
 		expect(metadata.llmTurns).toHaveLength(2);
 		expect(metadata.toolResults).toHaveLength(1);
+		expect(metadata.token_usage).toBeNull();
+	});
+
+	it("aggregates token usage across llm turns on assistant metadata", () => {
+		const metadata = buildDeploymentAgentAssistantMetadata({
+			outcome: "complete",
+			completed: true,
+			model: "gemini-2.5-flash",
+			provider: "gemini",
+			toolCallsUsed: 1,
+			toolResults: [],
+			llmTurns: [
+				{
+					message: "Checking deployments.",
+					toolCalls: [{ name: "list_deployments", arguments: {} }],
+					completed: false,
+					model: "gemini-2.5-flash",
+					provider: "gemini",
+					token_usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+				},
+				{
+					message: "You have no deployments yet.",
+					toolCalls: [],
+					completed: true,
+					model: "gemini-2.5-flash",
+					provider: "gemini",
+					token_usage: { input_tokens: 150, output_tokens: 30, total_tokens: 180 },
+				},
+			],
+			durationMs: 1200,
+			promptTurnCount: 2,
+			errorMessage: null,
+		});
+
+		expect(metadata.token_usage).toEqual({
+			input_tokens: 250,
+			output_tokens: 50,
+			total_tokens: 300,
+		});
 	});
 
 	it("builds llm turn snapshots from model decisions", () => {
@@ -75,6 +116,7 @@ describe("deploymentAgent messagePersistence", () => {
 				},
 				model: "claude-haiku",
 				provider: "bedrock",
+				token_usage: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
 			})
 		).toEqual({
 			message: "Checking runtime health.",
@@ -82,6 +124,7 @@ describe("deploymentAgent messagePersistence", () => {
 			completed: false,
 			model: "claude-haiku",
 			provider: "bedrock",
+			token_usage: { input_tokens: 90, output_tokens: 10, total_tokens: 100 },
 		});
 	});
 

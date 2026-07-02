@@ -130,6 +130,7 @@ describe("POST /api/llm/analyze-failure", () => {
 			text: "DATABASE_URL is missing.",
 			model: "llama3.2",
 			provider: "local",
+			token_usage: null,
 		});
 
 		const { POST } = await import("@/app/api/llm/analyze-failure/route");
