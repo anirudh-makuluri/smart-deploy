@@ -362,6 +362,35 @@ aws ecr get-login-password --region "\${AWS_REGION}" | docker login --username A
 SCRIPT
 chmod +x /usr/local/bin/smart-deploy-worker-login
 
+cat >/usr/local/bin/smart-deploy-worker-prune-images <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+
+IMAGE="\${1:-}"
+
+if [[ -z "\${IMAGE}" ]]; then
+	echo "Image is required"
+	exit 1
+fi
+
+image_no_digest="\${IMAGE%@*}"
+repo_ref="\${image_no_digest%:*}"
+if [[ "\${repo_ref}" == "\${image_no_digest}" ]]; then
+	repo_ref="\${image_no_digest}"
+fi
+
+docker image ls --format '{{.Repository}}:{{.Tag}}' "\${repo_ref}" | while read -r candidate; do
+	if [[ -z "\${candidate}" || "\${candidate}" == "\${IMAGE}" ]]; then
+		continue
+	fi
+
+	docker image rm -f "\${candidate}" || true
+done
+
+docker image prune -f >/dev/null 2>&1 || true
+SCRIPT
+chmod +x /usr/local/bin/smart-deploy-worker-prune-images
+
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
 if [[ ! -f /etc/nginx/conf.d/smart-deploy-worker.conf ]]; then
@@ -402,6 +431,7 @@ RestartSec=5
 TimeoutStartSec=0
 ExecStartPre=-/usr/bin/docker rm -f smart-deploy-worker
 ExecStartPre=/usr/local/bin/smart-deploy-worker-login ${WORKER_IMAGE}
+ExecStartPre=/usr/local/bin/smart-deploy-worker-prune-images ${WORKER_IMAGE}
 ExecStartPre=/usr/bin/docker pull ${WORKER_IMAGE}
 ExecStartPre=/usr/local/bin/smart-deploy-worker-write-env "${worker_secret_arn}" "/run/smart-deploy-worker.env" "/opt/smart-deploy/.env"
 ExecStart=/usr/bin/docker run --name smart-deploy-worker -p ${WORKER_PORT}:${WORKER_PORT} --env-file /run/smart-deploy-worker.env ${WORKER_IMAGE}

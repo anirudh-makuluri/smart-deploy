@@ -11,7 +11,9 @@ describe("worker systemd service definitions", () => {
 		const script = readRepoFile("scripts/lib/worker-release.sh");
 		expect(script).toContain("TimeoutStartSec=0");
 		expect(script).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(script).toContain("cat >/usr/local/bin/smart-deploy-worker-prune-images <<'SCRIPT'");
 		expect(script).toContain("ExecStartPre=/usr/local/bin/smart-deploy-worker-login ${WORKER_IMAGE}");
+		expect(script).toContain("ExecStartPre=/usr/local/bin/smart-deploy-worker-prune-images ${WORKER_IMAGE}");
 		expect(script).toContain("ExecStartPre=/usr/bin/docker pull ${WORKER_IMAGE}");
 	});
 
@@ -42,7 +44,9 @@ describe("worker systemd service definitions", () => {
 		const template = readRepoFile("infra/aws-worker/user_data.sh.tpl");
 		expect(template).toContain("TimeoutStartSec=0");
 		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-prune-images <<'SCRIPT'");
 		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-login "${worker_image}"');
+		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-prune-images "${worker_image}"');
 		expect(template).toContain("ExecStartPre=/usr/bin/docker pull ${worker_image}");
 	});
 
@@ -50,7 +54,9 @@ describe("worker systemd service definitions", () => {
 		const template = readRepoFile("infra/aws-worker-new/user_data.sh.tpl");
 		expect(template).toContain("TimeoutStartSec=0");
 		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-prune-images <<'SCRIPT'");
 		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-login "${worker_image}"');
+		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-prune-images "${worker_image}"');
 		expect(template).toContain("ExecStartPre=/usr/bin/docker pull ${worker_image}");
 	});
 });
