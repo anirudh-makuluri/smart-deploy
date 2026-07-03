@@ -341,6 +341,27 @@ exit 1
 SCRIPT
 chmod +x /usr/local/bin/smart-deploy-worker-write-env
 
+cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'
+#!/bin/bash
+set -euo pipefail
+
+IMAGE="\${1:-}"
+AWS_REGION="${AWS_REGION}"
+
+if [[ -z "\${IMAGE}" ]]; then
+	echo "Image is required"
+	exit 1
+fi
+
+if [[ "\${IMAGE}" != *.dkr.ecr.*.amazonaws.com/* ]]; then
+	exit 0
+fi
+
+ecr_registry="\$(echo "\${IMAGE}" | cut -d'/' -f1)"
+aws ecr get-login-password --region "\${AWS_REGION}" | docker login --username AWS --password-stdin "\${ecr_registry}"
+SCRIPT
+chmod +x /usr/local/bin/smart-deploy-worker-login
+
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
 
 if [[ ! -f /etc/nginx/conf.d/smart-deploy-worker.conf ]]; then
@@ -380,6 +401,7 @@ Restart=always
 RestartSec=5
 TimeoutStartSec=0
 ExecStartPre=-/usr/bin/docker rm -f smart-deploy-worker
+ExecStartPre=/usr/local/bin/smart-deploy-worker-login ${WORKER_IMAGE}
 ExecStartPre=/usr/bin/docker pull ${WORKER_IMAGE}
 ExecStartPre=/usr/local/bin/smart-deploy-worker-write-env "${worker_secret_arn}" "/run/smart-deploy-worker.env" "/opt/smart-deploy/.env"
 ExecStart=/usr/bin/docker run --name smart-deploy-worker -p ${WORKER_PORT}:${WORKER_PORT} --env-file /run/smart-deploy-worker.env ${WORKER_IMAGE}

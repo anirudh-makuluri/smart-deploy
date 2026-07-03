@@ -10,6 +10,8 @@ describe("worker systemd service definitions", () => {
 	it("gives image pulls unlimited startup time during rollout", () => {
 		const script = readRepoFile("scripts/lib/worker-release.sh");
 		expect(script).toContain("TimeoutStartSec=0");
+		expect(script).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(script).toContain("ExecStartPre=/usr/local/bin/smart-deploy-worker-login ${WORKER_IMAGE}");
 		expect(script).toContain("ExecStartPre=/usr/bin/docker pull ${WORKER_IMAGE}");
 	});
 
@@ -39,12 +41,16 @@ describe("worker systemd service definitions", () => {
 	it("boots existing-worker instances with the same startup safeguards", () => {
 		const template = readRepoFile("infra/aws-worker/user_data.sh.tpl");
 		expect(template).toContain("TimeoutStartSec=0");
+		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-login "${worker_image}"');
 		expect(template).toContain("ExecStartPre=/usr/bin/docker pull ${worker_image}");
 	});
 
 	it("boots fresh-worker instances with the same startup safeguards", () => {
 		const template = readRepoFile("infra/aws-worker-new/user_data.sh.tpl");
 		expect(template).toContain("TimeoutStartSec=0");
+		expect(template).toContain("cat >/usr/local/bin/smart-deploy-worker-login <<'SCRIPT'");
+		expect(template).toContain('ExecStartPre=/usr/local/bin/smart-deploy-worker-login "${worker_image}"');
 		expect(template).toContain("ExecStartPre=/usr/bin/docker pull ${worker_image}");
 	});
 });
