@@ -28,7 +28,7 @@ export default function ConfigTabs({
 	const tabs = useConfigTabs({ onConfigChange, deployment, branches });
 
 	return (
-		<Form key={`${deployment.repoName}:${deployment.serviceName}`} {...tabs.form}>
+		<Form {...tabs.form}>
 			<div className="flex flex-col gap-10 max-w-2xl mx-auto">
 				<ConfigTabsProjectSourceSection deployment={deployment} repoFullName={repoFullName} />
 

@@ -321,7 +321,6 @@ export default function DeployLogsView({
 				className="flex h-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
 			>
 				<ServiceLogs
-					key={`${repoNameForLogs ?? ""}:${serviceNameForLogs ?? ""}`}
 					{...(({
 						logs: logsToRender,
 						repoName: repoNameForLogs,

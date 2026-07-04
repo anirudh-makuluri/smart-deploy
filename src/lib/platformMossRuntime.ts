@@ -76,19 +76,29 @@ export class PlatformMossRuntime {
 	}
 
 	private async getManageClient(): Promise<MossManageClient> {
+		const cachedManageClient = this.manageClient;
+		if (cachedManageClient) {
+			return cachedManageClient;
+		}
 		await this.ensureClients();
-		if (!this.manageClient) {
+		const readyManageClient = this.manageClient;
+		if (!readyManageClient) {
 			throw new Error("Moss manage client is unavailable");
 		}
-		return this.manageClient;
+		return readyManageClient;
 	}
 
 	private async getIndexManager(): Promise<MossIndexManager> {
+		const cachedIndexManager = this.indexManager;
+		if (cachedIndexManager) {
+			return cachedIndexManager;
+		}
 		await this.ensureClients();
-		if (!this.indexManager) {
+		const readyIndexManager = this.indexManager;
+		if (!readyIndexManager) {
 			throw new Error("Moss index manager is unavailable");
 		}
-		return this.indexManager;
+		return readyIndexManager;
 	}
 
 	private async waitForJob(jobId: string, attempt = 0): Promise<void> {

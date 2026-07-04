@@ -62,11 +62,15 @@ function mapDeploymentDetails(value: unknown): AgentDeploymentDetails | null {
 	if (!record) return null;
 
 	const scanResultsRecord = asRecord(record.scanResults);
-	const deployUnits = Array.isArray(scanResultsRecord?.deployUnits)
-		? scanResultsRecord.deployUnits
-				.map(mapDeployUnit)
-				.filter((unit): unit is NonNullable<typeof unit> => unit !== null)
-		: [];
+	const deployUnits: NonNullable<ReturnType<typeof mapDeployUnit>>[] = [];
+	if (Array.isArray(scanResultsRecord?.deployUnits)) {
+		for (const unitValue of scanResultsRecord.deployUnits) {
+			const unit = mapDeployUnit(unitValue);
+			if (unit) {
+				deployUnits.push(unit);
+			}
+		}
+	}
 
 	return {
 		repoName: asString(record.repoName),
@@ -107,9 +111,15 @@ function mapHistoryEntry(value: unknown): AgentHistoryEntry | null {
 	const record = asRecord(value);
 	if (!record) return null;
 
-	const recentLogs = Array.isArray(record.recentLogs)
-		? record.recentLogs.map((line) => asString(line)).filter((line) => line.length > 0)
-		: [];
+	const recentLogs: string[] = [];
+	if (Array.isArray(record.recentLogs)) {
+		for (const line of record.recentLogs) {
+			const normalizedLine = asString(line);
+			if (normalizedLine.length > 0) {
+				recentLogs.push(normalizedLine);
+			}
+		}
+	}
 
 	return {
 		id: asString(record.id),
@@ -128,11 +138,15 @@ function mapToolResultToBlock(toolResult: ToolExecutionResult<AgentToolName>): A
 	if (!result) return null;
 
 	if (toolResult.name === "list_deployments") {
-		const deployments = Array.isArray(result.deployments)
-			? result.deployments
-					.map(mapDeploymentSummary)
-					.filter((entry): entry is AgentDeploymentSummary => entry !== null)
-			: [];
+		const deployments: AgentDeploymentSummary[] = [];
+		if (Array.isArray(result.deployments)) {
+			for (const deploymentValue of result.deployments) {
+				const deployment = mapDeploymentSummary(deploymentValue);
+				if (deployment) {
+					deployments.push(deployment);
+				}
+			}
+		}
 		if (deployments.length === 0) return null;
 		return { kind: "deployment_list", deployments };
 	}
@@ -144,11 +158,15 @@ function mapToolResultToBlock(toolResult: ToolExecutionResult<AgentToolName>): A
 	}
 
 	if (toolResult.name === "get_runtime_health") {
-		const entries = Array.isArray(result.entries)
-			? result.entries
-					.map(mapRuntimeHealthEntry)
-					.filter((entry): entry is AgentRuntimeHealthEntry => entry !== null)
-			: [];
+		const entries: AgentRuntimeHealthEntry[] = [];
+		if (Array.isArray(result.entries)) {
+			for (const entryValue of result.entries) {
+				const entry = mapRuntimeHealthEntry(entryValue);
+				if (entry) {
+					entries.push(entry);
+				}
+			}
+		}
 		if (entries.length === 0) return null;
 
 		const args = toolResult.arguments;
@@ -161,11 +179,15 @@ function mapToolResultToBlock(toolResult: ToolExecutionResult<AgentToolName>): A
 	}
 
 	if (toolResult.name === "get_deployment_history") {
-		const history = Array.isArray(result.history)
-			? result.history
-					.map(mapHistoryEntry)
-					.filter((entry): entry is AgentHistoryEntry => entry !== null)
-			: [];
+		const history: AgentHistoryEntry[] = [];
+		if (Array.isArray(result.history)) {
+			for (const historyValue of result.history) {
+				const entry = mapHistoryEntry(historyValue);
+				if (entry) {
+					history.push(entry);
+				}
+			}
+		}
 		if (history.length === 0) return null;
 
 		const args = toolResult.arguments;
