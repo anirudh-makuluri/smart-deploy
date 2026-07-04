@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, ClipboardList, ServerCog, Users } from "lucide-react";
+import { Activity, Bot, ClipboardList, ServerCog, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const adminLinks = [
 	{ href: "/admin/users", label: "Users", icon: Users },
 	{ href: "/admin/deployments", label: "Deployments", icon: Activity },
+	{ href: "/admin/agent-evals", label: "Agent Evals", icon: Bot },
 	{ href: "/admin/reports", label: "Reports", icon: ClipboardList },
 	{ href: "/admin/system", label: "System", icon: ServerCog },
 ];

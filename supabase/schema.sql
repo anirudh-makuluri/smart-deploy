@@ -121,6 +121,39 @@ create index if not exists idx_deployment_agent_messages_user_created
 create index if not exists idx_deployment_agent_messages_run
   on public.deployment_agent_messages(run_id);
 
+-- Deployment agent eval reviews: one manual review row per assistant run.
+create table if not exists public.deployment_agent_eval_reviews (
+  id uuid primary key default gen_random_uuid(),
+  run_id uuid not null unique,
+  assistant_message_id uuid not null unique references public.deployment_agent_messages(id) on delete cascade,
+  user_id text not null references public."user"(id) on delete cascade,
+  conversation_id text not null,
+  judge_intent text check (judge_intent in ('overview', 'current_status', 'runtime_health', 'failure_diagnosis', 'docs_howto', 'ambiguous_lookup')),
+  judge_helpfulness text check (judge_helpfulness in ('helpful', 'partially_helpful', 'not_helpful')),
+  judge_primary_failure_mode text check (judge_primary_failure_mode in ('wrong_answer', 'too_shallow', 'missing_tool', 'tool_limit', 'clarification_needed', 'out_of_scope')),
+  judge_expected_tool_path text,
+  judge_notes text,
+  judge_scores jsonb not null default '{}',
+  judge_model text,
+  judge_provider text,
+  judged_at timestamptz,
+  intent text check (intent in ('overview', 'current_status', 'runtime_health', 'failure_diagnosis', 'docs_howto', 'ambiguous_lookup')),
+  helpfulness text check (helpfulness in ('helpful', 'partially_helpful', 'not_helpful')),
+  primary_failure_mode text check (primary_failure_mode in ('wrong_answer', 'too_shallow', 'missing_tool', 'tool_limit', 'clarification_needed', 'out_of_scope')),
+  expected_tool_path text,
+  notes text,
+  reviewed_by_user_id text references public."user"(id) on delete set null,
+  reviewed_by_email text,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_deployment_agent_eval_reviews_reviewed
+  on public.deployment_agent_eval_reviews(reviewed_at desc nulls last);
+create index if not exists idx_deployment_agent_eval_reviews_helpfulness
+  on public.deployment_agent_eval_reviews(helpfulness);
+
 -- Artifact generation events: append-only facts about generated infra files.
 create table if not exists public.artifact_events (
   id uuid primary key default gen_random_uuid(),
@@ -243,6 +276,7 @@ alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;
 alter table public.deployment_runs enable row level security;
 alter table public.deployment_agent_messages enable row level security;
+alter table public.deployment_agent_eval_reviews enable row level security;
 alter table public.user_repos enable row level security;
 alter table public.artifact_events enable row level security;
 alter table public.waiting_list enable row level security;
