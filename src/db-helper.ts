@@ -331,6 +331,7 @@ function deployConfigToRow(
 	if (options?.includeStatus) {
 		row.status = normalizeDeploymentStatus(options.resolvedStatus ?? (config.status as string | null | undefined));
 	}
+	if (hasOwnKey(config, "activeRunId")) row.active_run_id = config.activeRunId ?? null;
 	if (hasOwnKey(config, "cloudResources")) row.cloud_resources = config.cloudResources;
 	if (hasOwnKey(config, "secretsArn")) row.secrets_arn = config.secretsArn ?? null;
 	return row;
@@ -884,6 +885,7 @@ export const dbHelper = {
 		branch?: string;
 		commitSha?: string;
 		responseId?: string | null;
+		releaseArtifact?: DeploymentHistoryEntry["releaseArtifact"];
 	}): Promise<{ error?: unknown; runId?: string }> {
 		try {
 			const userId = (args.userId || "").trim();
@@ -901,6 +903,8 @@ export const dbHelper = {
 					branch: args.branch ?? null,
 					commit_sha: args.commitSha ?? null,
 					response_id: args.responseId ?? null,
+					status: "queued",
+					release_artifact: args.releaseArtifact ?? {},
 					log_store: "s3",
 				},
 				{ returning: ["id"] }
@@ -956,6 +960,7 @@ export const dbHelper = {
 			await updateTableRows(
 				"deployment_runs",
 				{
+					status: "completed",
 					finished_at: new Date().toISOString(),
 					success: args.success,
 					duration_ms: args.durationMs ?? null,

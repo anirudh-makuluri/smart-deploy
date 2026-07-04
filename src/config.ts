@@ -18,6 +18,7 @@ const config = {
 	AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || "",
 	AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || "",
 	AWS_REGION: process.env.AWS_REGION || "us-west-2",
+	DEPLOYMENT_QUEUE_URL: process.env.DEPLOYMENT_QUEUE_URL || "",
 	// Shared ALB HTTPS: ACM certificate ARN (optional). When set, HTTPS listener and HTTP->HTTPS redirect are enabled.
 	DEPLOYMENT_ACM_CERTIFICATE_ARN: process.env.DEPLOYMENT_ACM_CERTIFICATE_ARN || "",
 	// ECS Fargate (Railpack / sd-artifacts server units).
