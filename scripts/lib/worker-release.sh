@@ -157,17 +157,19 @@ worker_release_login_ecr() {
 }
 
 worker_release_preflight_ecr_push_permissions() {
-	worker_release_log "Preflighting ECR push permissions with BatchCheckLayerAvailability"
+	local repository_name="${1:-${ECR_REPO}}"
+
+	worker_release_log "Preflighting ECR push permissions for ${repository_name} with BatchCheckLayerAvailability"
 	aws ecr batch-check-layer-availability \
 		--registry-id "${AWS_ACCOUNT_ID}" \
-		--repository-name "${ECR_REPO}" \
+		--repository-name "${repository_name}" \
 		--region "${AWS_REGION}" \
 		--layer-digests "${ECR_PERMISSION_CHECK_DIGEST}" >/dev/null
 
-	worker_release_log "Preflighting ECR push permissions with InitiateLayerUpload"
+	worker_release_log "Preflighting ECR push permissions for ${repository_name} with InitiateLayerUpload"
 	aws ecr initiate-layer-upload \
 		--registry-id "${AWS_ACCOUNT_ID}" \
-		--repository-name "${ECR_REPO}" \
+		--repository-name "${repository_name}" \
 		--region "${AWS_REGION}" >/dev/null
 }
 
@@ -175,7 +177,7 @@ worker_release_build_and_push() {
 	worker_release_ensure_ecr_repo
 	worker_release_init_docker_config
 	worker_release_login_ecr
-	worker_release_preflight_ecr_push_permissions
+	worker_release_preflight_ecr_push_permissions "${ECR_REPO}"
 
 	worker_release_log "Building worker image"
 	docker build -f "${DOCKERFILE_PATH}" -t "${WORKER_IMAGE}" "${REPO_ROOT}"
@@ -199,6 +201,7 @@ worker_release_build_and_push_deployment_queue_lambda() {
 	worker_release_ensure_named_ecr_repo "${DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO}"
 	worker_release_init_docker_config
 	worker_release_login_ecr
+	worker_release_preflight_ecr_push_permissions "${DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO}"
 
 	worker_release_log "Building and pushing deployment queue Lambda image: ${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}"
 	docker buildx build \

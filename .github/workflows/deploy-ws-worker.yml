@@ -29,6 +29,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Deploy worker via update.sh
         env:
           AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
@@ -36,4 +39,6 @@ jobs:
           WORKER_INSTANCE_ID: ${{ vars.WORKER_INSTANCE_ID }}
           WORKER_SECRET_ARN: ${{ vars.WORKER_SECRET_ARN }}
           WORKER_DNS_RECORD: ${{ vars.WORKER_DNS_RECORD }}
+          AUTO_APPROVE: "true"
+          TF_INPUT: "false"
         run: bash ./scripts/update.sh
