@@ -32,6 +32,17 @@ export function createEntry(userID: string | undefined, repoName: string, servic
 	});
 }
 
+export function ensureEntry(userID: string | undefined, repoName: string, serviceName: string): void {
+	const k = key(userID, repoName, serviceName);
+	if (store.has(k)) return;
+	store.set(k, {
+		steps: [],
+		logEntries: [],
+		status: "running",
+		error: null,
+	});
+}
+
 export function deleteEntry(userID: string, repoName: string, serviceName: string) {
 	const k = key(userID, repoName, serviceName);
 	store.delete(k);
@@ -51,11 +62,12 @@ export function broadcastLog(
 	repoName: string,
 	serviceName: string,
 	id: string,
-	msg: string
+	msg: string,
+	timeOverride?: string
 ): void {
 	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return;
-	const time = new Date().toISOString();
+	const time = timeOverride || new Date().toISOString();
 	const payload = { id, msg, time };
 	entry.logEntries.push({
 		id,

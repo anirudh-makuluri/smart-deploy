@@ -77,7 +77,6 @@ describe("llmProviders.callLLMWithFallback", () => {
 			AWS_BEDROCK_SESSION_TOKEN: "",
 			AWS_ACCESS_KEY_ID: "",
 			AWS_SECRET_ACCESS_KEY: "",
-			AWS_SESSION_TOKEN: "",
 			AWS_PROFILE: "",
 			AWS_WEB_IDENTITY_TOKEN_FILE: "",
 			AWS_ROLE_ARN: "",

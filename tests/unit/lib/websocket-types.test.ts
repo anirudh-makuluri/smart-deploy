@@ -1,30 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
-const handleDeployMock = vi.fn();
-const createEntryMock = vi.fn();
-const deleteEntryMock = vi.fn();
-const updateStepsMock = vi.fn();
-const broadcastLogMock = vi.fn();
-const setStatusMock = vi.fn();
+const createDeploymentRunMock = vi.fn();
+const updateDeploymentsMock = vi.fn();
+const finalizeDeploymentRunMock = vi.fn();
+const enqueueDeploymentRunMock = vi.fn();
 const getDeploymentMock = vi.fn();
 const getEcsServiceLogsMock = vi.fn();
 
-vi.mock("@/lib/handleDeploy", () => ({
-	handleDeploy: (...args: unknown[]) => handleDeployMock(...args),
-}));
-
-vi.mock("@/lib/deployLogsStore", () => ({
-	createEntry: (...args: unknown[]) => createEntryMock(...args),
-	deleteEntry: (...args: unknown[]) => deleteEntryMock(...args),
-	updateSteps: (...args: unknown[]) => updateStepsMock(...args),
-	broadcastLog: (...args: unknown[]) => broadcastLogMock(...args),
-	setStatus: (...args: unknown[]) => setStatusMock(...args),
-}));
-
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
+		createDeploymentRun: (...args: unknown[]) => createDeploymentRunMock(...args),
+		updateDeployments: (...args: unknown[]) => updateDeploymentsMock(...args),
+		finalizeDeploymentRun: (...args: unknown[]) => finalizeDeploymentRunMock(...args),
 		getDeployment: (...args: unknown[]) => getDeploymentMock(...args),
 	},
+}));
+
+vi.mock("@/lib/aws/deploymentQueue", () => ({
+	enqueueDeploymentRun: (...args: unknown[]) => enqueueDeploymentRunMock(...args),
 }));
 
 vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
@@ -34,19 +28,25 @@ vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
 describe("websocket-types deploy", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		createDeploymentRunMock.mockResolvedValue({ runId: "run-1" });
+		updateDeploymentsMock.mockResolvedValue({});
+		finalizeDeploymentRunMock.mockResolvedValue({});
+		enqueueDeploymentRunMock.mockResolvedValue(undefined);
 	});
 
-	it("marks store status as error when handleDeploy throws", async () => {
-		handleDeployMock.mockRejectedValue(new Error("Deployment failed"));
+	it("marks the deployment failed when queue handoff throws", async () => {
+		enqueueDeploymentRunMock.mockRejectedValue(new Error("Deployment failed"));
 		const { deploy } = await import("@/websocket-types");
+		const deployConfig = makeDeployment({
+			repoName: "smart-deploy",
+			serviceName: "web",
+			status: "deploying",
+		});
 
 		await expect(
 			deploy(
 				{
-					deployConfig: {
-						repoName: "smart-deploy",
-						serviceName: "web",
-					} as any,
+					deployConfig,
 					token: "gh-token",
 					userID: "user-1",
 				},
@@ -54,27 +54,71 @@ describe("websocket-types deploy", () => {
 			)
 		).rejects.toThrow("Deployment failed");
 
-		expect(setStatusMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web", "error", "Deployment failed");
+		expect(finalizeDeploymentRunMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				runId: "run-1",
+				userId: "user-1",
+				success: false,
+			})
+		);
+		expect(updateDeploymentsMock).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				repoName: "smart-deploy",
+				serviceName: "web",
+				activeRunId: null,
+				status: "failed",
+			}),
+			"user-1"
+		);
 	}, 10000);
 
-	it("cleans up the running deploy entry when handleDeploy succeeds", async () => {
-		handleDeployMock.mockResolvedValue("done");
+	it("queues the deployment run and skips failure cleanup on success", async () => {
 		const { deploy } = await import("@/websocket-types");
+		const deployConfig = makeDeployment({
+			repoName: "smart-deploy",
+			serviceName: "web",
+			status: "deploying",
+		});
 
 		await deploy(
 			{
-				deployConfig: {
-					repoName: "smart-deploy",
-					serviceName: "web",
-				} as any,
+				deployConfig,
 				token: "gh-token",
 				userID: "user-1",
 			},
 			{}
 		);
 
-		expect(deleteEntryMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web");
-		expect(setStatusMock).not.toHaveBeenCalled();
+		expect(createDeploymentRunMock).toHaveBeenCalledWith({
+			userId: "user-1",
+			repoName: "smart-deploy",
+			serviceName: "web",
+			branch: "main",
+			commitSha: undefined,
+			responseId: null,
+			releaseArtifact: {
+				deployConfig: expect.objectContaining({
+					repoName: "smart-deploy",
+					serviceName: "web",
+					status: "deploying",
+				}),
+			},
+		});
+		expect(updateDeploymentsMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				repoName: "smart-deploy",
+				serviceName: "web",
+				activeRunId: "run-1",
+			}),
+			"user-1"
+		);
+		expect(enqueueDeploymentRunMock).toHaveBeenCalledWith({
+			runId: "run-1",
+			userId: "user-1",
+			repoName: "smart-deploy",
+			serviceName: "web",
+		});
+		expect(finalizeDeploymentRunMock).not.toHaveBeenCalled();
 	}, 10000);
 
 	it("returns ECS logs even when the stored deployment status is failed", async () => {

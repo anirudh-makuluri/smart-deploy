@@ -18,7 +18,10 @@ import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { findTargetGroupArnByName } from "./awsHelpers";
 
 function getClientConfig(region: string) {
-	const conf: { region: string; credentials?: { accessKeyId: string; secretAccessKey: string } } = { region };
+	const conf: {
+		region: string;
+		credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
+	} = { region };
 	if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
 		conf.credentials = {
 			accessKeyId: config.AWS_ACCESS_KEY_ID,

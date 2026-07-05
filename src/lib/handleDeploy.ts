@@ -14,6 +14,7 @@ import { dbHelper } from "../db-helper";
 import { createDeployStepsLogger } from "./websocketLogger";
 import {
 	type ActiveDeployRun,
+	adoptDeploymentRun,
 	startDeploymentRun,
 	createDeployRunStepFlushHandler,
 } from "./deployRunTracker";
@@ -509,7 +510,10 @@ export async function handleDeploy(
 	token: string,
 	ws: any,
 	userID: string,
-	options: DeployLoggerOptions
+	options: DeployLoggerOptions,
+	context?: {
+		existingRunId?: string | null;
+	}
 ): Promise<string> {
 	const deployStartTime = Date.now();
 
@@ -520,6 +524,7 @@ export async function handleDeploy(
 	// Initialize deployment steps for tracking all logs
 	const deploySteps: DeployStep[] = [];
 	let activeDeployRun: ActiveDeployRun | null = null;
+	let runtimeEmitter = ws;
 	const send = createTrackedDeployLogger(ws, deploySteps, options, () => activeDeployRun);
 	if (ws) {
 		(ws as any).__deploySend = send;
@@ -534,14 +539,38 @@ export async function handleDeploy(
 			}),
 			userID
 		);
-		activeDeployRun = await startTrackedDeployRun(deployConfig, userID, ws);
-		return await handleAWSCodeBuildDeploy(deployConfig, token, ws, userID, deployStartTime, send, deploySteps);
+		activeDeployRun = context?.existingRunId?.trim()
+			? adoptDeploymentRun({
+				runId: context.existingRunId.trim(),
+				userId: userID,
+				region: deployConfig.region,
+			})
+			: await startTrackedDeployRun(deployConfig, userID, ws);
+		if (ws && activeDeployRun) {
+			(ws as any).__deployRun = activeDeployRun;
+		}
+		if (!ws && activeDeployRun) {
+			runtimeEmitter = {
+				emit: () => undefined,
+				__deployRun: activeDeployRun,
+				__deploySend: send,
+			};
+		}
+		return await handleAWSCodeBuildDeploy(
+			deployConfig,
+			token,
+			runtimeEmitter,
+			userID,
+			deployStartTime,
+			send,
+			deploySteps
+		);
 	} catch (error: any) {
 		send(`ERROR: Deployment failed: ${error.message}`, 'error');
 		const doneStep = deploySteps.find((step) => step.id === "done");
 		if (doneStep) doneStep.status = "error";
 		const durationMs = Date.now() - deployStartTime;
-		await sendDeployComplete(ws, undefined, false, deployConfig, deploySteps, userID, deployConfig.deploymentTarget, null, null, durationMs, {
+		await sendDeployComplete(runtimeEmitter, undefined, false, deployConfig, deploySteps, userID, deployConfig.deploymentTarget, null, null, durationMs, {
 			errorMessage: error instanceof Error ? error.message : String(error),
 		});
 		throw error;
@@ -907,6 +936,9 @@ async function sendDeployComplete(
 			deployConfig.serviceName,
 			payload
 		);
+		if ((ws as { __remoteDeploymentEventBridge?: boolean } | null | undefined)?.__remoteDeploymentEventBridge) {
+			emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
+		}
 	} else {
 		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
 	}
@@ -1233,6 +1265,7 @@ async function configureDeploymentDns(params: {
 		}
 	} else {
 		params.send(`WARNING: Route 53 DNS failed: ${resolvedDnsResult?.error ?? "Unknown error"}`, "done");
+		console.warn(`Route 53 DNS failed for ${deployUrl}: ${resolvedDnsResult?.error ?? "Unknown error"}`);
 	}
 
 	return { deployUrl, dnsResult: resolvedDnsResult };
@@ -1391,10 +1424,7 @@ async function handleAWSCodeBuildDeploy(
 	});
 	deployUrl = dnsOutcome.deployUrl;
 	const dnsResult = dnsOutcome.dnsResult;
-
-	if(!dnsResult || !dnsResult.success) {
-		throw new Error("DNS not configured properly.")
-	}
+	console.log(dnsResult)
 
 	// Phase 5: verify what is live, then persist the final status and release metadata.
 	let finalSuccess: boolean = deployResult.success;
@@ -1405,7 +1435,17 @@ async function handleAWSCodeBuildDeploy(
 		// Hold that step open until live verification tells us whether the release is actually healthy.
 		prematureDoneStep.status = 'pending';
 	}
-	if (deployResult.success && deployUrl) {
+	if (!dnsResult || !dnsResult.success) {
+		finalSuccess = false;
+		const dnsError = dnsResult?.success === false ? dnsResult.error : "DNS not configured properly.";
+		setStepState(deploySteps, "verify", "error");
+		send(`ERROR: DNS not configured properly: ${dnsError}`, "verify");
+		lifecycle = {
+			errorMessage: `DNS not configured properly: ${dnsError}`,
+			finalStatus: "failed",
+			releaseArtifact,
+		};
+	} else if (deployResult.success && deployUrl) {
 		const verification = await verifyDeploymentReadiness({
 			deployConfig,
 			deployUrl,

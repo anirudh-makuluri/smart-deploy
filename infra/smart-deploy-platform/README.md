@@ -10,6 +10,7 @@ Provisions AWS resources required by Smart Deploy v2 deploy routing:
 | Fargate security group + subnets | `ECS_SECURITY_GROUP_IDS`, `ECS_SUBNET_IDS` |
 | CloudWatch log group | `ECS_LOG_GROUP` (optional; defaults match app) |
 | DynamoDB runtime table | `RUNTIME_DYNAMODB_TABLE_NAME` |
+| Optional FIFO queue + Lambda trigger | `DEPLOYMENT_QUEUE_URL` |
 
 **Not created here** (Smart Deploy creates at deploy time):
 
@@ -22,6 +23,7 @@ Provisions AWS resources required by Smart Deploy v2 deploy routing:
 - Terraform ≥ 1.6
 - AWS credentials with permission to create S3, CloudFront, ECS, IAM, EC2 (security groups), CloudWatch Logs, and DynamoDB
 - Default VPC (or set `vpc_id` + `ecs_subnet_ids`)
+- For the optional deployment queue launcher: a pushed Lambda container image plus Supabase/Postgres server credentials
 
 Fargate subnets should be **public** (map public IP) unless you use private subnets with NAT and set `ECS_ASSIGN_PUBLIC_IP=DISABLED` in `.env`.
 
@@ -44,6 +46,46 @@ Copy outputs into your Smart Deploy `.env`:
 ```bash
 terraform output -raw smart_deploy_env_snippet
 ```
+
+## Deployment queue trigger
+
+This stack can also create the first-pass deployment launcher path:
+
+`SQS FIFO queue -> Lambda -> ECS RunTask`
+
+Build and push the images first:
+
+```bash
+# from the repository root
+docker build -f Dockerfile.websocket -t smart-deploy-worker .
+# tag + push to your ECR repo
+
+docker build -f Dockerfile.deployment-queue-lambda -t smart-deploy-deployment-queue .
+# tag + push to your ECR repo
+```
+
+Then enable it in `terraform.tfvars`:
+
+```hcl
+enable_deployment_queue          = true
+deployment_queue_lambda_image_uri = "123456789012.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-deployment-queue:latest"
+
+supabase_url              = "https://your-project.supabase.co"
+supabase_service_role_key = "your-service-role-key"
+database_url              = "postgresql://..."
+
+deployment_worker_image = "123456789012.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:latest"
+deployment_worker_secret_arn = "arn:aws:secretsmanager:us-west-2:123456789012:secret:smartdeploy/worker/prod-AbCdEf"
+```
+
+Notes:
+
+- The Lambda image must already exist in ECR before `terraform apply`.
+- The deployment worker image must already exist in ECR before `terraform apply`.
+- Image build and push stay outside Terraform on purpose.
+- Terraform creates the one-off ECS deployment worker task definition and task role for you.
+- The Lambda launches ECS tasks and does not run the deployment itself.
+- The generated env snippet includes `DEPLOYMENT_QUEUE_URL` plus the default worker networking values.
 
 Also set (if not already):
 

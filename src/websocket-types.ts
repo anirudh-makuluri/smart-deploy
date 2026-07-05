@@ -1,45 +1,87 @@
-import { DeployConfig, DeployStep } from "./app/types";
+import { DeployConfig } from "./app/types";
 import { isEcsCloudResources } from "@/lib/cloudResources";
 import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
-import type { DeployLoggerOptions } from "@/lib/deployLoggerOptions";
-import { handleDeploy } from "@/lib/handleDeploy";
+import { enqueueDeploymentRun } from "@/lib/aws/deploymentQueue";
 import { dbHelper } from "./db-helper";
-import * as deployLogsStore from "./lib/deployLogsStore";
 import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID: string }, ws: any) {
 	const {
 		deployConfig,
-		token,
 		userID,
 	}: { deployConfig: DeployConfig; token: string; userID: string } = payload;
 
 	const repoName = deployConfig.repoName;
 	const serviceName = deployConfig.serviceName;
-	deployLogsStore.createEntry(userID, repoName, serviceName, ws);
+	if (!repoName || !serviceName) {
+		throw new Error("repoName and serviceName are required.");
+	}
 
-	const options: DeployLoggerOptions = {
-		onStepsChange: (steps: DeployStep[]) => {
-			deployLogsStore.updateSteps(userID, repoName, serviceName, steps);
-		},
-		broadcast: (id: string, msg: string) => {
-			deployLogsStore.broadcastLog(userID, repoName, serviceName, id, msg);
+	const queuedReleaseArtifact = {
+		deployConfig: {
+			...deployConfig,
 		},
 	};
-
+	let runId: string | undefined;
 	try {
-		await handleDeploy(deployConfig, token, ws, userID, options);
-	} catch (err: any) {
-		deployLogsStore.setStatus(
-			userID,
+		const createdRun = await dbHelper.createDeploymentRun({
+			userId: userID,
 			repoName,
 			serviceName,
-			"error",
-			err instanceof Error ? err.message : String(err)
+			branch: deployConfig.branch,
+			commitSha: deployConfig.commitSha ?? undefined,
+			responseId: deployConfig.responseId ?? null,
+			releaseArtifact: queuedReleaseArtifact,
+		});
+		if (createdRun.error || !createdRun.runId) {
+			throw new Error(
+				typeof createdRun.error === "string"
+					? createdRun.error
+					: "Failed to create deployment run."
+			);
+		}
+		runId = createdRun.runId;
+
+		const updateResponse = await dbHelper.updateDeployments(
+			{
+				...deployConfig,
+				activeRunId: runId,
+			} as DeployConfig & { activeRunId: string },
+			userID
 		);
+		if (updateResponse.error) {
+			throw new Error(
+				typeof updateResponse.error === "string"
+					? updateResponse.error
+					: "Failed to update deployment before queueing."
+			);
+		}
+
+		await enqueueDeploymentRun({
+			runId,
+			userId: userID,
+			repoName,
+			serviceName,
+		});
+	} catch (err: any) {
+		if (runId) {
+			await dbHelper.finalizeDeploymentRun({
+				runId,
+				userId: userID,
+				success: false,
+				steps: [],
+				releaseArtifact: queuedReleaseArtifact,
+			});
+			await dbHelper.updateDeployments(
+				{
+					...deployConfig,
+					activeRunId: null,
+					status: "failed",
+				} as DeployConfig & { activeRunId: null },
+				userID
+			);
+		}
 		throw err;
-	} finally {
-		deployLogsStore.deleteEntry(userID, repoName, serviceName);
 	}
 }
 

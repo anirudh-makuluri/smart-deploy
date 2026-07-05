@@ -29,7 +29,8 @@ create table public.deployments (
   cloud_resources jsonb,
   secrets_arn text,
 
-  response_id uuid
+  response_id uuid,
+  active_run_id uuid
 );
 
 create unique index idx_deployments_hosted_subdomain
@@ -39,6 +40,7 @@ create index idx_deployments_owner on public.deployments(owner_id);
 create index idx_deployments_region on public.deployments(region);
 create index idx_deployments_provider on public.deployments(cloud_provider);
 create index idx_deployments_response_id on public.deployments(response_id);
+create index if not exists idx_deployments_active_run_id on public.deployments(active_run_id);
 
 -- Full analysis responses are stored separately and linked by deployments.response_id
 create table if not exists public.analysis_responses (
@@ -79,7 +81,9 @@ create table if not exists public.deployment_runs (
   repo_name text not null,
   service_name text not null,
   started_at timestamptz not null default now(),
+  started_at_executor timestamptz,
   finished_at timestamptz,
+  status text not null default 'queued',
   success boolean,
   duration_ms int,
   branch text,
@@ -89,6 +93,7 @@ create table if not exists public.deployment_runs (
   failure_classification jsonb,
   release_artifact jsonb not null default '{}',
   response_id uuid references public.analysis_responses(id) on delete set null,
+  worker_task_arn text,
   log_store text not null default 's3',
   log_ref text,
   step_summary jsonb not null default '[]',
