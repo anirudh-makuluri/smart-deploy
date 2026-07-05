@@ -35,3 +35,11 @@ export function getDbPool(): Pool {
 	return pool;
 }
 
+export async function closeDbPool(): Promise<void> {
+	const currentPool = pool;
+	pool = null;
+	delete globalForDbPool.__smartDeployDbPool;
+	if (currentPool) {
+		await currentPool.end();
+	}
+}

@@ -12,6 +12,7 @@ export function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployCon
 		envVars: null,
 		hostedSubdomain: null,
 		screenshotUrl: null,
+		activeRunId: null,
 		firstDeployment: null,
 		lastDeployment: null,
 		revision: null,

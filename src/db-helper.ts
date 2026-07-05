@@ -92,23 +92,30 @@ async function upsertAnalysisResponse(args: {
 	packagePath?: string | null;
 }) {
 	const supabase = getSupabaseServer();
+	const baseRow = {
+		id: args.id,
+		endpoint: "/analyze",
+		repo_url: args.repoUrl || "",
+		commit_sha: args.commitSha,
+		package_path: toOptionalTrimmedString(args.packagePath) ?? ".",
+		service_name: args.serviceName || null,
+		from_cache: false,
+		passed: args.payload.build_status === "passed" || args.payload.build_status === "partial",
+		payload: args.payload,
+	};
 	const { error } = await supabase
 		.from("analysis_responses")
-		.upsert(
-			{
-				id: args.id,
-				endpoint: "/analyze",
-				repo_url: args.repoUrl || "",
-				commit_sha: args.commitSha,
-				package_path: toOptionalTrimmedString(args.packagePath) ?? ".",
-				service_name: args.serviceName || null,
-				from_cache: false,
-				passed: args.payload.build_status === "passed" || args.payload.build_status === "partial",
-				payload: args.payload,
-			},
-			{ onConflict: "id" }
-		);
-	if (error) throw new Error(error.message);
+		.upsert(baseRow, { onConflict: "id" });
+	if (!error) return;
+	const message = error.message || "";
+	if (!message.includes("service_name")) {
+		throw new Error(message);
+	}
+	const { service_name, ...legacyRow } = baseRow;
+	const { error: legacyError } = await supabase
+		.from("analysis_responses")
+		.upsert(legacyRow, { onConflict: "id" });
+	if (legacyError) throw new Error(legacyError.message);
 }
 
 function toSqlInsertValue(value: unknown): unknown {
@@ -267,6 +274,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig {
 		commit_sha,
 		hosted_subdomain,
 		screenshot_url,
+		active_run_id,
 		cloud_provider,
 		deployment_target,
 		region,
@@ -291,6 +299,7 @@ function rowToDeployConfig(row: Record<string, unknown>): DeployConfig {
 		commitSha: (commit_sha as string | null) ?? null,
 		hostedSubdomain,
 		screenshotUrl: (screenshot_url as string | null) ?? null,
+		activeRunId: toOptionalTrimmedString(active_run_id),
 		status: resolveDeploymentStatus({
 			status: status as string | null | undefined,
 			hostedSubdomain,
@@ -363,6 +372,45 @@ function rowToDeploymentHistoryEntryFromRun(row: Record<string, unknown>): Deplo
 		failureCode: (row.failure_code as DeploymentHistoryEntry["failureCode"]) ?? null,
 		failureClassification: (row.failure_classification as DeploymentHistoryEntry["failureClassification"]) ?? null,
 		logRef: (row.log_ref as string | null) ?? null,
+	};
+}
+
+export type DeploymentRunRecord = {
+	id: string;
+	userId: string;
+	repoName: string;
+	serviceName: string;
+	status: "queued" | "deploying" | "completed";
+	startedAt: string;
+	startedAtExecutor: string | null;
+	finishedAt: string | null;
+	success: boolean | null;
+	branch: string | null;
+	commitSha: string | null;
+	responseId: string | null;
+	releaseArtifact: DeploymentHistoryEntry["releaseArtifact"] | Record<string, unknown>;
+	workerTaskArn: string | null;
+	logRef: string | null;
+};
+
+function rowToDeploymentRunRecord(row: Record<string, unknown>): DeploymentRunRecord {
+	return {
+		id: String(row.id ?? ""),
+		userId: String(row.user_id ?? ""),
+		repoName: String(row.repo_name ?? ""),
+		serviceName: String(row.service_name ?? ""),
+		status: (toOptionalTrimmedString(row.status) as DeploymentRunRecord["status"]) ?? "queued",
+		startedAt: String(row.started_at ?? ""),
+		startedAtExecutor: toOptionalTrimmedString(row.started_at_executor),
+		finishedAt: toOptionalTrimmedString(row.finished_at),
+		success: typeof row.success === "boolean" ? row.success : null,
+		branch: toOptionalTrimmedString(row.branch),
+		commitSha: toOptionalTrimmedString(row.commit_sha),
+		responseId: toOptionalTrimmedString(row.response_id),
+		releaseArtifact:
+			(row.release_artifact as DeploymentRunRecord["releaseArtifact"]) ?? {},
+		workerTaskArn: toOptionalTrimmedString(row.worker_task_arn),
+		logRef: toOptionalTrimmedString(row.log_ref),
 	};
 }
 
@@ -809,6 +857,30 @@ export const dbHelper = {
 		}
 	},
 
+	clearDeploymentActiveRunIfMatches: async function (args: {
+		repoName: string;
+		serviceName: string;
+		runId: string;
+	}): Promise<{ error?: string }> {
+		try {
+			await updateTableRows(
+				"deployments",
+				{
+					active_run_id: null,
+				},
+				{
+					repo_name: args.repoName,
+					service_name: args.serviceName,
+					active_run_id: args.runId,
+				}
+			);
+			return {};
+		} catch (error) {
+			console.error("clearDeploymentActiveRunIfMatches error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
 	syncUserRepos: async function (userID: string, repoList: repoType[]) {
 		const rows = dedupeRepoSyncRows(repoList.map(repo => ({
 			user_id: userID,
@@ -913,6 +985,63 @@ export const dbHelper = {
 			return { runId: inserted?.id as string | undefined };
 		} catch (error) {
 			console.error("createDeploymentRun error:", error);
+			return { error };
+		}
+	},
+
+	getDeploymentRunSystem: async function (
+		runId: string
+	): Promise<{ error?: unknown; run?: DeploymentRunRecord | null }> {
+		try {
+			const entryId = String(runId ?? "").trim();
+			if (!entryId) return { error: "Deployment run ID is required" };
+
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("deployment_runs")
+				.select("*")
+				.eq("id", entryId)
+				.maybeSingle();
+
+			if (error) return { error };
+			return {
+				run: data ? rowToDeploymentRunRecord(data as Record<string, unknown>) : null,
+			};
+		} catch (error) {
+			console.error("getDeploymentRunSystem error:", error);
+			return { error };
+		}
+	},
+
+	updateDeploymentRunSystem: async function (args: {
+		runId: string;
+		userId: string;
+		status?: DeploymentRunRecord["status"];
+		startedAtExecutor?: string | null;
+		workerTaskArn?: string | null;
+		releaseArtifact?: DeploymentHistoryEntry["releaseArtifact"] | Record<string, unknown>;
+	}): Promise<{ error?: unknown }> {
+		try {
+			const payload: Record<string, unknown> = {};
+			if (args.status) payload.status = args.status;
+			if (Object.prototype.hasOwnProperty.call(args, "startedAtExecutor")) {
+				payload.started_at_executor = args.startedAtExecutor ?? null;
+			}
+			if (Object.prototype.hasOwnProperty.call(args, "workerTaskArn")) {
+				payload.worker_task_arn = args.workerTaskArn ?? null;
+			}
+			if (Object.prototype.hasOwnProperty.call(args, "releaseArtifact")) {
+				payload.release_artifact = args.releaseArtifact ?? {};
+			}
+
+			await updateTableRows(
+				"deployment_runs",
+				payload,
+				{ id: args.runId, user_id: args.userId }
+			);
+			return {};
+		} catch (error) {
+			console.error("updateDeploymentRunSystem error:", error);
 			return { error };
 		}
 	},

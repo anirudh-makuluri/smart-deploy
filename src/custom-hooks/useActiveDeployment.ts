@@ -22,6 +22,7 @@ export function createDefaultDeployment(
 		envVars: null,
 		hostedSubdomain: hostedSubdomainOrDefault(repoName, null) || null,
 		screenshotUrl: null,
+		activeRunId: null,
 		status: "didnt_deploy",
 		firstDeployment: null,
 		lastDeployment: null,

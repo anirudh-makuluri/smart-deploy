@@ -185,19 +185,9 @@ resource "aws_ecs_task_definition" "deployment_worker" {
         { name = "ECS_SUBNET_IDS", value = join(",", local.deployment_worker_subnet_ids) },
         { name = "ECS_TASK_CPU", value = var.deployment_worker_task_cpu },
         { name = "ECS_TASK_MEMORY", value = var.deployment_worker_task_memory },
-        { name = "NEXT_PUBLIC_DEPLOYMENT_DOMAIN", value = var.deployment_domain != "" ? var.deployment_domain : "" },
-        { name = "ROUTE53_DOMAIN", value = var.deployment_domain != "" ? var.deployment_domain : "" },
-        { name = "ROUTE53_ENSURE_WILDCARD", value = "true" },
-        { name = "ROUTE53_HOSTED_ZONE_ID", value = local.route53_zone_id },
-        { name = "ROUTE53_USE_WILDCARD", value = "true" },
+        { name = "AWS_SECRETS_ARN", value = var.deployment_worker_secret_arn },
         { name = "USE_CODEBUILD", value = "true" },
       ]
-      secrets = var.deployment_worker_secret_arn != "" ? [
-        for key in local.deployment_worker_secret_env_keys : {
-          name      = key
-          valueFrom = "${var.deployment_worker_secret_arn}:${key}::"
-        }
-      ] : []
       logConfiguration = {
         logDriver = "awslogs"
         options = {

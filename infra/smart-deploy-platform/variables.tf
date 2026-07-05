@@ -198,37 +198,9 @@ variable "deployment_worker_assign_public_ip" {
 }
 
 variable "deployment_worker_secret_arn" {
-  description = "Optional Secrets Manager secret ARN containing deployment worker runtime env as a JSON object."
+  description = "Optional Secrets Manager secret ARN containing deployment worker runtime env as JSON or dotenv text."
   type        = string
   default     = ""
-}
-
-variable "deployment_worker_secret_env_keys" {
-  description = "Secret JSON keys to project into deployment worker container env vars."
-  type        = list(string)
-  default = [
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_SESSION_TOKEN",
-    "BETTER_AUTH_SECRET",
-    "DATABASE_URL",
-    "DEPLOYMENT_SCREENSHOT_BUCKET",
-    "DOCKERHUB_TOKEN",
-    "DOCKERHUB_USERNAME",
-    "GCP_PROJECT_ID",
-    "GCP_SERVICE_ACCOUNT_KEY",
-    "GEMINI_API_KEY",
-    "GITHUB_ID",
-    "GITHUB_SECRET",
-    "LOGS_BUCKET",
-    "RUNTIME_DYNAMODB_TABLE_NAME",
-    "STATIC_SITE_BUCKET",
-    "STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID",
-    "STATIC_SITE_KEY_PREFIX",
-    "STATIC_SITE_PUBLIC_BASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "SUPABASE_URL",
-  ]
 }
 
 variable "deployment_worker_task_role_name" {

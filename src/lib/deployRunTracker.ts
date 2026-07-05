@@ -58,3 +58,16 @@ export async function startDeploymentRun(args: {
 		lastFlushedStepCount: 0,
 	};
 }
+
+export function adoptDeploymentRun(args: {
+	runId: string;
+	userId: string;
+	region?: string;
+}): ActiveDeployRun {
+	return {
+		runId: args.runId,
+		userId: args.userId,
+		region: args.region,
+		lastFlushedStepCount: 0,
+	};
+}

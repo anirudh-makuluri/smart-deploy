@@ -1,4 +1,7 @@
-import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import {
+	SendMessageCommand,
+	SQSClient,
+} from "@aws-sdk/client-sqs";
 import config from "@/config";
 import { getAwsClientConfig } from "@/lib/aws/sdkClients";
 

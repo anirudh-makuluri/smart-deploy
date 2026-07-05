@@ -51,5 +51,4 @@ locals {
   deployment_worker_subnet_ids         = length(var.deployment_worker_subnet_ids) > 0 ? var.deployment_worker_subnet_ids : local.ecs_subnet_ids
   deployment_worker_security_group_ids = length(var.deployment_worker_security_group_ids) > 0 ? var.deployment_worker_security_group_ids : [aws_security_group.fargate.id]
   deployment_worker_assign_public_ip   = upper(trimspace(var.deployment_worker_assign_public_ip != "" ? var.deployment_worker_assign_public_ip : "ENABLED"))
-  deployment_worker_secret_env_keys    = distinct([for key in var.deployment_worker_secret_env_keys : trimspace(key) if trimspace(key) != ""])
 }

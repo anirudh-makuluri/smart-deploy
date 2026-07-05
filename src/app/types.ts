@@ -95,6 +95,8 @@ export type DeployConfig = {
 	hostedSubdomain: string | null;
 	/** Public URL to a screenshot of the deployed app (stored in Supabase Storage) */
 	screenshotUrl: string | null;
+	/** Current queued or active deployment run, if any */
+	activeRunId: string | null;
 	serviceName: string;
 	/** Deployment status */
 	status: DeploymentStatus;

@@ -173,8 +173,6 @@ function createBedrockClient(region: string): BedrockRuntimeClient {
 	const explicitBedrockSecretKey = process.env.AWS_BEDROCK_SECRET_ACCESS_KEY?.trim();
 	const genericAccessKey = process.env.AWS_ACCESS_KEY_ID?.trim();
 	const genericSecretKey = process.env.AWS_SECRET_ACCESS_KEY?.trim();
-	const sessionToken =
-		process.env.AWS_BEDROCK_SESSION_TOKEN?.trim() || process.env.AWS_SESSION_TOKEN?.trim();
 
 	if (explicitBedrockAccessKey && explicitBedrockSecretKey) {
 		return new BedrockRuntimeClient({
@@ -182,7 +180,6 @@ function createBedrockClient(region: string): BedrockRuntimeClient {
 			credentials: {
 				accessKeyId: explicitBedrockAccessKey,
 				secretAccessKey: explicitBedrockSecretKey,
-				...(sessionToken ? { sessionToken } : {}),
 			},
 		});
 	}
@@ -193,7 +190,6 @@ function createBedrockClient(region: string): BedrockRuntimeClient {
 			credentials: {
 				accessKeyId: genericAccessKey,
 				secretAccessKey: genericSecretKey,
-				...(sessionToken ? { sessionToken } : {}),
 			},
 		});
 	}
