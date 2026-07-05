@@ -103,8 +103,10 @@ That builds and pushes:
 It then updates:
 
 - The existing websocket EC2 worker container via SSM.
-- The one-off ECS deployment worker task definition in this stack.
+- The one-off ECS deployment worker task definition by cloning the current live task definition and changing only the worker image.
 - The deployment queue Lambda function so its image and `DEPLOYMENT_WORKER_TASK_DEFINITION_ARN` point at the latest worker task definition revision.
+
+By default, `./scripts/update.sh` uses AWS CLI for the deployment queue update (`DEPLOYMENT_QUEUE_UPDATE_MODE=awscli`). This avoids requiring `infra/smart-deploy-platform` Terraform state in GitHub Actions. Use `DEPLOYMENT_QUEUE_UPDATE_MODE=terraform` only from an environment that has the platform Terraform state configured.
 
 Useful overrides:
 
@@ -112,6 +114,7 @@ Useful overrides:
 IMAGE_TAG=20260705-live-log-bridge ./scripts/update.sh
 AUTO_APPROVE=true ./scripts/update.sh
 UPDATE_DEPLOYMENT_QUEUE=false ./scripts/update.sh
+DEPLOYMENT_QUEUE_UPDATE_MODE=terraform ./scripts/update.sh
 ROLLOUT_MODE=none ./scripts/update.sh
 ```
 
@@ -135,11 +138,68 @@ docker buildx build --platform linux/amd64 --provenance=false \
   -t "${ECR_REGISTRY}/smart-deploy-deployment-queue:${TAG}" \
   --push .
 
-terraform -chdir=infra/smart-deploy-platform apply \
-  -var="deployment_worker_image=${ECR_REGISTRY}/smart-deploy-worker:${TAG}" \
-  -var="deployment_queue_lambda_image_uri=${ECR_REGISTRY}/smart-deploy-deployment-queue:${TAG}" \
-  -target='aws_ecs_task_definition.deployment_worker[0]' \
-  -target='aws_lambda_function.deployment_queue[0]'
+CURRENT_TASK_DEFINITION=smart-deploy-deployment-worker
+LAMBDA_FUNCTION=smart-deploy-deployment-queue-handler
+
+aws ecs describe-task-definition \
+  --task-definition "${CURRENT_TASK_DEFINITION}" \
+  --region "${AWS_REGION}" \
+  --query taskDefinition \
+  --output json > /tmp/current-task-definition.json
+
+python3 - /tmp/current-task-definition.json "${ECR_REGISTRY}/smart-deploy-worker:${TAG}" > /tmp/register-task-definition.json <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    current = json.load(handle)
+
+allowed = {
+    "family", "taskRoleArn", "executionRoleArn", "networkMode",
+    "containerDefinitions", "volumes", "placementConstraints",
+    "requiresCompatibilities", "cpu", "memory", "tags",
+    "pidMode", "ipcMode", "proxyConfiguration", "inferenceAccelerators",
+    "ephemeralStorage", "runtimePlatform",
+}
+payload = {key: current[key] for key in allowed if key in current and current[key] is not None}
+payload["containerDefinitions"][0]["image"] = sys.argv[2]
+json.dump(payload, sys.stdout)
+PY
+
+NEW_TASK_DEFINITION_ARN="$(aws ecs register-task-definition \
+  --cli-input-json file:///tmp/register-task-definition.json \
+  --region "${AWS_REGION}" \
+  --query 'taskDefinition.taskDefinitionArn' \
+  --output text)"
+
+aws lambda update-function-code \
+  --function-name "${LAMBDA_FUNCTION}" \
+  --image-uri "${ECR_REGISTRY}/smart-deploy-deployment-queue:${TAG}" \
+  --region "${AWS_REGION}"
+aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION}" --region "${AWS_REGION}"
+
+aws lambda get-function-configuration \
+  --function-name "${LAMBDA_FUNCTION}" \
+  --region "${AWS_REGION}" \
+  --query 'Environment.Variables' \
+  --output json > /tmp/lambda-env.json
+
+python3 - /tmp/lambda-env.json "${NEW_TASK_DEFINITION_ARN}" > /tmp/lambda-env-updated.json <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    variables = json.load(handle)
+
+variables["DEPLOYMENT_WORKER_TASK_DEFINITION_ARN"] = sys.argv[2]
+json.dump({"Variables": variables}, sys.stdout)
+PY
+
+aws lambda update-function-configuration \
+  --function-name "${LAMBDA_FUNCTION}" \
+  --environment file:///tmp/lambda-env-updated.json \
+  --region "${AWS_REGION}"
+aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION}" --region "${AWS_REGION}"
 ```
 
 Use immutable tags for both images. If you only update the ECS task definition, Lambda may keep launching an older task definition ARN. If you only update Lambda, the task definition may still reference an older worker image.

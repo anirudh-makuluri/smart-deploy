@@ -25,6 +25,10 @@ WORKER_PORT="${WORKER_PORT:-4001}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 ROLLOUT_MODE="${ROLLOUT_MODE:-ssm}"
 UPDATE_DEPLOYMENT_QUEUE="${UPDATE_DEPLOYMENT_QUEUE:-true}"
+DEPLOYMENT_QUEUE_UPDATE_MODE="${DEPLOYMENT_QUEUE_UPDATE_MODE:-awscli}"
+DEPLOYMENT_WORKER_TASK_DEFINITION="${DEPLOYMENT_WORKER_TASK_DEFINITION:-smart-deploy-deployment-worker}"
+DEPLOYMENT_WORKER_CONTAINER_NAME="${DEPLOYMENT_WORKER_CONTAINER_NAME:-smart-deploy-worker}"
+DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME="${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME:-smart-deploy-deployment-queue-handler}"
 
 require_cmd() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -67,6 +71,9 @@ worker_release_require_prereqs() {
 	require_cmd terraform
 	require_cmd git
 	require_cmd base64
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" == "true" ]]; then
+		require_cmd python3
+	fi
 }
 
 worker_release_check_docker_daemon() {
@@ -102,7 +109,7 @@ worker_release_validate_paths() {
 		exit 1
 	fi
 
-	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" == "true" && ! -d "${PLATFORM_STACK_DIR}" ]]; then
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" == "true" && "${DEPLOYMENT_QUEUE_UPDATE_MODE}" == "terraform" && ! -d "${PLATFORM_STACK_DIR}" ]]; then
 		echo "Smart Deploy platform Terraform stack directory not found at ${PLATFORM_STACK_DIR}"
 		exit 1
 	fi
@@ -230,6 +237,10 @@ worker_release_platform_terraform_init() {
 		worker_release_log "Skipping platform terraform init (UPDATE_DEPLOYMENT_QUEUE=${UPDATE_DEPLOYMENT_QUEUE})"
 		return 0
 	fi
+	if [[ "${DEPLOYMENT_QUEUE_UPDATE_MODE}" != "terraform" ]]; then
+		worker_release_log "Skipping platform terraform init (DEPLOYMENT_QUEUE_UPDATE_MODE=${DEPLOYMENT_QUEUE_UPDATE_MODE})"
+		return 0
+	fi
 
 	worker_release_log "Running platform terraform init"
 	terraform -chdir="${PLATFORM_STACK_DIR}" init
@@ -268,6 +279,14 @@ worker_release_update_deployment_queue_infra() {
 		worker_release_log "Skipping deployment queue infra update (UPDATE_DEPLOYMENT_QUEUE=${UPDATE_DEPLOYMENT_QUEUE})"
 		return 0
 	fi
+	if [[ "${DEPLOYMENT_QUEUE_UPDATE_MODE}" == "awscli" ]]; then
+		worker_release_update_deployment_queue_infra_awscli
+		return 0
+	fi
+	if [[ "${DEPLOYMENT_QUEUE_UPDATE_MODE}" != "terraform" ]]; then
+		echo "Unsupported DEPLOYMENT_QUEUE_UPDATE_MODE: ${DEPLOYMENT_QUEUE_UPDATE_MODE}"
+		exit 1
+	fi
 
 	local apply_args=(
 		-chdir="${PLATFORM_STACK_DIR}"
@@ -284,6 +303,124 @@ worker_release_update_deployment_queue_infra() {
 
 	worker_release_log "Updating deployment queue ECS task definition and Lambda"
 	terraform "${apply_args[@]}"
+}
+
+worker_release_update_deployment_queue_infra_awscli() {
+	worker_release_log "Updating deployment queue via AWS CLI (no platform Terraform state required)"
+	worker_release_log "Source task definition: ${DEPLOYMENT_WORKER_TASK_DEFINITION}"
+	worker_release_log "New worker image: ${WORKER_IMAGE}"
+	worker_release_log "Lambda function: ${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}"
+	worker_release_log "New Lambda image: ${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}"
+
+	local tmp_dir
+	tmp_dir="$(mktemp -d)"
+	local current_task_json="${tmp_dir}/current-task-definition.json"
+	local register_task_json="${tmp_dir}/register-task-definition.json"
+	local lambda_env_json="${tmp_dir}/lambda-env.json"
+
+	aws ecs describe-task-definition \
+		--task-definition "${DEPLOYMENT_WORKER_TASK_DEFINITION}" \
+		--region "${AWS_REGION}" \
+		--query taskDefinition \
+		--output json >"${current_task_json}"
+
+	WORKER_IMAGE="${WORKER_IMAGE}" \
+	DEPLOYMENT_WORKER_CONTAINER_NAME="${DEPLOYMENT_WORKER_CONTAINER_NAME}" \
+	python3 - "${current_task_json}" >"${register_task_json}" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    current = json.load(handle)
+worker_image = os.environ["WORKER_IMAGE"]
+container_name = os.environ["DEPLOYMENT_WORKER_CONTAINER_NAME"]
+allowed = {
+    "family",
+    "taskRoleArn",
+    "executionRoleArn",
+    "networkMode",
+    "containerDefinitions",
+    "volumes",
+    "placementConstraints",
+    "requiresCompatibilities",
+    "cpu",
+    "memory",
+    "tags",
+    "pidMode",
+    "ipcMode",
+    "proxyConfiguration",
+    "inferenceAccelerators",
+    "ephemeralStorage",
+    "runtimePlatform",
+}
+payload = {key: current[key] for key in allowed if key in current and current[key] is not None}
+containers = payload.get("containerDefinitions") or []
+if not containers:
+    raise SystemExit("Task definition has no containerDefinitions")
+
+updated = False
+for container in containers:
+    if container.get("name") == container_name:
+        container["image"] = worker_image
+        updated = True
+        break
+
+if not updated:
+    containers[0]["image"] = worker_image
+
+json.dump(payload, sys.stdout)
+PY
+
+	local new_task_definition_arn
+	new_task_definition_arn="$(aws ecs register-task-definition \
+		--cli-input-json "file://${register_task_json}" \
+		--region "${AWS_REGION}" \
+		--query 'taskDefinition.taskDefinitionArn' \
+		--output text)"
+	worker_release_log "Registered worker task definition: ${new_task_definition_arn}"
+
+	worker_release_log "Updating Lambda image"
+	aws lambda update-function-code \
+		--function-name "${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}" \
+		--image-uri "${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}" \
+		--region "${AWS_REGION}" >/dev/null
+	aws lambda wait function-updated \
+		--function-name "${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}" \
+		--region "${AWS_REGION}"
+
+	aws lambda get-function-configuration \
+		--function-name "${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}" \
+		--region "${AWS_REGION}" \
+		--query 'Environment.Variables' \
+		--output json >"${lambda_env_json}.raw"
+
+	NEW_TASK_DEFINITION_ARN="${new_task_definition_arn}" \
+	python3 - "${lambda_env_json}.raw" >"${lambda_env_json}" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    variables = json.load(handle)
+if not isinstance(variables, dict):
+    variables = {}
+variables["DEPLOYMENT_WORKER_TASK_DEFINITION_ARN"] = os.environ["NEW_TASK_DEFINITION_ARN"]
+json.dump({"Variables": variables}, sys.stdout)
+PY
+
+	worker_release_log "Updating Lambda DEPLOYMENT_WORKER_TASK_DEFINITION_ARN"
+	aws lambda update-function-configuration \
+		--function-name "${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}" \
+		--environment "file://${lambda_env_json}" \
+		--region "${AWS_REGION}" >/dev/null
+	aws lambda wait function-updated \
+		--function-name "${DEPLOYMENT_QUEUE_LAMBDA_FUNCTION_NAME}" \
+		--region "${AWS_REGION}"
+
+	worker_release_log "Deployment queue update complete"
+	worker_release_log "Lambda now launches: ${new_task_definition_arn}"
+	rm -rf "${tmp_dir}"
 }
 
 worker_release_rollout_existing_instance() {

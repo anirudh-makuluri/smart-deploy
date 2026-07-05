@@ -8,6 +8,7 @@ set -euo pipefail
 #   WORKER_IMAGE=328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-worker:existing-tag ./scripts/update.sh
 #   DEPLOYMENT_QUEUE_LAMBDA_IMAGE=328342419078.dkr.ecr.us-west-2.amazonaws.com/smart-deploy-deployment-queue:existing-tag ./scripts/update.sh
 #   UPDATE_DEPLOYMENT_QUEUE=false ./scripts/update.sh
+#   DEPLOYMENT_QUEUE_UPDATE_MODE=terraform ./scripts/update.sh
 #   ROLLOUT_MODE=none ./scripts/update.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
