@@ -101,7 +101,7 @@ gcloud auth activate-service-account --key-file=path/to/key.json
 gcloud config set project YOUR_PROJECT_ID
 ```
 
-**Docker:** The default WebSocket worker image may not include `gcloud`. Extend `Dockerfile.websocket` (or your image) to install the CLI if deploys run fully inside Docker.
+**Docker:** The default deployment worker image (`Dockerfile.websocket`) may not include `gcloud`. Extend that Dockerfile (or your image) to install the CLI if GCP deploys run inside the ECS deployment runner task.
 
 ---
 

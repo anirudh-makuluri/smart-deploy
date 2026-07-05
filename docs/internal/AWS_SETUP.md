@@ -1,6 +1,6 @@
 # AWS setup
 
-SmartDeploy uses AWS for **CodeBuild** + **ECR** image builds, **ECS Fargate** runtime deployments, an **Application Load Balancer (ALB)** for HTTPS and custom-domain routing, **STS** for identity checks, and optionally **ACM** for TLS certificates on the ALB.
+SmartDeploy uses AWS for **CodeBuild** + **ECR** image builds, **ECS Fargate** runtime deployments, an **Application Load Balancer (ALB)** for HTTPS and custom-domain routing, **SQS + Lambda** to queue and launch deployment runs, **STS** for identity checks, and optionally **ACM** for TLS certificates on the ALB.
 
 Use this guide together with:
 
@@ -175,7 +175,31 @@ terraform init && terraform apply
 terraform output -raw smart_deploy_env_snippet
 ```
 
-Paste the snippet into `.env`. If you already created the bucket or cluster manually, set `create_s3_bucket = false` and/or `create_ecs_cluster = false` in `terraform.tfvars` (see [infra/smart-deploy-platform/README.md](../infra/smart-deploy-platform/README.md)).
+Paste the snippet into `.env`. If you already created the bucket or cluster manually, set `create_s3_bucket = false` and/or `create_ecs_cluster = false` in `terraform.tfvars` (see [infra/smart-deploy-platform/README.md](../../infra/smart-deploy-platform/README.md)).
+
+### 3.3 Deployment queue (required for deploys)
+
+Smart Deploy enqueues each deploy to **SQS**; a **Lambda** handler launches a **one-off ECS Fargate task** to run the pipeline. Enable this in `terraform.tfvars`:
+
+```hcl
+enable_deployment_queue           = true
+deployment_queue_lambda_image_uri = "<account>.dkr.ecr.<region>.amazonaws.com/smart-deploy-deployment-queue:latest"
+deployment_worker_image           = "<account>.dkr.ecr.<region>.amazonaws.com/smart-deploy-worker:latest"
+deployment_worker_secret_arn      = "arn:aws:secretsmanager:..."
+```
+
+Build and push `Dockerfile.websocket` and `Dockerfile.deployment-queue-lambda` before `terraform apply`. Full walkthrough: [infra/smart-deploy-platform/README.md](../../infra/smart-deploy-platform/README.md).
+
+| Variable | Description |
+|----------|-------------|
+| `DEPLOYMENT_QUEUE_URL` | SQS FIFO queue URL (included in Terraform `smart_deploy_env_snippet`) |
+| `DEPLOYMENT_EVENTS_TOKEN` | Shared secret so ECS deployment runners can POST live logs to the WebSocket worker |
+| `DEPLOYMENT_EVENTS_URL` | Optional. HTTP base URL for the WebSocket worker (defaults from `NEXT_PUBLIC_WS_URL`) |
+| `DEPLOYMENT_WORKER_TASK_DEFINITION_ARN` | Set on the Lambda; Terraform manages this when the queue is enabled |
+
+Roll out updated worker and Lambda images with `./scripts/update.sh` from the repository root.
+
+The Smart Deploy service IAM user (or EC2 instance role) also needs `sqs:SendMessage` on the deployment queue ARN so the app can enqueue runs.
 
 If the Next.js app and worker run on EC2, attach an IAM role with the **same policy** instead of embedding keys. Leave `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` unset; the AWS SDK uses the instance metadata role automatically.
 

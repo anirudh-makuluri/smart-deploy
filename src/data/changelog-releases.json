@@ -1,20 +1,20 @@
 {
-	"updatedAt": "2026-06-29",
+	"updatedAt": "2026-07-05",
 	"recentHighlights": [
 		{
-			"title": "User-facing documentation",
-			"description": "New guides for deploying, debugging production issues, Railpack, and the Deployment Agent — browse at /docs.",
-			"docHref": "/docs"
+			"title": "Queued deploy execution",
+			"description": "Docs now explain SQS FIFO ordering, Lambda launch, and isolated ECS deployment runners — from README through the pipeline guide.",
+			"docHref": "/docs/deployment-pipeline"
+		},
+		{
+			"title": "Status and run vocabulary",
+			"description": "Deployment Status Reference covers run lifecycle (queued → deploying → completed), failure stages, and structured codes.",
+			"docHref": "/docs/deployment-status-reference"
 		},
 		{
 			"title": "Deployment Agent",
 			"description": "Ask the Agent in the header about your deployments, recent failures, and runtime health. Read-only inspection with live data.",
 			"docHref": "/docs/deployment-agent"
-		},
-		{
-			"title": "Runtime health in Overview",
-			"description": "See whether your app stays healthy after deploy with background checks and a sparkline on the deploy workspace.",
-			"docHref": "/docs/runtime-health"
 		},
 		{
 			"title": "Production debugging runbooks",
@@ -23,6 +23,29 @@
 		}
 	],
 	"releases": [
+		{
+			"date": "2026-07-05",
+			"label": "July 2026",
+			"title": "Docs for queued execution",
+			"summary": "User-facing guides now match how deploys are queued on SQS and executed on isolated ECS tasks.",
+			"highlights": [
+				{
+					"title": "Deployment pipeline and architecture",
+					"description": "How It Works, Deployment Pipeline, and README describe SQS → Lambda → ECS Fargate execution and live log relay through the WebSocket worker.",
+					"docHref": "/docs/how-it-works"
+				},
+				{
+					"title": "Status reference refresh",
+					"description": "Run statuses, failure stages, and categories updated so debugging runbooks and the Error Catalog stay aligned.",
+					"docHref": "/docs/deployment-status-reference"
+				},
+				{
+					"title": "Glossary and deployment logs",
+					"description": "Key terms and log-streaming behavior clarified for queue stages, executor tasks, and CloudWatch history.",
+					"docHref": "/docs/glossary"
+				}
+			]
+		},
 		{
 			"date": "2026-06-29",
 			"label": "June 2026",

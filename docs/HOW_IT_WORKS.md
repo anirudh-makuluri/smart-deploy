@@ -28,8 +28,11 @@ flowchart LR
 | Component | Role |
 |-----------|------|
 | **SD Artifacts** | Scans repos, generates Railpack plans, verifies builds, supports improve-scan feedback |
-| **WebSocket worker** | Runs long deploy jobs, streams logs, reconciles runtime health |
-| **AWS** | CodeBuild, ECR, ECS Fargate, ALB, Route 53, S3, CloudFront, Secrets Manager, CloudWatch |
+| **WebSocket worker** | Real-time UI, Deployment Agent, runtime health, and live log relay from deploy tasks |
+| **Deployment queue** | SQS FIFO queue that orders and buffers deploy runs before execution |
+| **Deployment launcher** | Lambda function that reads the queue and starts one ECS task per run |
+| **Deployment runner** | Short-lived ECS Fargate task that runs the deploy pipeline |
+| **AWS** | SQS, Lambda, CodeBuild, ECR, ECS Fargate, ALB, Route 53, S3, CloudFront, Secrets Manager, CloudWatch |
 | **Database** | Stores deployments, scan results, history, and agent conversations |
 
 You do not configure these primitives directly — Smart Deploy orchestrates them from your repo scan and deployment config.
@@ -59,12 +62,27 @@ See [Blueprint and Preview](./BLUEPRINT_AND_PREVIEW.md).
 
 ## Deploy → release
 
-When you deploy, the WebSocket worker runs the pipeline:
+When you deploy:
 
-- **Container path**: CodeBuild → ECR → ECS Fargate → ALB host rule → Route 53 → HTTP verification
-- **Static path**: CodeBuild → S3 sync → optional CloudFront invalidation
+1. The **WebSocket worker** creates a deployment run and enqueues it on **SQS** (FIFO, grouped per user/repo/service).
+2. A **Lambda** handler consumes the message and launches a **one-off ECS Fargate task** (deployment runner).
+3. The runner executes the pipeline:
+   - **Container path**: CodeBuild → ECR → ECS Fargate → ALB host rule → Route 53 → HTTP verification
+   - **Static path**: CodeBuild → S3 sync → optional CloudFront invalidation
+4. Live logs POST back to the WebSocket worker and stream to the UI. Each attempt is recorded in deployment history.
 
-Logs stream to the UI in real time. Each attempt is recorded in deployment history.
+```mermaid
+flowchart LR
+  UI[Deploy workspace] --> WS[WebSocket worker]
+  WS --> SQS[SQS FIFO]
+  SQS --> Lambda[Lambda]
+  Lambda --> Runner[ECS deployment runner]
+  Runner --> AWS[Target AWS resources]
+  Runner -->|events| WS
+  WS --> UI
+```
+
+Platform operators provision the queue, Lambda, and deployment worker with [`infra/smart-deploy-platform`](../infra/smart-deploy-platform/README.md).
 
 See [Deployment Pipeline](./DEPLOYMENT_PIPELINE.md).
 

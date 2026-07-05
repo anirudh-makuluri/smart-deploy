@@ -1,8 +1,264 @@
 {
-	"generatedAt": "2026-06-29T22:25:43.488Z",
+	"generatedAt": "2026-07-05T23:40:57.969Z",
 	"rawCommitCount": 100,
-	"commitCount": 67,
+	"commitCount": 65,
 	"commits": [
+		{
+			"hash": "7bf6b1570580ed5d776c90934b7c7d32a83d1998",
+			"shortHash": "7bf6b15",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Enhance verification probe handling with detailed error reporting and latency tracking",
+			"prNumber": null
+		},
+		{
+			"hash": "7a61e8c35ff038e32e5dec1164ec5025d2ceeddb",
+			"shortHash": "7a61e8c",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Enhance worker release and update scripts with AWS CLI deployment mode",
+			"prNumber": null
+		},
+		{
+			"hash": "5074edf81e03129950427a0ef404360b82078d52",
+			"shortHash": "5074edf",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Update GA (+3 related commits)",
+			"prNumber": null
+		},
+		{
+			"hash": "d5f55d220652958c6a3eebe9cfbdf86746edd41c",
+			"shortHash": "d5f55d2",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Enhance deployment health probe with status verification and add tests",
+			"prNumber": null
+		},
+		{
+			"hash": "f56539c516726cb47df9107cb3057271f6f269d3",
+			"shortHash": "f56539c",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Add error handling for AWS resource not found in ECS and ALB health checks",
+			"prNumber": null
+		},
+		{
+			"hash": "bb79d34e7d6bf9cf0381adb5d69e7b0e3f21ae27",
+			"shortHash": "bb79d34",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Resolve tests",
+			"prNumber": null
+		},
+		{
+			"hash": "16ff8462cefd433cafed9195743e1f588d8110e1",
+			"shortHash": "16ff846",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Implement deployment event bridge and logging for deployment runs",
+			"prNumber": null
+		},
+		{
+			"hash": "6b72f5f36191ae2e560993dfafd803ca160ddd47",
+			"shortHash": "6b72f5f",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Connect sqs, lambda and worker",
+			"prNumber": null
+		},
+		{
+			"hash": "d46cfde83001864a0d6c70b9287bec75e46a5dd6",
+			"shortHash": "d46cfde",
+			"date": "2026-07-04",
+			"author": "amakulur",
+			"subject": "Change terraform to add lambda, worker ecs etc",
+			"prNumber": null
+		},
+		{
+			"hash": "ca8ab9c247cc9e139cfba5eb35a9049e398773e7",
+			"shortHash": "ca8ab9c",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Feature: Add SQS integration for deployment queue",
+			"prNumber": null
+		},
+		{
+			"hash": "7d41aedd64913fcf869b1493830cd23a9f3c33a9",
+			"shortHash": "7d41aed",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Updated schema",
+			"prNumber": null
+		},
+		{
+			"hash": "22c43549f5c22f1bebf9cb52f1d281f6e4279bcf",
+			"shortHash": "22c4354",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Fix agent eval admin page and cleanup diagnostics",
+			"prNumber": null
+		},
+		{
+			"hash": "f379868a62a70b98811c9ed61c09cd6114eda8a7",
+			"shortHash": "f379868",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Eval llm responses",
+			"prNumber": null
+		},
+		{
+			"hash": "3a4e62c76b6cdc6306015c4994a7e485d880d300",
+			"shortHash": "3a4e62c",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Update scripts to delete existing images to preserve images",
+			"prNumber": null
+		},
+		{
+			"hash": "72136e0d18064cd0b849142048a2f847e2291059",
+			"shortHash": "72136e0",
+			"date": "2026-07-03",
+			"author": "amakulur",
+			"subject": "Change script",
+			"prNumber": null
+		},
+		{
+			"hash": "edd66dc2f5d0caa92b35a12c4701949f59d35709",
+			"shortHash": "edd66dc",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Update script",
+			"prNumber": null
+		},
+		{
+			"hash": "2f19ac43ba5fde0b5f87f8c9a72e17883dde842c",
+			"shortHash": "2f19ac4",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Add terraform to GA",
+			"prNumber": null
+		},
+		{
+			"hash": "d6ec51f42b97adcdc6150e86d28c7a0fe2152f36",
+			"shortHash": "d6ec51f",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Add GA workflow for ws server",
+			"prNumber": null
+		},
+		{
+			"hash": "23522d504f03387be6f240b05bd966b028956b57",
+			"shortHash": "23522d5",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Add token usage to db",
+			"prNumber": null
+		},
+		{
+			"hash": "1b27d516cc12b09b25aeab3d84fb257d3c685ac6",
+			"shortHash": "1b27d51",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Fix the ui slightly",
+			"prNumber": null
+		},
+		{
+			"hash": "055c0883e18deb182317ed161ca3d37e3f172b94",
+			"shortHash": "055c088",
+			"date": "2026-07-01",
+			"author": "amakulur",
+			"subject": "Update dockerfile.websocket",
+			"prNumber": null
+		},
+		{
+			"hash": "06a6f4a4aa9150123eb0862da7ed1573e380b735",
+			"shortHash": "06a6f4a",
+			"date": "2026-06-30",
+			"author": "amakulur",
+			"subject": "Improved UI",
+			"prNumber": null
+		},
+		{
+			"hash": "23b14428a196d180c70774f900c8d3f67143055c",
+			"shortHash": "23b1442",
+			"date": "2026-06-30",
+			"author": "amakulur",
+			"subject": "Add retrievalms in db",
+			"prNumber": null
+		},
+		{
+			"hash": "e8462f7c29e5411c71889287e59cd03dacfb57ad",
+			"shortHash": "e8462f7",
+			"date": "2026-06-30",
+			"author": "amakulur",
+			"subject": "Fix DashboardMain test teardown errors on CI",
+			"prNumber": null
+		},
+		{
+			"hash": "3982ae32aaa20e1600eb24c1349f82b0fed919c5",
+			"shortHash": "3982ae3",
+			"date": "2026-06-30",
+			"author": "amakulur",
+			"subject": "Fix agent socket payload types and Moss sequential async patterns",
+			"prNumber": null
+		},
+		{
+			"hash": "18609aa79c2c72d8f121b4ff26a2c77ab14dc7f3",
+			"shortHash": "18609aa",
+			"date": "2026-06-30",
+			"author": "amakulur",
+			"subject": "Add citations in response",
+			"prNumber": null
+		},
+		{
+			"hash": "03d5bc188b5bb1bee933616c3267910db4846ebf",
+			"shortHash": "03d5bc1",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Integrated moss for search docs tool",
+			"prNumber": null
+		},
+		{
+			"hash": "07665a21c1d4bf8b303ada514b46fc82cc9b65a3",
+			"shortHash": "07665a2",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Fixed build",
+			"prNumber": null
+		},
+		{
+			"hash": "96f8c52c39b387a36bb4d660341abc5f5c8d5e65",
+			"shortHash": "96f8c52",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Change docs",
+			"prNumber": null
+		},
+		{
+			"hash": "7a281adedb0e220f09db4ee87eff5cf1a3619a88",
+			"shortHash": "7a281ad",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Updated landing",
+			"prNumber": null
+		},
+		{
+			"hash": "99b40e70ee7dab736c7cabafd5ed718b5dbe62a4",
+			"shortHash": "99b40e7",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Update icon",
+			"prNumber": null
+		},
+		{
+			"hash": "106eba76e03529228c1accfbd5c6214fff1f615c",
+			"shortHash": "106eba7",
+			"date": "2026-06-29",
+			"author": "amakulur",
+			"subject": "Updated docs and changelog",
+			"prNumber": null
+		},
 		{
 			"hash": "b4339eaab58cbe2c08917302cf3a041947a4d295",
 			"shortHash": "b4339ea",
@@ -265,278 +521,6 @@
 			"date": "2026-06-07",
 			"author": "amakulur",
 			"subject": "Fix lint issue",
-			"prNumber": null
-		},
-		{
-			"hash": "b54766996f46544a621787a392af8da592797757",
-			"shortHash": "b547669",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Use secrets manager to manage env vars",
-			"prNumber": null
-		},
-		{
-			"hash": "3a90eff2f2d8b866e12ae9f1d9943897ca8e5709",
-			"shortHash": "3a90eff",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Create a long polling worker to check deployments",
-			"prNumber": null
-		},
-		{
-			"hash": "3d7e300801235a49c6fee4dda31242c0fe24e3ce",
-			"shortHash": "3d7e300",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Fix lint issues (+1 related commits)",
-			"prNumber": null
-		},
-		{
-			"hash": "d16df58924ab7bd77a37e8e4cb12d23cd010c837",
-			"shortHash": "d16df58",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Renamed vars",
-			"prNumber": null
-		},
-		{
-			"hash": "ce1ff22426dd55779dcd01acefab79904cc2d761",
-			"shortHash": "ce1ff22",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Migrated to deployment_runs",
-			"prNumber": null
-		},
-		{
-			"hash": "5a749cbcec7f1eb6347aad0b27cb3374b9bc23fc",
-			"shortHash": "5a749cb",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Updated deployments table columns",
-			"prNumber": null
-		},
-		{
-			"hash": "b35915f10b75b8938428762240730d4e7caed707",
-			"shortHash": "b35915f",
-			"date": "2026-06-06",
-			"author": "amakulur",
-			"subject": "Fix tests issues",
-			"prNumber": null
-		},
-		{
-			"hash": "fd75db1dccdb1c8bca539b554974ce81e97653cd",
-			"shortHash": "fd75db1",
-			"date": "2026-06-06",
-			"author": "amakulur",
-			"subject": "Added react doctor skill md files",
-			"prNumber": null
-		},
-		{
-			"hash": "4dde3b493d2430b96ea7a15f818d60298294e235",
-			"shortHash": "4dde3b4",
-			"date": "2026-06-06",
-			"author": "amakulur",
-			"subject": "Push React Doctor score to 80 with React 19 and cleanup fixes.",
-			"prNumber": null
-		},
-		{
-			"hash": "278b69aa2a49827d766b29a66f66b9e146d06e28",
-			"shortHash": "278b69a",
-			"date": "2026-06-06",
-			"author": "amakulur",
-			"subject": "Improve React Doctor score via refactors, perf fixes, and CI.",
-			"prNumber": null
-		},
-		{
-			"hash": "5ea2732a5616162e6dae86bcec05c14936efcce3",
-			"shortHash": "5ea2732",
-			"date": "2026-06-06",
-			"author": "amakulur",
-			"subject": "Migrated nameservers to route53 and made the changes for it",
-			"prNumber": null
-		},
-		{
-			"hash": "4166762ef7f8442ff2c1141904b3a972362e77b3",
-			"shortHash": "4166762",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Add terraform setup to create the nexessary setup",
-			"prNumber": null
-		},
-		{
-			"hash": "9337266b185996b1d503fb9236a3149da4164c15",
-			"shortHash": "9337266",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Docs: Document STATIC_SITE_* for S3 static deploys",
-			"prNumber": null
-		},
-		{
-			"hash": "411329dfeb3a1ce2b6a4590b5d21834a38df274c",
-			"shortHash": "411329d",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Fix: Deploy overview for static S3, ECS, and target labels",
-			"prNumber": null
-		},
-		{
-			"hash": "ce946af89f99073cee3a58eda2d3d17af9825df3",
-			"shortHash": "ce946af",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Fix: GraphQL targets, delete path, and service logs for non-EC2 AWS",
-			"prNumber": null
-		},
-		{
-			"hash": "228b9c90e13f17b48d60ec76931cfb9e2844743f",
-			"shortHash": "228b9c9",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Feature: Deploy static_build scans to S3 via CodeBuild",
-			"prNumber": null
-		},
-		{
-			"hash": "13d82c54b74594180cd66d0885a8e523bacb0b23",
-			"shortHash": "13d82c5",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Route sd-artifacts Railpack servers to ECS Fargate behind the shared ALB.",
-			"prNumber": null
-		},
-		{
-			"hash": "de33fca5e0800aec507ca969e194008a24e19208",
-			"shortHash": "de33fca",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Add Railpack CodeBuild buildspec with embedded plan and pinned frontend.",
-			"prNumber": null
-		},
-		{
-			"hash": "45f6036f310d4acd7d8eb33665553a7d5458ff6b",
-			"shortHash": "45f6036",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Remove dead EC2-first AWS and GCP Cloud Run deploy handlers.",
-			"prNumber": null
-		},
-		{
-			"hash": "67f073b63ffd9ec4e45f87fa08d061f27b384219",
-			"shortHash": "67f073b",
-			"date": "2026-06-05",
-			"author": "amakulur",
-			"subject": "Add sd-artifacts analyze normalization and deploy guardrails.",
-			"prNumber": null
-		},
-		{
-			"hash": "bfd0838ffcf1eaa7b347f09fef069daed4cfe566",
-			"shortHash": "bfd0838",
-			"date": "2026-06-06",
-			"author": "Anirudh Makuluri",
-			"subject": "Change license badge from MIT to Apache 2.0",
-			"prNumber": null
-		},
-		{
-			"hash": "c4d68b75216fb3fbbe884af3995b9931f72e674a",
-			"shortHash": "c4d68b7",
-			"date": "2026-06-06",
-			"author": "Anirudh Makuluri",
-			"subject": "Change license to Apache 2.0 and add attribution",
-			"prNumber": null
-		},
-		{
-			"hash": "0e623a995f3214123789fed72fbf064454bff628",
-			"shortHash": "0e623a9",
-			"date": "2026-06-06",
-			"author": "Anirudh Makuluri",
-			"subject": "Add NOTICE file with project information",
-			"prNumber": null
-		},
-		{
-			"hash": "3551da4b4803b9818cd8ec1d158dfc6c34b6e6ad",
-			"shortHash": "3551da4",
-			"date": "2026-06-06",
-			"author": "Anirudh Makuluri",
-			"subject": "Update LICENSE by removing boilerplate text",
-			"prNumber": null
-		},
-		{
-			"hash": "a3c53b78e2d81608e0cd59f0cb3ed9f1ef5f27b8",
-			"shortHash": "a3c53b7",
-			"date": "2026-06-06",
-			"author": "Anirudh Makuluri",
-			"subject": "Update copyright year and owner in LICENSE file",
-			"prNumber": null
-		},
-		{
-			"hash": "f258827cb6e3bd6d066f8c08df546f61ce68249f",
-			"shortHash": "f258827",
-			"date": "2026-06-01",
-			"author": "amakulur",
-			"subject": "Add structured deployment failure classification",
-			"prNumber": null
-		},
-		{
-			"hash": "220249f2201ea9c0d108a374dedc93ffa04aa1de",
-			"shortHash": "220249f",
-			"date": "2026-06-01",
-			"author": "amakulur",
-			"subject": "Add automated and manual rollbacks",
-			"prNumber": null
-		},
-		{
-			"hash": "6aacae514bd3979c33256ceec64749f7a9a2ff25",
-			"shortHash": "6aacae5",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Fix rollback completion state and verification latency",
-			"prNumber": null
-		},
-		{
-			"hash": "367332112067622dec6301102a53b5a5f0f0902d",
-			"shortHash": "3673321",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Address deployment state machine review comments",
-			"prNumber": null
-		},
-		{
-			"hash": "4a99e224836c2c8a505892004eb039df96b996b5",
-			"shortHash": "4a99e22",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Implement canonical deployment state machine",
-			"prNumber": null
-		},
-		{
-			"hash": "f9396d8fa32bd2cf856d6915331fe502c20a2d6a",
-			"shortHash": "f9396d8",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Add roadmap task list",
-			"prNumber": null
-		},
-		{
-			"hash": "2c7445e99032ee6663631895f0117ca6b97123b0",
-			"shortHash": "2c7445e",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Fix landing proxy cookie guard tests",
-			"prNumber": null
-		},
-		{
-			"hash": "bf65b231a8228cf3e91c2b3f9e542b781508f106",
-			"shortHash": "bf65b23",
-			"date": "2026-05-26",
-			"author": "Anirudh Makuluri",
-			"subject": "Potential fix for pull request finding",
-			"prNumber": null
-		},
-		{
-			"hash": "18784db7a56526481e85e583c34eef1821b2c3be",
-			"shortHash": "18784db",
-			"date": "2026-05-26",
-			"author": "amakulur",
-			"subject": "Removed redundant file",
 			"prNumber": null
 		}
 	]

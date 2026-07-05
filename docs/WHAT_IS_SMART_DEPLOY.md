@@ -22,6 +22,7 @@ Smart Deploy is built around **preview**. You should know what will run, how tra
 | **Blueprint preview** | Shows build units, routing, and cloud targets before anything runs |
 | **Editable config** | Branch, region, env vars, and subdomain from the same preview surface |
 | **Real cloud deploys** | ECS Fargate for containers, S3 (+ optional CloudFront) for static sites |
+| **Queued execution** | Each deploy runs as an isolated ECS task, ordered per service via SQS |
 | **Live feedback** | Stream deploy logs, track history, and watch health update in place |
 | **Deployment Agent** | Ask questions about your deployments, history, and runtime health |
 

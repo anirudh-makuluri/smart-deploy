@@ -9,6 +9,10 @@
 | **Deploy shape** | Scan classification: `static`, `static_build`, `server`, `multi`, `existing_docker` |
 | **Deploy unit** | One buildable unit in a scan (name, root path, Railpack plan, port) |
 | **Deployment Agent** | Read-only AI that inspects deployments via tools (list, details, history, health) |
+| **Deployment event bridge** | HTTP path from the ECS deployment runner back to the WebSocket worker for live `deploy:log` / `deploy:steps` events |
+| **Deployment launcher** | Lambda function triggered by SQS that starts the ECS deployment runner task |
+| **Deployment queue** | SQS FIFO queue that buffers deploy runs before execution |
+| **Deployment runner** | Short-lived ECS Fargate task (`deployment-runner.js`) that executes the deploy pipeline for one run |
 | **Deployment target** | `ecs` (Fargate container) or `static_s3` (static hosting) |
 | **ECS Fargate** | AWS serverless containers used for Railpack and Dockerfile deploys |
 | **Failure code** | Structured deploy failure identifier (for example `DEPLOYMENT_VERIFICATION_FAILED`) |
@@ -25,4 +29,4 @@
 | **Service catalog** | List of detected deployable services on a repo page |
 | **Smart Analysis** | User-facing name for the repo scan / analyze stream |
 | **Verify step** | Post-deploy HTTP probes until app responds or timeout |
-| **WebSocket worker** | Process that runs deploys, streams logs, reconciles health, runs Deployment Agent |
+| **WebSocket worker** | Long-lived process for real-time UI, Deployment Agent, runtime health, and relaying live deploy logs from ECS tasks |

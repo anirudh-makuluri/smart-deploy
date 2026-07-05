@@ -19,6 +19,7 @@ In the deploy workspace **Overview**:
 
 | Status | Meaning |
 |--------|---------|
+| `queued` | Run enqueued on SQS — waiting for the ECS deployment runner to start |
 | `deploying` | Pipeline still running — watch live logs |
 | `running` | Last deploy succeeded; check runtime health if URL fails |
 | `failed` | Last deploy did not complete — open History |

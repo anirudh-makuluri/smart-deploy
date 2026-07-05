@@ -2,10 +2,32 @@
 
 Every deploy follows the same high-level stages. The blueprint shows them before you ship; the deploy workspace streams them live.
 
+## Execution path
+
+Before pipeline stages begin, Smart Deploy routes the run through a queue and isolated executor:
+
+```text
+Deploy button
+  → WebSocket worker creates deployment run
+  → SQS FIFO message (runId, userId, repoName, serviceName)
+  → Lambda handler
+  → ECS RunTask (deployment-runner.js)
+  → pipeline stages below
+  → live logs relayed to WebSocket worker → UI
+```
+
+- **FIFO ordering** — at most one active deploy per user/repo/service; later deploys wait in queue.
+- **Deduplication** — message dedup ID is the `runId`, so retries do not double-start the same run.
+- **Isolation** — each run gets its own Fargate task; the WebSocket EC2 host does not run the pipeline.
+
+Self-hosting setup: [`infra/smart-deploy-platform`](../infra/smart-deploy-platform/README.md).
+
 ## Pipeline stages
 
 | Stage | What happens |
 |-------|--------------|
+| **Queue** | Run recorded in the database and enqueued; Lambda waits for prior runs on the same service to finish |
+| **Launch** | Lambda starts the ECS deployment runner task with `DEPLOYMENT_RUN_ID` |
 | **Auth** | Resolve GitHub access, branch, and commit SHA |
 | **Build** | CodeBuild clones the repo and builds the artifact |
 | **Publish** | Push image to ECR (containers) or sync to S3 (static) |

@@ -59,10 +59,14 @@ function tokenize(value: string): string[] {
 function sourceWeight(source: string): number {
 	if (source.endsWith("DEBUGGING_DEPLOYMENTS.md")) return 2.4;
 	if (source.endsWith("ERROR_CATALOG.md")) return 2.2;
+	if (source.endsWith("DEPLOYMENT_STATUS_REFERENCE.md")) return 2.0;
 	if (source.endsWith("FAQ.md")) return 1.8;
+	if (source.endsWith("DEPLOYMENT_PIPELINE.md")) return 1.7;
 	if (source.endsWith("DEPLOYMENT_AGENT.md")) return 1.6;
+	if (source.endsWith("HOW_IT_WORKS.md")) return 1.5;
 	if (source === "README.md") return 1.4;
 	if (source.endsWith("BUILD_FAILURES.md") || source.endsWith("STARTUP_AND_RUNTIME_FAILURES.md")) return 1.3;
+	if (source.endsWith("DEPLOYMENT_LOGS.md") || source.endsWith("GLOSSARY.md")) return 1.2;
 	if (source.includes("/internal/")) return 0.5;
 	return 1;
 }

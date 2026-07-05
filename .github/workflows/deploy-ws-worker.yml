@@ -3,6 +3,17 @@ name: Deploy WS Worker
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "Dockerfile.websocket"
+      - "Dockerfile.deployment-queue-lambda"
+      - "scripts/**"
+      - "infra/**"
+      - "tsconfig.json"
+      - "tsconfig.websocket.json"
+      - ".github/workflows/deploy-ws-worker.yml"
   workflow_dispatch:
 
 concurrency:

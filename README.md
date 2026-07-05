@@ -31,6 +31,7 @@
 | Smart Analysis | Railpack build plans with optional build verification |
 | Multi-target deploys | ECS Fargate for containers, S3 for static sites |
 | Live deploy feedback | Stream logs, track run history, and watch health status update in place |
+| Queued deploy execution | Each deploy runs as an isolated ECS task, ordered per service via SQS |
 | Deployment Agent | Ask about your deployments, history, and runtime health |
 
 ## Workflow
@@ -55,6 +56,28 @@ flowchart LR
 | **ECS Fargate** | Server apps, Railpack builds, existing Docker images | CodeBuild → ECR → Fargate task behind a shared ALB |
 | **Static sites** | SPAs and static builds (no runtime) | CodeBuild → S3, optional CloudFront invalidation |
 
+## Deployment execution
+
+When you start a deploy, Smart Deploy enqueues the run and executes it on AWS — not on the WebSocket host.
+
+```mermaid
+flowchart LR
+  UI[Dashboard] --> WS[WebSocket worker]
+  WS --> SQS[SQS FIFO queue]
+  SQS --> Lambda[Lambda handler]
+  Lambda --> ECS[ECS Fargate task]
+  ECS --> AWS[CodeBuild / ECR / ECS / S3]
+  ECS -->|live logs| WS
+  WS --> UI
+```
+
+1. The **WebSocket worker** records the run and sends a message to an **SQS FIFO queue** (one in-flight deploy per user/repo/service).
+2. A **Lambda** function consumes the queue and launches a **one-off ECS Fargate task** (`deployment-runner.js`).
+3. That task runs the pipeline (CodeBuild, ECR, ECS rollout, S3 sync, verification).
+4. Live step logs stream back to the UI through the WebSocket worker via an HTTP event bridge.
+
+Provision the queue, Lambda, and deployment worker task with [`infra/smart-deploy-platform`](infra/smart-deploy-platform/README.md) and set `DEPLOYMENT_QUEUE_URL` in `.env`. Roll out worker and Lambda images with `./scripts/update.sh`.
+
 ## Documentation
 
 User-facing guides for deploying and debugging your apps:
@@ -73,8 +96,9 @@ Browse all docs in the app at `/docs`. For AI agents: [`/llms.txt`](/llms.txt) a
 - Tailwind CSS 4, shadcn/ui
 - Better Auth, Supabase
 - GraphQL (Yoga) + REST API routes
-- WebSocket worker for deploy execution
-- AWS SDK (CodeBuild, ECR, ECS, ALB, Route 53, S3, CloudFront, Secrets Manager)
+- WebSocket worker for real-time UI, Deployment Agent, and runtime health
+- SQS + Lambda + ECS Fargate for queued deployment execution
+- AWS SDK (SQS, Lambda, CodeBuild, ECR, ECS, ALB, Route 53, S3, CloudFront, Secrets Manager)
 - Railpack + Mise for container builds
 - Vitest, Playwright
 

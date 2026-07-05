@@ -60,9 +60,9 @@ See [Blueprint and Preview](./BLUEPRINT_AND_PREVIEW.md).
 
 ## 6. Deploy
 
-When the preview looks right, start the deploy. Watch live step logs:
+When the preview looks right, start the deploy. The run is enqueued and executed on a short-lived ECS task; watch live step logs in the workspace:
 
-- Auth → Build → Publish → Deploy → Rollout → Verify → Done
+- Queue → Auth → Build → Publish → Deploy → Rollout → Verify → Done
 
 On success you get a **Visit** URL like `https://your-service.yourdomain.com`.
 

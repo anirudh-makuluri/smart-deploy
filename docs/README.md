@@ -15,7 +15,7 @@ User-facing guides for deploying and debugging apps on Smart Deploy. These docs 
 
 | Guide | Summary |
 |-------|---------|
-| [Deployment Pipeline](./DEPLOYMENT_PIPELINE.md) | Stages from clone to live URL (ECS and static S3) |
+| [Deployment Pipeline](./DEPLOYMENT_PIPELINE.md) | Queue, executor, and stages from clone to live URL (ECS and static S3) |
 | [Blueprint and Preview](./BLUEPRINT_AND_PREVIEW.md) | Read and edit the deploy plan before you ship |
 | [Smart Analysis](./SMART_ANALYSIS.md) | Repo scan, deploy shapes, and build verification |
 | [Railpack](./RAILPACK.md) | How apps are built, including Mise runtimes |

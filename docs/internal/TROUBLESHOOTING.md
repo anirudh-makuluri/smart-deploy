@@ -116,6 +116,23 @@ Also see [Supabase Setup](./SUPABASE_SETUP.md).
 
 ---
 
+## Deploy stuck in queued or never starts
+
+### Symptoms
+- Deploy workspace shows `queued` for a long time with no live logs
+- Error: `DEPLOYMENT_QUEUE_URL is not configured`
+- Lambda or ECS task failures in CloudWatch
+
+### Fix
+- Set `DEPLOYMENT_QUEUE_URL` from [`infra/smart-deploy-platform`](../../infra/smart-deploy-platform/README.md) Terraform output.
+- Confirm `enable_deployment_queue = true` was applied and Lambda/ECR images exist.
+- Check Lambda logs (`smart-deploy-deployment-queue-handler`) and ECS task events for the deployment worker family.
+- Ensure `DEPLOYMENT_EVENTS_TOKEN` matches between `.env` and the ECS deployment worker task definition so live logs can reach the WebSocket worker.
+
+Also see [AWS Setup](./AWS_SETUP.md) §3.3 and [Deployment Pipeline](../DEPLOYMENT_PIPELINE.md).
+
+---
+
 ## AWS deploy fails with permission errors
 
 ### Symptoms
@@ -147,7 +164,7 @@ Also see [AWS Setup](./AWS_SETUP.md).
   - `logging.googleapis.com`
   - `sqladmin.googleapis.com` (if using Cloud SQL)
 - Ensure service account has required roles.
-- Install `gcloud` CLI on the worker host/image.
+- Install `gcloud` CLI on the ECS deployment worker image (`Dockerfile.websocket`) if GCP deploys run there.
 
 Also see [GCP Setup](./GCP_SETUP.md).
 

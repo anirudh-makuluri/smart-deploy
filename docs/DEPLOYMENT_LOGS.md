@@ -8,9 +8,11 @@ During an active deploy, logs stream over WebSocket to the **Logs** tab in the d
 
 | Property | Detail |
 |----------|--------|
-| **Transport** | WebSocket worker (`deploy:log`, `deploy:steps`) |
+| **Transport** | ECS deployment runner → HTTP event bridge → WebSocket worker → UI (`deploy:log`, `deploy:steps`) |
 | **Format** | Timestamped lines grouped by deploy step |
 | **Reconnection** | Subscribing to workspace replays in-progress state (`deploy:snapshot`) |
+
+The pipeline runs in a short-lived **ECS Fargate task**, not on the WebSocket EC2 host. The runner POSTs log events to the WebSocket worker using `DEPLOYMENT_EVENTS_TOKEN` and `DEPLOYMENT_EVENTS_URL` (defaults derived from `NEXT_PUBLIC_WS_URL`).
 
 If logs stop updating:
 

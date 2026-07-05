@@ -2,6 +2,8 @@
 
 This guide covers deploying SmartDeploy itself (the dashboard + WebSocket worker) on an AWS EC2 instance using the provided scripts.
 
+Deploy **execution** runs on ECS Fargate tasks launched via SQS and Lambda — not on this EC2 host. Before first deploy, provision the deployment queue with [`infra/smart-deploy-platform`](../../infra/smart-deploy-platform/README.md) (`enable_deployment_queue = true`) and set `DEPLOYMENT_QUEUE_URL` in `.env`.
+
 ---
 
 ## Prerequisites
@@ -140,9 +142,9 @@ All scripts assume the app lives at `/opt/smartdeploy`.
 | Service | Container | Port | Role |
 |---------|-----------|------|------|
 | `app` | `smartdeploy-app` | 3000 | Next.js dashboard (UI + API routes) |
-| `websocket` | `smartdeploy-websocket` | 4001 | Deploy worker (clones repos, builds Docker images, calls cloud APIs) |
+| `websocket` | `smartdeploy-websocket` | 4001 | WebSocket server (real-time UI, Deployment Agent, runtime health, live log relay) |
 
-The `websocket` service mounts `/var/run/docker.sock` so it can build Docker images on the host.
+The `websocket` service no longer runs the deploy pipeline directly. Deploys are enqueued to SQS and executed by one-off ECS Fargate tasks (`deployment-runner.js`). The same `Dockerfile.websocket` image is used for both the EC2 WebSocket service and the ECS deployment runner.
 
 Both services read `.env` via `env_file` and also have explicit `environment` entries for every variable the app uses at runtime.
 

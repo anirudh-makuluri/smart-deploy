@@ -14,6 +14,16 @@ Vocabulary for deployment status, failure stages, categories, and codes.
 | `unreachable` | Running but probes failing |
 | `paused` | UI state; AWS pause not fully supported |
 
+## Deployment run status
+
+Each deploy attempt (a **run**) has its own lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| `queued` | Run created and enqueued on SQS; waiting for Lambda to launch the ECS task |
+| `deploying` | ECS deployment runner is executing the pipeline |
+| `completed` | Run finished (success or failure recorded in history) |
+
 ## Runtime health status
 
 | Status | Meaning |
