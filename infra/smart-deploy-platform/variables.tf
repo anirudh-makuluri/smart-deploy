@@ -36,6 +36,207 @@ variable "runtime_dynamodb_table_name" {
   default     = "smart-deploy-runtime"
 }
 
+# Deployment queue (SQS -> Lambda -> ECS RunTask)
+
+variable "enable_deployment_queue" {
+  description = "Create the deployment FIFO queue, queue-launcher Lambda, and SQS trigger."
+  type        = bool
+  default     = false
+}
+
+variable "deployment_queue_name" {
+  description = "SQS FIFO queue name. Empty = derive from project/environment."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_queue_dlq_name" {
+  description = "Dead-letter SQS FIFO queue name. Empty = derive from project/environment."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_queue_visibility_timeout_seconds" {
+  description = "Visibility timeout for the deployment queue."
+  type        = number
+  default     = 180
+}
+
+variable "deployment_queue_max_receive_count" {
+  description = "How many failed receives before a message moves to the DLQ."
+  type        = number
+  default     = 5
+}
+
+variable "deployment_queue_lambda_function_name" {
+  description = "Lambda function name for the queue launcher. Empty = derive from project/environment."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_queue_lambda_image_uri" {
+  description = "ECR image URI for the deployment queue Lambda container."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_deployment_queue || var.deployment_queue_lambda_image_uri != ""
+    error_message = "deployment_queue_lambda_image_uri must be set when enable_deployment_queue is true."
+  }
+}
+
+variable "deployment_queue_lambda_timeout_seconds" {
+  description = "Lambda timeout for reading a queue message, updating DB state, and launching ECS."
+  type        = number
+  default     = 60
+}
+
+variable "deployment_queue_lambda_memory_size" {
+  description = "Memory size (MB) for the deployment queue Lambda."
+  type        = number
+  default     = 512
+}
+
+variable "deployment_queue_lambda_log_retention_days" {
+  description = "CloudWatch Logs retention for the deployment queue Lambda."
+  type        = number
+  default     = 14
+}
+
+variable "deployment_queue_lambda_db_pool_max" {
+  description = "DB_POOL_MAX passed to the deployment queue Lambda."
+  type        = number
+  default     = 5
+}
+
+variable "supabase_url" {
+  description = "Supabase project URL used by the deployment queue Lambda."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_deployment_queue || var.supabase_url != ""
+    error_message = "supabase_url must be set when enable_deployment_queue is true."
+  }
+}
+
+variable "supabase_service_role_key" {
+  description = "Supabase service role key used by the deployment queue Lambda."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = !var.enable_deployment_queue || var.supabase_service_role_key != ""
+    error_message = "supabase_service_role_key must be set when enable_deployment_queue is true."
+  }
+}
+
+variable "database_url" {
+  description = "Postgres connection string used by the deployment queue Lambda."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = !var.enable_deployment_queue || var.database_url != ""
+    error_message = "database_url must be set when enable_deployment_queue is true."
+  }
+}
+
+variable "deployment_worker_image" {
+  description = "Container image for the one-off deployment worker task."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = !var.enable_deployment_queue || var.deployment_worker_image != ""
+    error_message = "deployment_worker_image must be set when enable_deployment_queue is true."
+  }
+}
+
+variable "deployment_worker_container_name" {
+  description = "Container name to override when starting the deployment worker task."
+  type        = string
+  default     = "smart-deploy-worker"
+}
+
+variable "deployment_worker_task_cpu" {
+  description = "CPU units for the one-off deployment worker task definition."
+  type        = string
+  default     = "1024"
+}
+
+variable "deployment_worker_task_memory" {
+  description = "Memory (MiB) for the one-off deployment worker task definition."
+  type        = string
+  default     = "2048"
+}
+
+variable "deployment_worker_cluster_name" {
+  description = "ECS cluster name for the deployment worker task. Empty = reuse ecs_cluster_name."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_worker_subnet_ids" {
+  description = "Subnet IDs for the deployment worker task. Empty = reuse ECS subnets."
+  type        = list(string)
+  default     = []
+}
+
+variable "deployment_worker_security_group_ids" {
+  description = "Security group IDs for the deployment worker task. Empty = reuse the shared Fargate security group."
+  type        = list(string)
+  default     = []
+}
+
+variable "deployment_worker_assign_public_ip" {
+  description = "Assign public IP for the deployment worker task. Empty = ENABLED."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_worker_secret_arn" {
+  description = "Optional Secrets Manager secret ARN containing deployment worker runtime env as a JSON object."
+  type        = string
+  default     = ""
+}
+
+variable "deployment_worker_secret_env_keys" {
+  description = "Secret JSON keys to project into deployment worker container env vars."
+  type        = list(string)
+  default = [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "BETTER_AUTH_SECRET",
+    "DATABASE_URL",
+    "DEPLOYMENT_SCREENSHOT_BUCKET",
+    "DOCKERHUB_TOKEN",
+    "DOCKERHUB_USERNAME",
+    "GCP_PROJECT_ID",
+    "GCP_SERVICE_ACCOUNT_KEY",
+    "GEMINI_API_KEY",
+    "GITHUB_ID",
+    "GITHUB_SECRET",
+    "LOGS_BUCKET",
+    "RUNTIME_DYNAMODB_TABLE_NAME",
+    "STATIC_SITE_BUCKET",
+    "STATIC_SITE_CLOUDFRONT_DISTRIBUTION_ID",
+    "STATIC_SITE_KEY_PREFIX",
+    "STATIC_SITE_PUBLIC_BASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_URL",
+  ]
+}
+
+variable "deployment_worker_task_role_name" {
+  description = "IAM role name for the deployment worker task. Empty = derive from project/environment."
+  type        = string
+  default     = ""
+}
+
 # Static sites (S3 + CloudFront)
 
 variable "s3_bucket_name" {

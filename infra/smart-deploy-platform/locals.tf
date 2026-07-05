@@ -13,7 +13,7 @@ data "aws_vpc" "by_id" {
 locals {
   vpc_id = var.vpc_id != "" ? var.vpc_id : data.aws_vpc.selected[0].id
 
-  name_prefix = "${var.project_name}-${var.environment}"
+  name_prefix = var.project_name
 
   s3_bucket_id  = var.create_s3_bucket ? aws_s3_bucket.static[0].id : data.aws_s3_bucket.existing[0].id
   s3_bucket_arn = var.create_s3_bucket ? aws_s3_bucket.static[0].arn : data.aws_s3_bucket.existing[0].arn
@@ -41,4 +41,15 @@ locals {
   ])
 
   ecs_subnet_ids = length(var.ecs_subnet_ids) > 0 ? var.ecs_subnet_ids : local.auto_public_subnet_ids
+
+  deployment_queue_name                 = var.deployment_queue_name != "" ? var.deployment_queue_name : "${local.name_prefix}-deployments.fifo"
+  deployment_queue_dlq_name             = var.deployment_queue_dlq_name != "" ? var.deployment_queue_dlq_name : "${local.name_prefix}-deployments-dlq.fifo"
+  deployment_queue_lambda_function_name = var.deployment_queue_lambda_function_name != "" ? var.deployment_queue_lambda_function_name : "${local.name_prefix}-deployment-queue-handler"
+  deployment_worker_task_role_name      = var.deployment_worker_task_role_name != "" ? var.deployment_worker_task_role_name : "${local.name_prefix}-deployment-worker-task"
+
+  deployment_worker_cluster_name       = var.deployment_worker_cluster_name != "" ? var.deployment_worker_cluster_name : local.ecs_cluster_name
+  deployment_worker_subnet_ids         = length(var.deployment_worker_subnet_ids) > 0 ? var.deployment_worker_subnet_ids : local.ecs_subnet_ids
+  deployment_worker_security_group_ids = length(var.deployment_worker_security_group_ids) > 0 ? var.deployment_worker_security_group_ids : [aws_security_group.fargate.id]
+  deployment_worker_assign_public_ip   = upper(trimspace(var.deployment_worker_assign_public_ip != "" ? var.deployment_worker_assign_public_ip : "ENABLED"))
+  deployment_worker_secret_env_keys    = distinct([for key in var.deployment_worker_secret_env_keys : trimspace(key) if trimspace(key) != ""])
 }

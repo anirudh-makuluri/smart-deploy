@@ -58,6 +58,26 @@ output "runtime_dynamodb_table_arn" {
   value       = aws_dynamodb_table.runtime.arn
 }
 
+output "deployment_queue_url" {
+  description = "Deployment queue URL (DEPLOYMENT_QUEUE_URL)"
+  value       = var.enable_deployment_queue ? aws_sqs_queue.deployment_runs[0].url : null
+}
+
+output "deployment_queue_arn" {
+  description = "Deployment queue ARN"
+  value       = var.enable_deployment_queue ? aws_sqs_queue.deployment_runs[0].arn : null
+}
+
+output "deployment_queue_lambda_name" {
+  description = "Deployment queue launcher Lambda function name"
+  value       = var.enable_deployment_queue ? aws_lambda_function.deployment_queue[0].function_name : null
+}
+
+output "deployment_worker_task_definition_arn" {
+  description = "Task definition ARN for the one-off deployment worker"
+  value       = var.enable_deployment_queue ? aws_ecs_task_definition.deployment_worker[0].arn : null
+}
+
 output "vpc_id" {
   description = "VPC used for Fargate / ALB"
   value       = local.vpc_id
@@ -82,6 +102,7 @@ output "smart_deploy_env_snippet" {
     ECS_LOG_GROUP=${aws_cloudwatch_log_group.ecs.name}
     ECS_ASSIGN_PUBLIC_IP=ENABLED
     RUNTIME_DYNAMODB_TABLE_NAME=${aws_dynamodb_table.runtime.name}
+${var.enable_deployment_queue ? format("\n    DEPLOYMENT_QUEUE_URL=%s\n    DEPLOYMENT_WORKER_CLUSTER_NAME=%s\n    DEPLOYMENT_WORKER_SUBNET_IDS=%s\n    DEPLOYMENT_WORKER_SECURITY_GROUP_IDS=%s\n    DEPLOYMENT_WORKER_ASSIGN_PUBLIC_IP=%s\n    DEPLOYMENT_WORKER_TASK_DEFINITION_ARN=%s", aws_sqs_queue.deployment_runs[0].url, local.deployment_worker_cluster_name, join(",", local.deployment_worker_subnet_ids), join(",", local.deployment_worker_security_group_ids), local.deployment_worker_assign_public_ip, aws_ecs_task_definition.deployment_worker[0].arn) : ""}
 
     # Route 53 (set deployment_domain / shared_alb_dns_name in tfvars when ready)
     # ROUTE53_HOSTED_ZONE_ID=${local.route53_zone_id}
