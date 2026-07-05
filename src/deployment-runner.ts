@@ -88,11 +88,16 @@ async function main() {
 		{ getGithubAccessTokenForUserId },
 		{ handleDeploy },
 		{ withDeployInfraDefaults },
+		{
+			createDeploymentRunEventBridge,
+			emitDeploymentRunLog,
+		},
 	] = await Promise.all([
 		import("@/db-helper"),
 		import("@/lib/githubAccessToken"),
 		import("@/lib/handleDeploy"),
 		import("@/lib/deployInfraDefaults"),
+		import("@/lib/deploymentRunEventBridge"),
 	]);
 
 	const runId = readEnv("DEPLOYMENT_RUN_ID");
@@ -121,6 +126,7 @@ async function main() {
 
 	const userId = envUserId || run.userId;
 	const deployConfig = extractDeployConfig(run.releaseArtifact, withDeployInfraDefaults);
+	const deploymentEventBridge = createDeploymentRunEventBridge(run.id);
 
 	const token = await getGithubAccessTokenForUserId(userId);
 	if (!token) {
@@ -140,11 +146,15 @@ async function main() {
 		await handleDeploy(
 			deployConfig,
 			token,
-			null,
+			deploymentEventBridge,
 			userId,
 			{
 				onStepsChange: () => undefined,
-				broadcast: () => undefined,
+				broadcast: (id, msg) => {
+					if (deploymentEventBridge) {
+						emitDeploymentRunLog(run.id, id, msg);
+					}
+				},
 			},
 			{
 				existingRunId: run.id,
@@ -174,6 +184,13 @@ async function main() {
 }
 
 async function shutdownRuntimeResources(): Promise<void> {
+	try {
+		const { flushDeploymentRunEventBridge } = await import("@/lib/deploymentRunEventBridge");
+		await flushDeploymentRunEventBridge();
+	} catch (error) {
+		console.warn("[deployment-runner] event bridge cleanup warning:", error);
+	}
+
 	try {
 		const { closeDbPool } = await import("@/lib/dbPool");
 		await closeDbPool();

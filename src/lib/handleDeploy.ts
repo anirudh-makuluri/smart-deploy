@@ -936,6 +936,9 @@ async function sendDeployComplete(
 			deployConfig.serviceName,
 			payload
 		);
+		if ((ws as { __remoteDeploymentEventBridge?: boolean } | null | undefined)?.__remoteDeploymentEventBridge) {
+			emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
+		}
 	} else {
 		emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deployComplete, payload);
 	}

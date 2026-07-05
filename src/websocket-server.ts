@@ -5,6 +5,7 @@ import http from "http";
 import { deploy, serviceLogs } from "./websocket-types";
 import { runDeploymentAgent } from "./lib/deploymentAgent";
 import * as deployLogsStore from "./lib/deployLogsStore";
+import { handleInternalDeploymentRunEvent } from "./lib/internalDeploymentRunEvents";
 import { getAllowedOriginHeader, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
 import { createWorkerSocketServer, type WorkerServerSocket } from "./lib/workerSocketServer";
@@ -21,6 +22,62 @@ const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
 const version = "0.2.1";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
+const deploymentEventsToken = (
+	process.env.DEPLOYMENT_EVENTS_TOKEN ||
+	process.env.INTERNAL_DEPLOYMENT_EVENTS_TOKEN ||
+	""
+).trim();
+
+function readRequestBody(req: http.IncomingMessage, maxBytes = 256 * 1024): Promise<string> {
+	return new Promise((resolve, reject) => {
+		let body = "";
+		req.setEncoding("utf8");
+		req.on("data", (chunk) => {
+			body += chunk;
+			if (Buffer.byteLength(body, "utf8") > maxBytes) {
+				reject(new Error("Request body is too large."));
+				req.destroy();
+			}
+		});
+		req.on("end", () => resolve(body));
+		req.on("error", reject);
+	});
+}
+
+function bearerToken(req: http.IncomingMessage): string {
+	const header = typeof req.headers.authorization === "string" ? req.headers.authorization : "";
+	const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+	return match?.[1]?.trim() || "";
+}
+
+async function handleInternalDeploymentEventRequest(req: http.IncomingMessage, res: http.ServerResponse, runId: string) {
+	if (!deploymentEventsToken) {
+		res.writeHead(503, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: false, error: "Deployment event bridge is not configured." }));
+		return;
+	}
+	if (bearerToken(req) !== deploymentEventsToken) {
+		res.writeHead(401, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+		return;
+	}
+
+	try {
+		const bodyText = await readRequestBody(req);
+		const body = JSON.parse(bodyText || "{}") as { event?: unknown; payload?: unknown };
+		const result = await handleInternalDeploymentRunEvent(runId, body);
+		if (!result.ok) {
+			res.writeHead(result.status, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: false, error: result.error }));
+			return;
+		}
+		res.writeHead(202, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: true }));
+	} catch (error) {
+		res.writeHead(400, { "Content-Type": "application/json" });
+		res.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : "Invalid request" }));
+	}
+}
 
 // Setup HTTP server to attach Socket.IO to
 const server = http.createServer((req, res) => {
@@ -30,8 +87,8 @@ const server = http.createServer((req, res) => {
 		res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
 		res.setHeader("Vary", "Origin");
 	}
-	res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-	res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+	res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+	res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
 
 	if (requestOrigin && !allowedOrigin) {
 		res.writeHead(403, { "Content-Type": "application/json" });
@@ -45,7 +102,19 @@ const server = http.createServer((req, res) => {
 		return;
 	}
 
-	if (req.url === "/health" || req.url === "/") {
+	const url = new URL(req.url || "/", "http://localhost");
+	const internalEventMatch = /^\/internal\/deployment-runs\/([^/]+)\/events$/.exec(url.pathname);
+	if (internalEventMatch) {
+		if (req.method !== "POST") {
+			res.writeHead(405, { "Content-Type": "application/json" });
+			res.end(JSON.stringify({ ok: false, error: "Method not allowed" }));
+			return;
+		}
+		void handleInternalDeploymentEventRequest(req, res, decodeURIComponent(internalEventMatch[1] || ""));
+		return;
+	}
+
+	if (url.pathname === "/health" || url.pathname === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
 		res.end(
 			JSON.stringify({
