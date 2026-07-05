@@ -24,6 +24,10 @@ export function buildVerificationCandidates(baseUrl: string): string[] {
 	return Array.from(urls);
 }
 
+export function isSuccessfulVerificationStatus(status: number): boolean {
+	return status >= 200 && status < 400;
+}
+
 export async function fetchWithTimeout(url: string, timeoutMs: number, externalSignal?: AbortSignal) {
 	const controller = new AbortController();
 	const handleExternalAbort = () => controller.abort();
@@ -40,6 +44,11 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, externalS
 			method: "GET",
 			redirect: "follow",
 			cache: "no-store",
+			headers: {
+				Accept: "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
+				"Cache-Control": "no-cache",
+				"User-Agent": "SmartDeploy-HealthProbe/1.0",
+			},
 			signal: controller.signal,
 		});
 	} finally {
@@ -74,7 +83,7 @@ export async function probeDeploymentHealth(
 		const startedAt = Date.now();
 		return fetchWithTimeout(candidate, requestTimeoutMs, roundController.signal).then((response) => {
 			const latencyMs = Date.now() - startedAt;
-			if (response.status < 500) {
+			if (isSuccessfulVerificationStatus(response.status)) {
 				return {
 					reachable: true,
 					checkedUrl: candidate,

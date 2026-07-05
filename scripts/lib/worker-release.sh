@@ -8,18 +8,23 @@ SMART_DEPLOY_WORKER_RELEASE_SH=1
 WORKER_RELEASE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${WORKER_RELEASE_LIB_DIR}/../.." && pwd)}"
 STACK_DIR="${STACK_DIR:-${REPO_ROOT}/infra/aws-worker}"
+PLATFORM_STACK_DIR="${PLATFORM_STACK_DIR:-${REPO_ROOT}/infra/smart-deploy-platform}"
 DOCKERFILE_PATH="${DOCKERFILE_PATH:-${REPO_ROOT}/Dockerfile.websocket}"
+DEPLOYMENT_QUEUE_LAMBDA_DOCKERFILE_PATH="${DEPLOYMENT_QUEUE_LAMBDA_DOCKERFILE_PATH:-${REPO_ROOT}/Dockerfile.deployment-queue-lambda}"
 
 AWS_REGION="${AWS_REGION:-us-west-2}"
 AWS_ACCOUNT_ID="${AWS_ACCOUNT_ID:-328342419078}"
 ECR_REPO="${ECR_REPO:-smart-deploy-worker}"
+DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO="${DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO:-smart-deploy-deployment-queue}"
 ECR_REGISTRY="${ECR_REGISTRY:-${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com}"
 ECR_PERMISSION_CHECK_DIGEST="${ECR_PERMISSION_CHECK_DIGEST:-sha256:0000000000000000000000000000000000000000000000000000000000000000}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d-%H%M%S)-$(git -C "${REPO_ROOT}" rev-parse --short HEAD)}"
 WORKER_IMAGE="${WORKER_IMAGE:-${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}}"
+DEPLOYMENT_QUEUE_LAMBDA_IMAGE="${DEPLOYMENT_QUEUE_LAMBDA_IMAGE:-${ECR_REGISTRY}/${DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO}:${IMAGE_TAG}}"
 WORKER_PORT="${WORKER_PORT:-4001}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 ROLLOUT_MODE="${ROLLOUT_MODE:-ssm}"
+UPDATE_DEPLOYMENT_QUEUE="${UPDATE_DEPLOYMENT_QUEUE:-true}"
 
 require_cmd() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -87,8 +92,18 @@ worker_release_validate_paths() {
 		exit 1
 	fi
 
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" == "true" && ! -f "${DEPLOYMENT_QUEUE_LAMBDA_DOCKERFILE_PATH}" ]]; then
+		echo "Deployment queue Lambda Dockerfile not found at ${DEPLOYMENT_QUEUE_LAMBDA_DOCKERFILE_PATH}"
+		exit 1
+	fi
+
 	if [[ ! -d "${STACK_DIR}" ]]; then
 		echo "Terraform stack directory not found at ${STACK_DIR}"
+		exit 1
+	fi
+
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" == "true" && ! -d "${PLATFORM_STACK_DIR}" ]]; then
+		echo "Smart Deploy platform Terraform stack directory not found at ${PLATFORM_STACK_DIR}"
 		exit 1
 	fi
 }
@@ -114,6 +129,15 @@ worker_release_ensure_ecr_repo() {
 	worker_release_log "Ensuring ECR repo exists in ${AWS_ACCOUNT_ID}: ${ECR_REPO}"
 	if ! aws ecr describe-repositories --registry-id "${AWS_ACCOUNT_ID}" --repository-names "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null 2>&1; then
 		aws ecr create-repository --registry-id "${AWS_ACCOUNT_ID}" --repository-name "${ECR_REPO}" --region "${AWS_REGION}" >/dev/null
+	fi
+}
+
+worker_release_ensure_named_ecr_repo() {
+	local repository_name="$1"
+
+	worker_release_log "Ensuring ECR repo exists in ${AWS_ACCOUNT_ID}: ${repository_name}"
+	if ! aws ecr describe-repositories --registry-id "${AWS_ACCOUNT_ID}" --repository-names "${repository_name}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+		aws ecr create-repository --registry-id "${AWS_ACCOUNT_ID}" --repository-name "${repository_name}" --region "${AWS_REGION}" >/dev/null
 	fi
 }
 
@@ -165,6 +189,29 @@ worker_release_build_and_push() {
 	fi
 }
 
+worker_release_build_and_push_deployment_queue_lambda() {
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" != "true" ]]; then
+		worker_release_log "Skipping deployment queue Lambda image build (UPDATE_DEPLOYMENT_QUEUE=${UPDATE_DEPLOYMENT_QUEUE})"
+		return 0
+	fi
+
+	require_cmd docker
+	worker_release_ensure_named_ecr_repo "${DEPLOYMENT_QUEUE_LAMBDA_ECR_REPO}"
+	worker_release_init_docker_config
+	worker_release_login_ecr
+
+	worker_release_log "Building and pushing deployment queue Lambda image: ${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}"
+	docker buildx build \
+		--platform linux/amd64 \
+		--provenance=false \
+		-f "${DEPLOYMENT_QUEUE_LAMBDA_DOCKERFILE_PATH}" \
+		-t "${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}" \
+		--push \
+		"${REPO_ROOT}"
+
+	worker_release_cleanup_docker_config
+}
+
 worker_release_terraform_init() {
 	if [[ -n "${WORKER_INSTANCE_ID:-}" ]]; then
 		worker_release_log "Skipping terraform init (WORKER_INSTANCE_ID is set)"
@@ -173,6 +220,16 @@ worker_release_terraform_init() {
 
 	worker_release_log "Running terraform init"
 	terraform -chdir="${STACK_DIR}" init
+}
+
+worker_release_platform_terraform_init() {
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" != "true" ]]; then
+		worker_release_log "Skipping platform terraform init (UPDATE_DEPLOYMENT_QUEUE=${UPDATE_DEPLOYMENT_QUEUE})"
+		return 0
+	fi
+
+	worker_release_log "Running platform terraform init"
+	terraform -chdir="${PLATFORM_STACK_DIR}" init
 }
 
 worker_release_read_output() {
@@ -201,6 +258,29 @@ worker_release_terraform_apply() {
 		worker_release_log "Applying terraform"
 		terraform -chdir="${STACK_DIR}" apply -var "worker_image=${WORKER_IMAGE}"
 	fi
+}
+
+worker_release_update_deployment_queue_infra() {
+	if [[ "${UPDATE_DEPLOYMENT_QUEUE}" != "true" ]]; then
+		worker_release_log "Skipping deployment queue infra update (UPDATE_DEPLOYMENT_QUEUE=${UPDATE_DEPLOYMENT_QUEUE})"
+		return 0
+	fi
+
+	local apply_args=(
+		-chdir="${PLATFORM_STACK_DIR}"
+		apply
+		-var "deployment_worker_image=${WORKER_IMAGE}"
+		-var "deployment_queue_lambda_image_uri=${DEPLOYMENT_QUEUE_LAMBDA_IMAGE}"
+		-target "aws_ecs_task_definition.deployment_worker[0]"
+		-target "aws_lambda_function.deployment_queue[0]"
+	)
+
+	if [[ "${AUTO_APPROVE}" == "true" ]]; then
+		apply_args+=( -auto-approve )
+	fi
+
+	worker_release_log "Updating deployment queue ECS task definition and Lambda"
+	terraform "${apply_args[@]}"
 }
 
 worker_release_rollout_existing_instance() {

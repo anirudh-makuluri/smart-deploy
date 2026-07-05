@@ -20,7 +20,7 @@ import {
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.2.1";
+const version = "0.3.0";
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 const deploymentEventsToken = (
 	process.env.DEPLOYMENT_EVENTS_TOKEN ||

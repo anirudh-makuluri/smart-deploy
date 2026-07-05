@@ -87,6 +87,63 @@ Notes:
 - The Lambda launches ECS tasks and does not run the deployment itself.
 - The generated env snippet includes `DEPLOYMENT_QUEUE_URL` plus the default worker networking values.
 
+## Updating the deployment queue images
+
+Preferred path from the repository root:
+
+```bash
+./scripts/update.sh
+```
+
+That builds and pushes:
+
+- `Dockerfile.websocket` to the `smart-deploy-worker` ECR repo.
+- `Dockerfile.deployment-queue-lambda` to the `smart-deploy-deployment-queue` ECR repo.
+
+It then updates:
+
+- The existing websocket EC2 worker container via SSM.
+- The one-off ECS deployment worker task definition in this stack.
+- The deployment queue Lambda function so its image and `DEPLOYMENT_WORKER_TASK_DEFINITION_ARN` point at the latest worker task definition revision.
+
+Useful overrides:
+
+```bash
+IMAGE_TAG=20260705-live-log-bridge ./scripts/update.sh
+AUTO_APPROVE=true ./scripts/update.sh
+UPDATE_DEPLOYMENT_QUEUE=false ./scripts/update.sh
+ROLLOUT_MODE=none ./scripts/update.sh
+```
+
+Manual deployment queue update:
+
+```bash
+cd /path/to/smart-deploy
+
+TAG=20260705-live-log-bridge
+AWS_ACCOUNT_ID=1234567890
+AWS_REGION=us-west-2
+ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+
+docker buildx build --platform linux/amd64 --provenance=false \
+  -f Dockerfile.websocket \
+  -t "${ECR_REGISTRY}/smart-deploy-worker:${TAG}" \
+  --push .
+
+docker buildx build --platform linux/amd64 --provenance=false \
+  -f Dockerfile.deployment-queue-lambda \
+  -t "${ECR_REGISTRY}/smart-deploy-deployment-queue:${TAG}" \
+  --push .
+
+terraform -chdir=infra/smart-deploy-platform apply \
+  -var="deployment_worker_image=${ECR_REGISTRY}/smart-deploy-worker:${TAG}" \
+  -var="deployment_queue_lambda_image_uri=${ECR_REGISTRY}/smart-deploy-deployment-queue:${TAG}" \
+  -target='aws_ecs_task_definition.deployment_worker[0]' \
+  -target='aws_lambda_function.deployment_queue[0]'
+```
+
+Use immutable tags for both images. If you only update the ECS task definition, Lambda may keep launching an older task definition ARN. If you only update Lambda, the task definition may still reference an older worker image.
+
 Also set (if not already):
 
 ```env

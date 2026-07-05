@@ -9,7 +9,11 @@ import {
 } from "../app/types";
 import { cloudResourcesFromDeployResult, isEcsCloudResources } from "./cloudResources";
 import { hostedSubdomainOrDefault, hostedUrlFromSubdomain, subdomainFromHostedUrl } from "./hostedUrl";
-import { buildVerificationCandidates, fetchWithTimeout } from "./deploymentHealthProbe";
+import {
+	buildVerificationCandidates,
+	fetchWithTimeout,
+	isSuccessfulVerificationStatus,
+} from "./deploymentHealthProbe";
 import { dbHelper } from "../db-helper";
 import { createDeployStepsLogger } from "./websocketLogger";
 import {
@@ -404,10 +408,10 @@ async function verifyDeploymentReadiness(params: {
 		let roundResolved = false;
 		const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
 		const probes = candidates.map((candidate) => {
-			send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
+			// send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
 			return fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal)
 				.then((response) => {
-					if (response.status < 500) {
+					if (isSuccessfulVerificationStatus(response.status)) {
 						return {
 							candidate,
 							statusCode: response.status,
