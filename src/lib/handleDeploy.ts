@@ -100,6 +100,23 @@ type VerificationResult =
 		errorMessage: string;
 	};
 
+type VerificationProbeSuccess = {
+	success: true;
+	candidate: string;
+	statusCode: number;
+	latencyMs: number;
+};
+
+type VerificationProbeFailure = {
+	success: false;
+	candidate: string;
+	statusCode: number | null;
+	latencyMs: number;
+	errorMessage: string;
+};
+
+type VerificationProbeOutcome = VerificationProbeSuccess | VerificationProbeFailure;
+
 type DockerHubCredentials = {
 	username: string;
 	token: string;
@@ -161,6 +178,40 @@ function setStepState(steps: DeployStep[], stepId: string, status: DeployStep["s
 	if (step) {
 		step.status = status;
 	}
+}
+
+function isVerificationProbeFailure(value: unknown): value is VerificationProbeFailure {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		(value as Partial<VerificationProbeFailure>).success === false &&
+		typeof (value as Partial<VerificationProbeFailure>).candidate === "string"
+	);
+}
+
+function describeFetchError(error: unknown): string {
+	if (error instanceof DOMException && error.name === "AbortError") {
+		return "request timed out";
+	}
+	if (error instanceof Error) {
+		const cause = (error as Error & { cause?: unknown }).cause;
+		if (cause instanceof Error && cause.message) {
+			return `${error.message}: ${cause.message}`;
+		}
+		if (cause && typeof cause === "object") {
+			const code = (cause as { code?: unknown }).code;
+			if (typeof code === "string" && code) {
+				return `${error.message}: ${code}`;
+			}
+		}
+		return error.message;
+	}
+	return String(error);
+}
+
+function formatVerificationFailure(failure: VerificationProbeFailure): string {
+	const status = failure.statusCode === null ? failure.errorMessage : `HTTP ${failure.statusCode}`;
+	return `${failure.candidate} -> ${status} (${failure.latencyMs}ms)`;
 }
 
 function deployConfigForStatusPersist(config: DeployConfig): DeployConfig {
@@ -407,23 +458,47 @@ async function verifyDeploymentReadiness(params: {
 		const roundController = new AbortController();
 		let roundResolved = false;
 		const perCandidateTimeoutMs = Math.max(1_000, Math.min(requestTimeoutMs, remainingBudgetMs));
+		const roundOutcomes: VerificationProbeOutcome[] = [];
 		const probes = candidates.map((candidate) => {
-			// send(`Verification attempt ${round}/${maxRounds}: ${candidate}`, "verify");
+			const startedAt = Date.now();
 			return fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal)
 				.then((response) => {
+					const latencyMs = Date.now() - startedAt;
 					if (isSuccessfulVerificationStatus(response.status)) {
-						return {
+						const success = {
+							success: true,
 							candidate,
 							statusCode: response.status,
-						};
+							latencyMs,
+						} satisfies VerificationProbeSuccess;
+						roundOutcomes.push(success);
+						return success;
 					}
-					throw new Error(`HTTP ${response.status}`);
+					throw {
+						success: false,
+						candidate,
+						statusCode: response.status,
+						latencyMs,
+						errorMessage: `HTTP ${response.status}`,
+					} satisfies VerificationProbeFailure;
 				})
 				.catch((error) => {
 					if (roundResolved && roundController.signal.aborted) {
 						throw error;
 					}
-					throw error;
+					if (isVerificationProbeFailure(error)) {
+						roundOutcomes.push(error);
+						throw error;
+					}
+					const failure = {
+						success: false,
+						candidate,
+						statusCode: null,
+						latencyMs: Date.now() - startedAt,
+						errorMessage: describeFetchError(error),
+					} satisfies VerificationProbeFailure;
+					roundOutcomes.push(failure);
+					throw failure;
 				});
 		});
 
@@ -432,7 +507,7 @@ async function verifyDeploymentReadiness(params: {
 			roundResolved = true;
 			roundController.abort();
 			send(
-				`SUCCESS: Verification passed with HTTP ${verified.statusCode} at ${verified.candidate}`,
+				`SUCCESS: Verification passed with HTTP ${verified.statusCode} at ${verified.candidate} (${verified.latencyMs}ms)`,
 				"verify"
 			);
 			setStepState(deploySteps, "verify", "success");
@@ -443,6 +518,13 @@ async function verifyDeploymentReadiness(params: {
 			};
 		} catch {
 			roundController.abort();
+			const failures = roundOutcomes.filter((outcome) => !outcome.success);
+			if (failures.length > 0) {
+				send(
+					`Verification round ${round} failed: ${failures.map(formatVerificationFailure).join("; ")}`,
+					"verify"
+				);
+			}
 		}
 
 		if (round < maxRounds) {
