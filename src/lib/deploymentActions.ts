@@ -1,4 +1,5 @@
 import { deleteAWSDeployment } from "@/lib/aws/deleteAWSDeployment";
+import { isAwsMissingResourceError } from "@/lib/aws/resourceNotFound";
 import { deleteRoute53DnsRecord } from "@/lib/route53Dns";
 import { dbHelper } from "@/db-helper";
 import { DeployConfig } from "@/app/types";
@@ -61,14 +62,7 @@ export async function deleteDeploymentForUser({ repoName, serviceName, userID }:
 		await deleteAWSDeployment(deployConfig, deploymentTarget);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-		const alreadyGone =
-			message.includes("could not be found") ||
-			message.includes("NOT_FOUND") ||
-			message.includes("does not exist") ||
-			message.includes("NotFoundException") ||
-			message.includes("No Environment found") ||
-			message.includes("No Application found") ||
-			message.includes("InvalidParameterValue");
+		const alreadyGone = isAwsMissingResourceError(err) || message.includes("NOT_FOUND");
 		if (!alreadyGone) {
 			return { status: "error", message: "Failed to delete cloud service", details: message };
 		}

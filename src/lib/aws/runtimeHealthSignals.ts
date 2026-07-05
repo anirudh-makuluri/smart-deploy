@@ -2,6 +2,7 @@ import { DescribeTargetHealthCommand, ElasticLoadBalancingV2Client } from "@aws-
 import { DescribeServicesCommand, ECSClient } from "@aws-sdk/client-ecs";
 import type { EcsCloudResources, RuntimeHealthAlbEntry, RuntimeHealthEcsEntry } from "@/app/types";
 import config from "@/config";
+import { isAwsMissingResourceError } from "@/lib/aws/resourceNotFound";
 import { getAwsClientConfig } from "@/lib/aws/sdkClients";
 
 function resolveRegion(region: string | undefined): string {
@@ -14,12 +15,20 @@ export async function getRuntimeEcsHealth(ecs: EcsCloudResources): Promise<Runti
 	if (!cluster || !service) return null;
 
 	const client = new ECSClient(getAwsClientConfig(resolveRegion(ecs.region)));
-	const response = await client.send(
-		new DescribeServicesCommand({
-			cluster,
-			services: [service],
-		})
-	);
+	let response;
+	try {
+		response = await client.send(
+			new DescribeServicesCommand({
+				cluster,
+				services: [service],
+			})
+		);
+	} catch (error) {
+		if (isAwsMissingResourceError(error)) {
+			return null;
+		}
+		throw error;
+	}
 	const serviceResponse = response.services?.[0];
 	if (!serviceResponse) return null;
 
@@ -41,11 +50,19 @@ export async function getRuntimeAlbHealth(ecs: EcsCloudResources): Promise<Runti
 	if (!targetGroupArn) return null;
 
 	const client = new ElasticLoadBalancingV2Client(getAwsClientConfig(resolveRegion(ecs.region)));
-	const response = await client.send(
-		new DescribeTargetHealthCommand({
-			TargetGroupArn: targetGroupArn,
-		})
-	);
+	let response;
+	try {
+		response = await client.send(
+			new DescribeTargetHealthCommand({
+				TargetGroupArn: targetGroupArn,
+			})
+		);
+	} catch (error) {
+		if (isAwsMissingResourceError(error)) {
+			return null;
+		}
+		throw error;
+	}
 
 	const counts: RuntimeHealthAlbEntry = {
 		healthyTargetCount: 0,
