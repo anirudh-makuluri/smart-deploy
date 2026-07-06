@@ -133,6 +133,11 @@ const AGENT_TOOL_CHIPS = ["list_deployments", "get_deployment_details", "get_dep
 const sectionAnchorClass = "scroll-mt-20 sm:scroll-mt-24";
 
 const TYPED_WORDS = ["Next.js app", "Flask API", "monorepo", "microservice", "side project"];
+const LONGEST_TYPED_WORD = TYPED_WORDS.reduce((longest, word) => {
+	if (word.length > longest.length) return word;
+	if (word.length < longest.length) return longest;
+	return word.includes(" ") ? word : longest;
+});
 const TYPING_SPEED_MS = 80;
 const PAUSE_MS = 2200;
 const DELETE_SPEED_MS = 40;
@@ -207,9 +212,14 @@ function HeroSection({
 						className="mt-2 block min-h-[1.1em] sm:mt-0 sm:inline-block sm:min-h-0"
 						data-testid="landing-typed-line"
 					>
-						<span className="relative inline-flex min-w-[3ch] items-baseline justify-center whitespace-nowrap text-left sm:justify-start">
-							<span className="landing-hero-typed-text">{typedText}</span>
-							<span className="landing-hero-cursor" />
+						<span className="relative inline-block whitespace-nowrap text-left">
+							<span aria-hidden="true" className="invisible select-none landing-hero-typed-text">
+								{LONGEST_TYPED_WORD}
+							</span>
+							<span className="absolute inset-y-0 left-0 inline-flex items-baseline">
+								<span className="landing-hero-typed-text">{typedText}</span>
+								<span className="landing-hero-cursor" />
+							</span>
 						</span>
 					</span>
 					<br />
