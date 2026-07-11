@@ -795,6 +795,28 @@ button {
   box-shadow: 0 0 40px -10px color-mix(in srgb, var(--primary) 15%, transparent);
 }
 
+.landing-stat-spotlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: min(220px, 70%);
+  height: min(220px, 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--primary) 34%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 14%, transparent) 38%,
+    transparent 72%
+  );
+  filter: blur(18px);
+  transition: opacity 0.22s ease;
+  will-change: transform, opacity;
+}
+
 .landing-stat-glow {
   position: absolute;
   top: -20%;
