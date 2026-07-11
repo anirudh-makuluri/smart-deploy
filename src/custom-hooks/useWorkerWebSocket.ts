@@ -351,7 +351,24 @@ export function useWorkerWebSocketSession() {
 		subscribeWorkspace(socketRef.current);
 	}, [subscribeWorkspace]);
 
-	const createSocket = useCallback(() => {
+	const getWebSocketAuthTokenRef = useRef(getWebSocketAuthToken);
+	const subscribeWorkspaceRefFn = useRef(subscribeWorkspace);
+	const deployLogsRef = useRef(deployLogs);
+	const repoNameRef = useRef(repoName);
+
+	useEffect(() => {
+		getWebSocketAuthTokenRef.current = getWebSocketAuthToken;
+		subscribeWorkspaceRefFn.current = subscribeWorkspace;
+		deployLogsRef.current = deployLogs;
+		repoNameRef.current = repoName;
+	});
+
+	useEffect(() => {
+		if (!connectionEnabled) {
+			disconnectSocket();
+			return;
+		}
+
 		if (socketRef.current) {
 			return;
 		}
@@ -366,7 +383,8 @@ export function useWorkerWebSocketSession() {
 			reconnectionDelay: WORKER_RECONNECT_BASE_DELAY_MS,
 			reconnectionDelayMax: WORKER_RECONNECT_MAX_DELAY_MS,
 			auth: (cb) => {
-				void getWebSocketAuthToken()
+				void getWebSocketAuthTokenRef
+					.current()
 					.then((token) => {
 						cb({ token });
 					})
@@ -379,13 +397,13 @@ export function useWorkerWebSocketSession() {
 
 		socketRef.current = socket;
 
-		socket.on("connect", () => {
+		const onConnect = () => {
 			setSocketStatus("open");
 			dispatchWorkerState({ type: "set_error", error: null });
-			subscribeWorkspace(socket);
-		});
+			subscribeWorkspaceRefFn.current(socket);
+		};
 
-		socket.on("disconnect", (reason) => {
+		const onDisconnect = (reason: string) => {
 			const disconnectMessage = getSocketDisconnectMessage(reason);
 			if (isDeployingRef.current) {
 				dispatchWorkerState({
@@ -412,9 +430,9 @@ export function useWorkerWebSocketSession() {
 			}
 			isDeployingRef.current = false;
 			setSocketStatus(manualDisconnectRef.current ? "closed" : "connecting");
-		});
+		};
 
-		socket.on("connect_error", (error) => {
+		const onConnectError = (error: Error) => {
 			const message = getSocketConnectErrorMessage(error.message);
 			if (/unauthorized/i.test(error.message)) {
 				authTokenRef.current = null;
@@ -441,31 +459,31 @@ export function useWorkerWebSocketSession() {
 				pendingAgentRequestRef.current = false;
 			}
 			setSocketStatus("error");
-		});
+		};
 
-		socket.io.on("reconnect_attempt", () => {
+		const onReconnectAttempt = () => {
 			setSocketStatus("connecting");
-		});
+		};
 
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.serviceLogs, (payload) => {
+		const onServiceLogs = (payload: unknown) => {
 			dispatchWorkerState({
 				type: "set_service_logs",
 				logs: (payload as { logs?: ServiceLogEntry[] } | undefined)?.logs ?? [],
 			});
-		});
+		};
 
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.deployLog, (payload) => {
-			deployLogs(payload as { id?: string; msg?: string; time?: string });
-		});
+		const onDeployLog = (payload: unknown) => {
+			deployLogsRef.current(payload as { id?: string; msg?: string; time?: string });
+		};
 
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.deploySnapshot, (payload) => {
+		const onDeploySnapshot = (payload: unknown) => {
 			dispatchWorkerState({
 				type: "set_deploy_snapshot",
 				snapshot: payload as DeploySnapshotPayload,
 			});
-		});
+		};
 
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.deployComplete, (payload) => {
+		const onDeployComplete = (payload: unknown) => {
 			const completePayload = payload as DeployCompleteWsPayload;
 			isDeployingRef.current = false;
 			dispatchWorkerState({
@@ -475,15 +493,15 @@ export function useWorkerWebSocketSession() {
 					receivedAt: Date.now(),
 				},
 			});
-			subscribeWorkspace(socket);
-		});
+			subscribeWorkspaceRefFn.current(socket);
+		};
 
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged, (payload) => {
+		const onDeploymentStatusChanged = (payload: unknown) => {
 			const update = payload as DeploymentStatusChangedPayload;
-			if (update.repoName === repoName) {
+			if (update.repoName === repoNameRef.current) {
 				void useAppData.getState().fetchRepoDeployments(update.repoName);
 			}
-		});
+		};
 
 		const handleAgentEvent = (kind: AgentEventKind) => (payload: unknown) => {
 			const typedPayload = (payload as AgentSocketMessagePayload | undefined) ?? {
@@ -514,6 +532,24 @@ export function useWorkerWebSocketSession() {
 			});
 		};
 
+		const onWorkerError = (payload: unknown) => {
+			const message = (payload as { error?: string } | undefined)?.error ?? "Request failed";
+			dispatchWorkerState({
+				type: "set_error",
+				error: message,
+				...(isDeployingRef.current ? { status: "error" as const } : {}),
+			});
+		};
+
+		socket.on("connect", onConnect);
+		socket.on("disconnect", onDisconnect);
+		socket.on("connect_error", onConnectError);
+		socket.io.on("reconnect_attempt", onReconnectAttempt);
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.serviceLogs, onServiceLogs);
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.deployLog, onDeployLog);
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.deploySnapshot, onDeploySnapshot);
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.deployComplete, onDeployComplete);
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.deploymentStatusChanged, onDeploymentStatusChanged);
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentAccepted, handleAgentEvent("accepted"));
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentStatus, handleAgentEvent("status"));
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentToolStarted, handleAgentEvent("tool_started"));
@@ -521,37 +557,25 @@ export function useWorkerWebSocketSession() {
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentMessage, handleAgentEvent("message"));
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentComplete, handleAgentEvent("complete"));
 		socket.on(WORKER_SOCKET_SERVER_EVENTS.agentError, handleAgentEvent("error"));
-
-		socket.on(WORKER_SOCKET_SERVER_EVENTS.workerError, (payload) => {
-			const message = (payload as { error?: string } | undefined)?.error ?? "Request failed";
-			dispatchWorkerState({
-				type: "set_error",
-				error: message,
-				...(isDeployingRef.current ? { status: "error" as const } : {}),
-			});
-		});
+		socket.on(WORKER_SOCKET_SERVER_EVENTS.workerError, onWorkerError);
 
 		socket.connect();
-	}, [deployLogs, getWebSocketAuthToken, repoName, setSocketStatus, subscribeWorkspace]);
 
-	useEffect(() => {
-		if (!connectionEnabled) {
-			disconnectSocket();
-			return;
-		}
-
-		createSocket();
-	}, [connectionEnabled, createSocket, disconnectSocket]);
+		return () => {
+			socket.removeAllListeners();
+			socket.io.removeAllListeners();
+			socket.disconnect();
+			if (socketRef.current === socket) {
+				socketRef.current = null;
+			}
+			subscribedWorkspaceRef.current = null;
+			setSocketStatus("closed");
+		};
+	}, [connectionEnabled, disconnectSocket]);
 
 	useEffect(() => {
 		subscribeWorkspace(socketRef.current);
 	}, [repoName, serviceName, subscribeWorkspace]);
-
-	useEffect(() => {
-		return () => {
-			disconnectSocket();
-		};
-	}, [disconnectSocket]);
 
 	const runAgent = useCallback((conversationId: string, message: string) => {
 		const trimmedConversationId = conversationId.trim();

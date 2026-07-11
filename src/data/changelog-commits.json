@@ -1,8 +1,56 @@
 {
-	"generatedAt": "2026-07-05T23:40:57.969Z",
+	"generatedAt": "2026-07-11T22:12:47.507Z",
 	"rawCommitCount": 100,
-	"commitCount": 65,
+	"commitCount": 68,
 	"commits": [
+		{
+			"hash": "42d88079d4dc3b0231b3f2431d496c1585468c36",
+			"shortHash": "42d8807",
+			"date": "2026-07-11",
+			"author": "anirudh-makuluri",
+			"subject": "Apply sepia parchment theme and update changelog release notes.",
+			"prNumber": null
+		},
+		{
+			"hash": "ad8fe1f1761790ed00c5d6fe1c377b5e1cc2e8e7",
+			"shortHash": "ad8fe1f",
+			"date": "2026-07-11",
+			"author": "anirudh-makuluri",
+			"subject": "Unify app-wide brand on amber accent and shared typography.",
+			"prNumber": null
+		},
+		{
+			"hash": "3f00358d488aa81aeca62b86609448281bdf9c24",
+			"shortHash": "3f00358",
+			"date": "2026-07-11",
+			"author": "anirudh-makuluri",
+			"subject": "Add cursor-following spotlight glow to landing stat cards.",
+			"prNumber": null
+		},
+		{
+			"hash": "acbda423e0fbee6fafc6f913bd482da1b7713765",
+			"shortHash": "acbda42",
+			"date": "2026-07-11",
+			"author": "anirudh-makuluri",
+			"subject": "Add landing V2 with interactive deploy demo and blueprint hero.",
+			"prNumber": null
+		},
+		{
+			"hash": "475cd9419ba9a89c16c80bdd387ecf5de0096829",
+			"shortHash": "475cd94",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Feature: Add longest typed word calculation for improved typing animation in landing experience",
+			"prNumber": null
+		},
+		{
+			"hash": "4cf6766895a4509682cc05ff75e196dd83079e5a",
+			"shortHash": "4cf6766",
+			"date": "2026-07-05",
+			"author": "amakulur",
+			"subject": "Updated docs to reflect the new deployment pipeline",
+			"prNumber": null
+		},
 		{
 			"hash": "7bf6b1570580ed5d776c90934b7c7d32a83d1998",
 			"shortHash": "7bf6b15",
@@ -480,7 +528,7 @@
 			"shortHash": "51c6bbe",
 			"date": "2026-06-12",
 			"author": "amakulur",
-			"subject": "Fix lint (+1 related commits)",
+			"subject": "Fix lint",
 			"prNumber": null
 		},
 		{
@@ -497,30 +545,6 @@
 			"date": "2026-06-12",
 			"author": "amakulur",
 			"subject": "Created admin-panel",
-			"prNumber": null
-		},
-		{
-			"hash": "56e04fd5987752dd38f75096fc0879cbb2c33271",
-			"shortHash": "56e04fd",
-			"date": "2026-06-08",
-			"author": "amakulur",
-			"subject": "Improve scan",
-			"prNumber": null
-		},
-		{
-			"hash": "80dbe7a0dd07de4542026f3434fb08a88af804f1",
-			"shortHash": "80dbe7a",
-			"date": "2026-06-08",
-			"author": "amakulur",
-			"subject": "Update readme",
-			"prNumber": null
-		},
-		{
-			"hash": "eb9c3630d1e1a058b8cf720b6bdbeeffe53891ce",
-			"shortHash": "eb9c363",
-			"date": "2026-06-07",
-			"author": "amakulur",
-			"subject": "Fix lint issue",
 			"prNumber": null
 		}
 	]

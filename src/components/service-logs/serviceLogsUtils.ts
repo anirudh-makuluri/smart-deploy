@@ -1,6 +1,6 @@
 import type { KeywordRule, LogEntry, LogFilter } from "@/components/service-logs/types";
 
-export const LOG_FILTER_STORAGE_KEY = "sd-log-keyword-filters";
+export const LOG_FILTER_STORAGE_KEY = "sd-log-keyword-filters:v1";
 export const PAGE_SIZE = 50;
 
 export function getLogType(message: string): "ERROR" | "WARN" | "SUCCESS" | "INFO" {

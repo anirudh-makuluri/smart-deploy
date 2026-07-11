@@ -1,10 +1,30 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Bricolage_Grotesque, Hanken_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import { AccentSync } from "@/components/AccentSync";
 import { Toaster } from "@/components/ui/sonner"
 import { Analytics } from '@vercel/analytics/next';
+
+const fontDisplay = Bricolage_Grotesque({
+	subsets: ["latin"],
+	variable: "--font-display",
+	display: "swap",
+});
+
+const fontBody = Hanken_Grotesk({
+	subsets: ["latin"],
+	variable: "--font-body",
+	display: "swap",
+});
+
+const fontMono = IBM_Plex_Mono({
+	subsets: ["latin"],
+	weight: ["400", "500", "600"],
+	variable: "--font-mono-face",
+	display: "swap",
+});
 
 const organizationJsonLd = {
 	"@context": "https://schema.org",
@@ -55,9 +75,9 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html lang="en" className="dark" data-accent="blue">
+		<html lang="en" className="dark" data-accent="amber">
 			<body
-				className="landing-bg text-foreground antialiased"
+				className={`landing-bg text-foreground antialiased ${fontDisplay.variable} ${fontBody.variable} ${fontMono.variable}`}
 				suppressHydrationWarning
 			>
 				<script type="application/ld+json">{jsonLdString(organizationJsonLd)}</script>

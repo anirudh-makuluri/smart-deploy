@@ -1,15 +1,15 @@
 {
-	"updatedAt": "2026-07-05",
+	"updatedAt": "2026-07-11",
 	"recentHighlights": [
 		{
-			"title": "Queued deploy execution",
-			"description": "Docs now explain SQS FIFO ordering, Lambda launch, and isolated ECS deployment runners — from README through the pipeline guide.",
-			"docHref": "/docs/deployment-pipeline"
+			"title": "Landing page revamp",
+			"description": "Interactive deploy demo on the homepage — run analysis, preview the blueprint, and approve a mock deploy without leaving the hero.",
+			"docHref": null
 		},
 		{
-			"title": "Status and run vocabulary",
-			"description": "Deployment Status Reference covers run lifecycle (queued → deploying → completed), failure stages, and structured codes.",
-			"docHref": "/docs/deployment-status-reference"
+			"title": "Sepia parchment theme",
+			"description": "App-wide amber accent on a warm parchment dark palette, with Hanken Grotesk and Bricolage Grotesque typography across marketing and product UI.",
+			"docHref": null
 		},
 		{
 			"title": "Deployment Agent",
@@ -17,12 +17,40 @@
 			"docHref": "/docs/deployment-agent"
 		},
 		{
-			"title": "Production debugging runbooks",
-			"description": "Step-by-step guides for build failures, verify timeouts, and domain issues — plus a searchable error catalog.",
-			"docHref": "/docs/debugging-deployments"
+			"title": "Queued deploy execution",
+			"description": "Docs explain SQS FIFO ordering, Lambda launch, and isolated ECS deployment runners — from README through the pipeline guide.",
+			"docHref": "/docs/deployment-pipeline"
 		}
 	],
 	"releases": [
+		{
+			"date": "2026-07-11",
+			"label": "July 2026",
+			"title": "Landing revamp and sepia brand theme",
+			"summary": "A blueprint-first marketing homepage and a unified warm amber palette across the public site and signed-in app.",
+			"highlights": [
+				{
+					"title": "Interactive landing demo",
+					"description": "Hero workspace mock walks through setup, scan, blueprint preview, and deploy with a shareable ?repo= URL and crawlable sync for SEO.",
+					"docHref": null
+				},
+				{
+					"title": "Blueprint hero backdrop",
+					"description": "Drafting grid, amber survey line, and phase-reactive background tied to the demo stepper.",
+					"docHref": null
+				},
+				{
+					"title": "Global amber and typography",
+					"description": "Safety-amber accent, sepia parchment surfaces (#1a1712 ground, #26221c cards), and shared Hanken Grotesk / Bricolage Grotesque / IBM Plex Mono fonts.",
+					"docHref": null
+				},
+				{
+					"title": "Open source and FAQ",
+					"description": "GitHub star CTA with live count, public deploy stats, and an FAQ section below the fold.",
+					"docHref": null
+				}
+			]
+		},
 		{
 			"date": "2026-07-05",
 			"label": "July 2026",

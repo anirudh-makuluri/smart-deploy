@@ -43,7 +43,7 @@ function PreviewNeedsAnalysis({ onStartScan }: { onStartScan?: () => void }) {
 						<span className="text-xs font-medium">Deploy units</span>
 					</div>
 					<div className="flex flex-col items-center gap-2">
-						<Layers className="size-5 text-blue-500" />
+						<Layers className="size-5 text-primary" />
 						<span className="text-xs font-medium">Build plan</span>
 					</div>
 					<div className="flex flex-col items-center gap-2">

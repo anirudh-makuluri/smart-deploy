@@ -27,9 +27,9 @@ function parseSecretString(secretString: string): Record<string, string> {
 			return {};
 		}
 		return Object.fromEntries(
-			Object.entries(parsed as Record<string, unknown>)
-				.filter(([key, value]) => key.trim() && value != null)
-				.map(([key, value]) => [key, String(value)])
+			Object.entries(parsed as Record<string, unknown>).flatMap(([key, value]) =>
+				key.trim() && value != null ? [[key, String(value)] as const] : []
+			)
 		);
 	} catch {
 		return parseDotenvSecret(secretString);

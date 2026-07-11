@@ -828,9 +828,13 @@ function AgentEvalRunCard({
 							<input type="hidden" name="conversation_id" value={run.conversationId} />
 
 							<div className="space-y-1">
-								<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Intent</div>
+								<label htmlFor="eval-intent" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+									Intent
+								</label>
 								<select
+									id="eval-intent"
 									name="intent"
+									aria-label="Intent"
 									defaultValue={review?.intent ?? review?.judgeIntent ?? run.autoIntent}
 									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
 								>
@@ -843,9 +847,13 @@ function AgentEvalRunCard({
 							</div>
 
 							<div className="space-y-1">
-								<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Helpfulness</div>
+								<label htmlFor="eval-helpfulness" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+									Helpfulness
+								</label>
 								<select
+									id="eval-helpfulness"
 									name="helpfulness"
+									aria-label="Helpfulness"
 									defaultValue={review?.helpfulness ?? review?.judgeHelpfulness ?? ""}
 									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
 								>
@@ -859,9 +867,16 @@ function AgentEvalRunCard({
 							</div>
 
 							<div className="space-y-1">
-								<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Primary failure mode</div>
+								<label
+									htmlFor="eval-primary-failure-mode"
+									className="text-[11px] uppercase tracking-wide text-muted-foreground"
+								>
+									Primary failure mode
+								</label>
 								<select
+									id="eval-primary-failure-mode"
 									name="primary_failure_mode"
+									aria-label="Primary failure mode"
 									defaultValue={review?.primaryFailureMode ?? review?.judgePrimaryFailureMode ?? run.suggestedFailureMode ?? ""}
 									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
 								>

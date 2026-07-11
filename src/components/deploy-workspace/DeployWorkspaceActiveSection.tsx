@@ -206,7 +206,7 @@ export default function DeployWorkspaceActiveSection({
 					</div>
 					<div className="grid grid-cols-2 gap-4 pt-8 border-t border-border/50">
 						<div className="flex flex-col items-center gap-2">
-							<Layers className="size-5 text-blue-500" />
+							<Layers className="size-5 text-primary" />
 							<span className="text-xs font-medium">Auto-Layering</span>
 						</div>
 						<div className="flex flex-col items-center gap-2">

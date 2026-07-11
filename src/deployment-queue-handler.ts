@@ -18,19 +18,20 @@ type SqsBatchResponse = {
 
 export async function handler(event: SqsEvent): Promise<SqsBatchResponse> {
 	const records = Array.isArray(event.Records) ? event.Records : [];
-	const batchItemFailures: Array<{ itemIdentifier: string }> = [];
-
-	for (const record of records) {
-		const messageId = String(record.messageId ?? "").trim();
-		try {
-			await processDeploymentQueueMessage(record.body);
-		} catch (error) {
-			console.error("[deployment-queue-handler] failed to process record:", error);
-			if (messageId) {
-				batchItemFailures.push({ itemIdentifier: messageId });
+	const outcomes = await Promise.all(
+		records.map(async (record) => {
+			const messageId = String(record.messageId ?? "").trim();
+			try {
+				await processDeploymentQueueMessage(record.body);
+				return null;
+			} catch (error) {
+				console.error("[deployment-queue-handler] failed to process record:", error);
+				return messageId ? { itemIdentifier: messageId } : null;
 			}
-		}
-	}
+		})
+	);
 
-	return { batchItemFailures };
+	return {
+		batchItemFailures: outcomes.filter((failure): failure is { itemIdentifier: string } => failure !== null),
+	};
 }
