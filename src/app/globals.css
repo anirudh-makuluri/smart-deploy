@@ -52,74 +52,74 @@ button {
 
 :root {
   --radius: 0.65rem;
-  --background: #f7f4ed;
-  --foreground: #1a1204;
-  --card: #ffffff;
-  --card-foreground: #1a1204;
-  --popover: #ffffff;
-  --popover-foreground: #1a1204;
+  --background: #f3ede3;
+  --foreground: #1a150c;
+  --card: #faf6ee;
+  --card-foreground: #1a150c;
+  --popover: #faf6ee;
+  --popover-foreground: #1a150c;
   --primary: #f5a524;
   --primary-foreground: #1a1204;
-  --secondary: #ede8dc;
+  --secondary: #e8e0d4;
   --secondary-foreground: #2a2214;
-  --muted: #ede8dc;
-  --muted-foreground: #6b6560;
+  --muted: #ebe4d8;
+  --muted-foreground: #6b6358;
   --accent: #f5a524;
   --accent-foreground: #1a1204;
   --destructive: #ef4444;
-  --border: #e5dfd0;
-  --input: #e5dfd0;
+  --border: #ddd5c8;
+  --input: #ddd5c8;
   --ring: #f5a524;
   --chart-1: #f5a524;
   --chart-2: #d4880f;
   --chart-3: #fbbf24;
   --chart-4: #eab308;
   --chart-5: #fde68a;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1a1204;
+  --sidebar: #faf6ee;
+  --sidebar-foreground: #1a150c;
   --sidebar-primary: #f5a524;
   --sidebar-primary-foreground: #1a1204;
-  --sidebar-accent: #ede8dc;
+  --sidebar-accent: #e8e0d4;
   --sidebar-accent-foreground: #2a2214;
-  --sidebar-border: #e5dfd0;
+  --sidebar-border: #ddd5c8;
   --sidebar-ring: #f5a524;
 }
 
 .dark {
-  --background: #0a0c10;
-  --foreground: #ece7db;
-  --card: #0f1319;
-  --card-foreground: #ece7db;
-  --popover: #0f1319;
-  --popover-foreground: #ece7db;
+  --background: #1a1712;
+  --foreground: #e8e0d0;
+  --card: #26221c;
+  --card-foreground: #e8e0d0;
+  --popover: #26221c;
+  --popover-foreground: #e8e0d0;
   --primary: #f5a524;
   --primary-foreground: #1a1204;
-  --secondary: #141922;
-  --secondary-foreground: #d8d2c4;
-  --muted: #121722;
-  --muted-foreground: #8b9186;
+  --secondary: #2a261f;
+  --secondary-foreground: #d4ccc0;
+  --muted: #1e1b16;
+  --muted-foreground: #9a9285;
   --accent: #f5a524;
   --accent-foreground: #1a1204;
   --destructive: #ef4444;
-  --border: #232a34;
-  --input: #232a34;
+  --border: #3a352c;
+  --input: #3a352c;
   --ring: #f5a524;
   --chart-1: #f5a524;
   --chart-2: #d4880f;
   --chart-3: #fbbf24;
   --chart-4: #eab308;
   --chart-5: #fde68a;
-  --sidebar: #0f1319;
-  --sidebar-foreground: #ece7db;
+  --sidebar: #26221c;
+  --sidebar-foreground: #e8e0d0;
   --sidebar-primary: #f5a524;
   --sidebar-primary-foreground: #1a1204;
-  --sidebar-accent: #141922;
-  --sidebar-accent-foreground: #d8d2c4;
-  --sidebar-border: #232a34;
+  --sidebar-accent: #2a261f;
+  --sidebar-accent-foreground: #d4ccc0;
+  --sidebar-border: #3a352c;
   --sidebar-ring: #f5a524;
 }
 
-/* Amber accent — default brand palette (safety-amber on warm ink ground). */
+/* Amber accent — sepia parchment ground with safety-amber highlights. */
 :root[data-accent="amber"] {
   --primary: #f5a524;
   --primary-foreground: #1a1204;
@@ -137,15 +137,15 @@ button {
 }
 
 .dark[data-accent="amber"] {
-  --background: #0a0c10;
-  --card: #0f1319;
-  --popover: #0f1319;
-  --secondary: #141922;
-  --muted: #121722;
-  --border: #232a34;
-  --input: #232a34;
-  --sidebar: #0f1319;
-  --sidebar-border: #232a34;
+  --background: #1a1712;
+  --card: #26221c;
+  --popover: #26221c;
+  --secondary: #2a261f;
+  --muted: #1e1b16;
+  --border: #3a352c;
+  --input: #3a352c;
+  --sidebar: #26221c;
+  --sidebar-border: #3a352c;
   --primary: #f5a524;
   --primary-foreground: #1a1204;
   --accent: #f5a524;
@@ -287,27 +287,27 @@ button {
 
 /* ============================================================
    Technical Blueprint — aesthetic scoped to the marketing landing.
-   Ink ground, warm drafting off-white, safety-amber accent,
+   Sepia parchment ground, drafting off-white type, safety-amber accent,
    hairline rules and drafting marks instead of glass/glow.
    ============================================================ */
 .landing-blueprint {
   --radius: 0.3rem;
-  --background: #0a0c10;
-  --foreground: #ece7db;
-  --card: #0f1319;
-  --card-foreground: #ece7db;
-  --popover: #0f1319;
-  --popover-foreground: #ece7db;
+  --background: #1a1712;
+  --foreground: #e8e0d0;
+  --card: #26221c;
+  --card-foreground: #e8e0d0;
+  --popover: #26221c;
+  --popover-foreground: #e8e0d0;
   --primary: #f5a524;
   --primary-foreground: #1a1204;
-  --secondary: #141922;
-  --secondary-foreground: #d8d2c4;
-  --muted: #121722;
-  --muted-foreground: #8b9186;
+  --secondary: #2a261f;
+  --secondary-foreground: #d4ccc0;
+  --muted: #1e1b16;
+  --muted-foreground: #9a9285;
   --accent: #f5a524;
   --accent-foreground: #1a1204;
-  --border: #232a34;
-  --input: #232a34;
+  --border: #3a352c;
+  --input: #3a352c;
   --ring: #f5a524;
 
   --font-sans: var(--font-body);
