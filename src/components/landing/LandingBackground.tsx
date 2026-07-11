@@ -40,7 +40,7 @@ export function LandingBackground() {
 		const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
 		const rootStyles = getComputedStyle(document.documentElement);
-		const primary = hexToRgb(rootStyles.getPropertyValue("--primary") || "#3b82f6");
+		const primary = hexToRgb(rootStyles.getPropertyValue("--primary") || "#f5a524");
 		const cyan: RGB = [56, 189, 248];
 
 		let width = 0;

@@ -75,7 +75,7 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html lang="en" className="dark" data-accent="blue">
+		<html lang="en" className="dark" data-accent="amber">
 			<body
 				className={`landing-bg text-foreground antialiased ${fontDisplay.variable} ${fontBody.variable} ${fontMono.variable}`}
 				suppressHydrationWarning

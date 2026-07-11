@@ -14,8 +14,8 @@ type LandingHeroCanvasProps = {
 };
 
 function readPrimaryColor(): string {
-	if (typeof window === "undefined") return "#3b82f6";
-	return getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() || "#3b82f6";
+	if (typeof window === "undefined") return "#f5a524";
+	return getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() || "#f5a524";
 }
 
 const vertexShader = /* glsl */ `
