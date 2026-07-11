@@ -187,7 +187,12 @@ export function ServiceLogsToolbar({
 									}`}
 								>
 									{rule.mode === "exclude" ? "−" : "+"} {rule.keyword}
-									<button type="button" className="hover:opacity-70" onClick={() => onRemoveKeywordRule(i)}>
+									<button
+										type="button"
+										aria-label={`Remove keyword filter ${rule.keyword}`}
+										className="hover:opacity-70"
+										onClick={() => onRemoveKeywordRule(i)}
+									>
 										<X className="size-3" />
 									</button>
 								</span>

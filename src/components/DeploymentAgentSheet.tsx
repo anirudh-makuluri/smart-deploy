@@ -51,7 +51,11 @@ function connectionMeta(status: string): ConnectionMeta {
 }
 
 function formatTimestamp(createdAt: number): string {
-	return new Date(createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+	return new Date(createdAt).toLocaleTimeString("en-US", {
+		hour: "2-digit",
+		minute: "2-digit",
+		timeZone: "UTC",
+	});
 }
 
 const markdownComponents = {

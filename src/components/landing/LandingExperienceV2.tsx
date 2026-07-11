@@ -13,7 +13,7 @@ import { PublicPageFooterContent } from "@/components/public/PublicPageFooterCon
 import { Button } from "@/components/ui/button";
 import { formatLandingCount } from "@/lib/landing/landingCopy";
 import { GITHUB_REPO_URL } from "@/lib/metrics/githubStars";
-import type { DemoPhase } from "@/lib/landing/interactiveDemo";
+import type { WorkspacePhase } from "@/components/landing/InteractiveDeployDemo";
 import type { LandingPublicStats } from "@/lib/metrics/landingStats";
 
 type LandingExperienceV2Props = {
@@ -32,7 +32,7 @@ export function LandingExperienceV2({
 	const primaryHref = isSignedIn ? "/home" : "/auth";
 	const primaryCopy = isSignedIn ? "Open Dashboard" : "Deploy a repo";
 	const prefersReducedMotion = useReducedMotion();
-	const [backgroundPhase, setBackgroundPhase] = React.useState<DemoPhase>("idle");
+	const [phase, setPhase] = React.useState<WorkspacePhase>("setup");
 
 	const handleRepoChange = React.useCallback((slug: string) => {
 		if (typeof window === "undefined") return;
@@ -44,7 +44,7 @@ export function LandingExperienceV2({
 	return (
 		<LazyMotion features={domAnimation} strict>
 			<div className="landing-blueprint landing-bg min-h-svh overflow-x-hidden text-foreground">
-				<LandingBlueprintBackdrop phase={backgroundPhase} />
+				<LandingBlueprintBackdrop phase={phase} />
 				<div className="relative z-10 flex min-h-svh flex-col">
 					<header className="sticky top-0 z-50 border-b border-border/55 bg-background/70 backdrop-blur-xl">
 						<div className="mx-auto flex max-w-7xl min-w-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
@@ -104,7 +104,8 @@ export function LandingExperienceV2({
 										primaryCopy={primaryCopy}
 										publicStats={publicStats}
 										prefersReducedMotion={prefersReducedMotion}
-										onPhaseChange={setBackgroundPhase}
+										phase={phase}
+										onPhaseChange={setPhase}
 										initialRepoSlug={initialRepoSlug}
 										onRepoChange={handleRepoChange}
 									/>

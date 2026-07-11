@@ -135,15 +135,17 @@ export function DeploymentHistoryEntryItem({
 												<span className="text-muted-foreground font-normal ml-1">
 													{" · "}
 													{step.endedAt
-														? new Date(step.endedAt).toLocaleTimeString(undefined, {
+														? new Date(step.endedAt).toLocaleTimeString("en-US", {
 																hour: "2-digit",
 																minute: "2-digit",
 																second: "2-digit",
+																timeZone: "UTC",
 															})
-														: new Date(step.startedAt!).toLocaleTimeString(undefined, {
+														: new Date(step.startedAt!).toLocaleTimeString("en-US", {
 																hour: "2-digit",
 																minute: "2-digit",
 																second: "2-digit",
+																timeZone: "UTC",
 															})}
 												</span>
 											)}

@@ -211,7 +211,8 @@ async function upsertTableRows(
 		});
 		return `(${placeholders.join(", ")})`;
 	});
-	const updateColumns = keys.filter((key) => !conflictColumns.includes(key));
+	const conflictColumnSet = new Set(conflictColumns);
+	const updateColumns = keys.filter((key) => !conflictColumnSet.has(key));
 	const updateClause = updateColumns
 		.map((key) => `${quoteSqlIdentifier(key)} = excluded.${quoteSqlIdentifier(key)}`)
 		.join(", ");

@@ -30,18 +30,19 @@ import { BLUEPRINT_STAGE_COUNT, BLUEPRINT_STAGE_STEP_MS } from "@/lib/landing/bl
 import { useAnimatedNumber } from "@/lib/landing/useAnimatedNumber";
 import type { LandingPublicStats } from "@/lib/metrics/landingStats";
 
+export type WorkspacePhase = Exclude<DemoPhase, "idle">;
+
 type InteractiveDeployDemoProps = {
 	primaryHref: string;
 	primaryCopy: string;
 	publicStats: LandingPublicStats | null;
 	prefersReducedMotion: boolean | null;
-	onPhaseChange: (phase: DemoPhase) => void;
+	phase: WorkspacePhase;
+	onPhaseChange: (phase: WorkspacePhase) => void;
 	initialRepoSlug: string | null;
 	onRepoChange: (slug: string) => void;
 	compact: boolean;
 };
-
-type WorkspacePhase = Exclude<DemoPhase, "idle">;
 
 const PHASE_ORDER: ReadonlyArray<WorkspacePhase> = ["setup", "scan", "blueprint", "deploy", "complete"];
 
@@ -56,7 +57,6 @@ const PHASE_LABELS: Record<WorkspacePhase, string> = {
 const DEMO_LAYOUT = {
 	stage: { default: "h-[300px]" },
 	stat: { default: "mt-4 h-6" },
-	repoPicker: { default: "mt-5 h-8" },
 	actions: { default: "mt-5 h-11" },
 } as const;
 
@@ -68,21 +68,23 @@ function formatDeploymentStat(count: number): string {
 	return `${formatLandingCount(count)} deployments shipped through this flow so far`;
 }
 
-export function InteractiveDeployDemo({
-	primaryHref,
-	primaryCopy,
-	publicStats,
-	prefersReducedMotion,
+function useInteractiveDeployRuntime({
+	phase,
 	onPhaseChange,
+	prefersReducedMotion,
 	initialRepoSlug,
 	onRepoChange,
-	compact,
-}: InteractiveDeployDemoProps) {
+}: {
+	phase: WorkspacePhase;
+	onPhaseChange: (phase: WorkspacePhase) => void;
+	prefersReducedMotion: boolean | null;
+	initialRepoSlug: string | null;
+	onRepoChange: (slug: string) => void;
+}) {
 	const reducedMotion = Boolean(prefersReducedMotion);
 	const [repo, setRepo] = React.useState<DemoRepo>(() =>
 		initialRepoSlug ? buildDemoRepoFromSlug(initialRepoSlug) : DEMO_REPOS[0]
 	);
-	const [phase, setPhase] = React.useState<WorkspacePhase>("setup");
 	const [scanStarted, setScanStarted] = React.useState(false);
 	const [deployStarted, setDeployStarted] = React.useState(false);
 	const [deployProgress, setDeployProgress] = React.useState(0);
@@ -93,10 +95,6 @@ export function InteractiveDeployDemo({
 	const advanceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	const storyContext = React.useMemo(() => buildDemoStoryContext(repo), [repo]);
-
-	React.useEffect(() => {
-		onPhaseChange(phase);
-	}, [onPhaseChange, phase]);
 
 	const clearAdvanceTimer = React.useCallback(() => {
 		if (advanceTimerRef.current !== null) {
@@ -114,8 +112,8 @@ export function InteractiveDeployDemo({
 		ease: "linear",
 		onComplete: React.useCallback(() => {
 			clearAdvanceTimer();
-			advanceTimerRef.current = setTimeout(() => setPhase("blueprint"), reducedMotion ? 0 : 850);
-		}, [clearAdvanceTimer, reducedMotion]),
+			advanceTimerRef.current = setTimeout(() => onPhaseChange("blueprint"), reducedMotion ? 0 : 850);
+		}, [clearAdvanceTimer, onPhaseChange, reducedMotion]),
 	});
 
 	const blueprintResolved = useAnimatedNumber({
@@ -135,7 +133,7 @@ export function InteractiveDeployDemo({
 			const frame = requestAnimationFrame(() => {
 				setDeployProgress(100);
 				setDeployLineCount(DEPLOY_LOG_LINES.length);
-				setPhase("complete");
+				onPhaseChange("complete");
 				setDeployStarted(false);
 			});
 			return () => cancelAnimationFrame(frame);
@@ -150,7 +148,7 @@ export function InteractiveDeployDemo({
 			if (elapsed >= DEPLOY_ANIMATION_MS) {
 				setDeployProgress(100);
 				setDeployLineCount(DEPLOY_LOG_LINES.length);
-				setPhase("complete");
+				onPhaseChange("complete");
 				setDeployStarted(false);
 				deployStartRef.current = null;
 				deployFrameRef.current = null;
@@ -168,7 +166,7 @@ export function InteractiveDeployDemo({
 			deployFrameRef.current = null;
 			deployStartRef.current = null;
 		};
-	}, [phase, deployStarted, reducedMotion]);
+	}, [phase, deployStarted, onPhaseChange, reducedMotion]);
 
 	React.useEffect(() => clearAdvanceTimer, [clearAdvanceTimer]);
 
@@ -184,17 +182,17 @@ export function InteractiveDeployDemo({
 		(nextRepo: DemoRepo) => {
 			resetRuntime();
 			setRepo(nextRepo);
-			setPhase("setup");
+			onPhaseChange("setup");
 			onRepoChange(nextRepo.slug);
 		},
-		[onRepoChange, resetRuntime]
+		[onPhaseChange, onRepoChange, resetRuntime]
 	);
 
 	const runAnalysis = React.useCallback(() => {
 		resetRuntime();
 		setScanStarted(true);
-		setPhase("scan");
-	}, [resetRuntime]);
+		onPhaseChange("scan");
+	}, [onPhaseChange, resetRuntime]);
 
 	const approveDeploy = React.useCallback(() => {
 		clearAdvanceTimer();
@@ -202,13 +200,91 @@ export function InteractiveDeployDemo({
 		setDeployProgress(0);
 		setDeployLineCount(1);
 		setDeployStarted(true);
-		setPhase("deploy");
-	}, [clearAdvanceTimer]);
+		onPhaseChange("deploy");
+	}, [clearAdvanceTimer, onPhaseChange]);
 
 	const replay = React.useCallback(() => {
 		resetRuntime();
-		setPhase("setup");
-	}, [resetRuntime]);
+		onPhaseChange("setup");
+	}, [onPhaseChange, resetRuntime]);
+
+	return {
+		reducedMotion,
+		repo,
+		storyContext,
+		scanVisibleLines,
+		blueprintResolved,
+		deployProgress,
+		deployLineCount,
+		selectRepo,
+		runAnalysis,
+		approveDeploy,
+		replay,
+		goToBlueprint: React.useCallback(() => onPhaseChange("blueprint"), [onPhaseChange]),
+	};
+}
+
+function DemoPhaseStepper({ phase, compact }: { phase: WorkspacePhase; compact: boolean }) {
+	const currentIndex = PHASE_ORDER.indexOf(phase);
+	return (
+		<div className={compact ? "demo-stepper flex justify-center" : "mb-4 flex justify-center"}>
+			<div className={`flex flex-wrap justify-center ${compact ? "" : "gap-1.5"}`} aria-hidden>
+				{PHASE_ORDER.map((step, stepIndex) => {
+					const isActive = phase === step;
+					const isDone = stepIndex < currentIndex;
+					return (
+						<span
+							key={step}
+							className={`rounded-[3px] border font-mono uppercase tracking-[0.14em] transition-colors ${
+								compact ? "demo-stepper-pill" : "px-2 py-1 text-[10px]"
+							} ${
+								isActive
+									? "border-primary/50 bg-primary/12 text-primary"
+									: isDone
+										? "border-primary/25 bg-transparent text-primary/70"
+										: "border-border bg-transparent text-muted-foreground/70"
+							}`}
+						>
+							{PHASE_LABELS[step]}
+						</span>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+export function InteractiveDeployDemo({
+	primaryHref,
+	primaryCopy,
+	publicStats,
+	prefersReducedMotion,
+	phase,
+	onPhaseChange,
+	initialRepoSlug,
+	onRepoChange,
+	compact,
+}: InteractiveDeployDemoProps) {
+	const {
+		reducedMotion,
+		repo,
+		storyContext,
+		scanVisibleLines,
+		blueprintResolved,
+		deployProgress,
+		deployLineCount,
+		selectRepo,
+		runAnalysis,
+		approveDeploy,
+		replay,
+		goToBlueprint,
+	} = useInteractiveDeployRuntime({
+		phase,
+		onPhaseChange,
+		prefersReducedMotion,
+		initialRepoSlug,
+		onRepoChange,
+	});
 
 	const handleKeyDown = React.useCallback(
 		(event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -239,7 +315,6 @@ export function InteractiveDeployDemo({
 			? formatDeploymentStat(publicStats.totalDeployments)
 			: "Ship your next deployment with full blueprint visibility";
 
-	const currentIndex = PHASE_ORDER.indexOf(phase);
 	const scanComplete = scanVisibleLines >= SCAN_LOG_COUNT;
 	const stageHeight = compact ? "demo-stage" : DEMO_LAYOUT.stage.default;
 
@@ -252,30 +327,7 @@ export function InteractiveDeployDemo({
 			aria-label="Interactive deploy demo"
 			tabIndex={-1}
 		>
-			<div className={compact ? "demo-stepper flex justify-center" : "mb-4 flex justify-center"}>
-				<div className={`flex flex-wrap justify-center ${compact ? "" : "gap-1.5"}`} aria-hidden>
-					{PHASE_ORDER.map((step, stepIndex) => {
-						const isActive = phase === step;
-						const isDone = stepIndex < currentIndex;
-						return (
-							<span
-								key={step}
-								className={`rounded-[3px] border font-mono uppercase tracking-[0.14em] transition-colors ${
-									compact ? "demo-stepper-pill" : "px-2 py-1 text-[10px]"
-								} ${
-									isActive
-										? "border-primary/50 bg-primary/12 text-primary"
-										: isDone
-											? "border-primary/25 bg-transparent text-primary/70"
-											: "border-border bg-transparent text-muted-foreground/70"
-								}`}
-							>
-								{PHASE_LABELS[step]}
-							</span>
-						);
-					})}
-				</div>
-			</div>
+			<DemoPhaseStepper phase={phase} compact={compact} />
 
 			<div
 				className={`landing-panel landing-shell bp-frame w-full ${compact ? "demo-panel-pad" : "p-4 sm:p-5"}`}
@@ -384,7 +436,7 @@ export function InteractiveDeployDemo({
 							<Button
 								size={compact ? "default" : "lg"}
 								variant="outline"
-								onClick={() => setPhase("blueprint")}
+								onClick={goToBlueprint}
 								data-testid="landing-v2-continue-scan"
 								className={compact ? "demo-btn shrink-0" : undefined}
 							>

@@ -410,6 +410,19 @@ function StructuredDataBlock({ block }: { block: AgentStructuredDataBlock }) {
 	}
 }
 
+function structuredDataBlockKey(block: AgentStructuredDataBlock): string {
+	switch (block.kind) {
+		case "deployment_list":
+			return "deployment_list";
+		case "deployment_details":
+			return `deployment_details:${block.deployment.repoName}:${block.deployment.serviceName}`;
+		case "runtime_health":
+			return `runtime_health:${block.repoName}:${block.serviceName}`;
+		case "deployment_history":
+			return `deployment_history:${block.repoName}:${block.serviceName}`;
+	}
+}
+
 export function AgentStructuredDataBlocks({ data }: AgentStructuredDataBlocksProps) {
 	if (data.blocks.length === 0) {
 		return null;
@@ -417,8 +430,8 @@ export function AgentStructuredDataBlocks({ data }: AgentStructuredDataBlocksPro
 
 	return (
 		<div className="min-w-0 w-full max-w-full space-y-3">
-			{data.blocks.map((block, index) => (
-				<StructuredDataBlock key={`${block.kind}-${index}`} block={block} />
+			{data.blocks.map((block) => (
+				<StructuredDataBlock key={structuredDataBlockKey(block)} block={block} />
 			))}
 		</div>
 	);

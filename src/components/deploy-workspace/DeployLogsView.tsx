@@ -219,7 +219,13 @@ export default function DeployLogsView({
 								</div>
 								<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
 									<Calendar className="size-3.5 text-primary" />
-									<span>{new Date(deployingCommitInfo.date).toLocaleTimeString()}</span>
+									<span>
+										{new Date(deployingCommitInfo.date).toLocaleTimeString("en-US", {
+											hour: "2-digit",
+											minute: "2-digit",
+											timeZone: "UTC",
+										})}
+									</span>
 								</div>
 							</div>
 						)}

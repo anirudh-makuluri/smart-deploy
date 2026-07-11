@@ -1722,9 +1722,11 @@ export async function ensureHostRule(
 	}
 
 	const existingRule = rules.find((rule) =>
-		(rule.Conditions || []).some((cond) =>
-			cond.Field === "host-header" && (cond.HostHeaderConfig?.Values || []).includes(hostname)
-		)
+		(rule.Conditions || []).some((cond) => {
+			if (cond.Field !== "host-header") return false;
+			const hostValues = new Set(cond.HostHeaderConfig?.Values || []);
+			return hostValues.has(hostname);
+		})
 	);
 	if (existingRule?.RuleArn) {
 		const currentTargetGroup = (existingRule.Actions || []).find((a) => a.Type === "forward")?.TargetGroupArn;
@@ -1807,9 +1809,11 @@ export async function deleteHostRule(
 		// Find the rule matching the hostname
 		const ruleToDelete = rules.find((rule) =>
 			!rule.IsDefault && rule.Priority !== "default" &&
-			(rule.Conditions || []).some((cond) =>
-				cond.Field === "host-header" && (cond.HostHeaderConfig?.Values || []).includes(hostname)
-			)
+			(rule.Conditions || []).some((cond) => {
+				if (cond.Field !== "host-header") return false;
+				const hostValues = new Set(cond.HostHeaderConfig?.Values || []);
+				return hostValues.has(hostname);
+			})
 		);
 
 		if (!ruleToDelete?.RuleArn) {
