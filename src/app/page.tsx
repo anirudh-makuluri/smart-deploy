@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { LandingExperience } from "@/components/landing/LandingExperience";
+import { LandingCrawlableContent } from "@/components/landing/LandingCrawlableContent";
+import { LandingExperienceV2 } from "@/components/landing/LandingExperienceV2";
+import { LANDING_DESCRIPTION, LANDING_WORKFLOW_STEPS } from "@/lib/landing/landingCopy";
 import { getLandingPublicStats } from "@/lib/metrics/landingStats";
+import { getGitHubStarCount } from "@/lib/metrics/githubStars";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
-
-const LANDING_DESCRIPTION =
-	"Deploy without the black box. Smart Deploy scans your GitHub repo, generates a Railpack build plan (or uses your Dockerfile), previews the full deploy blueprint, then ships to AWS with live logs, runtime health, and a read-only AI deployment agent.";
 
 export const metadata: Metadata = {
 	title: "Deploy anything. Inspect everything.",
@@ -25,6 +25,19 @@ const webApplicationJsonLd = {
 	description: LANDING_DESCRIPTION,
 };
 
+const howToJsonLd = {
+	"@context": "https://schema.org",
+	"@type": "HowTo",
+	name: "Deploy with Smart Deploy",
+	description: LANDING_DESCRIPTION,
+	step: LANDING_WORKFLOW_STEPS.map((step, index) => ({
+		"@type": "HowToStep",
+		position: index + 1,
+		name: step.name,
+		text: step.text,
+	})),
+};
+
 function jsonLdString(value: unknown): string {
 	return JSON.stringify(value).replace(/[<>&]/g, (char) => {
 		if (char === "<") return "\\u003c";
@@ -33,7 +46,11 @@ function jsonLdString(value: unknown): string {
 	});
 }
 
-export default async function Home() {
+type HomeProps = {
+	searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function Home({ searchParams }: HomeProps) {
 	let session: Awaited<ReturnType<typeof auth.api.getSession>> | null = null;
 	try {
 		session = await auth.api.getSession({ headers: await headers() });
@@ -44,12 +61,26 @@ export default async function Home() {
 	if (session) {
 		redirect("/home");
 	}
-	const publicStats = await getLandingPublicStats();
+	const [publicStats, githubStars, resolvedSearchParams] = await Promise.all([
+		getLandingPublicStats(),
+		getGitHubStarCount(),
+		searchParams,
+	]);
+
+	const repoParam = resolvedSearchParams.repo;
+	const initialRepoSlug = typeof repoParam === "string" ? repoParam : null;
 
 	return (
 		<>
 			<script type="application/ld+json">{jsonLdString(webApplicationJsonLd)}</script>
-			<LandingExperience isSignedIn={Boolean(session)} publicStats={publicStats} />
+			<script type="application/ld+json">{jsonLdString(howToJsonLd)}</script>
+			<LandingCrawlableContent publicStats={publicStats} />
+			<LandingExperienceV2
+				isSignedIn={Boolean(session)}
+				publicStats={publicStats}
+				githubStars={githubStars}
+				initialRepoSlug={initialRepoSlug}
+			/>
 		</>
 	);
 }

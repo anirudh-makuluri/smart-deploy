@@ -231,6 +231,439 @@ button {
   }
 }
 
+/* ============================================================
+   Technical Blueprint — aesthetic scoped to the marketing landing.
+   Ink ground, warm drafting off-white, safety-amber accent,
+   hairline rules and drafting marks instead of glass/glow.
+   ============================================================ */
+.landing-blueprint {
+  --radius: 0.3rem;
+  --background: #0a0c10;
+  --foreground: #ece7db;
+  --card: #0f1319;
+  --card-foreground: #ece7db;
+  --popover: #0f1319;
+  --popover-foreground: #ece7db;
+  --primary: #f5a524;
+  --primary-foreground: #1a1204;
+  --secondary: #141922;
+  --secondary-foreground: #d8d2c4;
+  --muted: #121722;
+  --muted-foreground: #8b9186;
+  --accent: #f5a524;
+  --accent-foreground: #1a1204;
+  --border: #232a34;
+  --input: #232a34;
+  --ring: #f5a524;
+
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono-face);
+
+  color: var(--foreground);
+  background-color: var(--background);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv01";
+}
+
+.landing-blueprint h1,
+.landing-blueprint h2,
+.landing-blueprint h3,
+.landing-blueprint h4 {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+/* Flatten the templated glassmorphism/glow into precise, drafted surfaces. */
+.landing-blueprint .landing-panel {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  box-shadow: none;
+}
+.landing-blueprint .landing-shell {
+  backdrop-filter: none;
+}
+.landing-blueprint .landing-shell::after {
+  display: none;
+}
+.landing-blueprint .landing-halo,
+.landing-blueprint .landing-card-glow,
+.landing-blueprint .landing-stat-glow,
+.landing-blueprint .landing-hero-orb,
+.landing-blueprint .landing-hero-orb-ring,
+.landing-blueprint .landing-orbital-ring::after {
+  display: none;
+}
+/* Hero interactive demo — fluid width/height; inner content scales with viewport */
+.landing-demo-scale {
+  --demo-max-w: clamp(18rem, 92vw, 52rem);
+  --demo-stage-h: clamp(176px, calc((100svh - 17rem) * 0.72), 372px);
+  --demo-pad: clamp(0.5rem, 1.1vw, 1.25rem);
+  --demo-pad-inner: clamp(0.375rem, 0.85vw, 0.875rem);
+  --demo-gap-sm: clamp(0.25rem, 0.55vw, 0.5rem);
+  --demo-gap: clamp(0.375rem, 0.75vw, 0.625rem);
+  --demo-gap-lg: clamp(0.5rem, 1vw, 0.875rem);
+  --demo-text-body: clamp(0.625rem, 0.45rem + 0.55vw, 0.8125rem);
+  --demo-text-label: clamp(0.5625rem, 0.4rem + 0.45vw, 0.6875rem);
+  --demo-text-mono: clamp(0.5625rem, 0.38rem + 0.42vw, 0.6875rem);
+  --demo-text-title: clamp(0.6875rem, 0.5rem + 0.6vw, 0.875rem);
+  --demo-text-micro: clamp(0.5rem, 0.35rem + 0.35vw, 0.625rem);
+  --demo-slot-gap: clamp(0.375rem, 0.8vw, 0.75rem);
+  --demo-stat-h: clamp(1rem, 2.2vh, 1.5rem);
+  --demo-repo-h: clamp(1.375rem, 2.8vh, 2rem);
+  --demo-actions-h: clamp(1.875rem, 4vh, 2.75rem);
+  --demo-stepper-gap: clamp(0.25rem, 0.5vw, 0.375rem);
+  --demo-stepper-text: clamp(0.5rem, 0.35rem + 0.35vw, 0.625rem);
+  --demo-stepper-pad-x: clamp(0.375rem, 0.7vw, 0.5rem);
+  --demo-stepper-pad-y: clamp(0.1875rem, 0.35vw, 0.25rem);
+  --demo-btn-h: clamp(1.75rem, 3.5vh, 2.5rem);
+  --demo-btn-px: clamp(0.625rem, 1.2vw, 1rem);
+  --demo-btn-text: clamp(0.6875rem, 0.5rem + 0.35vw, 0.875rem);
+  --demo-icon-sm: clamp(0.75rem, 1.1vw, 1rem);
+  --demo-radius: clamp(0.375rem, 0.6vw, 0.75rem);
+  width: 100%;
+  max-width: var(--demo-max-w);
+}
+
+.landing-demo-scale .demo-stepper {
+  margin-bottom: var(--demo-gap);
+  gap: var(--demo-stepper-gap);
+}
+
+.landing-demo-scale .demo-stepper-pill {
+  font-size: var(--demo-stepper-text);
+  padding: var(--demo-stepper-pad-y) var(--demo-stepper-pad-x);
+}
+
+.landing-demo-scale .demo-panel-pad {
+  padding: var(--demo-pad);
+}
+
+.landing-demo-scale .demo-stage {
+  container-type: size;
+  container-name: demo-stage;
+  height: var(--demo-stage-h);
+  min-height: var(--demo-stage-h);
+  max-height: var(--demo-stage-h);
+}
+
+.landing-demo-scale .demo-stat-slot {
+  margin-top: var(--demo-slot-gap);
+  height: var(--demo-stat-h);
+}
+
+.landing-demo-scale .demo-repo-slot {
+  margin-top: var(--demo-slot-gap);
+  height: var(--demo-repo-h);
+}
+
+.landing-demo-scale .demo-actions-slot {
+  margin-top: var(--demo-slot-gap);
+  height: var(--demo-actions-h);
+}
+
+.landing-demo-scale .demo-text-body {
+  font-size: var(--demo-text-body);
+}
+
+.landing-demo-scale .demo-text-label {
+  font-size: var(--demo-text-label);
+  letter-spacing: 0.14em;
+}
+
+.landing-demo-scale .demo-text-mono {
+  font-size: var(--demo-text-mono);
+}
+
+.landing-demo-scale .demo-text-title {
+  font-size: var(--demo-text-title);
+}
+
+.landing-demo-scale .demo-text-micro {
+  font-size: var(--demo-text-micro);
+}
+
+.landing-demo-scale .demo-mock-root {
+  display: flex;
+  flex-direction: column;
+  padding: var(--demo-pad-inner);
+  gap: var(--demo-gap);
+}
+
+.landing-demo-scale .demo-mock-card {
+  padding: var(--demo-pad-inner);
+  border-radius: var(--demo-radius);
+}
+
+.landing-demo-scale .demo-mock-inset {
+  padding: clamp(0.375rem, 0.65vw, 0.625rem) clamp(0.5rem, 0.85vw, 0.625rem);
+}
+
+.landing-demo-scale .demo-setup-root {
+  gap: var(--demo-gap-sm);
+  --demo-setup-fields-gap: clamp(0.375rem, 0.85vw, 0.625rem);
+}
+
+.landing-demo-scale .demo-setup-fields {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--demo-setup-fields-gap);
+}
+
+.landing-demo-scale .demo-setup-grid {
+  display: grid;
+  gap: var(--demo-gap-sm);
+}
+
+/* ≥640px: Branch | Target | Framework, then Region | Domain */
+.landing-demo-scale .demo-setup-grid-primary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-demo-scale .demo-setup-grid-secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-demo-scale .demo-setup-secrets {
+  padding: clamp(0.25rem, 0.45vw, 0.4375rem);
+}
+
+.landing-demo-scale .demo-setup-secrets-inner {
+  display: grid;
+  align-items: center;
+  gap: var(--demo-gap-sm);
+  grid-template-columns: auto 1fr;
+}
+
+.landing-demo-scale .demo-setup-secrets-head {
+  display: flex;
+  align-items: center;
+  gap: var(--demo-gap-sm);
+}
+
+.landing-demo-scale .demo-setup-secrets-list {
+  display: grid;
+  min-width: 0;
+  gap: var(--demo-gap-sm);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.landing-demo-scale .demo-setup-secret-chip {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  border-radius: calc(var(--demo-radius) - 2px);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--background) 60%, transparent);
+  padding: clamp(0.1875rem, 0.32vw, 0.375rem) clamp(0.375rem, 0.55vw, 0.5rem);
+}
+
+/* 480–639px: 2-col primary, 2-col secondary, secrets stay in a row */
+@media (max-width: 639px) {
+  .landing-demo-scale .demo-setup-grid-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing-demo-scale .demo-setup-source-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* <480px: single column fields + stacked secrets */
+@media (max-width: 479px) {
+  .landing-demo-scale .demo-setup-grid-primary,
+  .landing-demo-scale .demo-setup-grid-secondary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing-demo-scale .demo-setup-source-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+
+  .landing-demo-scale .demo-setup-value {
+    min-height: clamp(1.125rem, 2.2vh, 1.5rem);
+  }
+
+  .landing-demo-scale .demo-setup-secrets-inner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing-demo-scale .demo-setup-secrets-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .landing-demo-scale .demo-repo-slot {
+    height: auto;
+    min-height: var(--demo-repo-h);
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+}
+
+@container demo-stage (max-height: 239px) {
+  .landing-demo-scale .demo-setup-secrets {
+    display: none;
+  }
+}
+
+.landing-demo-scale .demo-setup-source {
+  padding: clamp(0.3125rem, 0.58vw, 0.5625rem);
+}
+
+.landing-demo-scale .demo-setup-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: clamp(0.25rem, 0.45vw, 0.5rem);
+}
+
+.landing-demo-scale .demo-setup-value {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  margin-top: clamp(0.125rem, 0.2vw, 0.25rem);
+  min-height: clamp(1.375rem, 2.8vh, 1.875rem);
+  padding: clamp(0.25rem, 0.38vw, 0.4375rem) clamp(0.375rem, 0.55vw, 0.5rem);
+  border-radius: calc(var(--demo-radius) - 2px);
+}
+
+.landing-demo-scale .demo-btn {
+  height: var(--demo-btn-h);
+  min-height: var(--demo-btn-h);
+  padding-left: var(--demo-btn-px);
+  padding-right: var(--demo-btn-px);
+  font-size: var(--demo-btn-text);
+}
+
+.landing-demo-scale .demo-btn svg {
+  width: var(--demo-icon-sm);
+  height: var(--demo-icon-sm);
+}
+
+.landing-demo-scale .demo-repo-chip {
+  font-size: var(--demo-text-mono);
+  padding: clamp(0.125rem, 0.3vw, 0.25rem) clamp(0.375rem, 0.65vw, 0.5rem);
+}
+
+.landing-demo-scale .demo-blueprint-track {
+  display: flex;
+  align-items: stretch;
+  gap: clamp(0.125rem, 0.3vw, 0.25rem);
+  width: 100%;
+  overflow: hidden;
+}
+
+.landing-demo-scale .demo-blueprint-stage {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: var(--demo-pad-inner);
+}
+
+.landing-demo-scale .demo-blueprint-connector {
+  width: clamp(0.375rem, 1vw, 0.75rem);
+  flex-shrink: 0;
+}
+
+.landing-demo-scale .demo-scan-grid {
+  gap: var(--demo-gap);
+}
+
+.landing-demo-scale .demo-node-row {
+  padding: clamp(0.1875rem, 0.45vw, 0.375rem) clamp(0.375rem, 0.7vw, 0.625rem);
+}
+
+.landing-demo-scale .demo-node-icon {
+  width: var(--demo-icon-sm);
+  height: var(--demo-icon-sm);
+}
+
+.landing-blueprint .landing-stat-card {
+  border-radius: 0.4rem;
+  backdrop-filter: none;
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+}
+
+/* Drafting grid backdrop: fine + coarse rules across the full viewport. */
+.bp-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--background);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 7%, transparent) 1px, transparent 1px);
+  background-size: 27px 27px, 27px 27px, 135px 135px, 135px 135px;
+}
+
+/* A slow amber survey line that sweeps the hero grid. */
+.bp-scanline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--primary) 55%, transparent) 22%,
+    color-mix(in srgb, var(--primary) 55%, transparent) 78%,
+    transparent
+  );
+  transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 0.6;
+}
+
+/* Registration/corner ticks on framed panels — the drafting signature. */
+.bp-frame {
+  position: relative;
+}
+.bp-frame::before,
+.bp-frame::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  z-index: 20;
+  border-color: color-mix(in srgb, var(--primary) 72%, transparent);
+}
+.bp-frame::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+.bp-frame::after {
+  right: -1px;
+  bottom: -1px;
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+}
+
+/* Monospace technical label used for section kickers and annotations. */
+.bp-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.bp-rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
 .landing-bg {
   background-color: var(--background);
   overflow-x: hidden;

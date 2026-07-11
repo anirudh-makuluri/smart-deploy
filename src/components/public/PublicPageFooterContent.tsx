@@ -33,7 +33,7 @@ export type PublicPageFooterContentProps = {
  */
 export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContentProps) {
 	return (
-		<footer className="border-t border-border/60 bg-muted/15 px-6 py-10 lg:px-10">
+		<footer className="border-t border-border/60 px-6 py-10 lg:px-10">
 			<div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-start md:justify-between">
 				<div>
 					<SmartDeployLogo href="/" className="mb-3" />
@@ -45,20 +45,11 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 					<Link href="/" className={navLinkClass}>
 						Home
 					</Link>
-					<Link href="/#flow" className={navLinkClass}>
-						Flow
-					</Link>
-					<Link href="/#agent" className={navLinkClass}>
-						Agent
-					</Link>
-					<Link href="/#why-smartdeploy" className={navLinkClass}>
-						Why
-					</Link>
-					<Link href="/#cloud" className={navLinkClass}>
-						Deploy
-					</Link>
 					<Link href="/#stats" className={navLinkClass}>
 						Stats
+					</Link>
+					<Link href="/#faq" className={navLinkClass}>
+						FAQ
 					</Link>
 					<Link href="/docs" className={navLinkClass}>
 						Docs
