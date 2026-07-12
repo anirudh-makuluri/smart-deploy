@@ -135,4 +135,23 @@ describe("DeployLogsView", () => {
 			expect(screen.getByText("Unauthorized")).toBeInTheDocument();
 		});
 	});
+
+	it("keeps the logs panel constrained to the workspace width", () => {
+		const { container } = render(
+			<DeployLogsView
+				isDeploymentLive={false}
+				showDeployLogs={true}
+				deployLogEntries={[{ message: "A log message that should not resize the panel" }]}
+				serviceLogs={[]}
+				deployStatus="running"
+			/>
+		);
+
+		const [view, logsPanel] = Array.from(container.querySelectorAll("div")).filter((element) =>
+			element.className.includes("min-w-0")
+		);
+
+		expect(view).toHaveClass("w-full", "min-w-0");
+		expect(logsPanel).toHaveClass("w-full", "min-w-0", "overflow-hidden");
+	});
 });

@@ -40,7 +40,7 @@ export default function ServiceLogs({
 		<>
 			<div
 				ref={containerRef}
-				className={`relative min-w-0 ${scrollable ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : ""}`}
+				className={`relative w-full min-w-0 ${scrollable ? "flex h-full min-h-0 flex-1 flex-col overflow-hidden" : ""}`}
 			>
 				<ServiceLogsLoadingIndicator visible={state.isLoadingOlderLogs} />
 
