@@ -126,11 +126,13 @@ export default function DeployLogsView({
 		: serviceLogs;
 	const showDeploymentHeader = showDeployLogs;
 
-	const completedSteps = showDeploymentHeader
-		? steps?.filter((step) => step.status === "success").length || 0
+	const deploymentSteps = showDeploymentHeader ? steps ?? [] : [];
+	const hasDeploymentSteps = deploymentSteps.length > 0;
+	const completedSteps = hasDeploymentSteps
+		? deploymentSteps.filter((step) => step.status === "success").length
 		: 0;
-	const totalSteps = showDeploymentHeader ? steps?.length || 1 : 1;
-	const progress = showDeploymentHeader ? (completedSteps / totalSteps) * 100 : 0;
+	const totalSteps = deploymentSteps.length;
+	const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
 	const headerTitle = showDeploymentHeader
 		? deployStatus === "running"
@@ -146,7 +148,9 @@ export default function DeployLogsView({
 
 	const headerSubtitle = showDeploymentHeader
 		? deployStatus === "running"
-			? `Step ${completedSteps + 1} of ${totalSteps}`
+			? hasDeploymentSteps
+				? `Step ${Math.min(completedSteps + 1, totalSteps)} of ${totalSteps}`
+				: "Deployment is running"
 			: deployStatus === "success"
 				? "All steps completed successfully"
 				: deployStatus === "error"
