@@ -36,21 +36,23 @@ export async function ensureUserAndRepos(session: SessionForRepos): Promise<{ us
 		throw new Error(error);
 	}
 
-	if (repos && repos.length > 0) {
-		repoCache.set(userID, { repoList: repos, ts: Date.now() });
-		return { userID, repoList: repos };
-	}
+	const persistedRepos = repos ?? [];
 
 	// If GitHub isn't connected, we can still return persisted repos (if any),
 	// but we cannot fetch/sync new ones from GitHub.
 	if (!token) {
-		const repoList: repoType[] = [];
-		repoCache.set(userID, { repoList, ts: Date.now() });
-		return { userID, repoList };
+		repoCache.set(userID, { repoList: persistedRepos, ts: Date.now() });
+		return { userID, repoList: persistedRepos };
 	}
 
 	const githubResult = await getGithubRepos(token);
-	const repoList = githubResult.data ?? [];
+	if (!githubResult.data) {
+		console.warn(`Could not refresh GitHub repositories for user: ${userID}`);
+		repoCache.set(userID, { repoList: persistedRepos, ts: Date.now() });
+		return { userID, repoList: persistedRepos };
+	}
+
+	const repoList = githubResult.data;
 	if (repoList.length > 0) {
 		await dbHelper.syncUserRepos(userID, repoList);
 	}
