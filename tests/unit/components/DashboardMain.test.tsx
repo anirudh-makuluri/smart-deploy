@@ -101,6 +101,7 @@ describe("DashboardMain", () => {
 		render(<DashboardMain activeView="repositories" />);
 
 		expect(screen.getAllByRole("heading", { name: "Repositories" }).length).toBeGreaterThan(0);
+		expect(screen.getAllByRole("link", { name: /set up auto-deploy/i })[0]).toHaveAttribute("href", "/api/github/install");
 		expect(screen.getAllByRole("button", { name: "Refresh" }).length).toBeGreaterThan(0);
 		expect(screen.getAllByTitle("Add public repository").length).toBeGreaterThan(0);
 		expect(screen.getAllByText("repo-one").length).toBeGreaterThan(0);

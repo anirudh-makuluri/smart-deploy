@@ -29,6 +29,8 @@ GITHUB_APP_SLUG=
 
 `GITHUB_APP_PRIVATE_KEY_BASE64` is the Base64 encoding of the downloaded PEM private-key file. `GITHUB_APP_ID` is the numeric App ID, not the Client ID.
 
+After sign-in, the dashboard's **Set up auto-deploy** action sends the user to GitHub's installation flow for `GITHUB_APP_SLUG`. Users choose the account and repositories that can trigger automated deployments there.
+
 ## Apply the database change
 
 Apply the `github_webhook_deliveries` table and index block from the current [`supabase/schema.sql`](../supabase/schema.sql) in Supabase before enabling webhook delivery. The table ensures GitHub retries do not create duplicate deployments.

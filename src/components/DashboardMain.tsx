@@ -1,9 +1,12 @@
 "use client";
 
+import { ExternalLink, GitBranch } from "lucide-react";
+import Link from "next/link";
 import DashboardDeploymentsView from "@/components/dashboard/DashboardDeploymentsView";
 import DashboardOverviewView from "@/components/dashboard/DashboardOverviewView";
 import DashboardRepositoriesView from "@/components/dashboard/DashboardRepositoriesView";
 import { useDashboardMain } from "@/components/dashboard/useDashboardMain";
+import { Button } from "@/components/ui/button";
 
 export type DashboardMainProps = {
 	activeView: "overview" | "history" | "repositories";
@@ -38,6 +41,13 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 									: "Repositories"}
 						</h1>
 					</div>
+					<Button asChild variant="outline" size="sm" className="shrink-0 border-border bg-background/70 text-foreground hover:bg-secondary hover:text-foreground">
+						<Link href="/api/github/install" title="Choose the repositories that can automatically deploy on push">
+							<GitBranch className="size-4" />
+							<span>Set up auto-deploy</span>
+							<ExternalLink className="size-3.5 opacity-65" aria-hidden />
+						</Link>
+					</Button>
 				</div>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] sm:px-6 sm:pt-6 sm:pb-[calc(6.5rem+env(safe-area-inset-bottom,0px))] md:p-6">
