@@ -17,11 +17,62 @@ const baseSteps: DeployStep[] = [
 	},
 ];
 
+const inProgressSteps: DeployStep[] = [
+	{
+		id: "prepare",
+		label: "Prepare",
+		status: "success",
+		logs: [],
+	},
+	{
+		id: "build",
+		label: "Build",
+		status: "in_progress",
+		logs: [],
+	},
+	{
+		id: "verify",
+		label: "Verify",
+		status: "pending",
+		logs: [],
+	},
+];
+
 describe("DeployLogsView", () => {
 	beforeEach(() => {
 		cleanup();
 		vi.clearAllMocks();
 		global.fetch = vi.fn();
+	});
+
+	it("does not invent deployment progress when live steps are unavailable", () => {
+		render(
+			<DeployLogsView
+				isDeploymentLive={false}
+				showDeployLogs={true}
+				deployLogEntries={[]}
+				serviceLogs={[]}
+				deployStatus="running"
+			/>
+		);
+
+		expect(screen.getByText("Deployment is running")).toBeInTheDocument();
+		expect(screen.queryByText(/Step \d+ of \d+/)).not.toBeInTheDocument();
+	});
+
+	it("shows the actual current step when live steps are available", () => {
+		render(
+			<DeployLogsView
+				isDeploymentLive={false}
+				showDeployLogs={true}
+				deployLogEntries={[]}
+				serviceLogs={[]}
+				deployStatus="running"
+				steps={inProgressSteps}
+			/>
+		);
+
+		expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
 	});
 
 	it("renders root cause analysis after the logs action resolves", async () => {

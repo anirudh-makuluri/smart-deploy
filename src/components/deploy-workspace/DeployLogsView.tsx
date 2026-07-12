@@ -126,11 +126,13 @@ export default function DeployLogsView({
 		: serviceLogs;
 	const showDeploymentHeader = showDeployLogs;
 
-	const completedSteps = showDeploymentHeader
-		? steps?.filter((step) => step.status === "success").length || 0
+	const deploymentSteps = showDeploymentHeader ? steps ?? [] : [];
+	const hasDeploymentSteps = deploymentSteps.length > 0;
+	const completedSteps = hasDeploymentSteps
+		? deploymentSteps.filter((step) => step.status === "success").length
 		: 0;
-	const totalSteps = showDeploymentHeader ? steps?.length || 1 : 1;
-	const progress = showDeploymentHeader ? (completedSteps / totalSteps) * 100 : 0;
+	const totalSteps = deploymentSteps.length;
+	const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
 	const headerTitle = showDeploymentHeader
 		? deployStatus === "running"
@@ -146,7 +148,9 @@ export default function DeployLogsView({
 
 	const headerSubtitle = showDeploymentHeader
 		? deployStatus === "running"
-			? `Step ${completedSteps + 1} of ${totalSteps}`
+			? hasDeploymentSteps
+				? `Step ${Math.min(completedSteps + 1, totalSteps)} of ${totalSteps}`
+				: "Deployment is running"
 			: deployStatus === "success"
 				? "All steps completed successfully"
 				: deployStatus === "error"
@@ -157,8 +161,8 @@ export default function DeployLogsView({
 			: "Logs will appear here once the deployment starts producing output";
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-6">
-			<div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/2 p-6 shadow-xl backdrop-blur-sm">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 sm:gap-6">
+			<div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/2 p-4 shadow-xl backdrop-blur-sm sm:p-6">
 				{showDeploymentHeader && (
 					<div className="absolute left-0 top-0 h-[2px] w-full bg-white/5">
 						<div
@@ -231,7 +235,7 @@ export default function DeployLogsView({
 						)}
 					</div>
 
-					<div className="shrink-0 flex flex-col items-end gap-3">
+					<div className="flex shrink-0 flex-col items-start gap-3 md:items-end">
 						{showDeploymentHeader && steps && (
 							<div className="flex items-center gap-2">
 								{steps.map((step) => (
@@ -324,7 +328,7 @@ export default function DeployLogsView({
 
 			<div
 				ref={logsContainerRef}
-				className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
+				className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
 			>
 				<ServiceLogs
 					{...(({

@@ -316,7 +316,7 @@ export default function DeployWorkspaceActiveSection({
 		{
 			id: "logs",
 			content: (
-				<div className="w-full mx-auto p-6 flex-1 max-w-6xl min-h-0 overflow-hidden">
+				<div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 p-4 sm:p-6">
 					<DeployLogsView
 						isDeploymentLive={isLiveDeploymentStatus(effectiveDeploymentStatus)}
 						showDeployLogs={viewState.showDeployLogs}
