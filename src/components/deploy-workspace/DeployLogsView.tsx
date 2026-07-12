@@ -157,7 +157,7 @@ export default function DeployLogsView({
 			: "Logs will appear here once the deployment starts producing output";
 
 	return (
-		<div className="flex h-full min-h-0 flex-col gap-6">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-6">
 			<div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/2 p-6 shadow-xl backdrop-blur-sm">
 				{showDeploymentHeader && (
 					<div className="absolute left-0 top-0 h-[2px] w-full bg-white/5">
@@ -324,7 +324,7 @@ export default function DeployLogsView({
 
 			<div
 				ref={logsContainerRef}
-				className="flex h-full flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
+				className="flex h-full w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
 			>
 				<ServiceLogs
 					{...(({
