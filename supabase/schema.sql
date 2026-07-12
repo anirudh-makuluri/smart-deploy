@@ -107,6 +107,17 @@ create index if not exists idx_deployment_runs_user_started
 create index if not exists idx_deployment_runs_latest_success
   on public.deployment_runs(user_id, repo_name, service_name, success, started_at desc);
 
+-- GitHub webhook idempotency. GitHub can retry deliveries, so one delivery ID
+-- must never create more than one SmartDeploy run.
+create table if not exists public.github_webhook_deliveries (
+  delivery_id text primary key,
+  event_name text not null,
+  received_at timestamptz not null default now()
+);
+create index if not exists idx_github_webhook_deliveries_received_at
+  on public.github_webhook_deliveries(received_at desc);
+alter table public.github_webhook_deliveries enable row level security;
+
 -- Deployment agent messages: append-only log for eval / LLMOps (live sessions stay in-memory on the WS server).
 create table if not exists public.deployment_agent_messages (
   id uuid primary key default gen_random_uuid(),

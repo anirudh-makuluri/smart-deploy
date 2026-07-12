@@ -19,6 +19,15 @@ function extractDeployConfig(
 	return withDeployInfraDefaults(deployConfig as DeployConfig);
 }
 
+function extractGithubAppInstallationId(releaseArtifact: unknown): number | null {
+	const githubApp = (releaseArtifact as { githubApp?: unknown } | null | undefined)?.githubApp;
+	if (!githubApp || typeof githubApp !== "object" || Array.isArray(githubApp)) return null;
+	const installationId = (githubApp as { installationId?: unknown }).installationId;
+	return typeof installationId === "number" && Number.isSafeInteger(installationId) && installationId > 0
+		? installationId
+		: null;
+}
+
 type DeploymentRunnerDbHelper = {
 	finalizeDeploymentRun: (args: {
 		runId: string;
@@ -86,6 +95,7 @@ async function main() {
 	const [
 		{ dbHelper },
 		{ getGithubAccessTokenForUserId },
+		{ createGithubInstallationAccessToken },
 		{ handleDeploy },
 		{ withDeployInfraDefaults },
 		{
@@ -95,6 +105,7 @@ async function main() {
 	] = await Promise.all([
 		import("@/db-helper"),
 		import("@/lib/githubAccessToken"),
+		import("@/lib/githubApp"),
 		import("@/lib/handleDeploy"),
 		import("@/lib/deployInfraDefaults"),
 		import("@/lib/deploymentRunEventBridge"),
@@ -128,21 +139,15 @@ async function main() {
 	const deployConfig = extractDeployConfig(run.releaseArtifact, withDeployInfraDefaults);
 	const deploymentEventBridge = createDeploymentRunEventBridge(run.id);
 
-	const token = await getGithubAccessTokenForUserId(userId);
-	if (!token) {
-		await failRun({
-			dbHelper,
-			runId: run.id,
-			userId,
-			repoName: run.repoName,
-			serviceName: run.serviceName,
-			releaseArtifact: run.releaseArtifact,
-			error: new Error("GitHub is not connected for this deployment run."),
-		});
-		throw new Error("GitHub is not connected for this deployment run.");
-	}
-
 	try {
+		const githubAppInstallationId = extractGithubAppInstallationId(run.releaseArtifact);
+		const token = githubAppInstallationId
+			? (await createGithubInstallationAccessToken(githubAppInstallationId)).token
+			: await getGithubAccessTokenForUserId(userId);
+		if (!token) {
+			throw new Error("GitHub is not connected for this deployment run.");
+		}
+
 		await handleDeploy(
 			deployConfig,
 			token,

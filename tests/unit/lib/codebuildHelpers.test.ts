@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { __testing } from "@/lib/aws/codebuildHelpers";
+import { __testing, generateBuildspec } from "@/lib/aws/codebuildHelpers";
 
 describe("routeCodeBuildLogMessage", () => {
 	it("switches to publish when push markers appear", () => {
@@ -17,5 +17,18 @@ describe("routeCodeBuildLogMessage", () => {
 		const routed = __testing.routeCodeBuildLogMessage(line, "build");
 		expect(routed.stepId).toBe("publish");
 		expect(routed.nextStep).toBe("publish");
+	});
+
+	it("checks out the requested commit SHA instead of building a later branch head", () => {
+		const buildspec = generateBuildspec({
+			ecrRegistry: "123456789.dkr.ecr.us-west-2.amazonaws.com",
+			ecrRepoName: "acme/shop",
+			imageTag: "abcdef",
+			region: "us-west-2",
+			deployUnit: { type: "existing_docker", root: "." },
+		});
+
+		expect(buildspec).toContain("git clone https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src");
+		expect(buildspec).toContain('git fetch --depth=1 origin \\"$COMMIT_SHA\\" && git checkout --detach FETCH_HEAD');
 	});
 });

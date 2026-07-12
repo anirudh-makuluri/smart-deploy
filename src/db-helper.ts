@@ -837,6 +837,129 @@ export const dbHelper = {
 		}
 	},
 
+	/**
+	 * Returns only already-live deployment configurations for a GitHub push.
+	 * A webhook never creates a deployment draft; users must approve and deploy
+	 * a configuration once before branch automation can reuse it.
+	 */
+	getLiveDeploymentsForGithubPush: async function (args: {
+		repositoryUrl: string;
+		branch: string;
+	}): Promise<{ error?: string; deployments?: Array<{ userId: string; deployment: DeployConfig }> }> {
+		try {
+			const repositoryUrl = args.repositoryUrl.trim().replace(/\.git$/i, "").replace(/\/$/, "").toLowerCase();
+			const branch = args.branch.trim();
+			if (!repositoryUrl || !branch) return { deployments: [] };
+
+			const result = await getDbPool().query(
+				`select *
+				 from deployments
+				 where regexp_replace(regexp_replace(lower(repo_url), E'\\.git$', ''), E'/$', '') = $1
+				   and branch = $2
+				   and status = 'running'
+				   and active_run_id is null`,
+				[repositoryUrl, branch]
+			);
+			const rows = result.rows as DeploymentDbRow[];
+			const hydratedRows = attachAnalysisPayload(rows, await fetchAnalysisPayloadMap(rows));
+			return {
+				deployments: hydratedRows.map((row) => ({
+					userId: String(row.owner_id ?? ""),
+					deployment: rowToDeployConfig(row),
+				})).filter((entry) => Boolean(entry.userId)),
+			};
+		} catch (error) {
+			console.error("getLiveDeploymentsForGithubPush error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	/** Atomically changes a live deployment to deploying before a webhook queues its run. */
+	reserveLiveDeploymentForGithubPush: async function (args: {
+		userId: string;
+		repoName: string;
+		serviceName: string;
+		runId: string;
+		commitSha: string;
+	}): Promise<{ error?: string; reserved: boolean }> {
+		try {
+			const result = await getDbPool().query(
+				`update deployments
+				 set status = 'deploying',
+				     active_run_id = $1,
+				     commit_sha = $2,
+				     last_deployment = now(),
+				     revision = coalesce(revision, 0) + 1
+				 where owner_id = $3
+				   and repo_name = $4
+				   and service_name = $5
+				   and status = 'running'
+				   and active_run_id is null`,
+				[args.runId, args.commitSha, args.userId, args.repoName, args.serviceName]
+			);
+			return { reserved: result.rowCount === 1 };
+		} catch (error) {
+			console.error("reserveLiveDeploymentForGithubPush error:", error);
+			return { error: error instanceof Error ? error.message : String(error), reserved: false };
+		}
+	},
+
+	updateGithubPushDeploymentState: async function (args: {
+		userId: string;
+		repoName: string;
+		serviceName: string;
+		status: "running" | "failed";
+		runId: string;
+	}): Promise<{ error?: string }> {
+		try {
+			await updateTableRows(
+				"deployments",
+				{ status: args.status, active_run_id: null },
+				{
+					owner_id: args.userId,
+					repo_name: args.repoName,
+					service_name: args.serviceName,
+					active_run_id: args.runId,
+				}
+			);
+			return {};
+		} catch (error) {
+			console.error("updateGithubPushDeploymentState error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	claimGithubWebhookDelivery: async function (args: {
+		deliveryId: string;
+		eventName: string;
+	}): Promise<{ error?: string; claimed: boolean }> {
+		try {
+			await insertTableRow("github_webhook_deliveries", {
+				delivery_id: args.deliveryId,
+				event_name: args.eventName,
+			});
+			return { claimed: true };
+		} catch (error) {
+			const code = typeof error === "object" && error !== null && "code" in error
+				? String((error as { code?: unknown }).code ?? "")
+				: "";
+			if (code === "23505") return { claimed: false };
+			console.error("claimGithubWebhookDelivery error:", error);
+			return { error: error instanceof Error ? error.message : String(error), claimed: false };
+		}
+	},
+
+	releaseGithubWebhookDelivery: async function (deliveryId: string): Promise<void> {
+		try {
+			await getDbPool().query(
+				"delete from github_webhook_deliveries where delivery_id = $1",
+				[deliveryId]
+			);
+		} catch (error) {
+			console.error("releaseGithubWebhookDelivery error:", error);
+		}
+	},
+
 	updateDeploymentSystem: async function (deployConfig: Partial<DeployConfig> & { repoName: string; serviceName: string }) {
 		try {
 			const supabase = getSupabaseServer();
@@ -952,6 +1075,7 @@ export const dbHelper = {
 	},
 
 	createDeploymentRun: async function (args: {
+		runId?: string;
 		userId: string;
 		repoName: string;
 		serviceName: string;
@@ -970,6 +1094,7 @@ export const dbHelper = {
 			const inserted = await insertTableRow(
 				"deployment_runs",
 				{
+					...(args.runId ? { id: args.runId } : {}),
 					user_id: userId,
 					repo_name: args.repoName,
 					service_name: args.serviceName,
