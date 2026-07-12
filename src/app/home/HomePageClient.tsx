@@ -3,6 +3,7 @@
 import * as React from "react";
 import DashboardMain, { DashboardMainProps } from "@/components/DashboardMain";
 import DashboardSideBar from "@/components/DashboardSideBar";
+import GithubAppSetupBanner from "@/components/dashboard/GithubAppSetupBanner";
 import Header from "@/components/Header";
 import { useAppDataQuery } from "@/hooks/useAppDataQuery";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -17,6 +18,7 @@ export default function HomePageClient() {
 	return (
 		<div className="landing-bg flex h-svh flex-col overflow-hidden text-foreground">
 			<Header homeNav={{ onOpenMobileSidebar: () => setMobileNavOpen(true) }} />
+			<GithubAppSetupBanner />
 			<div className="flex min-h-0 w-full flex-1 flex-row overflow-hidden">
 				<div
 					className={cn(
