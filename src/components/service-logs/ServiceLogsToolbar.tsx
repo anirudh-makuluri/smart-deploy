@@ -50,8 +50,8 @@ export function ServiceLogsToolbar({
 	onClearKeywordRules,
 }: ServiceLogsToolbarProps) {
 	return (
-		<div className="flex flex-col border-b border-border/40 bg-card/80">
-			<div className="flex items-center gap-2 px-3 py-2">
+		<div className="flex min-w-0 flex-col border-b border-border/40 bg-card/80">
+			<div className="flex flex-wrap items-center gap-2 px-3 py-2">
 				{displayLimit && displayLimit > 0 && (
 					<Button
 						type="button"
@@ -82,7 +82,7 @@ export function ServiceLogsToolbar({
 					</button>
 				))}
 
-				<div className="ml-auto flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2 sm:ml-auto">
 					<button
 						type="button"
 						className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
@@ -127,8 +127,8 @@ export function ServiceLogsToolbar({
 			</div>
 
 			{showFilterInput && (
-				<div className="px-3 pb-2 space-y-2">
-					<div className="flex items-center gap-2">
+				<div className="space-y-2 px-3 pb-2">
+					<div className="flex flex-wrap items-center gap-2">
 						<button
 							type="button"
 							className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
@@ -155,7 +155,7 @@ export function ServiceLogsToolbar({
 						</button>
 						<input
 							type="text"
-							className="flex-1 bg-background/60 border border-border/50 rounded-md px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
+							className="min-w-0 flex-1 basis-40 bg-background/60 border border-border/50 rounded-md px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
 							placeholder={ruleMode === "exclude" ? "Keyword to hide..." : "Keyword to show..."}
 							value={ruleInput}
 							onChange={(e) => onRuleInputChange(e.target.value)}
