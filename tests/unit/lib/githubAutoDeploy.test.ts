@@ -10,8 +10,7 @@ function makeDb() {
 		getLiveDeploymentsForGithubPush: vi.fn().mockResolvedValue({
 			deployments: [{ userId: "user-1", deployment: makeDeployment({ status: "running" }) }],
 		}),
-		reserveLiveDeploymentForGithubPush: vi.fn().mockResolvedValue({ reserved: true }),
-		createDeploymentRun: vi.fn().mockResolvedValue({ runId: "run-1" }),
+		createAndReserveGithubPushDeployment: vi.fn().mockResolvedValue({ reserved: true }),
 		updateGithubPushDeploymentState: vi.fn().mockResolvedValue({}),
 		finalizeDeploymentRun: vi.fn().mockResolvedValue({}),
 	};
@@ -32,21 +31,19 @@ describe("GitHub push deployment queue", () => {
 		}, { db, enqueue, createRunId: () => "run-1" });
 
 		expect(result).toEqual({ queuedRuns: 1, skippedDeployments: 0 });
-		expect(db.reserveLiveDeploymentForGithubPush).toHaveBeenCalledWith({
+		expect(db.createAndReserveGithubPushDeployment).toHaveBeenCalledWith({
 			userId: "user-1",
 			repoName: "shop",
 			serviceName: "web",
 			runId: "run-1",
 			commitSha,
-		});
-		expect(db.createDeploymentRun).toHaveBeenCalledWith(expect.objectContaining({
-			runId: "run-1",
-			commitSha,
+			branch: "main",
+			responseId: null,
 			releaseArtifact: expect.objectContaining({
 				githubApp: { installationId: 42, repositoryId: 99 },
 				deployConfig: expect.objectContaining({ commitSha, branch: "main", status: "deploying" }),
 			}),
-		}));
+		});
 		expect(enqueue).toHaveBeenCalledWith({
 			runId: "run-1",
 			userId: "user-1",
@@ -57,7 +54,7 @@ describe("GitHub push deployment queue", () => {
 
 	it("skips a deployment that was reserved by another trigger", async () => {
 		const db = makeDb();
-		db.reserveLiveDeploymentForGithubPush.mockResolvedValue({ reserved: false });
+		db.createAndReserveGithubPushDeployment.mockResolvedValue({ reserved: false });
 		const enqueue = vi.fn();
 
 		const result = await queueGithubPushDeployments({
@@ -70,7 +67,6 @@ describe("GitHub push deployment queue", () => {
 		}, { db, enqueue, createRunId: () => "run-1" });
 
 		expect(result).toEqual({ queuedRuns: 0, skippedDeployments: 1 });
-		expect(db.createDeploymentRun).not.toHaveBeenCalled();
 		expect(enqueue).not.toHaveBeenCalled();
 	});
 });

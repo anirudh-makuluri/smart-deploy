@@ -1,5 +1,6 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { getDbPool } from "./lib/dbPool";
+import type { PoolClient } from "pg";
 import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoRecord, StaticServiceType } from "./app/types";
 import type { DeployLogLine, DeployStepSummary } from "./lib/aws/deployRunLogs";
 import { deployStepsFromLogLines } from "./lib/aws/deployRunLogs";
@@ -874,33 +875,90 @@ export const dbHelper = {
 		}
 	},
 
-	/** Atomically changes a live deployment to deploying before a webhook queues its run. */
-	reserveLiveDeploymentForGithubPush: async function (args: {
+	/**
+	 * Creates the run before assigning deployments.active_run_id, within one transaction.
+	 * The deployments table has a foreign key to deployment_runs, so the reverse order
+	 * is invalid. Locking the deployment row also prevents concurrent push deliveries
+	 * from creating an unused run.
+	 */
+	createAndReserveGithubPushDeployment: async function (args: {
 		userId: string;
 		repoName: string;
 		serviceName: string;
 		runId: string;
 		commitSha: string;
+		branch: string;
+		responseId: string | null;
+		releaseArtifact: Record<string, unknown>;
 	}): Promise<{ error?: string; reserved: boolean }> {
+		let client: PoolClient | null = null;
+		let transactionOpen = false;
 		try {
-			const result = await getDbPool().query(
+			client = await getDbPool().connect();
+			await client.query("begin");
+			transactionOpen = true;
+			const target = await client.query(
+				`select id
+				 from deployments
+				 where owner_id = $1
+				   and repo_name = $2
+				   and service_name = $3
+				   and status = 'running'
+				   and active_run_id is null
+				 for update`,
+				[args.userId, args.repoName, args.serviceName]
+			);
+			if (target.rowCount !== 1) {
+				await client.query("rollback");
+				transactionOpen = false;
+				return { reserved: false };
+			}
+
+			await client.query(
+				`insert into deployment_runs (
+					id, user_id, repo_name, service_name, branch, commit_sha,
+					response_id, status, release_artifact, log_store
+				 ) values ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, 's3')`,
+				[
+					args.runId,
+					args.userId,
+					args.repoName,
+					args.serviceName,
+					args.branch,
+					args.commitSha,
+					args.responseId,
+					JSON.stringify(args.releaseArtifact),
+				]
+			);
+
+			const result = await client.query(
 				`update deployments
 				 set status = 'deploying',
 				     active_run_id = $1,
 				     commit_sha = $2,
 				     last_deployment = now(),
 				     revision = coalesce(revision, 0) + 1
-				 where owner_id = $3
-				   and repo_name = $4
-				   and service_name = $5
-				   and status = 'running'
-				   and active_run_id is null`,
-				[args.runId, args.commitSha, args.userId, args.repoName, args.serviceName]
+				 where id = $3`,
+				[args.runId, args.commitSha, target.rows[0].id]
 			);
+			if (result.rowCount !== 1) {
+				throw new Error("Could not reserve deployment for GitHub push.");
+			}
+			await client.query("commit");
+			transactionOpen = false;
 			return { reserved: result.rowCount === 1 };
 		} catch (error) {
-			console.error("reserveLiveDeploymentForGithubPush error:", error);
+			if (transactionOpen && client) {
+				try {
+					await client.query("rollback");
+				} catch (rollbackError) {
+					console.error("createAndReserveGithubPushDeployment rollback error:", rollbackError);
+				}
+			}
+			console.error("createAndReserveGithubPushDeployment error:", error);
 			return { error: error instanceof Error ? error.message : String(error), reserved: false };
+		} finally {
+			client?.release();
 		}
 	},
 

@@ -107,6 +107,21 @@ create index if not exists idx_deployment_runs_user_started
 create index if not exists idx_deployment_runs_latest_success
   on public.deployment_runs(user_id, repo_name, service_name, success, started_at desc);
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'deployments_active_run_id_fkey'
+  ) then
+    alter table public.deployments
+      add constraint deployments_active_run_id_fkey
+      foreign key (active_run_id)
+      references public.deployment_runs(id)
+      on delete set null;
+  end if;
+end $$;
+
 -- GitHub webhook idempotency. GitHub can retry deliveries, so one delivery ID
 -- must never create more than one SmartDeploy run.
 create table if not exists public.github_webhook_deliveries (

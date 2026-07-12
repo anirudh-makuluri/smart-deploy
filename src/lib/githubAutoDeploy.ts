@@ -18,23 +18,16 @@ type GithubAutoDeployDb = {
 		repositoryUrl: string;
 		branch: string;
 	}) => Promise<{ error?: string; deployments?: GithubPushDeployment[] }>;
-	reserveLiveDeploymentForGithubPush: (args: {
+	createAndReserveGithubPushDeployment: (args: {
 		userId: string;
 		repoName: string;
 		serviceName: string;
 		runId: string;
 		commitSha: string;
-	}) => Promise<{ error?: string; reserved: boolean }>;
-	createDeploymentRun: (args: {
-		runId: string;
-		userId: string;
-		repoName: string;
-		serviceName: string;
 		branch: string;
-		commitSha: string;
 		responseId: string | null;
 		releaseArtifact: Record<string, unknown>;
-	}) => Promise<{ error?: unknown; runId?: string }>;
+	}) => Promise<{ error?: string; reserved: boolean }>;
 	updateGithubPushDeploymentState: (args: {
 		userId: string;
 		repoName: string;
@@ -103,12 +96,15 @@ export async function queueGithubPushDeployments(
 	for (const entry of matching.deployments ?? []) {
 		const runId = createRunId();
 		const artifact = releaseArtifact({ deployment: entry.deployment, push, runId });
-		const reserved = await db.reserveLiveDeploymentForGithubPush({
+		const reserved = await db.createAndReserveGithubPushDeployment({
 			userId: entry.userId,
 			repoName: entry.deployment.repoName,
 			serviceName: entry.deployment.serviceName,
 			runId,
 			commitSha: push.commitSha,
+			branch: push.branch,
+			responseId: entry.deployment.responseId ?? null,
+			releaseArtifact: artifact,
 		});
 		if (reserved.error) throw new Error(reserved.error);
 		if (!reserved.reserved) {
@@ -117,20 +113,6 @@ export async function queueGithubPushDeployments(
 		}
 
 		try {
-			const created = await db.createDeploymentRun({
-				runId,
-				userId: entry.userId,
-				repoName: entry.deployment.repoName,
-				serviceName: entry.deployment.serviceName,
-				branch: push.branch,
-				commitSha: push.commitSha,
-				responseId: entry.deployment.responseId ?? null,
-				releaseArtifact: artifact,
-			});
-			if (created.error || !created.runId) {
-				throw new Error(typeof created.error === "string" ? created.error : "Failed to create deployment run.");
-			}
-
 			await enqueue({
 				runId,
 				userId: entry.userId,
