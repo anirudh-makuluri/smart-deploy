@@ -9,9 +9,9 @@ type ServiceLogsListProps = {
 export function ServiceLogsList({ logs, onSelectLog }: ServiceLogsListProps) {
 	return (
 		<>
-			<div className="sticky top-0 z-0 grid grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/60 bg-card px-4 py-2 text-xs uppercase tracking-wide text-muted-foreground/90">
+			<div className="sticky top-0 z-0 grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 border-b border-border/60 bg-card px-3 py-2 text-xs uppercase tracking-wide text-muted-foreground/90 sm:grid-cols-[110px_160px_minmax(0,1fr)] sm:gap-4 sm:px-4">
 				<span>Type</span>
-				<span>Time</span>
+				<span className="hidden sm:block">Time</span>
 				<span>Message</span>
 			</div>
 			{logs.map((log) => {
@@ -24,16 +24,19 @@ export function ServiceLogsList({ logs, onSelectLog }: ServiceLogsListProps) {
 						type="button"
 						key={logKey(log)}
 						data-log-row
-						className={`group grid w-full grid-cols-[110px_160px_minmax(0,1fr)] gap-4 border-b border-border/50 px-4 py-2 text-left transition-colors hover:bg-muted/40 cursor-pointer ${
+						className={`group grid w-full grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 border-b border-border/50 px-3 py-2 text-left transition-colors hover:bg-muted/40 cursor-pointer sm:grid-cols-[110px_160px_minmax(0,1fr)] sm:gap-4 sm:px-4 ${
 							type === "ERROR" ? "bg-destructive/5" : ""
 						}`}
 						onClick={() => onSelectLog(log)}
 					>
 						<span className={type === "ERROR" ? "text-destructive font-semibold" : "text-primary"}>{type}</span>
-						<span className="truncate">{formattedTime}</span>
-						<span className="flex items-center gap-2 truncate text-foreground">
-							<span className="flex-1 truncate">{message || "-"}</span>
-							<span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs h-7 px-2 shrink-0 text-muted-foreground">
+						<span className="hidden truncate sm:block">{formattedTime}</span>
+						<span className="flex min-w-0 items-start gap-2 whitespace-normal break-words text-foreground sm:items-center sm:truncate">
+							<span className="flex min-w-0 flex-1 flex-col gap-1 sm:block">
+								<span className="text-xs text-muted-foreground sm:hidden">{formattedTime}</span>
+								<span className="sm:truncate">{message || "-"}</span>
+							</span>
+							<span className="hidden shrink-0 px-2 text-xs text-muted-foreground transition-opacity group-hover:opacity-100 sm:block sm:h-7 sm:opacity-0">
 								Show full log
 							</span>
 						</span>
