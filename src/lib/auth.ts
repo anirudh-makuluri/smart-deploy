@@ -8,7 +8,20 @@ function env(name: string): string {
 
 function hasOAuth(provider: "google" | "github") {
 	if (provider === "google") return Boolean(env("GOOGLE_CLIENT_ID") && env("GOOGLE_CLIENT_SECRET"));
-	return Boolean(env("GITHUB_ID") && env("GITHUB_SECRET"));
+	return Boolean(githubClientId() && githubClientSecret());
+}
+
+/**
+ * GitHub Apps expose OAuth client credentials for the user sign-in flow.
+ * Keep the legacy names as a migration fallback so existing deployments do
+ * not lose sign-in while the new GitHub App values are rolled out.
+ */
+function githubClientId(): string {
+	return env("GITHUB_APP_CLIENT_ID") || env("GITHUB_ID");
+}
+
+function githubClientSecret(): string {
+	return env("GITHUB_APP_CLIENT_SECRET") || env("GITHUB_SECRET");
 }
 
 export const auth = betterAuth({
@@ -32,8 +45,8 @@ export const auth = betterAuth({
 		...(hasOAuth("github")
 			? {
 					github: {
-						clientId: env("GITHUB_ID"),
-						clientSecret: env("GITHUB_SECRET"),
+						clientId: githubClientId(),
+						clientSecret: githubClientSecret(),
 					},
 			  }
 			: {}),

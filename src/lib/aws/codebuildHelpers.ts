@@ -244,9 +244,9 @@ function buildRailpackEcrBuildspec(params: {
 		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${ecrRegistry}`,
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
-		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
+		"git clone https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
 		"cd src",
-		'if [ -n "$COMMIT_SHA" ]; then git checkout $COMMIT_SHA; fi',
+		'if [ -n "$COMMIT_SHA" ]; then git fetch --depth=1 origin "$COMMIT_SHA" && git checkout --detach FETCH_HEAD; else git checkout "$BRANCH_NAME"; fi',
 		'if [ -n "$APP_ENV_VARS_B64" ]; then echo "$APP_ENV_VARS_B64" | base64 -d > .env; fi',
 		"rm -f /tmp/railpack-plan.b64",
 	];
@@ -317,9 +317,9 @@ function buildExistingDockerEcrBuildspec(params: {
 		`aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin ${params.ecrRegistry}`,
 		'if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "Logging in to Docker Hub..."; echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; fi',
 		"echo Cloning source repository...",
-		"git clone -b $BRANCH_NAME https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
+		"git clone https://${GITHUB_TOKEN}@github.com/${REPO_FULL_NAME}.git src",
 		"cd src",
-		'if [ -n "$COMMIT_SHA" ]; then git checkout $COMMIT_SHA; fi',
+		'if [ -n "$COMMIT_SHA" ]; then git fetch --depth=1 origin "$COMMIT_SHA" && git checkout --detach FETCH_HEAD; else git checkout "$BRANCH_NAME"; fi',
 		'if [ -n "$APP_ENV_VARS_B64" ]; then echo "$APP_ENV_VARS_B64" | base64 -d > .env; fi',
 	];
 	if (ctx !== ".") {

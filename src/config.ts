@@ -6,7 +6,14 @@ const config = {
 	// Better Auth DB (Supabase Postgres connection string)
 	DATABASE_URL: process.env.DATABASE_URL || "",
 
-	// GitHub OAuth
+	// GitHub App (OAuth credentials are used by Better Auth; the private key is server-only).
+	GITHUB_APP_ID: process.env.GITHUB_APP_ID || "",
+	GITHUB_APP_CLIENT_ID: process.env.GITHUB_APP_CLIENT_ID || "",
+	GITHUB_APP_CLIENT_SECRET: process.env.GITHUB_APP_CLIENT_SECRET || "",
+	GITHUB_APP_PRIVATE_KEY_BASE64: process.env.GITHUB_APP_PRIVATE_KEY_BASE64 || "",
+	GITHUB_APP_WEBHOOK_SECRET: process.env.GITHUB_APP_WEBHOOK_SECRET || "",
+	GITHUB_APP_SLUG: process.env.GITHUB_APP_SLUG || "",
+	// Legacy GitHub OAuth values, retained only while environments migrate to GitHub Apps.
 	GITHUB_ID: process.env.GITHUB_ID || "",
 	GITHUB_SECRET: process.env.GITHUB_SECRET || "",
 
