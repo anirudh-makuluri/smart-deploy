@@ -1,0 +1,17 @@
+{
+  "name": "@arm8tron/smart-deploy",
+  "version": "0.1.0-beta.1",
+  "description": "Command-line interface for Smart Deploy",
+  "type": "module",
+  "bin": { "smart-deploy": "./dist/index.js" },
+  "files": ["dist", "README.md"],
+  "publishConfig": { "access": "public", "tag": "beta" },
+  "scripts": { "build": "tsc -p tsconfig.json", "prepack": "npm run build", "pack:dry-run": "npm pack --dry-run" },
+  "engines": { "node": ">=20" },
+  "keywords": ["smart-deploy", "deployment", "cli", "aws"],
+  "license": "Apache-2.0",
+  "homepage": "https://smart-deploy.xyz",
+  "repository": { "type": "git", "url": "git+https://github.com/anirudh-makuluri/smart-deploy.git", "directory": "packages/cli" },
+  "bugs": { "url": "https://github.com/anirudh-makuluri/smart-deploy/issues" },
+  "devDependencies": { "@types/node": "^20.19.0", "typescript": "^5.0.0" }
+}
