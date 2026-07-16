@@ -46,7 +46,11 @@ function repoRelativeServicePath(path: string | undefined): string | undefined {
 	return p;
 }
 
-const lastHandledDeployCompletionEventByWorkspace = new Map<string, number>();
+const handledDeployCompletionEventTimes = new Set<number>();
+
+function deploymentCompletionToastId(workspaceKey: string): string {
+	return `deployment-complete:${workspaceKey}`;
+}
 
 export function useDeployWorkspace() {
 	const updateDeploymentById = useAppData((s) => s.updateDeploymentById);
@@ -67,6 +71,7 @@ export function useDeployWorkspace() {
 		"";
 	const repoUrl = activeRepo.html_url;
 	const defaultBranch = activeRepo.default_branch;
+	const workspaceKey = `${repoName}:${serviceName}`;
 
 	const [ui, dispatch] = React.useReducer(deployWorkspaceUiReducer, initialDeployWorkspaceUiState);
 	const scanStartTimeRef = React.useRef(0);
@@ -163,12 +168,17 @@ export function useDeployWorkspace() {
 	});
 
 	React.useEffect(() => {
+		const toastId = deploymentCompletionToastId(workspaceKey);
+		return () => {
+			toast.dismiss(toastId);
+		};
+	}, [workspaceKey]);
+
+	React.useEffect(() => {
 		const p = deployCompleteEvent?.payload;
 		if (!p) return;
-		const workspaceKey = `${repoName}:${serviceName}`;
-		const lastHandledEventAt = lastHandledDeployCompletionEventByWorkspace.get(workspaceKey);
-		if (lastHandledEventAt === deployCompleteEvent.receivedAt) return;
-		lastHandledDeployCompletionEventByWorkspace.set(workspaceKey, deployCompleteEvent.receivedAt);
+		if (handledDeployCompletionEventTimes.has(deployCompleteEvent.receivedAt)) return;
+		handledDeployCompletionEventTimes.add(deployCompleteEvent.receivedAt);
 
 		dispatch({ type: "set_deploying", value: false });
 		const finalStatus = p.finalStatus ?? (p.success ? "running" : "failed");
@@ -176,6 +186,7 @@ export function useDeployWorkspace() {
 		const url = hostedUrlFromSubdomain(hostedSubdomain);
 		if (p.success) {
 			toast.success("Deployment successful", {
+				id: deploymentCompletionToastId(workspaceKey),
 				description: `Live at ${url}`,
 				duration: 8000,
 			});
@@ -199,7 +210,7 @@ export function useDeployWorkspace() {
 				deploymentTarget: p.deploymentTarget as DeployConfig["deploymentTarget"],
 			}),
 		});
-	}, [deployCompleteEvent, deployment.firstDeployment, deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById]);
+	}, [deployCompleteEvent, deployment.firstDeployment, deployment.hostedSubdomain, deployment.repoUrl, repoName, repoUrl, serviceName, updateDeploymentById, workspaceKey]);
 
 	const canPauseResumeDeployment = effectiveDeploymentStatus === "running" || effectiveDeploymentStatus === "paused";
 	const pauseResumeAction = effectiveDeploymentStatus === "paused" ? "resume" : "pause";

@@ -12,6 +12,7 @@ const mockUseWorkerWebSocket = vi.fn();
 const mockToastSuccess = vi.fn();
 const mockToastInfo = vi.fn();
 const mockToastError = vi.fn();
+const mockToastDismiss = vi.fn();
 const fetchRepoDeployments = vi.fn();
 const updateDeploymentById = vi.fn();
 const getDetectedRepoCache = vi.fn(() => undefined);
@@ -38,6 +39,7 @@ vi.mock("sonner", () => ({
 		success: (...args: unknown[]) => mockToastSuccess(...args),
 		info: (...args: unknown[]) => mockToastInfo(...args),
 		error: (...args: unknown[]) => mockToastError(...args),
+		dismiss: (...args: unknown[]) => mockToastDismiss(...args),
 	},
 }));
 
@@ -452,6 +454,59 @@ describe("DeployWorkspace", () => {
 		renderWithQueryClient(<DeployWorkspace />);
 
 		await waitFor(() => {
+			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("dismisses and does not replay a completion toast after switching workspaces", async () => {
+		mockUseWorkerWebSocket.mockReturnValue({
+			steps: [],
+			sendDeployConfig: vi.fn(),
+			deployConfigRef: { current: null },
+			deployStatus: "success",
+			deployError: null,
+			deployCompleteEvent: {
+				payload: {
+					success: true,
+					hosted_subdomain: "web",
+					deploymentTarget: "ecs",
+					finalStatus: "running",
+					cloudResources: null,
+					rolledBack: false,
+				},
+				receivedAt: 1_718_000_000_000,
+			},
+			serviceLogs: [],
+			deployLogEntries: [],
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "lexiguess-next", default_branch: "main", full_name: "acme/lexiguess-next", html_url: "https://github.com/acme/lexiguess-next" },
+			activeServiceName: "web",
+			deployments: [{ ...baseDeployment, repoName: "lexiguess-next" }],
+		};
+
+		const view = renderWithQueryClient(<DeployWorkspace />);
+
+		await waitFor(() => {
+			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
+		});
+
+		appState = {
+			...appState,
+			activeRepo: { name: "Pluto", default_branch: "main", full_name: "acme/Pluto", html_url: "https://github.com/acme/Pluto" },
+			activeServiceName: "server-node",
+			deployments: [makeDeployment({ repoName: "Pluto", serviceName: "server-node" })],
+		};
+		view.rerender(
+			<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+				<DeployWorkspace />
+			</QueryClientProvider>
+		);
+
+		await waitFor(() => {
+			expect(mockToastDismiss).toHaveBeenCalledWith("deployment-complete:lexiguess-next:web");
 			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
 		});
 	});
