@@ -293,6 +293,48 @@ describe("useWorkerWebSocketSession", () => {
 		expect(screen.getByTestId("last-log").textContent).toBe("Build started");
 	});
 
+	it("clears live deployment logs when the active workspace changes", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 5 * 60 * 1000) }),
+		} as Response);
+
+		render(<HarnessWithLogs />);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		const socket = MockSocket.instances[0];
+		expect(socket).toBeDefined();
+
+		await act(async () => {
+			socket?.emitServer("deploy:log", {
+				id: "lexiguess-deploy",
+				msg: "Lexiguess build started",
+				time: "2026-04-14T00:00:00.000Z",
+			});
+		});
+
+		expect(screen.getByTestId("log-count").textContent).toBe("1");
+
+		await act(async () => {
+			useAppData.setState({
+				activeRepo: {
+					id: 2,
+					name: "Pluto",
+					full_name: "acme/Pluto",
+					html_url: "https://github.com/acme/Pluto",
+					owner: { login: "acme" },
+				} as repoType,
+				activeServiceName: "server-node",
+			});
+		});
+
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		expect(screen.getByTestId("last-log").textContent).toBe("");
+	});
+
 	it("reuses a valid ws token for reconnects after the socket closes", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			ok: true,

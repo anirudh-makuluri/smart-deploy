@@ -16,7 +16,7 @@ import {
 	WORKER_SOCKET_SERVER_EVENTS,
 } from "@/lib/workerSocketEvents";
 import { useAppData } from "@/store/useAppData";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
 
@@ -90,9 +90,12 @@ function workerWebSocketReducer(
 		| { type: "set_deploy_complete"; event: DeployCompleteEvent }
 		| { type: "set_agent_event"; event: AgentEvent }
 		| { type: "set_status"; status: DeployStatus }
+		| { type: "reset_workspace" }
 		| { type: "set_error"; error: string | null; status?: DeployStatus }
 ): WorkerWebSocketState {
 	switch (action.type) {
+		case "reset_workspace":
+			return INITIAL_WORKER_WEBSOCKET_STATE;
 		case "start_deploy":
 			return {
 				...state,
@@ -271,6 +274,7 @@ export function useWorkerWebSocketSession() {
 	const manualDisconnectRef = useRef(false);
 	const authTokenRef = useRef<CachedWebSocketAuthToken | null>(null);
 	const subscribedWorkspaceRef = useRef<WorkspaceSubscription | null>(null);
+	const workerStateWorkspaceRef = useRef<WorkspaceSubscription | null>(null);
 	const activeAgentRunIdRef = useRef<string | null>(null);
 	const pendingAgentRequestRef = useRef(false);
 
@@ -576,6 +580,28 @@ export function useWorkerWebSocketSession() {
 	useEffect(() => {
 		subscribeWorkspace(socketRef.current);
 	}, [repoName, serviceName, subscribeWorkspace]);
+
+	useLayoutEffect(() => {
+		const previousWorkspace = workerStateWorkspaceRef.current;
+		const nextWorkspace =
+			repoName && serviceName
+				? {
+					repoName,
+					serviceName,
+				}
+				: null;
+
+		if (
+			previousWorkspace &&
+			(!nextWorkspace ||
+				previousWorkspace.repoName !== nextWorkspace.repoName ||
+				previousWorkspace.serviceName !== nextWorkspace.serviceName)
+		) {
+			dispatchWorkerState({ type: "reset_workspace" });
+		}
+
+		workerStateWorkspaceRef.current = nextWorkspace;
+	}, [repoName, serviceName]);
 
 	const runAgent = useCallback((conversationId: string, message: string) => {
 		const trimmedConversationId = conversationId.trim();
