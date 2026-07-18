@@ -86,9 +86,17 @@ export function useDeployWorkspace() {
 	
 	const effectiveBranch = React.useMemo(() => deployment.branch || defaultBranch, [deployment.branch, defaultBranch]);
 	
-	const showDeployLogs = React.useMemo(() => ui.isDeploying || deployStatus === "running" || deployStatus === "success" || deployStatus === "error",	[ui.isDeploying, deployStatus]);
+	const showDeployLogs = React.useMemo(
+		() =>
+			ui.isDeploying ||
+			deployStatus === "queued" ||
+			deployStatus === "running" ||
+			deployStatus === "success" ||
+			deployStatus === "error",
+		[ui.isDeploying, deployStatus]
+	);
 		const workspaceDeployState = React.useMemo(() => {
-		if (ui.isDeploying || deployStatus === "running") return "running";
+		if (ui.isDeploying || deployStatus === "queued" || deployStatus === "running") return "running";
 		if (deployStatus === "success") return "success";
 		if (deployStatus === "error") return "error";
 		return "idle";

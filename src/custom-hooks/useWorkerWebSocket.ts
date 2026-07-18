@@ -23,7 +23,7 @@ import { toast } from "sonner";
 export type { DeployCompleteWsPayload } from "@/lib/workerSocketEvents";
 
 type SocketStatus = "connecting" | "open" | "closed" | "error";
-type DeployStatus = "not-started" | "running" | "success" | "error";
+type DeployStatus = "not-started" | "queued" | "running" | "success" | "error";
 type DeployCompleteEvent = {
 	payload: DeployCompleteWsPayload;
 	receivedAt: number;
@@ -74,6 +74,7 @@ const INITIAL_WORKER_WEBSOCKET_STATE: WorkerWebSocketState = {
 };
 
 function deployStatusFromSocketStatus(status: WorkerSocketStatus): DeployStatus {
+	if (status === "queued") return "queued";
 	if (status === "running") return "running";
 	if (status === "success") return "success";
 	return "error";
@@ -99,7 +100,7 @@ function workerWebSocketReducer(
 		case "start_deploy":
 			return {
 				...state,
-				deployStatus: "running",
+				deployStatus: "queued",
 				deployError: null,
 				deployLogEntries: [],
 				serviceLogs: [],
@@ -148,7 +149,10 @@ function workerWebSocketReducer(
 			return {
 				...state,
 				deployStatus: action.status,
-				deployError: action.status === "running" || action.status === "not-started" ? null : state.deployError,
+				deployError:
+					action.status === "queued" || action.status === "running" || action.status === "not-started"
+						? null
+						: state.deployError,
 			};
 		case "set_error":
 			return {

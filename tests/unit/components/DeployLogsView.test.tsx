@@ -45,6 +45,23 @@ describe("DeployLogsView", () => {
 		global.fetch = vi.fn();
 	});
 
+	it("shows queued status before the deployment worker begins processing", () => {
+		render(
+			<DeployLogsView
+				isDeploymentLive={false}
+				showDeployLogs={true}
+				deployLogEntries={[]}
+				serviceLogs={[]}
+				deployStatus="queued"
+			/>
+		);
+
+		expect(screen.getByText("Deployment queued")).toBeInTheDocument();
+		expect(
+			screen.getByText("Waiting for the deployment worker to begin processing")
+		).toBeInTheDocument();
+	});
+
 	it("does not invent deployment progress when live steps are unavailable", () => {
 		render(
 			<DeployLogsView

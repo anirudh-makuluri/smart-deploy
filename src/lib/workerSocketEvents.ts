@@ -1,7 +1,7 @@
 import { CloudResources, DeployConfig, DeploymentTarget } from "@/app/types";
 import type { AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
 
-export type WorkerSocketStatus = "running" | "success" | "error";
+export type WorkerSocketStatus = "queued" | "running" | "success" | "error";
 
 export type ServiceLogEntry = {
 	timestamp: string;
