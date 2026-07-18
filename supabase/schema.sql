@@ -302,6 +302,32 @@ create table if not exists public._health (
 );
 insert into public._health (id) values (1) on conflict (id) do nothing;
 
+-- CLI device authorization codes and bearer tokens are stored only as hashes.
+create table if not exists public.cli_device_authorizations (
+  id uuid primary key default gen_random_uuid(),
+  device_code_hash text not null unique,
+  approval_code_hash text not null unique,
+  user_id text references public."user"(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'consumed', 'expired')),
+  expires_at timestamptz not null,
+  approved_at timestamptz,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_cli_device_authorizations_expiry on public.cli_device_authorizations(expires_at);
+create table if not exists public.cli_access_tokens (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public."user"(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz,
+  expires_at timestamptz,
+  revoked_at timestamptz
+);
+create index if not exists idx_cli_access_tokens_user on public.cli_access_tokens(user_id, created_at desc);
+alter table public.cli_device_authorizations enable row level security;
+alter table public.cli_access_tokens enable row level security;
+
 -- RLS: disable or set policies as needed; service role bypasses RLS
 alter table public.deployments enable row level security;
 alter table public.analysis_responses enable row level security;

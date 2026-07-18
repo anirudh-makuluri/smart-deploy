@@ -33,6 +33,7 @@ export default async function AuthPage({ searchParams }: AuthPageProps) {
 
 	const params = searchParams ? await searchParams : {};
 	const error = typeof params.error === "string" ? params.error : undefined;
+	const callbackURL = typeof params.callbackURL === "string" && params.callbackURL.startsWith("/") ? params.callbackURL : "/home";
 	if (error && config.WAITING_LIST_ENABLED) {
 		redirect("/waiting-list");
 	}
@@ -53,7 +54,7 @@ export default async function AuthPage({ searchParams }: AuthPageProps) {
 								Use your GitHub account to continue to your deploy workspace.
 							</p>
 						</div>
-						<LoginForm />
+						<LoginForm callbackURL={callbackURL} />
 					</div>
 
 					<div className="landing-panel landing-shell flex flex-col justify-center gap-6 p-6 sm:p-8 md:p-10">

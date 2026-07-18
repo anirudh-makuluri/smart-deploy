@@ -22,6 +22,7 @@
 # production
 /build
 /dist
+/packages/cli/dist/
 
 # misc
 .DS_Store
@@ -75,3 +76,6 @@ smartdeploy-key.pub
 
 /temp-docs
 /mcps
+
+# Smart Deploy CLI local project selection. Never commit local deployment state.
+/.smartdeploy/

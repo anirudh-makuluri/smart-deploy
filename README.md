@@ -90,6 +90,16 @@ User-facing guides for deploying and debugging your apps:
 
 Browse all docs in the app at `/docs`. For AI agents: [`/llms.txt`](/llms.txt) and [`/llms-full.txt`](/llms-full.txt).
 
+## CLI beta
+
+The Smart Deploy CLI currently supports browser-based account login and local project selection. Smart Analysis and deployment commands are still in development.
+
+```bash
+npx @arm8tron/smart-deploy@beta login
+```
+
+See the [CLI guide](docs/CLI.md) for the available commands and local-development setup.
+
 ## Tech stack
 
 - Next.js 16, React 19, TypeScript

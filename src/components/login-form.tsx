@@ -9,8 +9,9 @@ import { cn } from "@/lib/utils";
 
 export function LoginForm({
 	className,
+	callbackURL = "/home",
 	...props
-}: React.ComponentProps<"div">) {
+}: React.ComponentProps<"div"> & { callbackURL?: string }) {
 	const [pending, setPending] = React.useState(false);
 
 	async function signInWithGithub() {
@@ -18,7 +19,7 @@ export function LoginForm({
 		try {
 			await authClient.signIn.social({
 				provider: "github",
-				callbackURL: "/home",
+				callbackURL,
 			});
 		} catch (e) {
 			toast.error(e instanceof Error ? e.message : "Sign in failed");
