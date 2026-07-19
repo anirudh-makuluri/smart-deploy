@@ -37,6 +37,7 @@ export function PublicPageFooterContent({ primaryHref }: PublicPageFooterContent
 			<div className="mx-auto flex max-w-7xl flex-col gap-8 md:flex-row md:items-start md:justify-between">
 				<div>
 					<SmartDeployLogo href="/" className="mb-3" />
+					<span>Smart Deploy is a product of Makuluri Labs.</span>
 					<p className="max-w-xl text-sm leading-6 text-muted-foreground">
 						Smart Deploy is a transparent deployment platform for solo developers — scan a repo, preview the full deploy blueprint, and ship to AWS without a black-box deploy path.
 					</p>
