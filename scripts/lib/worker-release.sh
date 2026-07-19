@@ -187,7 +187,11 @@ worker_release_build_and_push() {
 	worker_release_preflight_ecr_push_permissions "${ECR_REPO}"
 
 	worker_release_log "Building worker image"
-	docker build -f "${DOCKERFILE_PATH}" -t "${WORKER_IMAGE}" "${REPO_ROOT}"
+	docker build \
+		--build-arg "WORKER_VERSION=${IMAGE_TAG}" \
+		-f "${DOCKERFILE_PATH}" \
+		-t "${WORKER_IMAGE}" \
+		"${REPO_ROOT}"
 
 	worker_release_log "Pushing worker image"
 	local push_status=0
