@@ -9,6 +9,7 @@ import { handleInternalDeploymentRunEvent } from "./lib/internalDeploymentRunEve
 import { getAllowedOriginHeader, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
 import { createWorkerSocketServer, type WorkerServerSocket } from "./lib/workerSocketServer";
+import { createWorkerHealthPayload, getWorkerVersion } from "./lib/workerHealth";
 import {
 	emitWorkerSocketEvent,
 	getWorkerDeploymentRoom,
@@ -20,7 +21,7 @@ import {
 const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
-const version = "0.3.0";
+const version = getWorkerVersion(process.env.WORKER_VERSION);
 const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
 const deploymentEventsToken = (
 	process.env.DEPLOYMENT_EVENTS_TOKEN ||
@@ -116,15 +117,7 @@ const server = http.createServer((req, res) => {
 
 	if (url.pathname === "/health" || url.pathname === "/") {
 		res.writeHead(200, { "Content-Type": "application/json" });
-		res.end(
-			JSON.stringify({
-				ok: true,
-				service: "websocket",
-				port,
-				environment,
-				version,
-			})
-		);
+		res.end(JSON.stringify(createWorkerHealthPayload({ port, environment, version })));
 		return;
 	}
 
