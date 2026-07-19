@@ -147,7 +147,14 @@ export async function resolveRepo(
 		if (!ownerTrimmed || !repoTrimmed) throw new Error("Owner and repo are required");
 
 		const repoData = await fetchAndBuildRepo(ownerTrimmed, repoTrimmed, ctx.githubToken);
-		await dbHelper.syncUserRepos(userID, [repoData]);
+
+		try {
+			await dbHelper.syncUserRepos(userID, [repoData]);
+		} catch (error) {
+			// Resolving the repository is sufficient to render its page. A transient
+			// catalog-sync failure must not hide an otherwise valid GitHub response.
+			console.error("[GraphQL] resolveRepo failed to sync repository:", error);
+		}
 
 		return repoData;
 	});
