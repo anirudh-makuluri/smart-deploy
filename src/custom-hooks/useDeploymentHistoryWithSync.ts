@@ -16,7 +16,7 @@ interface DeploymentHistoryState {
 interface UseDeploymentHistoryWithSyncProps {
 	repoName: string | undefined;
 	serviceName: string | undefined;
-	deployStatus: "not-started" | "running" | "success" | "error";
+	deployStatus: "not-started" | "queued" | "running" | "success" | "error";
 }
 
 export function useDeploymentHistoryWithSync({

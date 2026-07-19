@@ -5,6 +5,8 @@ const createDeploymentRunMock = vi.fn();
 const updateDeploymentsMock = vi.fn();
 const finalizeDeploymentRunMock = vi.fn();
 const enqueueDeploymentRunMock = vi.fn();
+const createEntryMock = vi.fn();
+const getSocketSnapshotMock = vi.fn();
 
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
@@ -19,6 +21,11 @@ vi.mock("@/lib/aws/deploymentQueue", () => ({
 	enqueueDeploymentRun: (...args: unknown[]) => enqueueDeploymentRunMock(...args),
 }));
 
+vi.mock("@/lib/deployLogsStore", () => ({
+	createEntry: (...args: unknown[]) => createEntryMock(...args),
+	getSocketSnapshot: (...args: unknown[]) => getSocketSnapshotMock(...args),
+}));
+
 describe("websocket deploy queue handoff", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -26,6 +33,13 @@ describe("websocket deploy queue handoff", () => {
 		updateDeploymentsMock.mockResolvedValue({});
 		finalizeDeploymentRunMock.mockResolvedValue({});
 		enqueueDeploymentRunMock.mockResolvedValue(undefined);
+		getSocketSnapshotMock.mockReturnValue({
+			repoName: "shop",
+			serviceName: "web",
+			logEntries: [],
+			status: "queued",
+			error: null,
+		});
 	});
 
 	it("creates a queued run, updates the deployment, and enqueues the run id", async () => {
@@ -36,13 +50,14 @@ describe("websocket deploy queue handoff", () => {
 			scanResults: { response_id: "resp-1" } as never,
 		});
 
+		const ws = { emit: vi.fn() };
 		await deploy(
 			{
 				deployConfig,
 				token: "github-token",
 				userID: "user-1",
 			},
-			null
+			ws
 		);
 
 		expect(createDeploymentRunMock).toHaveBeenCalledWith({
@@ -73,6 +88,14 @@ describe("websocket deploy queue handoff", () => {
 			userId: "user-1",
 			repoName: "shop",
 			serviceName: "web",
+		});
+		expect(createEntryMock).toHaveBeenCalledWith("user-1", "shop", "web");
+		expect(ws.emit).toHaveBeenCalledWith("deploy:snapshot", {
+			repoName: "shop",
+			serviceName: "web",
+			logEntries: [],
+			status: "queued",
+			error: null,
 		});
 		expect(finalizeDeploymentRunMock).not.toHaveBeenCalled();
 	});

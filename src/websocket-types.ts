@@ -3,6 +3,7 @@ import { isEcsCloudResources } from "@/lib/cloudResources";
 import { getEcsServiceLogs } from "@/lib/aws/ecsCloudWatchLogs";
 import { enqueueDeploymentRun } from "@/lib/aws/deploymentQueue";
 import { dbHelper } from "./db-helper";
+import * as deployLogsStore from "@/lib/deployLogsStore";
 import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
 export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID: string }, ws: any) {
@@ -63,6 +64,12 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 			repoName,
 			serviceName,
 		});
+
+		deployLogsStore.createEntry(userID, repoName, serviceName);
+		const snapshot = deployLogsStore.getSocketSnapshot(userID, repoName, serviceName);
+		if (snapshot) {
+			emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deploySnapshot, snapshot);
+		}
 	} catch (err: any) {
 		if (runId) {
 			await dbHelper.finalizeDeploymentRun({

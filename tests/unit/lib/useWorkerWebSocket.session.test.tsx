@@ -166,13 +166,14 @@ function Harness() {
 }
 
 function HarnessWithLogs() {
-	const { deployLogEntries, socketStatus } = useWorkerWebSocketSession();
+	const { deployLogEntries, deployStatus, socketStatus } = useWorkerWebSocketSession();
 
 	const lastMessage = deployLogEntries[deployLogEntries.length - 1]?.message ?? "";
 
 	return (
 		<>
 			<div data-testid="socket-status">{socketStatus}</div>
+			<div data-testid="deploy-status">{deployStatus}</div>
 			<div data-testid="log-count">{deployLogEntries.length}</div>
 			<div data-testid="last-log">{lastMessage}</div>
 		</>
@@ -291,6 +292,44 @@ describe("useWorkerWebSocketSession", () => {
 
 		expect(screen.getByTestId("log-count").textContent).toBe("1");
 		expect(screen.getByTestId("last-log").textContent).toBe("Build started");
+	});
+
+	it("shows queued status until the deployment worker emits the first log", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 5 * 60 * 1000) }),
+		} as Response);
+
+		render(<HarnessWithLogs />);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		const socket = MockSocket.instances[0];
+		expect(socket).toBeDefined();
+
+		await act(async () => {
+			socket?.emitServer("deploy:snapshot", {
+				repoName: "smart-deploy",
+				serviceName: "web",
+				logEntries: [],
+				status: "queued",
+				error: null,
+			});
+		});
+
+		expect(screen.getByTestId("deploy-status").textContent).toBe("queued");
+
+		await act(async () => {
+			socket?.emitServer("deploy:log", {
+				id: "deploy",
+				msg: "Deployment worker started",
+				time: "2026-07-18T00:00:00.000Z",
+			});
+		});
+
+		expect(screen.getByTestId("deploy-status").textContent).toBe("running");
 	});
 
 	it("clears live deployment logs when the active workspace changes", async () => {

@@ -22,12 +22,12 @@ function key(userID: string | undefined, repoName: string, serviceName: string):
 	return makeRuntimeStoreKey(userID, repoName, serviceName);
 }
 
-export function createEntry(userID: string | undefined, repoName: string, serviceName: string, ws: any): void {
+export function createEntry(userID: string | undefined, repoName: string, serviceName: string): void {
 	const k = key(userID, repoName, serviceName);
 	store.set(k, {
 		steps: [],
 		logEntries: [],
-		status: "running",
+		status: "queued",
 		error: null,
 	});
 }
@@ -67,6 +67,7 @@ export function broadcastLog(
 ): void {
 	const entry = store.get(key(userID, repoName, serviceName));
 	if (!entry) return;
+	entry.status = "running";
 	const time = timeOverride || new Date().toISOString();
 	const payload = { id, msg, time };
 	entry.logEntries.push({
@@ -136,12 +137,12 @@ export function getSocketSnapshot(
 	};
 }
 
-/** In-memory deploy runs only (`status === "running"`). Used to greet reconnecting clients. */
+/** In-memory queued or running deploys. Used to greet reconnecting clients. */
 export function listRunningDeploymentsForUser(userID: string): Array<{ repoName: string; serviceName: string }> {
 	const out: Array<{ repoName: string; serviceName: string }> = [];
 	const prefix = `${userID}:`;
 	for (const [k, entry] of store) {
-		if (entry.status !== "running") continue;
+		if (entry.status !== "queued" && entry.status !== "running") continue;
 		if (!k.startsWith(prefix)) continue;
 		const rest = k.slice(prefix.length);
 		const sep = rest.lastIndexOf(":");

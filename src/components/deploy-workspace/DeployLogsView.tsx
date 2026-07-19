@@ -19,7 +19,7 @@ import {
 import { DeployStep } from "@/app/types";
 import { formatRecentDeployLogs } from "@/components/deploy-workspace/deployLogsUtils";
 
-export type DeployStatus = "not-started" | "running" | "success" | "error";
+export type DeployStatus = "not-started" | "queued" | "running" | "success" | "error";
 
 type LogEntry = { timestamp?: string; message?: string };
 type CommitInfo = { sha: string; message: string; author: string; date: string };
@@ -115,6 +115,7 @@ export default function DeployLogsView({
 	}
 
 	const showingDeployLogs =
+		deployStatus === "queued" ||
 		deployStatus === "running" ||
 		(showDeployLogs &&
 			deployLogEntries.length > 0 &&
@@ -135,7 +136,9 @@ export default function DeployLogsView({
 	const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
 	const headerTitle = showDeploymentHeader
-		? deployStatus === "running"
+		? deployStatus === "queued"
+			? "Deployment queued"
+			: deployStatus === "running"
 			? "Deployment in Progress"
 			: deployStatus === "success"
 				? "Deployment Successful"
@@ -147,7 +150,9 @@ export default function DeployLogsView({
 			: "Start a new deployment";
 
 	const headerSubtitle = showDeploymentHeader
-		? deployStatus === "running"
+		? deployStatus === "queued"
+			? "Waiting for the deployment worker to begin processing"
+			: deployStatus === "running"
 			? hasDeploymentSteps
 				? `Step ${Math.min(completedSteps + 1, totalSteps)} of ${totalSteps}`
 				: "Deployment is running"
@@ -179,7 +184,7 @@ export default function DeployLogsView({
 								className={`rounded-xl p-2 ${
 									!showDeploymentHeader
 										? "bg-muted text-muted-foreground"
-										: deployStatus === "running"
+										: deployStatus === "queued" || deployStatus === "running"
 											? "animate-pulse bg-primary/10 text-primary"
 											: deployStatus === "success"
 												? "bg-emerald-500/10 text-emerald-500"
@@ -190,6 +195,7 @@ export default function DeployLogsView({
 							>
 								{showDeploymentHeader ? (
 									<>
+										{deployStatus === "queued" && <Clock className="size-6" />}
 										{deployStatus === "running" && <Loader2 className="size-6 animate-spin" />}
 										{deployStatus === "success" && <CheckCircle2 className="size-6" />}
 										{deployStatus === "error" && <XCircle className="size-6" />}

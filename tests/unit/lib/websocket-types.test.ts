@@ -7,6 +7,8 @@ const finalizeDeploymentRunMock = vi.fn();
 const enqueueDeploymentRunMock = vi.fn();
 const getDeploymentMock = vi.fn();
 const getEcsServiceLogsMock = vi.fn();
+const createEntryMock = vi.fn();
+const getSocketSnapshotMock = vi.fn();
 
 vi.mock("@/db-helper", () => ({
 	dbHelper: {
@@ -25,6 +27,11 @@ vi.mock("@/lib/aws/ecsCloudWatchLogs", () => ({
 	getEcsServiceLogs: (...args: unknown[]) => getEcsServiceLogsMock(...args),
 }));
 
+vi.mock("@/lib/deployLogsStore", () => ({
+	createEntry: (...args: unknown[]) => createEntryMock(...args),
+	getSocketSnapshot: (...args: unknown[]) => getSocketSnapshotMock(...args),
+}));
+
 describe("websocket-types deploy", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -32,6 +39,13 @@ describe("websocket-types deploy", () => {
 		updateDeploymentsMock.mockResolvedValue({});
 		finalizeDeploymentRunMock.mockResolvedValue({});
 		enqueueDeploymentRunMock.mockResolvedValue(undefined);
+		getSocketSnapshotMock.mockReturnValue({
+			repoName: "smart-deploy",
+			serviceName: "web",
+			logEntries: [],
+			status: "queued",
+			error: null,
+		});
 	});
 
 	it("marks the deployment failed when queue handoff throws", async () => {
@@ -80,13 +94,14 @@ describe("websocket-types deploy", () => {
 			status: "deploying",
 		});
 
+		const ws = { emit: vi.fn() };
 		await deploy(
 			{
 				deployConfig,
 				token: "gh-token",
 				userID: "user-1",
 			},
-			{}
+			ws
 		);
 
 		expect(createDeploymentRunMock).toHaveBeenCalledWith({
@@ -117,6 +132,14 @@ describe("websocket-types deploy", () => {
 			userId: "user-1",
 			repoName: "smart-deploy",
 			serviceName: "web",
+		});
+		expect(createEntryMock).toHaveBeenCalledWith("user-1", "smart-deploy", "web");
+		expect(ws.emit).toHaveBeenCalledWith("deploy:snapshot", {
+			repoName: "smart-deploy",
+			serviceName: "web",
+			logEntries: [],
+			status: "queued",
+			error: null,
 		});
 		expect(finalizeDeploymentRunMock).not.toHaveBeenCalled();
 	}, 10000);
