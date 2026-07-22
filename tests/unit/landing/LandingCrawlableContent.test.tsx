@@ -15,5 +15,6 @@ describe("LandingCrawlableContent", () => {
 		expect(screen.getByText(/130/)).toBeInTheDocument();
 		expect(screen.getByRole("heading", { level: 3, name: "Smart Analysis" })).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /Documentation/i })).toHaveAttribute("href", "/docs");
+		expect(screen.getByRole("link", { name: /Join the waitlist/i })).toHaveAttribute("href", "/waiting-list");
 	});
 });

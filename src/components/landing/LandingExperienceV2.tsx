@@ -29,8 +29,8 @@ export function LandingExperienceV2({
 	githubStars,
 	initialRepoSlug,
 }: LandingExperienceV2Props) {
-	const primaryHref = isSignedIn ? "/home" : "/auth";
-	const primaryCopy = isSignedIn ? "Open Dashboard" : "Deploy a repo";
+	const primaryHref = isSignedIn ? "/home" : "/waiting-list";
+	const primaryCopy = isSignedIn ? "Open Dashboard" : "Join the waitlist";
 	const prefersReducedMotion = useReducedMotion();
 	const [phase, setPhase] = React.useState<WorkspacePhase>("setup");
 
@@ -68,7 +68,7 @@ export function LandingExperienceV2({
 								</Button>
 								<Button asChild size="sm" className="sm:h-9 sm:px-4 sm:text-sm">
 									<Link href={primaryHref}>
-										<span className="sm:hidden">{isSignedIn ? "Dashboard" : "Get started"}</span>
+										<span className="sm:hidden">{isSignedIn ? "Dashboard" : "Join waitlist"}</span>
 										<span className="hidden sm:inline">{primaryCopy}</span>
 									</Link>
 								</Button>
