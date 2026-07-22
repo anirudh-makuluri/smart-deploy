@@ -29,7 +29,7 @@ export function LandingExperienceV2({
 	githubStars,
 	initialRepoSlug,
 }: LandingExperienceV2Props) {
-	const primaryHref = isSignedIn ? "/home" : "/waiting-list";
+	const primaryHref = isSignedIn ? "/home" : "/auth";
 	const primaryCopy = isSignedIn ? "Open Dashboard" : "Join the waitlist";
 	const prefersReducedMotion = useReducedMotion();
 	const [phase, setPhase] = React.useState<WorkspacePhase>("setup");

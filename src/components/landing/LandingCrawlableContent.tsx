@@ -83,7 +83,7 @@ export function LandingCrawlableContent({ publicStats }: LandingCrawlableContent
 			<p>Python: {LANDING_FRAMEWORKS.python.join(", ")}.</p>
 
 			<p>
-				<Link href="/docs">Documentation</Link> · <Link href="/waiting-list">Join the waitlist</Link> ·{" "}
+				<Link href="/docs">Documentation</Link> · <Link href="/auth">Join the waitlist</Link> ·{" "}
 				<Link href="/llms.txt">llms.txt</Link>
 			</p>
 		</section>
