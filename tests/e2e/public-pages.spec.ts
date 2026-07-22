@@ -18,6 +18,10 @@ test("landing page renders interactive v2 hero and has no horizontal overflow", 
 	await expect(page.getByTestId("landing-v2-workspace")).toBeVisible();
 	await expect(page.getByTestId("landing-v2-run-analysis")).toBeVisible();
 	await expect(page.getByRole("banner").getByRole("link", { name: "Docs" })).toBeVisible();
+	await expect(page.getByRole("banner").getByRole("link", { name: "Join the waitlist" })).toHaveAttribute(
+		"href",
+		"/auth"
+	);
 	await expect(page.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Changelog" })).toBeVisible();
 	await expectNoHorizontalOverflow(page);
 
@@ -27,6 +31,7 @@ test("landing page renders interactive v2 hero and has no horizontal overflow", 
 	await expect(page.getByTestId("landing-v2-approve-blueprint")).toBeVisible({ timeout: 15000 });
 	await page.getByTestId("landing-v2-approve-blueprint").click();
 	await expect(page.getByTestId("landing-v2-replay")).toBeVisible({ timeout: 15000 });
+	await expect(page.getByTestId("landing-v2-final-cta")).toHaveAttribute("href", "/auth");
 	await expectNoHorizontalOverflow(page);
 
 	await page.setViewportSize({ width: 390, height: 844 });
