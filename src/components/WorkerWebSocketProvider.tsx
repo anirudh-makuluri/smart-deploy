@@ -21,6 +21,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 		deployError,
 		deployCompleteEvent,
 		initiateServiceLogs,
+		clearDeploymentLogs,
 		serviceLogs,
 	} = sessionValue;
 
@@ -36,6 +37,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 			deployError,
 			deployCompleteEvent,
 			initiateServiceLogs,
+			clearDeploymentLogs,
 			serviceLogs,
 		}),
 		[
@@ -49,6 +51,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 			deployError,
 			deployCompleteEvent,
 			initiateServiceLogs,
+			clearDeploymentLogs,
 			serviceLogs,
 		]
 	);

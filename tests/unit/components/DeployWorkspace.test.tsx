@@ -21,6 +21,7 @@ const setActiveRepo = vi.fn();
 const setActiveServiceName = vi.fn();
 const removeDeployment = vi.fn();
 const mockSendDeployConfig = vi.fn();
+const mockClearDeploymentLogs = vi.fn();
 const mockControlDeployment = vi.fn();
 const mockDeleteDeployment = vi.fn();
 const mockFetchLatestCommit = vi.fn();
@@ -223,6 +224,7 @@ describe("DeployWorkspace", () => {
 		mockUseWorkerWebSocket.mockReturnValue({
 			steps: [],
 			sendDeployConfig: mockSendDeployConfig,
+			clearDeploymentLogs: mockClearDeploymentLogs,
 			deployConfigRef: { current: null },
 			deployStatus: "not-started",
 			deployError: null,
@@ -740,6 +742,7 @@ describe("DeployWorkspace", () => {
 		await waitFor(() => {
 			expect(mockDeleteDeployment).toHaveBeenCalledWith("smart-deploy", "web");
 		});
+		expect(mockClearDeploymentLogs).toHaveBeenCalledOnce();
 		await waitFor(() => {
 			expect(updateDeploymentById).toHaveBeenCalledWith(
 				expect.objectContaining({

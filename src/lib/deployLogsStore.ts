@@ -127,6 +127,7 @@ export function getSocketSnapshot(
 	if (!userID) return null;
 	const snapshot = getSnapshot(userID, repoName, serviceName);
 	if (!snapshot) return null;
+	if (snapshot.status !== "queued" && snapshot.status !== "running") return null;
 
 	return {
 		repoName,

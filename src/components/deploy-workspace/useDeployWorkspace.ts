@@ -78,7 +78,16 @@ export function useDeployWorkspace() {
 	const lastResolvedDeploymentKeyRef = React.useRef<string | null>(null);
 
 	const deployment = useActiveDeployment();
-	const { sendDeployConfig, liveDeployConfig, deployStatus, deployError, deployCompleteEvent, serviceLogs, deployLogEntries } = useWorkerWebSocket();
+	const {
+		sendDeployConfig,
+		liveDeployConfig,
+		deployStatus,
+		deployError,
+		deployCompleteEvent,
+		serviceLogs,
+		deployLogEntries,
+		clearDeploymentLogs,
+	} = useWorkerWebSocket();
 
 	const hasHostedSubdomain = React.useMemo(() => Boolean(deployment.hostedSubdomain?.trim()), [deployment.hostedSubdomain]);
 	
@@ -546,6 +555,7 @@ export function useDeployWorkspace() {
 				scanResults: deletedScanResults ?? deployment.scanResults ?? {},
 			} as DeployConfig);
 			await deleteDeployment(deployment.repoName, deployment.serviceName);
+			clearDeploymentLogs();
 			useAppData.getState().removeDeployment(deployment.repoName, deployment.serviceName);
 			await updateDeploymentById(draftDeployment);
 			if (deletedScanResults && Object.keys(deletedScanResults).length > 0) {
@@ -561,7 +571,7 @@ export function useDeployWorkspace() {
 		} finally {
 			dispatch({ type: "set_changing_deployment_state", value: false });
 		}
-	}, [deployment, effectiveScanResults, ui.isChangingDeploymentState, updateDeploymentById]);
+	}, [clearDeploymentLogs, deployment, effectiveScanResults, ui.isChangingDeploymentState, updateDeploymentById]);
 
 	const handleRollbackEntrySelect = React.useCallback((entry: DeploymentHistoryEntry) => {
 		dispatch({ type: "set_rollback_entry", value: entry });
