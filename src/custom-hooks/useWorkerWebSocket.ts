@@ -91,12 +91,23 @@ function workerWebSocketReducer(
 		| { type: "set_deploy_complete"; event: DeployCompleteEvent }
 		| { type: "set_agent_event"; event: AgentEvent }
 		| { type: "set_status"; status: DeployStatus }
+		| { type: "clear_deployment_logs" }
 		| { type: "reset_workspace" }
 		| { type: "set_error"; error: string | null; status?: DeployStatus }
 ): WorkerWebSocketState {
 	switch (action.type) {
 		case "reset_workspace":
 			return INITIAL_WORKER_WEBSOCKET_STATE;
+		case "clear_deployment_logs":
+			return {
+				...state,
+				deployStatus: "not-started",
+				deployError: null,
+				deployLogEntries: [],
+				serviceLogs: [],
+				liveDeployConfig: null,
+				deployCompleteEvent: null,
+			};
 		case "start_deploy":
 			return {
 				...state,
@@ -358,6 +369,10 @@ export function useWorkerWebSocketSession() {
 	const initiateServiceLogs = useCallback(() => {
 		subscribeWorkspace(socketRef.current);
 	}, [subscribeWorkspace]);
+
+	const clearDeploymentLogs = useCallback(() => {
+		dispatchWorkerState({ type: "clear_deployment_logs" });
+	}, []);
 
 	const getWebSocketAuthTokenRef = useRef(getWebSocketAuthToken);
 	const subscribeWorkspaceRefFn = useRef(subscribeWorkspace);
@@ -670,6 +685,7 @@ export function useWorkerWebSocketSession() {
 		deployError: workerState.deployError,
 		deployCompleteEvent: workerState.deployCompleteEvent,
 		initiateServiceLogs,
+		clearDeploymentLogs,
 		serviceLogs: workerState.serviceLogs,
 		latestAgentEvent: workerState.latestAgentEvent,
 	};

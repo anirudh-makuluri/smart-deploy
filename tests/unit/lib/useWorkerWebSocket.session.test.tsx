@@ -1,5 +1,5 @@
 import React from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { repoType } from "@/app/types";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
@@ -166,7 +166,7 @@ function Harness() {
 }
 
 function HarnessWithLogs() {
-	const { deployLogEntries, deployStatus, socketStatus } = useWorkerWebSocketSession();
+	const { clearDeploymentLogs, deployLogEntries, deployStatus, socketStatus } = useWorkerWebSocketSession();
 
 	const lastMessage = deployLogEntries[deployLogEntries.length - 1]?.message ?? "";
 
@@ -176,6 +176,9 @@ function HarnessWithLogs() {
 			<div data-testid="deploy-status">{deployStatus}</div>
 			<div data-testid="log-count">{deployLogEntries.length}</div>
 			<div data-testid="last-log">{lastMessage}</div>
+			<button type="button" onClick={clearDeploymentLogs}>
+				Clear deployment logs
+			</button>
 		</>
 	);
 }
@@ -372,6 +375,40 @@ describe("useWorkerWebSocketSession", () => {
 
 		expect(screen.getByTestId("log-count").textContent).toBe("0");
 		expect(screen.getByTestId("last-log").textContent).toBe("");
+	});
+
+	it("clears the current deployment logs after a service is deleted", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 5 * 60 * 1000) }),
+		} as Response);
+
+		render(<HarnessWithLogs />);
+
+		await act(async () => {
+			await Promise.resolve();
+		});
+
+		const socket = MockSocket.instances[0];
+		expect(socket).toBeDefined();
+
+		await act(async () => {
+			socket?.emitServer("deploy:snapshot", {
+				repoName: "smart-deploy",
+				serviceName: "web",
+				logEntries: [{ id: "build", message: "Build complete" }],
+				status: "success",
+				error: null,
+			});
+		});
+
+		expect(screen.getByTestId("log-count").textContent).toBe("1");
+		expect(screen.getByTestId("deploy-status").textContent).toBe("success");
+
+		fireEvent.click(screen.getByRole("button", { name: "Clear deployment logs" }));
+
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		expect(screen.getByTestId("deploy-status").textContent).toBe("not-started");
 	});
 
 	it("reuses a valid ws token for reconnects after the socket closes", async () => {
