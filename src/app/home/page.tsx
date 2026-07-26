@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import HomePageClient from "./HomePageClient";
 
 export const metadata: Metadata = {
@@ -10,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-	return <HomePageClient />;
+	return (
+		<Suspense fallback={null}>
+			<HomePageClient />
+		</Suspense>
+	);
 }

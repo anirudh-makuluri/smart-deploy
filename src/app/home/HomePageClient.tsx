@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import DashboardMain, { DashboardMainProps } from "@/components/DashboardMain";
 import DashboardSideBar from "@/components/DashboardSideBar";
 import GithubAppSetupBanner from "@/components/dashboard/GithubAppSetupBanner";
@@ -11,9 +12,28 @@ import { cn } from "@/lib/utils";
 
 export default function HomePageClient() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
+	const searchParams = useSearchParams();
 	const [activeView, setActiveView] = React.useState<DashboardMainProps['activeView']>("overview");
 	const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 	const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
+
+	React.useEffect(() => {
+		const billing = searchParams.get("billing");
+		if (billing === "success" || billing === "cancelled") {
+			setActiveView("credits");
+		}
+	}, [searchParams]);
+
+	const billingNotice = React.useMemo(() => {
+		const billing = searchParams.get("billing");
+		if (billing === "success") {
+			return "Payment received. Credits appear after Stripe confirms the checkout (usually within a few seconds).";
+		}
+		if (billing === "cancelled") {
+			return "Checkout was cancelled. No charges were made.";
+		}
+		return null;
+	}, [searchParams]);
 
 	return (
 		<div className="landing-bg flex h-svh flex-col overflow-hidden text-foreground">
@@ -34,7 +54,7 @@ export default function HomePageClient() {
 					/>
 				</div>
 				<div className="hidden w-px shrink-0 bg-border/60 md:block" aria-hidden />
-				<DashboardMain activeView={activeView} />
+				<DashboardMain activeView={activeView} billingNotice={billingNotice} />
 			</div>
 
 			<Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
