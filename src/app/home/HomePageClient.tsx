@@ -13,16 +13,12 @@ import { cn } from "@/lib/utils";
 export default function HomePageClient() {
 	useAppDataQuery(); // Fetch in background and sync to store; no blocking loader
 	const searchParams = useSearchParams();
-	const [activeView, setActiveView] = React.useState<DashboardMainProps['activeView']>("overview");
+	const billingParam = searchParams.get("billing");
+	const [activeView, setActiveView] = React.useState<DashboardMainProps["activeView"]>(() =>
+		billingParam === "success" || billingParam === "cancelled" ? "credits" : "overview",
+	);
 	const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 	const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-
-	React.useEffect(() => {
-		const billing = searchParams.get("billing");
-		if (billing === "success" || billing === "cancelled") {
-			setActiveView("credits");
-		}
-	}, [searchParams]);
 
 	const billingNotice = React.useMemo(() => {
 		const billing = searchParams.get("billing");
