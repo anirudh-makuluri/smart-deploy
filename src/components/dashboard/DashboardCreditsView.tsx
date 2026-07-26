@@ -65,8 +65,28 @@ const COUNTRY_OPTIONS = [
 	{ code: "JP", label: "Japan" },
 ];
 
+const usdFormatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const integerFormatter = new Intl.NumberFormat("en-US");
+const ledgerDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+	timeZone: "UTC",
+	year: "numeric",
+	month: "short",
+	day: "numeric",
+	hour: "numeric",
+	minute: "2-digit",
+	hour12: true,
+});
+
 function formatUsd(cents: number): string {
-	return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
+	return usdFormatter.format(cents / 100);
+}
+
+function formatInteger(value: number): string {
+	return integerFormatter.format(value);
+}
+
+function formatLedgerTimestamp(isoTimestamp: string): string {
+	return ledgerDateTimeFormatter.format(new Date(isoTimestamp));
 }
 
 function formatLedgerType(type: CreditLedgerEntry["type"]): string {
@@ -128,9 +148,21 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ packageId, countryCode }),
 			});
-			const data = (await response.json()) as { checkoutUrl?: string; error?: string };
-			if (!response.ok || !data.checkoutUrl) {
-				throw new Error(data.error || "Could not start checkout");
+			if (!response.ok) {
+				let message = "Could not start checkout";
+				try {
+					const errorData = (await response.json()) as { error?: string };
+					if (errorData.error) {
+						message = errorData.error;
+					}
+				} catch {
+					// Ignore JSON parse errors on failed responses.
+				}
+				throw new Error(message);
+			}
+			const data = (await response.json()) as { checkoutUrl?: string };
+			if (!data.checkoutUrl) {
+				throw new Error("Could not start checkout");
 			}
 			window.location.assign(data.checkoutUrl);
 		} catch (error) {
@@ -163,7 +195,7 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 				</CardHeader>
 				<CardContent>
 					<p className="text-3xl font-semibold tracking-tight text-foreground">
-						{isLoading ? "…" : (balanceQuery.data?.balance ?? 0).toLocaleString()}
+						{isLoading ? "…" : formatInteger(balanceQuery.data?.balance ?? 0)}
 						<span className="ml-2 text-sm font-medium text-muted-foreground">credits</span>
 					</p>
 				</CardContent>
@@ -208,7 +240,7 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 						return (
 							<Card key={pkg.id} className="border-border bg-card/70">
 								<CardHeader className="pb-3">
-									<CardTitle className="text-base">{pkg.credits.toLocaleString()} credits</CardTitle>
+									<CardTitle className="text-base">{formatInteger(pkg.credits)} credits</CardTitle>
 									<CardDescription>
 										{formatUsd(tax.subtotalCents)}
 										{tax.taxAmountCents > 0
@@ -247,7 +279,7 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 					<CardTitle className="text-base">What credits buy</CardTitle>
 					<CardDescription>
 						Flat per-action rates plus hourly uptime while an ECS service is live. A typical always-on month
-						(~{pricingQuery.data?.customer.hobbyMonthCredits.toLocaleString() ?? "3,000"} credits, ≈$
+						(~{pricingQuery.data ? formatInteger(pricingQuery.data.customer.hobbyMonthCredits) : "3,000"} credits, ≈$
 						{(pricingQuery.data?.customer.hobbyMonthUsd ?? 30).toFixed(2)}) covers deploys, scans, and 730
 						uptime hours at {pricingQuery.data?.customer.rates.uptimePerHour ?? 4} credits/hr.
 					</CardDescription>
@@ -308,7 +340,7 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 									<div>
 										<p className="font-medium text-foreground">{formatLedgerType(entry.type)}</p>
 										<p className="text-xs text-muted-foreground">
-											{new Date(entry.createdAt).toLocaleString()}
+											{formatLedgerTimestamp(entry.createdAt)}
 										</p>
 									</div>
 									<span
@@ -318,7 +350,7 @@ export default function DashboardCreditsView({ billingNotice }: DashboardCredits
 										)}
 									>
 										{entry.amount > 0 ? "+" : ""}
-										{entry.amount.toLocaleString()}
+										{formatInteger(entry.amount)}
 									</span>
 								</li>
 							))}

@@ -79,22 +79,27 @@ export async function reconcileUptimeBilling(now = new Date()): Promise<UptimeBi
 		`[uptime-billing] billing ${listed.deployments.length} deployment(s) for ${hourBucket} at ${creditsPerHour} credits/hr`
 	);
 
-	for (const deployment of listed.deployments) {
-		const referenceId = buildUptimeReferenceId(deployment.id, hourBucket);
-		const debit = await dbHelper.debitCredits({
-			userId: deployment.userId,
-			credits: creditsPerHour,
-			referenceId,
-			metadata: {
-				kind: "uptime",
-				deploymentId: deployment.id,
-				repoName: deployment.repoName,
-				serviceName: deployment.serviceName,
-				hourBucket,
-				creditsPerHour,
-			},
-		});
+	const debitResults = await Promise.all(
+		listed.deployments.map(async (deployment) => {
+			const referenceId = buildUptimeReferenceId(deployment.id, hourBucket);
+			const debit = await dbHelper.debitCredits({
+				userId: deployment.userId,
+				credits: creditsPerHour,
+				referenceId,
+				metadata: {
+					kind: "uptime",
+					deploymentId: deployment.id,
+					repoName: deployment.repoName,
+					serviceName: deployment.serviceName,
+					hourBucket,
+					creditsPerHour,
+				},
+			});
+			return { deployment, debit };
+		}),
+	);
 
+	for (const { deployment, debit } of debitResults) {
 		if (debit.error) {
 			console.error(
 				`[uptime-billing] error for ${deployment.repoName}/${deployment.serviceName}:`,
