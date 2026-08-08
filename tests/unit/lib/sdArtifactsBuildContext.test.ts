@@ -5,6 +5,7 @@ import {
 	normalizeRailpackFrontendTag,
 	railpackFrontendBuildkitSyntax,
 	resolveSdArtifactsPrebuiltImage,
+	resolveSdArtifactsPrebuiltImageLocation,
 	sdArtifactsRemoteBuildImageTag,
 } from "@/lib/sdArtifactsBuildContext";
 
@@ -107,6 +108,45 @@ describe("sdArtifactsBuildContext prebuilt image helpers", () => {
 				imageDigest: "sha256:abc",
 			})
 		);
+	});
+
+	it("uses the current ECR tag instead of a stale remote-build digest", () => {
+		const scan = makeScan({
+			deploy_units: [
+				{
+					name: "api",
+					root: ".",
+					type: "server",
+					provider: "node",
+					framework: "nextjs",
+					port: 3000,
+					artifacts: { railpack_plan: null, railpack_json: null },
+					remote_build: {
+						unit_name: "api",
+						unit_root: ".",
+						status: "SUCCEEDED",
+						image_uri: "old-account.dkr.ecr.us-west-2.amazonaws.com/sd/chatify-next/root@sha256:stale",
+						image_digest: "sha256:stale",
+						ecr_repository: "sd/chatify-next/root",
+						image_tag: "abcdef",
+					},
+				},
+			],
+		});
+		const prebuiltImage = resolveSdArtifactsPrebuiltImage({ scan, repoName: "chatify-next" });
+		expect(prebuiltImage).not.toBeNull();
+
+		expect(
+			resolveSdArtifactsPrebuiltImageLocation({
+				ecrRegistry: "328342419078.dkr.ecr.us-west-2.amazonaws.com",
+				prebuiltImage: prebuiltImage!,
+			})
+		).toEqual({
+			ecrRegistry: "328342419078.dkr.ecr.us-west-2.amazonaws.com",
+			ecrRepoName: "sd/chatify-next/root",
+			imageTag: "abcdef",
+			imageUri: "328342419078.dkr.ecr.us-west-2.amazonaws.com/sd/chatify-next/root:abcdef",
+		});
 	});
 
 	it("falls back to the sd-artifacts repo path when image_uri is omitted", () => {

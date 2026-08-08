@@ -95,7 +95,7 @@ export async function ecrImageTagExists(
 		);
 		return Boolean(resp.imageDetails && resp.imageDetails.length > 0);
 	} catch (e: any) {
-		if (e.name === "ImageNotFoundException") return false;
+		if (e.name === "ImageNotFoundException" || e.name === "RepositoryNotFoundException") return false;
 		throw e;
 	}
 }

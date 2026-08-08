@@ -133,3 +133,24 @@ export function resolveSdArtifactsPrebuiltImage(params: {
 		imageDigest: remoteBuild.image_digest?.trim() || null,
 	};
 }
+
+/**
+ * Remote-build payloads are a hint that an image was built, not an authority on
+ * the image reference that ECS should run. ECR can prune an old untagged digest
+ * after a tagged image is rebuilt, so deployments must start from the current
+ * tag in Smart Deploy's registry and resolve its digest immediately before ECS.
+ */
+export function resolveSdArtifactsPrebuiltImageLocation(params: {
+	ecrRegistry: string;
+	prebuiltImage: NonNullable<ReturnType<typeof resolveSdArtifactsPrebuiltImage>>;
+}): { ecrRegistry: string; ecrRepoName: string; imageTag: string; imageUri: string } {
+	const ecrRegistry = params.ecrRegistry.trim().replace(/\/+$/, "");
+	const ecrRepoName = params.prebuiltImage.ecrRepoName.trim().replace(/^\/+/, "");
+	const imageTag = params.prebuiltImage.imageTag.trim();
+	return {
+		ecrRegistry,
+		ecrRepoName,
+		imageTag,
+		imageUri: `${ecrRegistry}/${ecrRepoName}:${imageTag}`,
+	};
+}
