@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-	collectDocCitationsFromSearchDocsToolResults,
+	collectDocCitationsFromToolResults,
 	extractAgentDocCitations,
 	prepareAgentAssistantMessage,
 	stripAgentDocSourcesSuffix,
@@ -47,7 +47,7 @@ describe("agentDocCitations", () => {
 	});
 
 	it("collects citations from search_docs tool results", () => {
-		const citations = collectDocCitationsFromSearchDocsToolResults([
+		const citations = collectDocCitationsFromToolResults([
 			{
 				name: "search_docs",
 				result: {
@@ -57,6 +57,30 @@ describe("agentDocCitations", () => {
 		]);
 
 		expect(citations.map((citation) => citation.source)).toEqual(["docs/FAQ.md", "docs/RAILPACK.md"]);
+	});
+
+	it("collects external documentation citations from Context.dev results", () => {
+		const citations = collectDocCitationsFromToolResults([
+			{
+				name: "search_external_docs",
+				result: {
+					results: [
+						{
+							title: "Amazon ECS deployment circuit breaker",
+							url: "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html",
+						},
+					],
+				},
+			},
+		]);
+
+		expect(citations).toEqual([
+			{
+				source: "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html",
+				href: "https://docs.aws.amazon.com/AmazonECS/latest/developerguide/deployment-circuit-breaker.html",
+				label: "Amazon ECS deployment circuit breaker",
+			},
+		]);
 	});
 
 	it("prefers search_docs tool citations over text parsing", () => {
