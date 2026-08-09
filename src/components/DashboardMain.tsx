@@ -3,13 +3,15 @@
 import DashboardDeploymentsView from "@/components/dashboard/DashboardDeploymentsView";
 import DashboardOverviewView from "@/components/dashboard/DashboardOverviewView";
 import DashboardRepositoriesView from "@/components/dashboard/DashboardRepositoriesView";
+import DashboardCreditsView from "@/components/dashboard/DashboardCreditsView";
 import { useDashboardMain } from "@/components/dashboard/useDashboardMain";
 
 export type DashboardMainProps = {
-	activeView: "overview" | "history" | "repositories";
+	activeView: "overview" | "history" | "repositories" | "credits";
+	billingNotice?: string | null;
 };
 
-export default function DashboardMain({ activeView }: DashboardMainProps) {
+export default function DashboardMain({ activeView, billingNotice = null }: DashboardMainProps) {
 	const {
 		session,
 		isLoading,
@@ -35,7 +37,9 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 								? "Deployments"
 								: activeView === "history"
 									? "History"
-									: "Repositories"}
+									: activeView === "credits"
+										? "Credits"
+										: "Repositories"}
 						</h1>
 					</div>
 				</div>
@@ -66,6 +70,9 @@ export default function DashboardMain({ activeView }: DashboardMainProps) {
 						onRefresh={handleRefresh}
 						onCancelAddRepo={() => dispatch({ type: "reset_add_repo" })}
 					/>
+				</div>
+				<div className={activeView === "credits" ? "" : "hidden"}>
+					<DashboardCreditsView billingNotice={billingNotice} />
 				</div>
 			</div>
 		</main>
