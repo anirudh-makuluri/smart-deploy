@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { headers } from "next/headers";
 import { getGithubAccessTokenForUserId } from "@/lib/githubAccessToken";
+import { getRequestUserId } from "@/lib/requestUser";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
-	const session = await auth.api.getSession({ headers: await headers() });
-	const userId = session?.user?.id;
+	const userId = await getRequestUserId(req.headers);
+	if (!userId) {
+		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+	}
 	const token = userId ? await getGithubAccessTokenForUserId(userId, req.headers) : null;
 
 	let body;

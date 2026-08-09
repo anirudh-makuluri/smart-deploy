@@ -1,3 +1,12 @@
+import { lookup } from "node:dns";
+import { Agent } from "undici";
+
+export type VerificationProbeCandidate = {
+	url: string;
+	/** Connect through the ALB while retaining the URL host for TLS and routing. */
+	connectTo?: string;
+};
+
 export function buildVerificationCandidates(baseUrl: string): string[] {
 	const trimmed = baseUrl.trim();
 	if (!trimmed) return [];
@@ -24,11 +33,32 @@ export function buildVerificationCandidates(baseUrl: string): string[] {
 	return Array.from(urls);
 }
 
+function getAlbHostname(value: string | undefined): string | null {
+	const hostname = value?.trim().replace(/\.$/, "").toLowerCase() ?? "";
+	return hostname.endsWith(".elb.amazonaws.com") ? hostname : null;
+}
+
+export function buildVerificationProbeCandidates(
+	baseUrl: string,
+	sharedAlbDns?: string
+): VerificationProbeCandidate[] {
+	const publicCandidates = buildVerificationCandidates(baseUrl);
+	const albHostname = getAlbHostname(sharedAlbDns);
+	if (!albHostname) return publicCandidates.map((url) => ({ url }));
+
+	return publicCandidates.flatMap((url) => [{ url }, { url, connectTo: albHostname }]);
+}
+
 export function isSuccessfulVerificationStatus(status: number): boolean {
 	return status >= 200 && status < 400;
 }
 
-export async function fetchWithTimeout(url: string, timeoutMs: number, externalSignal?: AbortSignal) {
+export async function fetchWithTimeout(
+	url: string,
+	timeoutMs: number,
+	externalSignal?: AbortSignal,
+	connectTo?: string
+) {
 	const controller = new AbortController();
 	const handleExternalAbort = () => controller.abort();
 	if (externalSignal) {
@@ -39,6 +69,13 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, externalS
 		}
 	}
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	const dispatcher = connectTo
+		? new Agent({
+			connect: {
+				lookup: (_hostname, options, callback) => lookup(connectTo, options, callback),
+			},
+		})
+		: undefined;
 	try {
 		return await fetch(url, {
 			method: "GET",
@@ -50,10 +87,12 @@ export async function fetchWithTimeout(url: string, timeoutMs: number, externalS
 				"User-Agent": "SmartDeploy-HealthProbe/1.0",
 			},
 			signal: controller.signal,
+			...(dispatcher ? { dispatcher } : {}),
 		});
 	} finally {
 		clearTimeout(timer);
 		externalSignal?.removeEventListener("abort", handleExternalAbort);
+		if (dispatcher) await dispatcher.close();
 	}
 }
 

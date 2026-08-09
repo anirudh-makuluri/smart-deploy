@@ -22,13 +22,18 @@ export async function getGithubAccessTokenForUserId(userId: string, headers?: He
 	try {
 		const getAccessToken = (auth.api as any)?.getAccessToken;
 		if (typeof getAccessToken === "function") {
-			const tokenResponse = await getAccessToken({
+			const request = {
 				body: {
 					providerId: "github",
 					userId: uid,
 				},
-				headers: headers ?? new Headers(),
-			});
+			};
+			// A CLI bearer token is authenticated by Smart Deploy, not Better Auth.
+			// Supplying it to Better Auth makes getAccessToken require a browser
+			// session and bypasses its server-side decrypt/refresh path.
+			const tokenResponse = headers?.get("cookie")
+				? await getAccessToken({ ...request, headers })
+				: await getAccessToken(request);
 
 			const resolved = tokenResponse?.accessToken;
 			if (typeof resolved === "string" && resolved.trim()) {

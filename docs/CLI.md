@@ -1,31 +1,70 @@
 # Smart Deploy CLI
 
-The CLI foundation keeps the deployment project selection local to a Git checkout. It does not store credentials or environment-secret values in the repository.
+The Smart Deploy CLI lets you discover services, inspect the generated build plan, configure runtime settings, and manage deployments without leaving a Git checkout.
 
-## Local project selection
-
-Run this from a Git checkout with a GitHub origin remote:
+Install or run the beta package with Node.js 20 or later:
 
 ~~~bash
-npx smart-deploy init
+npx @arm8tron/smart-deploy@beta login
 ~~~
 
-The command records the repository URL, branch, and optional service name in .smartdeploy/state.json. The directory is ignored by Git.
+## Start a project
 
-You can update a selection without rerunning the wizard:
+Run these commands from a Git checkout with a GitHub `origin` remote:
 
 ~~~bash
-npx smart-deploy repo use https://github.com/acme/storefront --branch main
-npx smart-deploy service select web
-npx smart-deploy config show
+smart-deploy init
+smart-deploy login
+smart-deploy service discover
+smart-deploy service list
+smart-deploy service select web
 ~~~
 
-## Safety model
+`init` records only the selected repository, branch, and service in `.smartdeploy/state.json`. The directory is ignored by Git. CLI credentials are stored separately in the user configuration directory; no credentials or environment-secret values are written into the repository.
 
-- Local state contains no access token, secret, or deployment configuration.
-- The CLI requires a GitHub origin and records selection only for the current checkout.
-- Future analysis and deployment commands will use the exact pushed commit, preventing uncommitted local files from being deployed accidentally.
+## Analyze and deploy
 
-## Planned commands
+~~~bash
+smart-deploy analyze
+smart-deploy domain check storefront
+smart-deploy domain set https://storefront.smart-deploy.xyz
+smart-deploy env set API_URL https://api.example.com
+smart-deploy deploy
+smart-deploy status
+smart-deploy logs --run RUN_ID --follow
+~~~
 
-The next implementation slices add device login, repository/service discovery, platform-domain setup, AWS Secrets Manager-backed environment variables, Smart Analysis previews, deployment queueing, status, and streamed logs.
+`analyze` resolves the selected branch's latest GitHub commit, requests the same Smart Analysis used by the web application, and persists its deploy plan. `deploy` queues that persisted plan and returns a deployment run ID. Follow a specific run with `logs --run RUN_ID --follow`; without `--run`, `logs` shows recent runtime logs for the selected service.
+
+## Repositories, domains, secrets, and rollback
+
+~~~bash
+smart-deploy repo list
+smart-deploy repo use https://github.com/acme/storefront --branch main
+smart-deploy env list
+smart-deploy env unset API_URL
+smart-deploy domain clear
+smart-deploy rollback SUCCESSFUL_RUN_ID
+~~~
+
+`rollback` queues a redeploy of the commit recorded by a successful deployment run while retaining the selected service's current environment variables.
+
+## Command reference
+
+~~~text
+smart-deploy login | logout
+smart-deploy init [--repo URL] [--branch NAME] [--service NAME]
+smart-deploy repo list | show | use URL [--branch NAME]
+smart-deploy service discover | list | select NAME
+smart-deploy analyze
+smart-deploy env list | set NAME VALUE | unset NAME
+smart-deploy domain check SUBDOMAIN | set URL | clear
+smart-deploy deploy [--commit SHA]
+smart-deploy deployment delete
+smart-deploy status
+smart-deploy logs [--run ID] [--follow]
+smart-deploy rollback RUN_ID
+smart-deploy config show
+~~~
+
+The CLI does not accept GitHub OAuth credentials. Its browser-based login exchanges a short-lived device authorization for a scoped Smart Deploy token, while GitHub access stays on the Smart Deploy server.

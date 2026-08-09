@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { dbHelper } from "@/db-helper";
 import {
 	deployStepsFromLogLines,
 	fetchDeployRunLogsFromS3,
 	type DeployStepSummary,
 } from "@/lib/aws/deployRunLogs";
+import { getRequestUserId } from "@/lib/requestUser";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,8 +15,7 @@ export async function GET(
 	context: { params: Promise<{ id: string }> }
 ) {
 	try {
-		const session = await auth.api.getSession({ headers: req.headers });
-		const userID = session?.user?.id;
+		const userID = await getRequestUserId(req.headers);
 		if (!userID) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
@@ -37,7 +36,11 @@ export async function GET(
 		}
 
 		if (!entry.logRef) {
-			return NextResponse.json({ steps: entry.steps });
+			const runResponse = await dbHelper.getDeploymentRunSystem(runId);
+			return NextResponse.json({
+				steps: entry.steps,
+				completed: runResponse.run?.status === "completed",
+			});
 		}
 
 		const lines = await fetchDeployRunLogsFromS3({ logRef: entry.logRef });
@@ -51,7 +54,11 @@ export async function GET(
 		}));
 		const steps = deployStepsFromLogLines(stepSummary, lines);
 
-		return NextResponse.json({ steps });
+		const runResponse = await dbHelper.getDeploymentRunSystem(runId);
+		return NextResponse.json({
+			steps,
+			completed: runResponse.run?.status === "completed",
+		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return NextResponse.json({ error: message }, { status: 500 });
