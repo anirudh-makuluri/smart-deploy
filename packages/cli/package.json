@@ -1,6 +1,6 @@
 {
   "name": "@arm8tron/smart-deploy",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.1-beta.2",
   "description": "Command-line interface for Smart Deploy",
   "type": "module",
   "bin": { "smart-deploy": "./dist/index.js" },
