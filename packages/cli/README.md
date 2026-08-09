@@ -1,6 +1,6 @@
 # Smart Deploy CLI
 
-> Beta release: login and local project selection are available today. Smart Analysis and deployment commands are still in development.
+> Beta release: repository discovery, Smart Analysis, deployment controls, and runtime configuration are available today.
 
 Smart Deploy is a preview-first application deployment platform. This CLI connects a local Git checkout to your Smart Deploy account.
 
@@ -15,18 +15,24 @@ npx @arm8tron/smart-deploy@beta login
 ## Commands
 
 ~~~text
-smart-deploy login
-smart-deploy logout
+smart-deploy login | logout
 smart-deploy init [--repo URL] [--branch NAME] [--service NAME]
-smart-deploy repo show
-smart-deploy repo use URL [--branch NAME]
-smart-deploy service select NAME
+smart-deploy repo list | show | use URL [--branch NAME]
+smart-deploy service discover | list | select NAME
+smart-deploy analyze
+smart-deploy env list | set NAME VALUE | unset NAME
+smart-deploy domain check SUBDOMAIN | set URL | clear
+smart-deploy deploy [--commit SHA]
+smart-deploy deployment delete
+smart-deploy status
+smart-deploy logs [--run ID] [--follow]
+smart-deploy rollback RUN_ID
 smart-deploy config show
 ~~~
 
 Login opens a browser authorization flow and uses your existing Smart Deploy GitHub connection. The CLI never receives your GitHub OAuth token.
 
-Init stores the selected repository, branch, and service in .smartdeploy/state.json, which is ignored by Git. It does not store secrets or deployment credentials in the repository.
+Init stores the selected repository, branch, and service in .smartdeploy/state.json, which is ignored by Git. It does not store secrets or deployment credentials in the repository. See the full [CLI guide](https://github.com/anirudh-makuluri/smart-deploy/blob/main/docs/CLI.md) for the analyze, environment-variable, domain, deploy, log, and rollback workflow.
 
 Install beta releases explicitly:
 

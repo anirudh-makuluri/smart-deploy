@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { headers } from "next/headers";
 import { dbHelper } from "@/db-helper";
-import { auth } from "@/lib/auth";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
 import type { ScanResultsPayload } from "@/app/types";
+import { getRequestUserId } from "@/lib/requestUser";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -11,6 +10,7 @@ export const runtime = "nodejs";
 type Body = {
 	repoName?: string;
 	serviceName?: string;
+	repoUrl?: string;
 	url?: string;
 	branch?: string;
 	commitSha?: string | null;
@@ -19,8 +19,7 @@ type Body = {
 };
 
 export async function POST(req: Request) {
-	const session = await auth.api.getSession({ headers: await headers() });
-	const userID = session?.user?.id;
+	const userID = await getRequestUserId(req.headers);
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
@@ -51,7 +50,7 @@ export async function POST(req: Request) {
 		{
 			repoName,
 			serviceName,
-			url: body.url ?? "",
+			repoUrl: String(body.repoUrl ?? body.url ?? "").trim(),
 			branch: body.branch ?? "main",
 			commitSha: body.commitSha ?? null,
 			responseId,

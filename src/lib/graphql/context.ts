@@ -9,6 +9,7 @@ import type { NextRequest } from "next/server";
 import { headers as nextHeaders } from "next/headers";
 import { auth } from "@/lib/auth";
 import { getGithubAccessTokenForUserId } from "@/lib/githubAccessToken";
+import { authenticateCliAccessToken, getCliBearerToken } from "@/lib/cliAuth";
 
 export type GraphQLContext = {
 	session: Awaited<ReturnType<typeof auth.api.getSession>> | null;
@@ -30,7 +31,9 @@ export async function buildContext(request?: NextRequest): Promise<GraphQLContex
 		const session = await auth.api.getSession({
 			headers: requestHeaders,
 		});
-		const userID = session?.user?.id;
+		const sessionUserID = session?.user?.id;
+		const cliToken = getCliBearerToken(requestHeaders);
+		const userID = sessionUserID ?? (cliToken ? await authenticateCliAccessToken(cliToken) : null);
 		const githubToken = userID ? await getGithubAccessTokenForUserId(userID, requestHeaders) : null;
 
 		return {
@@ -51,7 +54,7 @@ export async function buildContext(request?: NextRequest): Promise<GraphQLContex
  * Throws error if session is not authenticated
  */
 export function requireUser(ctx: GraphQLContext): string {
-	if (!ctx.userID || !ctx.session) {
+	if (!ctx.userID) {
 		throw new Error("Unauthorized");
 	}
 	return ctx.userID;

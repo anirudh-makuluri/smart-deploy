@@ -6,7 +6,21 @@ import { dbHelper } from "./db-helper";
 import * as deployLogsStore from "@/lib/deployLogsStore";
 import { emitWorkerSocketEvent, WORKER_SOCKET_SERVER_EVENTS } from "@/lib/workerSocketEvents";
 
-export async function deploy(payload: { deployConfig: DeployConfig; token: string; userID: string }, ws: any) {
+type WorkerSocket = NonNullable<Parameters<typeof emitWorkerSocketEvent>[0]>;
+
+function isWorkerSocket(value: unknown): value is WorkerSocket {
+	return Boolean(
+		value &&
+		typeof value === "object" &&
+		"emit" in value &&
+		typeof (value as { emit?: unknown }).emit === "function"
+	);
+}
+
+export async function deploy(
+	payload: { deployConfig: DeployConfig; token: string; userID: string },
+	ws: unknown
+): Promise<{ runId: string }> {
 	const {
 		deployConfig,
 		userID,
@@ -67,9 +81,11 @@ export async function deploy(payload: { deployConfig: DeployConfig; token: strin
 
 		deployLogsStore.createEntry(userID, repoName, serviceName);
 		const snapshot = deployLogsStore.getSocketSnapshot(userID, repoName, serviceName);
-		if (snapshot) {
+		if (isWorkerSocket(ws) && snapshot) {
 			emitWorkerSocketEvent(ws, WORKER_SOCKET_SERVER_EVENTS.deploySnapshot, snapshot);
 		}
+
+		return { runId };
 	} catch (err: any) {
 		if (runId) {
 			await dbHelper.finalizeDeploymentRun({

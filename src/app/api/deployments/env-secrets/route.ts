@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { dbHelper } from "@/db-helper";
-import { auth } from "@/lib/auth";
 import config from "@/config";
 import {
 	getDeploymentEnvSecretEntries,
@@ -8,6 +7,7 @@ import {
 	upsertDeploymentEnvSecret,
 } from "@/lib/aws/deploymentSecrets";
 import type { DeployConfig } from "@/app/types";
+import { getRequestUserId } from "@/lib/requestUser";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,8 +56,7 @@ function resolveRegion(deployment: DeployConfig, override?: string): string {
 }
 
 export async function GET(req: Request) {
-	const session = await auth.api.getSession({ headers: req.headers });
-	const userID = session?.user?.id;
+	const userID = await getRequestUserId(req.headers);
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}
@@ -89,8 +88,7 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
-	const session = await auth.api.getSession({ headers: req.headers });
-	const userID = session?.user?.id;
+	const userID = await getRequestUserId(req.headers);
 	if (!userID) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	}

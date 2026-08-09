@@ -11,6 +11,7 @@ import { cloudResourcesFromDeployResult, isEcsCloudResources } from "./cloudReso
 import { hostedSubdomainOrDefault, hostedUrlFromSubdomain, subdomainFromHostedUrl } from "./hostedUrl";
 import {
 	buildVerificationCandidates,
+	buildVerificationProbeCandidates,
 	fetchWithTimeout,
 	isSuccessfulVerificationStatus,
 } from "./deploymentHealthProbe";
@@ -403,8 +404,9 @@ async function verifyDeploymentReadiness(params: {
 	send: (msg: string, stepId: string) => void;
 	deploySteps: DeployStep[];
 	serviceDetails?: ServiceDeployDetails | null;
+	albDnsName?: string;
 }): Promise<VerificationResult> {
-	const { deployConfig, deployUrl, userID, send, deploySteps, serviceDetails } = params;
+	const { deployConfig, deployUrl, userID, send, deploySteps, serviceDetails, albDnsName } = params;
 	setStepState(deploySteps, "verify", "in_progress");
 	await updatePersistedDeploymentStatus(deployConfig, userID, "deploying", {
 		...(serviceDetails?.cloudResources ? { cloudResources: serviceDetails.cloudResources } : {}),
@@ -424,7 +426,7 @@ async function verifyDeploymentReadiness(params: {
 	const requestTimeoutMs = 8_000;
 	const roundDelayMs = 20_000;
 	const verificationDeadlineMs = 300_000;
-	const candidates = buildVerificationCandidates(targetUrl);
+	const candidates = buildVerificationProbeCandidates(targetUrl, albDnsName);
 	if (candidates.length === 0) {
 		setStepState(deploySteps, "verify", "error");
 		send("ERROR: Deployment verification could not start because no reachable URL was available.", "verify");
@@ -435,6 +437,9 @@ async function verifyDeploymentReadiness(params: {
 	}
 
 	send(`Starting verification: ${targetUrl}`, "verify");
+	if (candidates.some((candidate) => candidate.connectTo)) {
+		send(`DNS propagation fallback enabled through ALB ${albDnsName}.`, "verify");
+	}
 
 	const verificationDeadlineAt = Date.now() + verificationDeadlineMs;
 	const verifyRound = async (round: number): Promise<VerificationResult | null> => {
@@ -455,13 +460,13 @@ async function verifyDeploymentReadiness(params: {
 		const roundOutcomes: VerificationProbeOutcome[] = [];
 		const probes = candidates.map((candidate) => {
 			const startedAt = Date.now();
-			return fetchWithTimeout(candidate, perCandidateTimeoutMs, roundController.signal)
+			return fetchWithTimeout(candidate.url, perCandidateTimeoutMs, roundController.signal, candidate.connectTo)
 				.then((response) => {
 					const latencyMs = Date.now() - startedAt;
 					if (isSuccessfulVerificationStatus(response.status)) {
 						const success = {
 							success: true,
-							candidate,
+							candidate: candidate.url,
 							statusCode: response.status,
 							latencyMs,
 						} satisfies VerificationProbeSuccess;
@@ -470,7 +475,7 @@ async function verifyDeploymentReadiness(params: {
 					}
 					throw {
 						success: false,
-						candidate,
+						candidate: candidate.url,
 						statusCode: response.status,
 						latencyMs,
 						errorMessage: `HTTP ${response.status}`,
@@ -486,7 +491,7 @@ async function verifyDeploymentReadiness(params: {
 					}
 					const failure = {
 						success: false,
-						candidate,
+						candidate: candidate.url,
 						statusCode: null,
 						latencyMs: Date.now() - startedAt,
 						errorMessage: describeFetchError(error),
@@ -1562,6 +1567,7 @@ async function handleAWSCodeBuildDeploy(
 			send,
 			deploySteps,
 			serviceDetails,
+			albDnsName: deployResult.sharedAlbDns,
 		});
 		finalSuccess = verification.success;
 		if (!verification.success) {

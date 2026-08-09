@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	buildVerificationCandidates,
+	buildVerificationProbeCandidates,
 	fetchWithTimeout,
 	isSuccessfulVerificationStatus,
 	probeDeploymentHealth,
@@ -25,6 +26,24 @@ describe("deploymentHealthProbe", () => {
 			"https://lexiguess-next19u2m.smart-deploy.xyz/health",
 			"https://lexiguess-next19u2m.smart-deploy.xyz/healthz",
 			"https://lexiguess-next19u2m.smart-deploy.xyz/api/health",
+		]);
+	});
+
+	it("adds an ALB fallback without changing the public request host", () => {
+		expect(
+			buildVerificationProbeCandidates(
+				"https://app.smart-deploy.xyz",
+				"smartdeploy-123.us-west-2.elb.amazonaws.com"
+			)
+		).toEqual([
+			{ url: "https://app.smart-deploy.xyz/" },
+			{ url: "https://app.smart-deploy.xyz/", connectTo: "smartdeploy-123.us-west-2.elb.amazonaws.com" },
+			{ url: "https://app.smart-deploy.xyz/health" },
+			{ url: "https://app.smart-deploy.xyz/health", connectTo: "smartdeploy-123.us-west-2.elb.amazonaws.com" },
+			{ url: "https://app.smart-deploy.xyz/healthz" },
+			{ url: "https://app.smart-deploy.xyz/healthz", connectTo: "smartdeploy-123.us-west-2.elb.amazonaws.com" },
+			{ url: "https://app.smart-deploy.xyz/api/health" },
+			{ url: "https://app.smart-deploy.xyz/api/health", connectTo: "smartdeploy-123.us-west-2.elb.amazonaws.com" },
 		]);
 	});
 
@@ -79,5 +98,20 @@ describe("deploymentHealthProbe", () => {
 		expect(headers.get("accept")).toContain("text/html");
 		expect(headers.get("cache-control")).toBe("no-cache");
 		expect(headers.get("user-agent")).toBe("SmartDeploy-HealthProbe/1.0");
+	});
+
+	it("uses a dedicated dispatcher when bypassing pending public DNS", async () => {
+		const fetchMock = vi.fn<FetchMock>(async () => new Response("ok", { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await fetchWithTimeout(
+			"https://app.smart-deploy.xyz/",
+			1_000,
+			undefined,
+			"smartdeploy-123.us-west-2.elb.amazonaws.com"
+		);
+
+		const init = fetchMock.mock.calls[0]?.[1] as RequestInit & { dispatcher?: unknown };
+		expect(init.dispatcher).toBeDefined();
 	});
 });

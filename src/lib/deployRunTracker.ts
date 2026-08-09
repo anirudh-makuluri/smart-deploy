@@ -6,13 +6,14 @@ export type ActiveDeployRun = {
 	runId: string;
 	userId: string;
 	region?: string;
-	lastFlushedStepCount: number;
+	lastFlushedLogCount: number;
 };
 
 export function createDeployRunStepFlushHandler(run: ActiveDeployRun, getSteps: () => DeployStep[]) {
 	return (steps: DeployStep[]) => {
-		if (steps.length <= run.lastFlushedStepCount) return;
-		run.lastFlushedStepCount = steps.length;
+		const logCount = steps.reduce((total, step) => total + step.logs.length, 0);
+		if (logCount <= run.lastFlushedLogCount) return;
+		run.lastFlushedLogCount = logCount;
 		void flushDeployRunProgress(run, getSteps());
 	};
 }
@@ -55,7 +56,7 @@ export async function startDeploymentRun(args: {
 		runId: created.runId,
 		userId: args.userId,
 		region: args.region,
-		lastFlushedStepCount: 0,
+		lastFlushedLogCount: 0,
 	};
 }
 
@@ -68,6 +69,6 @@ export function adoptDeploymentRun(args: {
 		runId: args.runId,
 		userId: args.userId,
 		region: args.region,
-		lastFlushedStepCount: 0,
+		lastFlushedLogCount: 0,
 	};
 }

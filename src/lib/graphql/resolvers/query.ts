@@ -310,6 +310,7 @@ export async function serviceLogs(
 	ctx: GraphQLContext
 ) {
 	return withTiming("serviceLogs", async () => {
+		requireUser(ctx);
 		const repoNameStr = String(repoName ?? "").trim();
 		const serviceNameStr = String(serviceName ?? "").trim();
 		let limitNum = Number(limit ?? 50);
