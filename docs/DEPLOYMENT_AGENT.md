@@ -72,7 +72,7 @@ If the WebSocket worker is offline, you see: *"The deployment agent is offline r
 
 | Limit | Value |
 |-------|-------|
-| Tool calls per question | 2 |
+| Tool calls per question | 6 |
 | Conversation memory | Last 6 turns |
 | History/health samples per tool | 5 |
 | Write actions | None |
