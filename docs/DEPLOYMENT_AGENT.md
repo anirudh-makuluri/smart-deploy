@@ -13,6 +13,7 @@ It answers questions by fetching **your** deployment data — status, history, h
 | Review history | "Why did my last deployment fail?" |
 | Check health | "Is my service healthy right now?" |
 | Search platform docs | "What does an ALB unhealthy target mean?" (often paired with a deployment tool) |
+| Search external docs | "How does the ECS deployment circuit breaker work?" |
 
 ## What it cannot do
 
@@ -51,6 +52,13 @@ For actions, use the deploy workspace UI.
 | `get_deployment_history` | Recent attempts: success/fail, failed step, log excerpts |
 | `get_runtime_health` | Recent probes: app status, HTTP code, latency, ECS/ALB signals |
 | `search_docs` | Relevant Smart Deploy doc excerpts (Moss + deterministic search) for troubleshooting and how-to |
+| `search_external_docs` | One public external technical-doc result, searched and converted to Markdown by Context.dev |
+
+## External documentation setup
+
+Set `CONTEXT_DEV_API_KEY` on the WebSocket worker environment. The key remains server-side: the agent sends it only to Context.dev and never to the browser, model prompt, tool result, or logs. The tool is optional; without the key it returns a clear unavailable result and the rest of the agent continues to work.
+
+External results are limited to one HTTPS page per tool call, with article content trimmed before it is sent to the model. Prefer official sources such as `docs.aws.amazon.com`; the tool can restrict a query to a supplied public hostname.
 
 ## Live status updates
 
@@ -64,7 +72,7 @@ If the WebSocket worker is offline, you see: *"The deployment agent is offline r
 
 | Limit | Value |
 |-------|-------|
-| Tool calls per question | 2 |
+| Tool calls per question | 6 |
 | Conversation memory | Last 6 turns |
 | History/health samples per tool | 5 |
 | Write actions | None |

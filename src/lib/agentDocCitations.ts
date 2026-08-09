@@ -100,27 +100,63 @@ type SearchDocsToolResult = {
 	chunks?: Array<{ source: string }>;
 };
 
-export function collectDocCitationsFromSearchDocsToolResults(
-	toolResults: Array<{ name: string; result: unknown }>
-): AgentDocCitation[] {
-	const sources: string[] = [];
+type SearchExternalDocsToolResult = {
+	results?: Array<{ title: string; url: string }>;
+};
 
-	for (const toolResult of toolResults) {
-		if (toolResult.name !== "search_docs") {
+function externalDocCitationsFromResult(result: SearchExternalDocsToolResult): AgentDocCitation[] {
+	if (!Array.isArray(result.results)) {
+		return [];
+	}
+
+	const citations: AgentDocCitation[] = [];
+	const seen = new Set<string>();
+	for (const entry of result.results) {
+		try {
+			const url = new URL(entry.url);
+			if (url.protocol !== "https:" || seen.has(url.href)) {
+				continue;
+			}
+			seen.add(url.href);
+			citations.push({
+				source: url.href,
+				href: url.href,
+				label: entry.title.trim() || url.hostname,
+			});
+		} catch {
 			continue;
-		}
-		const result = toolResult.result as SearchDocsToolResult;
-		if (Array.isArray(result.citations)) {
-			sources.push(...result.citations);
-			continue;
-		}
-		if (Array.isArray(result.chunks)) {
-			sources.push(...result.chunks.map((chunk) => chunk.source));
 		}
 	}
 
-	return docCitationsFromSources(sources);
+	return citations;
 }
+
+export function collectDocCitationsFromToolResults(
+	toolResults: Array<{ name: string; result: unknown }>
+): AgentDocCitation[] {
+	const citationGroups: AgentDocCitation[][] = [];
+
+	for (const toolResult of toolResults) {
+		if (toolResult.name === "search_docs") {
+			const result = toolResult.result as SearchDocsToolResult;
+			const sources = Array.isArray(result.citations)
+				? result.citations
+				: Array.isArray(result.chunks)
+					? result.chunks.map((chunk) => chunk.source)
+					: [];
+			citationGroups.push(docCitationsFromSources(sources));
+			continue;
+		}
+
+		if (toolResult.name === "search_external_docs") {
+			citationGroups.push(externalDocCitationsFromResult(toolResult.result as SearchExternalDocsToolResult));
+		}
+	}
+
+	return mergeAgentDocCitations(citationGroups);
+}
+
+export const collectDocCitationsFromSearchDocsToolResults = collectDocCitationsFromToolResults;
 
 export function extractAgentDocCitations(content: string): AgentDocCitation[] {
 	const citations: AgentDocCitation[] = [];

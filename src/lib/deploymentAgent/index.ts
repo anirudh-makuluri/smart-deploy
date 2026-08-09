@@ -25,7 +25,7 @@ import type { AgentToolName } from "@/lib/deploymentAgent/registry";
 import type { AgentEmitter, AgentSocketDocCitation, ToolExecutionResult } from "@/lib/deploymentAgent/types";
 import { buildStructuredDataFromToolResults } from "@/lib/deploymentAgent/buildStructuredData";
 import { EMPTY_AGENT_STRUCTURED_DATA, type AgentStructuredData } from "@/lib/deploymentAgent/structuredData";
-import { collectDocCitationsFromSearchDocsToolResults } from "@/lib/agentDocCitations";
+import { collectDocCitationsFromToolResults } from "@/lib/agentDocCitations";
 import { callLLMWithFallback, type LLMFallbackResult } from "@/lib/llmProviders";
 
 type AgentDecisionResult = {
@@ -187,7 +187,7 @@ export async function runDeploymentAgent(args: {
 			);
 
 			if (toolCallsUsed === MAX_TOOL_CALLS || decision.completed || decision.tool_calls.length === 0) {
-				const docCitations = collectDocCitationsFromSearchDocsToolResults(toolResults);
+				const docCitations = collectDocCitationsFromToolResults(toolResults);
 				const structuredData = buildStructuredDataFromToolResults(toolResults);
 				await appendDeploymentAgentConversationTurn({
 					userID: args.userID,

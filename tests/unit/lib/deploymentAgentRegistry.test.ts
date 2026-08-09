@@ -10,8 +10,9 @@ describe("deploymentAgent registry", () => {
 			"get_deployment_history",
 			"get_runtime_health",
 			"search_docs",
+			"search_external_docs",
 		]);
-		expect(listDeploymentAgentTools()).toHaveLength(5);
+		expect(listDeploymentAgentTools()).toHaveLength(6);
 	});
 
 	it("keeps registry keys aligned with tool names", () => {
