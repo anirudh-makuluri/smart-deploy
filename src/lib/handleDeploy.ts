@@ -30,6 +30,7 @@ import {
 	hasUsableRailpackPlan,
 	pickDeployUnitForBuild,
 	resolveSdArtifactsPrebuiltImage,
+	resolveSdArtifactsPrebuiltImageLocation,
 } from "./sdArtifactsBuildContext";
 
 // AWS imports
@@ -142,23 +143,16 @@ function imageRefFromUriAndDigest(imageUri: string, imageDigest?: string | null)
 	return `${base}@${imageDigest}`;
 }
 
-function parseRegistryFromImageUri(imageUri: string): string | null {
-	const trimmed = imageUri.trim();
-	if (!trimmed) return null;
-	const slash = trimmed.indexOf("/");
-	if (slash <= 0) return null;
-	return trimmed.slice(0, slash);
-}
-
 async function describeImageRefWithFallback(params: {
 	region: string;
 	ecrRegistry: string;
 	ecrRepoName: string;
 	imageTag: string;
+	imageUri?: string;
 	serviceName?: string;
 	send: (msg: string, stepId: string) => void;
 }): Promise<{ imageUri: string; imageDigest?: string | null }> {
-	const imageUri = `${params.ecrRegistry}/${params.ecrRepoName}:${params.imageTag}`;
+	const imageUri = params.imageUri ?? `${params.ecrRegistry}/${params.ecrRepoName}:${params.imageTag}`;
 	try {
 		const image = await describeEcrImageByTag(params.region, params.ecrRepoName, params.imageTag);
 		return {
@@ -1135,7 +1129,7 @@ async function runContainerDeployment(params: {
 
 	const ecrRegistry = getEcrRegistry(accountId, region);
 	const ecrRepoName = buildScopedEcrRepoName(repoName, buildInputs.scanResultsTyped?.package_path);
-	const prebuiltImage =
+	let prebuiltImage =
 		buildInputs.useRailpackBuild && buildInputs.scanResultsForCodebuild
 			? resolveSdArtifactsPrebuiltImage({
 				scan: buildInputs.scanResultsForCodebuild,
@@ -1143,6 +1137,25 @@ async function runContainerDeployment(params: {
 				preferredServiceName: deployConfig.serviceName,
 			})
 			: null;
+	let prebuiltImageLocation = prebuiltImage
+		? resolveSdArtifactsPrebuiltImageLocation({ ecrRegistry, prebuiltImage })
+		: null;
+
+	if (prebuiltImage && prebuiltImageLocation) {
+		const tagExists = await ecrImageTagExists(
+			region,
+			prebuiltImageLocation.ecrRepoName,
+			prebuiltImageLocation.imageTag
+		);
+		if (!tagExists) {
+			send(
+				`Prebuilt image tag ${prebuiltImageLocation.imageTag} is no longer available in ECR; rebuilding it before deployment.`,
+				"build"
+			);
+			prebuiltImage = null;
+			prebuiltImageLocation = null;
+		}
+	}
 
 	let releaseEcrRegistry = ecrRegistry;
 	let releaseEcrRepoName = ecrRepoName;
@@ -1150,16 +1163,25 @@ async function runContainerDeployment(params: {
 	let resolvedImageUri = getEcrImageUri(accountId, region, ecrRepoName, imageTag);
 	let resolvedImageDigest: string | null = null;
 
-	if (prebuiltImage) {
+	if (prebuiltImage && prebuiltImageLocation) {
 		// The analyze pipeline may already have produced the exact image we want.
-		// Reusing it makes retries faster and keeps the release artifact tied to the original image digest.
-		releaseEcrRegistry = parseRegistryFromImageUri(prebuiltImage.imageUri || "") || ecrRegistry;
-		releaseEcrRepoName = prebuiltImage.ecrRepoName;
-		releaseImageTag = prebuiltImage.imageTag;
-		resolvedImageUri = prebuiltImage.imageUri
-			? imageRefFromUriAndDigest(prebuiltImage.imageUri, prebuiltImage.imageDigest)
-			: getEcrImageUri(accountId, region, prebuiltImage.ecrRepoName, prebuiltImage.imageTag);
-		resolvedImageDigest = prebuiltImage.imageDigest;
+		// Do not pass the digest carried by the earlier analysis payload to ECS: it can
+		// be stale if ECR has since replaced or pruned the image. Resolve the current
+		// digest from the verified tag immediately before the rollout.
+		releaseEcrRegistry = prebuiltImageLocation.ecrRegistry;
+		releaseEcrRepoName = prebuiltImageLocation.ecrRepoName;
+		releaseImageTag = prebuiltImageLocation.imageTag;
+		const primaryImage = await describeImageRefWithFallback({
+			region,
+			ecrRegistry: prebuiltImageLocation.ecrRegistry,
+			ecrRepoName: prebuiltImageLocation.ecrRepoName,
+			imageTag: prebuiltImageLocation.imageTag,
+			imageUri: prebuiltImageLocation.imageUri,
+			serviceName: prebuiltImage.unit.name,
+			send,
+		});
+		resolvedImageUri = primaryImage.imageUri;
+		resolvedImageDigest = primaryImage.imageDigest ?? null;
 		send(
 			`Using prebuilt image for ${prebuiltImage.unit.name}; skipping CodeBuild rebuild (${resolvedImageUri}).`,
 			"build"

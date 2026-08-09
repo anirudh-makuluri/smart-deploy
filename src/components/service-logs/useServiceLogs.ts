@@ -19,6 +19,13 @@ import {
 } from "@/components/service-logs/serviceLogsState";
 import type { LogEntry } from "@/components/service-logs/types";
 
+const AUTO_SCROLL_THRESHOLD_PX = 40;
+
+function isViewportAtBottom(viewport: HTMLDivElement): boolean {
+	const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+	return distanceFromBottom <= AUTO_SCROLL_THRESHOLD_PX;
+}
+
 type UseServiceLogsParams = {
 	logs: LogEntry[];
 	serviceName?: string;
@@ -216,10 +223,9 @@ export function useServiceLogs({ logs, serviceName, repoName, displayLimit }: Us
 				const delta = v.scrollHeight - prevScrollHeight;
 				v.scrollTop = prevScrollTop + delta;
 
-				const thresholdPx = 40;
-				const distanceFromBottom = v.scrollHeight - v.scrollTop - v.clientHeight;
-				shouldAutoScrollRef.current = distanceFromBottom <= thresholdPx;
-				dispatch({ type: "set_show_scroll_to_bottom", value: distanceFromBottom > thresholdPx });
+				const atBottom = isViewportAtBottom(v);
+				shouldAutoScrollRef.current = atBottom;
+				dispatch({ type: "set_show_scroll_to_bottom", value: !atBottom });
 			});
 		} catch {
 			// ignore pagination errors; live logs should still work
@@ -248,10 +254,9 @@ export function useServiceLogs({ logs, serviceName, repoName, displayLimit }: Us
 		if (!viewport) return;
 
 		const updateAutoScrollState = () => {
-			const thresholdPx = 40;
-			const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-			shouldAutoScrollRef.current = distanceFromBottom <= thresholdPx;
-			dispatch({ type: "set_show_scroll_to_bottom", value: distanceFromBottom > thresholdPx });
+			const atBottom = isViewportAtBottom(viewport);
+			shouldAutoScrollRef.current = atBottom;
+			dispatch({ type: "set_show_scroll_to_bottom", value: !atBottom });
 		};
 
 		updateAutoScrollState();
