@@ -99,4 +99,13 @@ report a published PR, completion, failure, or decision requiring user input.
 |------|--------|----------|
 | Kickoff | Prepared | Clean managed worktree from origin/main; uncommitted K3s/Oracle/GCP experiment discarded at the user's request. |
 | Existing billing | Separate open PR at kickoff | https://github.com/anirudh-makuluri/smart-deploy/pull/85 |
-| Slices 1-7 | Pending | No implementation or hosted proof claimed by this planning document. |
+| Slice 1: ownership foundation | Draft PR; local validation passed, CI pending at publication | https://github.com/anirudh-makuluri/smart-deploy/pull/91 — branch `feat/app-workspace-foundation`, base `main`, independent of #85 and #90. Additive schema, optional rerunnable backfill, typed policy helpers, and PostgreSQL CI job. 119 unit files / 404 tests, 8 PostgreSQL 16 integration tests, lint, production build, and diff checks passed locally. |
+| Slices 2-7 | Pending | Next session: inspect #91 CI/reviews and repair the active slice before starting membership/invitations. No gateway, app-use sharing, production migration, or hosted proof yet. |
+
+Session 1 (October 23, approximately 03:21-03:33 America/Phoenix): implemented
+the foundation in a clean branch from `origin/main`. Database checks used a
+disposable local PostgreSQL 16 cluster, which was stopped afterward. The local
+build exited successfully with unconfigured Better Auth secret/base-URL warnings
+and a Turbopack tracing warning; it does not establish hosted authentication.
+Existing runtime endpoints remain unchanged. Do not treat the new ownership
+metadata or pure permission helpers as deployed application access enforcement.
