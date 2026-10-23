@@ -6,6 +6,7 @@ import { requireId, withWorkspaceTransaction, WorkspaceError } from "./workspace
 export interface GatewayAuthLifetimes { codeSeconds: number; sessionSeconds: number }
 export interface GatewayHandoff { code: string; callbackUrl: string; expiresAt: Date }
 export interface GatewaySession { token: string; expiresAt: Date }
+export interface PlatformSessionIdentity { userId: string; sessionId: string }
 interface GatewayBinding { id: string; appId: string; origin: string }
 
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -64,17 +65,30 @@ export class GatewayAuthStore {
 		return identity;
 	}
 
-	async issue(bindingId: string, authenticatedUserId: string, challenge: string): Promise<GatewayHandoff> {
+	private async authorizedPlatformSession(client: PoolClient, appId: string, principal: PlatformSessionIdentity): Promise<Date> {
+		// Lock the platform session before the user, matching logout's delete/trigger.
+		const result = await client.query<{ userId: string; expiresAt: Date }>(`
+			select "userId", "expiresAt" from public.session where id = $1 and "userId" = $2
+			and "expiresAt" > clock_timestamp() for share
+		`, [principal.sessionId, principal.userId]);
+		if (!result.rows[0]) throw new WorkspaceError(401, "Platform session unavailable.");
+		await this.identity(client, appId, result.rows[0].userId);
+		return result.rows[0].expiresAt;
+	}
+
+	async issue(bindingId: string, principal: PlatformSessionIdentity, challenge: string): Promise<GatewayHandoff> {
 		if (!SECRET_PATTERN.test(challenge)) throw new WorkspaceError(400, "S256 challenge required.");
 		return withWorkspaceTransaction(this.pool, async (client) => {
 			const binding = await this.binding(client, bindingId);
-			await this.identity(client, binding.appId, authenticatedUserId);
+			const platformExpiry = await this.authorizedPlatformSession(client, binding.appId, principal);
 			const code = randomBytes(32).toString("base64url");
 			const result = await client.query<{ expiresAt: Date }>(`
-				insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, created_at, expires_at)
-				select $1, $2, $3, $4, $5, t, t + $6 * interval '1 second' from (select clock_timestamp() as t) ts
+				insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, created_at, expires_at, platform_session_id)
+				select $1, $2, $3, $4, $5, t, least(t + $6 * interval '1 second', $7::timestamptz), $8
+				from (select clock_timestamp() as t) ts where $7::timestamptz > t
 				returning expires_at as "expiresAt"
-			`, [secretHash(code), bindingId, binding.appId, authenticatedUserId, challenge, this.lifetimes.codeSeconds]);
+			`, [secretHash(code), bindingId, binding.appId, principal.userId, challenge, this.lifetimes.codeSeconds, platformExpiry, principal.sessionId]);
+			if (!result.rows[0]) throw new WorkspaceError(401, "Platform session unavailable.");
 			return { code, callbackUrl: callbackUrl(binding.origin), expiresAt: result.rows[0].expiresAt };
 		});
 	}
@@ -86,22 +100,24 @@ export class GatewayAuthStore {
 		return withWorkspaceTransaction(this.pool, async (client) => {
 			const binding = await this.binding(client, bindingId);
 			if (exactCallbackUrl !== callbackUrl(binding.origin)) throw new WorkspaceError(401, "Gateway credential unavailable.");
-			const lookup = await client.query<{ userId: string }>(`
-				select user_id as "userId" from public.app_gateway_codes
+			const lookup = await client.query<{ userId: string; sessionId: string }>(`
+				select user_id as "userId", platform_session_id as "sessionId" from public.app_gateway_codes
 				where token_hash = $1 and binding_id = $2 and app_id = $3 and challenge = $4 and expires_at > clock_timestamp()
 			`, [hash, bindingId, binding.appId, challenge]);
 			if (!lookup.rows[0]) throw new WorkspaceError(401, "Gateway credential unavailable.");
-			await this.identity(client, binding.appId, lookup.rows[0].userId);
+			const platformExpiry = await this.authorizedPlatformSession(client, binding.appId, lookup.rows[0]);
 			const consumed = await client.query(`
 				delete from public.app_gateway_codes where token_hash = $1 and expires_at > clock_timestamp() returning token_hash
 			`, [hash]);
 			if (!consumed.rowCount) throw new WorkspaceError(401, "Gateway credential unavailable.");
 			const token = randomBytes(32).toString("base64url");
 			const result = await client.query<{ expiresAt: Date }>(`
-				insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, created_at, expires_at)
-				select $1, $2, $3, $4, t, t + $5 * interval '1 second' from (select clock_timestamp() as t) ts
+				insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, created_at, expires_at, platform_session_id)
+				select $1, $2, $3, $4, t, least(t + $5 * interval '1 second', $6::timestamptz), $7
+				from (select clock_timestamp() as t) ts where $6::timestamptz > t
 				returning expires_at as "expiresAt"
-			`, [secretHash(token), bindingId, binding.appId, lookup.rows[0].userId, this.lifetimes.sessionSeconds]);
+			`, [secretHash(token), bindingId, binding.appId, lookup.rows[0].userId, this.lifetimes.sessionSeconds, platformExpiry, lookup.rows[0].sessionId]);
+			if (!result.rows[0]) throw new WorkspaceError(401, "Platform session unavailable.");
 			return { token, expiresAt: result.rows[0].expiresAt };
 		});
 	}
@@ -115,6 +131,7 @@ export class GatewayAuthStore {
 			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and b.disabled_at is null
 			join public.apps a on a.id = s.app_id join public.app_workspaces w on w.id = a.workspace_id
 			join public."user" u on u.id = s.user_id and u."emailVerified" = true
+			join public.session p on p.id = s.platform_session_id and p."userId" = u.id and p."expiresAt" > clock_timestamp()
 			left join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
 			where s.token_hash = $1 and s.binding_id = $2 and s.expires_at > clock_timestamp()
 			and (w.owner_id = u.id or m.role = 'admin' or (m.role = 'member' and exists (

@@ -35,7 +35,7 @@ beforeAll(async () => { await client.connect(); await prepareDatabaseTestRoles(c
 afterAll(async () => { await pool.end(); await client.end(); });
 beforeEach(async () => {
 	await resetFoundationDatabase(client);
-	for (const name of ["app_use_grants", "app_gateway_auth", "gateway_service_credentials"]) await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
+	for (const name of ["app_use_grants", "app_gateway_auth", "gateway_service_credentials", "gateway_platform_sessions"]) await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	const workspace = await workspaces.createWorkspace("alice", "Team");
 	const app = await apps.createApp(workspace.id, "alice", "App");
 	appId = app.id;
@@ -52,7 +52,7 @@ describe("operator-owned gateway service authentication", () => {
 	it("runs creator/member redemption, authorization, and logout through real routes and PostgreSQL", async () => {
 		for (const userId of ["alice", "bob"]) {
 			const verifier = randomBytes(32).toString("base64url");
-			const handoff = await sessions.issue(bindingId, userId, createHash("sha256").update(verifier).digest("base64url"));
+			const handoff = await sessions.issue(bindingId, { userId, sessionId: `${userId}-session` }, createHash("sha256").update(verifier).digest("base64url"));
 			const response = await redeem(request({ code: handoff.code, callbackUrl: handoff.callbackUrl, verifier }));
 			expect(response.status).toBe(200);
 			const body = await response.json() as { token: string; identity: { id: string } };
@@ -61,12 +61,12 @@ describe("operator-owned gateway service authentication", () => {
 			expect((await logout(request({ token: body.token }))).status).toBe(200);
 			expect((await authorize(request({ token: body.token }))).status).toBe(403);
 		}
-		await expect(sessions.issue(bindingId, "carol", createHash("sha256").update(randomBytes(32)).digest("base64url"))).rejects.toMatchObject({ status: 403 });
+		await expect(sessions.issue(bindingId, { userId: "carol", sessionId: "carol-session" }, createHash("sha256").update(randomBytes(32)).digest("base64url"))).rejects.toMatchObject({ status: 403 });
 	});
 
 	it("denies real API decisions after user grant or service key revocation", async () => {
 		const verifier = randomBytes(32).toString("base64url");
-		const handoff = await sessions.issue(bindingId, "bob", createHash("sha256").update(verifier).digest("base64url"));
+		const handoff = await sessions.issue(bindingId, { userId: "bob", sessionId: "bob-session" }, createHash("sha256").update(verifier).digest("base64url"));
 		const response = await redeem(request({ code: handoff.code, callbackUrl: handoff.callbackUrl, verifier }));
 		expect(response.status).toBe(200);
 		const body = await response.json() as { token: string };
@@ -104,7 +104,7 @@ describe("operator-owned gateway service authentication", () => {
 
 	it("cannot use the authenticated binding to redeem or authorize another app's credentials", async () => {
 		const verifier = randomBytes(32).toString("base64url");
-		const handoff = await sessions.issue(otherBindingId, "alice", createHash("sha256").update(verifier).digest("base64url"));
+		const handoff = await sessions.issue(otherBindingId, { userId: "alice", sessionId: "alice-session" }, createHash("sha256").update(verifier).digest("base64url"));
 		const principal = await authenticateGateway(pool, `Bearer ${credential.token}`);
 		await expect(sessions.redeem(principal.bindingId, handoff.callbackUrl, handoff.code, verifier)).rejects.toMatchObject({ status: 401 });
 		const session = await sessions.redeem(otherBindingId, handoff.callbackUrl, handoff.code, verifier);

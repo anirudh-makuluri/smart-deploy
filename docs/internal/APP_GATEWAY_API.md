@@ -71,13 +71,16 @@ The latter defaults false. Explicit integer GATEWAY_CODE_TTL_SECONDS (1-120) and
 GATEWAY_SESSION_TTL_SECONDS (1-3600) are required; there are no production TTL
 defaults. The sample environment keeps the gateway disabled and TTLs empty.
 
+Platform-session binding and global SmartDeploy logout are supplied by
+[APP_GATEWAY_LOGOUT.md](./APP_GATEWAY_LOGOUT.md). Apply that migration before
+enabling this API; the current handoff store requires a live platform session.
+
 Keep it disabled until the remaining gateway acceptance gates pass: operator
 domain/cost decisions, isolated secret delivery, ingress/rate limits, browser
-transaction/state/CSRF/cookie handling, Better Auth logout/account-security
-revocation propagation, trusted upstream routing, HTTP/WS header and cookie
+transaction/state/CSRF/cookie handling, complete account-security-flow coverage,
+trusted upstream routing, HTTP/WS header and cookie
 isolation, direct-origin blocking, and creator/member/outsider browser proof.
-There is deliberately no public handoff-issuance endpoint yet. App sessions
-remain independent of platform sessions as documented in the storage increment.
+There is deliberately no public handoff-issuance endpoint yet.
 
 ## Verification boundary
 
