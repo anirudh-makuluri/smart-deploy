@@ -109,7 +109,7 @@ report a published PR, completion, failure, or decision requiring user input.
 | Slice 3b: authenticated gateway API | Draft stacked PR; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/95 — branch `feat/gateway-authorization-api`, base `feat/private-app-handoff`; merge #91 → #92 → #93 → #94 first. Default-off service endpoints for redemption, authorization, and per-app logout. Hash-only expiring/revocable machine keys derive the binding; clients cannot choose authority. Current approval/use checks, 4 KiB/5-second streaming body bounds, strict schemas, secure service-only request profile, redacted errors, and fail-closed responses. 121 unit files / 437 tests, 5 PostgreSQL files / 53 tests (7 new real credential/route integration cases), lint/build/diff checks, and exact-base React Doctor across all 9 TypeScript files (100/100) passed locally. GitHub database/build/tests and React Doctor checks passed on `80ce05a`. No public handoff issuance, proxy, or AWS origin enforcement. |
 | Slice 3c: platform-session binding/global logout | Draft stacked PR; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/96 — branch `feat/global-app-logout`, base `feat/gateway-authorization-api`; merge #91 → #92 → #93 → #94 → #95 first. Implements confirmed all-app logout for the user. Live platform-session proof, expiry caps, current session joins, atomic credential/platform-session removal before cookie clearing, and database revocation hooks. Upgrade clears only unbound legacy credentials; reruns preserve bound ones. 122 unit files / 443 tests, 6 PostgreSQL files / 63 tests (10 added integration cases), lint/final build/diff checks, and exact-base React Doctor across all 8 TypeScript files (100/100, no diagnostics/suppressions) passed locally. Real installed Better Auth schema, signed login cookies, logout, rollback, and expired-session cleanup were tested locally. GitHub database/build/tests and React Doctor checks passed on `bfb328b`. |
 | Slice 3: private runtime | Control-plane storage/API/logout prepared; browser adapter and runtime pending | [AWS_PRIVATE_GATEWAY.md](./AWS_PRIVATE_GATEWAY.md) records current direct-ALB code, a separate Fargate gateway/private origin chain, identity handoff, cookie/header isolation, revocation, static-site exclusions, and operating/cost decisions. Sources: AWS, MDN, and IETF primary documentation. No origin routing or hosted access protection changed. |
-| Remaining UI and slices 3-7 | Pending | Finish/verify #96, then implement browser handoff state/CSRF/cookie handling and a local gateway/runtime fixture. Explicit production lifetimes, domain/cost choices, proxy HTTP/WS enforcement, direct-origin blocking, sharing/acceptance UI, persistent app data/resources, usage controls, and hosted end-to-end proof remain outstanding. The full deliverable is not achieved in this window. The last scheduled slot near the deadline should finish checks/state audit and provide a consolidated handoff if insufficient time remains for another fully verified slice. Passing metadata/policy/API tests are not private-runtime proof. |
+| Remaining UI and slices 3-7 | Pending | #96 is verified; the next implementation is browser handoff state/CSRF/cookie handling and a local gateway/runtime fixture. Explicit production lifetimes, domain/cost choices, proxy HTTP/WS enforcement, direct-origin blocking, sharing/acceptance UI, persistent app data/resources, usage controls, and hosted end-to-end proof remain outstanding. The full deliverable is not achieved in this window. Passing metadata/policy/API tests are not private-runtime proof. |
 
 Session 1 (October 23, approximately 03:21-03:33 America/Phoenix): implemented
 the foundation in a clean branch from `origin/main`. Database checks used a
@@ -190,3 +190,16 @@ connection change, email, merge, or application-runtime deployment was performed
 All #95 and #96 CI checks passed at their published heads.
 The runtime, private network, persistence, UI, and agent-tool slices require
 further implementation; they have not been completed or enabled by these PRs.
+
+Final window audit (October 23, 23:45 UTC / 16:45 America/Phoenix): the bounded
+implementation window has ended. No new implementation was started during this
+audit. GitHub confirms #90-#96 remain open at the recorded heads with all reported
+checks passing; #92-#96 remain drafts. Required implementation merge order is
+#91 -> #92 -> #93 -> #94 -> #95 -> #96. Billing #85 remains separate and open.
+Both the original checkout and this managed worktree were clean before this
+documentation update. The scheduled automation was deleted after its deadline.
+The remaining runtime, isolation, persistence, UI, agent tooling, usage controls,
+and integrated verification work requires a new implementation pass. Existing
+application URLs have not gained private access enforcement from these PRs.
+The full agreed deliverable remains incomplete; no production migration, cloud
+provisioning, merge, or production deployment was performed in this rollout.
