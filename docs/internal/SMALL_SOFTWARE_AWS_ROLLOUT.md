@@ -99,8 +99,9 @@ report a published PR, completion, failure, or decision requiring user input.
 |------|--------|----------|
 | Kickoff | Prepared | Clean managed worktree from origin/main; uncommitted K3s/Oracle/GCP experiment discarded at the user's request. |
 | Existing billing | Separate open PR at kickoff | https://github.com/anirudh-makuluri/smart-deploy/pull/85 |
-| Slice 1: ownership foundation | Draft PR; local validation passed, CI pending at publication | https://github.com/anirudh-makuluri/smart-deploy/pull/91 — branch `feat/app-workspace-foundation`, base `main`, independent of #85 and #90. Additive schema, optional rerunnable backfill, typed policy helpers, and PostgreSQL CI job. 119 unit files / 404 tests, 8 PostgreSQL 16 integration tests, lint, production build, and diff checks passed locally. |
-| Slices 2-7 | Pending | Next session: inspect #91 CI/reviews and repair the active slice before starting membership/invitations. No gateway, app-use sharing, production migration, or hosted proof yet. |
+| Slice 1: ownership foundation | Open for review; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/91 — branch `feat/app-workspace-foundation`, base `main`, independent of #85 and #90. Additive schema, optional rerunnable backfill, typed policy helpers, and PostgreSQL CI job. 119 unit files / 404 tests, 8 PostgreSQL 16 integration tests, lint, production build, and diff checks passed locally; GitHub database/build/tests and React Doctor checks passed. See the latest local dependency-health baseline below before claiming overall 95/100 compliance. |
+| Slice 2a: membership/invitation backend | Draft PR; final CI pending at publication | https://github.com/anirudh-makuluri/smart-deploy/pull/92 — branch `feat/workspace-invitations`, base `feat/app-workspace-foundation`; merge #91 first. Browser APIs for team workspaces, rosters, owner-controlled role changes, removal, expiring/revocable verified-email invitations, and atomic redemption. Default-off feature flag. 120 unit files / 416 tests, 21 PostgreSQL integration tests, lint/build/diff checks passed; final focused API tests also passed after fixing three route diagnostics. React Doctor 0.9.18 versus the exact #91 base: 100/100 with zero diagnostics. |
+| Remaining slice 2 and slices 3-7 | Pending | Next session: inspect #92 final CI/reviews and repair regressions before proceeding to app-use grants and private-access design. Membership does not grant colleague access to legacy deployment APIs/secrets. Sharing/acceptance UI, app-use grants, gateway, persistence, usage controls, production migration, and hosted end-to-end proof remain outstanding. |
 
 Session 1 (October 23, approximately 03:21-03:33 America/Phoenix): implemented
 the foundation in a clean branch from `origin/main`. Database checks used a
@@ -109,3 +110,19 @@ build exited successfully with unconfigured Better Auth secret/base-URL warnings
 and a Turbopack tracing warning; it does not establish hosted authentication.
 Existing runtime endpoints remain unchanged. Do not treat the new ownership
 metadata or pure permission helpers as deployed application access enforcement.
+
+Session 2 (October 23, approximately 05:18-05:43 America/Phoenix): verified #91
+CI and review state, then implemented #92 as a separate stacked backend increment.
+The disposable PostgreSQL test cluster was stopped after verification. No email,
+production migration, cloud provisioning, merge, or runtime configuration change
+was performed. CI now also runs against feature-branch PR bases so stacked
+increments get database/unit/build checks.
+
+Quality baseline: the initial #92 scan found three independent-await warnings;
+all were fixed without suppressions. The final exact-base #92 scan is 100/100.
+The latest local React Doctor 0.9.18 comparison against `origin/main` reports
+43/100 from `socket/low-supply-chain-score`, also reproduced in an isolated,
+unchanged #91 checkout. Dependencies were not changed by these increments.
+This broader baseline still requires separate dependency-health triage before
+claiming repository-wide health of at least 95/100. The temporary baseline
+worktree was submitted for archival after the comparison.
