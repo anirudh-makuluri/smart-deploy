@@ -144,24 +144,24 @@ consumes codes atomically, and permanently invalidates issued credentials when
 authorization/identity/binding state changes. These caps are storage safeguards;
 production configuration has not been chosen or enabled.
 
-The store has no public HTTP adapter. Binding IDs are not gateway authentication.
-The next increment must authenticate the gateway channel independently, bind
-each browser login transaction/verifier/state, apply the existing Better Auth
-and platform approval/CSRF guards, and ensure the reserved callback never reaches
-customer code. No origin routing or cookie/header enforcement is supplied by
-the storage PR. Its feature documentation records the complete adapter contract,
-database-role prerequisites, and local/hosted verification boundary.
-
-App sessions are independent records: the storage increment does not connect
-Better Auth logout, password/account recovery, or platform-session revocation
-events to them. The authenticated integration must define and test those
-invalidation paths before production enablement; expiry and gateway logout
-alone must not be presented as global account-session revocation.
+The browser adapter must still bind each login transaction/verifier/state, apply
+Better Auth and platform approval/CSRF guards, and ensure the reserved callback
+never reaches customer code. No origin routing or cookie/header enforcement is
+supplied by the storage/API PRs. Their feature documentation records the adapter
+contract, database-role prerequisites, and local/hosted verification boundary.
 
 [PR #95](https://github.com/anirudh-makuluri/smart-deploy/pull/95) supplies the
 default-off authenticated control-plane API using operator-owned machine keys
 bound to a single registry binding. It checks fresh user/use/platform approval,
 rejects supplied app/user/upstream authority, and bounds request bodies. This is
-not the browser adapter, proxy, or origin enforcement. In session 5 the user
-confirmed that platform sign-out must invalidate all private-app sessions for
-that user; session linkage and verified revocation are the next increment.
+not the browser adapter, proxy, or origin enforcement.
+
+[PR #96](https://github.com/anirudh-makuluri/smart-deploy/pull/96) implements the
+confirmed policy that authenticated platform sign-out invalidates all of that
+user's app sessions and pending handoffs. Credentials require a live originating
+platform session, their expiry is capped at that login's expiry, and logout
+removes credentials and the current platform session atomically before cookie
+clearing. Other SmartDeploy logins remain signed in and may initiate fresh app
+logins, but old app credentials cannot revive. Expired-session cleanup only
+removes its linked credentials. Real Better Auth/database integration tests
+cover success, rollback, and cleanup; this is not browser/proxy/WS proof.
