@@ -10,6 +10,7 @@ Operator and maintainer guides moved out of the public docs index. End users sho
 | `BETTER_AUTH.md` | Authentication configuration |
 | [SMALL_SOFTWARE_AWS_ROLLOUT.md](./SMALL_SOFTWARE_AWS_ROLLOUT.md) | AWS small-software implementation slices and acceptance criteria |
 | `SELF_HOSTING.md` | Self-hosting Smart Deploy |
+| [AWS_PRIVATE_GATEWAY.md](./AWS_PRIVATE_GATEWAY.md) | Proposed private ingress, identity handoff, and origin-isolation design |
 | `MULTI_SERVICE_DETECTION.md` | Maintainer reference for detection code |
 | `FIELD_AUDIT.md` | GraphQL field audit |
 | `GRAPHQL_YOGA_MIGRATION.md` | GraphQL migration notes |
