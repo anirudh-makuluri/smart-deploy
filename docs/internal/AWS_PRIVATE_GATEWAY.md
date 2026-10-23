@@ -133,3 +133,27 @@ the connection revocation bound, a proxy library/protocol compatibility matrix,
 an approved app domain, and the resource/cost envelope. Resolve security-relevant
 ambiguity before enabling production behavior; do not hide it behind feature
 flags or a successful metadata API test.
+
+## Storage increment and remaining adapter boundary
+
+[PR #94](https://github.com/anirudh-makuluri/smart-deploy/pull/94), stacked on the
+app-use policy PR, adds the server-only handoff/session store and migration. It
+requires explicit lifetimes (code at most 120 seconds, session at most one hour),
+stores credential hashes, verifies S256 proof and exact callback/app binding,
+consumes codes atomically, and permanently invalidates issued credentials when
+authorization/identity/binding state changes. These caps are storage safeguards;
+production configuration has not been chosen or enabled.
+
+The store has no public HTTP adapter. Binding IDs are not gateway authentication.
+The next increment must authenticate the gateway channel independently, bind
+each browser login transaction/verifier/state, apply the existing Better Auth
+and platform approval/CSRF guards, and ensure the reserved callback never reaches
+customer code. No origin routing or cookie/header enforcement is supplied by
+the storage PR. Its feature documentation records the complete adapter contract,
+database-role prerequisites, and local/hosted verification boundary.
+
+App sessions are independent records: the storage increment does not connect
+Better Auth logout, password/account recovery, or platform-session revocation
+events to them. The authenticated integration must define and test those
+invalidation paths before production enablement; expiry and gateway logout
+alone must not be presented as global account-session revocation.
