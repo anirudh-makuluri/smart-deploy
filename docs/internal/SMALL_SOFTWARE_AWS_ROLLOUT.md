@@ -16,8 +16,9 @@ the source and the existing analysis/blueprint workflow retained.
 
 - Use AWS for new builds, application runtimes, and application data resources.
   Build on the existing SQS/Lambda, CodeBuild, ECR, ECS Fargate, and S3 paths.
-- Preserve the uncommitted K3s/Oracle/GCP work in the original checkout. It is
-  excluded from this rollout, rather than deleted or incorporated.
+- The user authorized discarding the uncommitted K3s/Oracle/GCP experiment.
+  Its tracked changes were restored to HEAD and its added source/configuration
+  files removed from the original checkout. Keep this rollout on AWS.
 - Keep existing Better Auth and Supabase platform dependencies during the first
   increment. Moving the platform database or authentication to AWS is a separate
   migration decision; AWS application resources must not require that migration.
@@ -96,6 +97,6 @@ report a published PR, completion, failure, or decision requiring user input.
 
 | Item | Status | Evidence |
 |------|--------|----------|
-| Kickoff | Prepared | Clean managed worktree from origin/main; original K3s checkout preserved. |
+| Kickoff | Prepared | Clean managed worktree from origin/main; uncommitted K3s/Oracle/GCP experiment discarded at the user's request. |
 | Existing billing | Separate open PR at kickoff | https://github.com/anirudh-makuluri/smart-deploy/pull/85 |
 | Slices 1-7 | Pending | No implementation or hosted proof claimed by this planning document. |
