@@ -30,6 +30,9 @@ the source and the existing analysis/blueprint workflow retained.
   part of scheduled implementation.
 - Read AGENTS.md and applicable skills before each implementation. Preserve
   DeployConfig as the source of truth for a deployment. Avoid broad refactors.
+- Confirmed in session 5: signing out of SmartDeploy must end all private-app
+  sessions for that user, across their apps and originating platform logins.
+  Implement and test this before enabling the private gateway.
 
 ## PR sequence and acceptance criteria
 
@@ -103,8 +106,9 @@ report a published PR, completion, failure, or decision requiring user input.
 | Slice 2a: membership/invitation backend | Draft stacked PR; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/92 — branch `feat/workspace-invitations`, base `feat/app-workspace-foundation`; merge #91 first. Browser APIs for team workspaces, rosters, owner-controlled role changes, removal, expiring/revocable verified-email invitations, and atomic redemption. Default-off feature flag. 120 unit files / 416 tests, 21 PostgreSQL integration tests, lint/build/diff checks passed; final focused API tests also passed after fixing three route diagnostics. React Doctor 0.9.18 versus the exact #91 base: 100/100 with zero diagnostics. GitHub database/build/tests and React Doctor checks passed on `6ecc4d3`. |
 | Slice 2b: app-use policy backend | Draft stacked PR; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/93 — branch `feat/app-use-grants`, base `feat/workspace-invitations`; merge #91 then #92 first. App creation/listing, ordinary-member use grants, current verified-identity lookup, membership-cascade cleanup, and explicit access-event API. 120 unit files / 422 tests, 32 PostgreSQL tests, full lint/build, staged diff check, and complete 9-file exact-base React Doctor scan (100/100) passed locally. All GitHub database/build/tests and React Doctor checks passed on `e4c8aa3`, verified in session 4. |
 | Slice 3a: handoff/session storage | Draft stacked PR; CI passed, not merged | https://github.com/anirudh-makuluri/smart-deploy/pull/94 — branch `feat/private-app-handoff`, base `feat/app-use-grants`; merge #91 → #92 → #93 first. Server-only store/schema: hash-only credentials, S256 proof, exact operator-owned origin/app binding, atomic single-use redemption, fresh verified policy lookup, permanent invalidation on access/identity/binding changes, and explicit bounded lifetimes. 120 unit files / 422 tests, 4 PostgreSQL files / 46 tests (14 new gateway cases), lint/build/diff checks, and all three changed TypeScript files in exact-base React Doctor (100/100, zero diagnostics) passed locally. GitHub database/build/tests and React Doctor checks passed on `7060dce`. No HTTP endpoints or runtime enforcement are exposed. |
+| Slice 3b: authenticated gateway API | Draft stacked PR; CI in progress | https://github.com/anirudh-makuluri/smart-deploy/pull/95 — branch `feat/gateway-authorization-api`, base `feat/private-app-handoff`; merge #91 → #92 → #93 → #94 first. Default-off service endpoints for redemption, authorization, and per-app logout. Hash-only expiring/revocable machine keys derive the binding; clients cannot choose authority. Current approval/use checks, 4 KiB/5-second streaming body bounds, strict schemas, secure service-only request profile, redacted errors, and fail-closed responses. 121 unit files / 437 tests, 5 PostgreSQL files / 53 tests (7 new real credential/route integration cases), lint/build/diff checks, and exact-base React Doctor across all 9 TypeScript files (100/100) passed locally. No public handoff issuance, proxy, or AWS origin enforcement. |
 | Slice 3: private runtime | Design and storage prepared; authenticated adapters and runtime pending | [AWS_PRIVATE_GATEWAY.md](./AWS_PRIVATE_GATEWAY.md) records current direct-ALB code, a separate Fargate gateway/private origin chain, identity handoff, cookie/header isolation, revocation, static-site exclusions, and operating/cost decisions. Sources: AWS, MDN, and IETF primary documentation. No origin routing or hosted access protection changed. |
-| Remaining UI and slices 3-7 | Pending | Next session: inspect #94 CI/reviews and repair regressions, then implement the authenticated control-plane/gateway adapters and a local creator/member/outsider runtime fixture. Choose production lifetimes explicitly within storage caps before enabling; browser state/CSRF/cookie handling is still required. Sharing/acceptance UI, runtime origin enforcement, persistent app data/resources, usage controls, production migration, and hosted end-to-end proof remain outstanding. Metadata and passing policy tests are not private-runtime proof. |
+| Remaining UI and slices 3-7 | Pending | Finish/verify #95, then implement confirmed global logout and session-bound handoff issuance as a separate increment. Browser state/CSRF/cookie handling, a local gateway/runtime fixture, and explicit production lifetimes remain prerequisites. Sharing/acceptance UI, runtime origin enforcement, persistent app data/resources, usage controls, production migration, and hosted end-to-end proof remain outstanding. Metadata and passing policy tests are not private-runtime proof. |
 
 Session 1 (October 23, approximately 03:21-03:33 America/Phoenix): implemented
 the foundation in a clean branch from `origin/main`. Database checks used a
@@ -157,3 +161,14 @@ was stopped. Billing #85 remains open/separate; the original checkout is clean.
 No production migration, email, provisioning, runtime deployment, connection
 change, or merge was performed. There are two scheduled follow-up slots before
 the bounded deadline; do not compress the remaining security work to fit them.
+
+Session 5, first increment (October 23, starting 11:20 America/Phoenix): verified
+#94 checks/reviews and published #95. Real route handlers, credential lookup,
+and session storage were exercised together against PostgreSQL for creator and
+member flows, outsider denial, logout, and user/key revocation. These are handler
+Request/Response tests, not browser/network TLS or origin-blocking proof. The
+disposable database was stopped. Billing #85 remains open/separate; the original
+checkout remains clean. The user chose global app logout on platform sign-out.
+Inspection of installed Better Auth 1.6.23 found sign-out catches database
+deletion errors and can return success anyway; the next increment must verify
+revocation before reporting success, including stale handoff/concurrency cases.

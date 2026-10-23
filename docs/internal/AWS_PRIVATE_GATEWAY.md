@@ -157,3 +157,11 @@ Better Auth logout, password/account recovery, or platform-session revocation
 events to them. The authenticated integration must define and test those
 invalidation paths before production enablement; expiry and gateway logout
 alone must not be presented as global account-session revocation.
+
+[PR #95](https://github.com/anirudh-makuluri/smart-deploy/pull/95) supplies the
+default-off authenticated control-plane API using operator-owned machine keys
+bound to a single registry binding. It checks fresh user/use/platform approval,
+rejects supplied app/user/upstream authority, and bounds request bodies. This is
+not the browser adapter, proxy, or origin enforcement. In session 5 the user
+confirmed that platform sign-out must invalidate all private-app sessions for
+that user; session linkage and verified revocation are the next increment.
