@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { dbHelper } from "@/db-helper";
 import { getDbPool } from "@/lib/dbPool";
 import { WorkspaceError, WorkspaceStore } from "./workspaceStore";
+import { AppStore } from "./appStore";
 
 export const WorkspaceNameInput = z.object({ name: z.string().trim().min(1).max(120) }).strict();
 export const InvitationInput = z.object({ email: z.string().trim().email().max(254), role: z.enum(["member", "admin"]) }).strict();
@@ -25,7 +26,7 @@ export async function parseWorkspaceBody<T>(request: Request, schema: z.ZodType<
 	return result.data;
 }
 
-interface WorkspaceApiContext { userId: string; store: WorkspaceStore }
+interface WorkspaceApiContext { userId: string; store: WorkspaceStore; apps: AppStore }
 
 export async function withWorkspaceApi(
 	request: Request,
@@ -42,7 +43,8 @@ export async function withWorkspaceApi(
 			const approval = await dbHelper.isApprovedUser(session.user.email);
 			if (!approval.approved) throw new WorkspaceError(403, "Your account is not approved for workspace access.");
 		}
-		return await action({ userId: session.user.id, store: new WorkspaceStore(getDbPool()) });
+		const pool = getDbPool();
+		return await action({ userId: session.user.id, store: new WorkspaceStore(pool), apps: new AppStore(pool) });
 	} catch (error) {
 		if (error instanceof WorkspaceError) return workspaceJson({ error: error.message }, error.status);
 		// Do not log invitation tokens, request bodies, or database row details.

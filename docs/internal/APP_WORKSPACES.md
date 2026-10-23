@@ -125,8 +125,8 @@ invitation. Personal workspaces cannot issue invitations.
 
 Workspace membership manages platform organization; it is separate from app-use
 grants and does not expose legacy deployment APIs or secrets to colleagues.
-App-use grants, sharing/acceptance UI, private gateway enforcement, and integrated
-browser proof remain subsequent increments. Invitation acceptance/removal has
+Sharing/acceptance UI, private gateway enforcement, and integrated browser proof
+remain subsequent increments. Invitation acceptance/removal has
 database/API proof here, not hosted multi-user application proof.
 
 The invitation increment's React Doctor 0.9.18 scan against its exact foundation
@@ -135,3 +135,46 @@ base (#91) reports 100/100 with zero errors/warnings. A broader comparison again
 unchanged foundation branch reports the same 43/100. No dependency versions or
 diagnostic rules were changed here. This broader dependency-health baseline
 still needs separate triage before claiming repository-wide health of 95/100.
+
+## Per-app use access
+
+Apply `supabase/migrations/20261023_app_use_grants.sql` after the foundation and
+invitation migrations before enabling/upgrading the workspace API feature.
+This increment adds app creation/listing, explicit ordinary-member use grants,
+and management access-event records. It does not deploy a gateway or protect
+existing public application URLs.
+
+| Endpoint | Behavior |
+|----------|----------|
+| `GET /api/workspaces/:workspaceId/apps` | Owners/admins see all apps; ordinary members see only explicitly granted apps. Outsiders cannot list the workspace. |
+| `POST /api/workspaces/:workspaceId/apps` | Owner/admin creates `{name}`. The creator is provenance; workspace ownership remains authoritative. No deployment configuration is copied or changed. |
+| `GET /api/apps/:appId/grants` | Owner/admin lists explicit grants. |
+| `POST /api/apps/:appId/grants` | Owner/admin grants `{userId}` use access to a currently verified ordinary member of that workspace. |
+| `DELETE /api/apps/:appId/grants` | Owner/admin revokes `{userId}` explicit access. Inherited owner/admin authority must be removed through workspace roles instead. |
+| `GET /api/apps/:appId/access-events` | Owner/admin reads up to the latest 100 explicit grant/revoke records. |
+
+Owners and administrators inherit app-management/use authority; ordinary
+membership grants neither app use nor app management. A use grant never grants
+deployment/configuration/secret management. Creating an app does not grant
+enduring authority if its creator later loses their workspace role.
+
+`AppStore.getUseIdentity` takes an already authenticated principal ID and reads
+current verification, membership, role, and grant state in one database query.
+It returns only the authorized user's ID/email, or null. It does not authenticate
+cookies, authorize arbitrary headers, proxy requests, or protect existing URLs.
+The future gateway must authenticate first and enforce this lookup for every
+request/connection; long-lived connection revocation still needs runtime work.
+
+Removing membership cascades explicit use grants, so reinvitation does not
+resurrect them. New lookups fail closed after revocation, role loss, or loss of
+email verification. All management mutations share the workspace transaction
+lock with invitation/removal operations. Database foreign keys reject mixed-app,
+mixed-workspace, and nonmember grant associations.
+
+Explicit grant/revoke changes record actor, subject, app, workspace, and time;
+repeating an unchanged grant/revoke does not duplicate events. Automatic grant
+cleanup on membership removal is not an explicit-revocation event in this table.
+Complete membership/security audit coverage remains later work. RLS denies
+client access. The service role has only insert/select privileges on events;
+privileged database owners can still modify them. Event history restricts
+destructive app/user deletion and requires a reviewed retention/deletion policy.

@@ -7,7 +7,7 @@ export class WorkspaceError extends Error {
 	constructor(public readonly status: number, message: string) { super(message); }
 }
 
-interface WorkspaceAccess {
+export interface WorkspaceAccess {
 	workspace: AppWorkspace;
 	role: WorkspaceRole;
 }
@@ -25,7 +25,7 @@ interface StoredInvitation extends WorkspaceInvitation {
 	active: boolean;
 }
 
-function requireId(value: string): void {
+export function requireId(value: string): void {
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
 		throw new WorkspaceError(400, "Invalid identifier.");
 	}
@@ -46,38 +46,50 @@ function tokenHash(token: string): string {
 
 const WORKSPACE_FIELDS = 'id, name, kind, owner_id as "ownerId"';
 
+export async function withWorkspaceTransaction<T>(pool: Pool, action: (client: PoolClient) => Promise<T>): Promise<T> {
+	const client = await pool.connect();
+	try {
+		await client.query("begin");
+		const result = await action(client);
+		await client.query("commit");
+		return result;
+	} catch (error) {
+		await client.query("rollback");
+		throw error;
+	} finally { client.release(); }
+}
+
+export async function loadWorkspaceAccess(client: PoolClient, workspaceId: string, userId: string): Promise<WorkspaceAccess> {
+	requireId(workspaceId);
+	const result = await client.query<AppWorkspace>(`select ${WORKSPACE_FIELDS} from public.app_workspaces where id = $1 for update`, [workspaceId]);
+	const workspace = result.rows[0];
+	if (!workspace || !userId) throw new WorkspaceError(404, "Workspace not found.");
+	const membership = await client.query<WorkspaceMembership>(
+		'select workspace_id as "workspaceId", user_id as "userId", role from public.app_workspace_members where workspace_id = $1 and user_id = $2',
+		[workspaceId, userId]
+	);
+	const role = workspaceRoleForUser(workspace, userId, membership.rows[0] ?? null);
+	if (!role) throw new WorkspaceError(404, "Workspace not found.");
+	return { workspace, role };
+}
+
+export function requireWorkspaceManager(access: WorkspaceAccess): void {
+	if (access.role === "member") throw new WorkspaceError(403, "Workspace management permission required.");
+}
+
 export class WorkspaceStore {
 	constructor(private readonly pool: Pool) {}
 
 	private async transaction<T>(action: (client: PoolClient) => Promise<T>): Promise<T> {
-		const client = await this.pool.connect();
-		try {
-			await client.query("begin");
-			const result = await action(client);
-			await client.query("commit");
-			return result;
-		} catch (error) {
-			await client.query("rollback");
-			throw error;
-		} finally { client.release(); }
+		return withWorkspaceTransaction(this.pool, action);
 	}
 
 	private async access(client: PoolClient, workspaceId: string, userId: string): Promise<WorkspaceAccess> {
-		requireId(workspaceId);
-		const result = await client.query<AppWorkspace>(`select ${WORKSPACE_FIELDS} from public.app_workspaces where id = $1 for update`, [workspaceId]);
-		const workspace = result.rows[0];
-		if (!workspace || !userId) throw new WorkspaceError(404, "Workspace not found.");
-		const membership = await client.query<WorkspaceMembership>(
-			'select workspace_id as "workspaceId", user_id as "userId", role from public.app_workspace_members where workspace_id = $1 and user_id = $2',
-			[workspaceId, userId]
-		);
-		const role = workspaceRoleForUser(workspace, userId, membership.rows[0] ?? null);
-		if (!role) throw new WorkspaceError(404, "Workspace not found.");
-		return { workspace, role };
+		return loadWorkspaceAccess(client, workspaceId, userId);
 	}
 
 	private requireManager(access: WorkspaceAccess): void {
-		if (access.role === "member") throw new WorkspaceError(403, "Workspace management permission required.");
+		requireWorkspaceManager(access);
 	}
 
 	async createWorkspace(userId: string, name: string): Promise<AppWorkspace> {
