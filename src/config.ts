@@ -7,6 +7,9 @@ const config = {
 	DATABASE_URL: process.env.DATABASE_URL || "",
 	// Enable only after all current app/workspace migrations are applied.
 	WORKSPACE_APPS_ENABLED: process.env.WORKSPACE_APPS_ENABLED === "true",
+	PRIVATE_APP_GATEWAY_ENABLED: process.env.PRIVATE_APP_GATEWAY_ENABLED === "true",
+	GATEWAY_CODE_TTL_SECONDS: process.env.GATEWAY_CODE_TTL_SECONDS || "",
+	GATEWAY_SESSION_TTL_SECONDS: process.env.GATEWAY_SESSION_TTL_SECONDS || "",
 
 	// GitHub App (OAuth credentials are used by Better Auth; the private key is server-only).
 	GITHUB_APP_ID: process.env.GITHUB_APP_ID || "",
