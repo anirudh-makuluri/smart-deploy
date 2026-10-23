@@ -13,8 +13,7 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
 	return withWorkspaceApi(request, async ({ userId, store }) => {
-		const { workspaceId } = await context.params;
-		const body = await parseWorkspaceBody(request, MemberInput);
+		const [{ workspaceId }, body] = await Promise.all([context.params, parseWorkspaceBody(request, MemberInput)]);
 		await store.removeMember(workspaceId, userId, body.userId);
 		return workspaceJson({ ok: true });
 	});
@@ -22,8 +21,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
 	return withWorkspaceApi(request, async ({ userId, store }) => {
-		const { workspaceId } = await context.params;
-		const body = await parseWorkspaceBody(request, MemberRoleInput);
+		const [{ workspaceId }, body] = await Promise.all([context.params, parseWorkspaceBody(request, MemberRoleInput)]);
 		await store.setMemberRole(workspaceId, userId, body.userId, body.role);
 		return workspaceJson({ ok: true });
 	});

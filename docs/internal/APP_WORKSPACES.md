@@ -128,3 +128,10 @@ grants and does not expose legacy deployment APIs or secrets to colleagues.
 App-use grants, sharing/acceptance UI, private gateway enforcement, and integrated
 browser proof remain subsequent increments. Invitation acceptance/removal has
 database/API proof here, not hosted multi-user application proof.
+
+The invitation increment's React Doctor 0.9.18 scan against its exact foundation
+base (#91) reports 100/100 with zero errors/warnings. A broader comparison against
+`origin/main` reports 43/100 from `socket/low-supply-chain-score`; the isolated
+unchanged foundation branch reports the same 43/100. No dependency versions or
+diagnostic rules were changed here. This broader dependency-health baseline
+still needs separate triage before claiming repository-wide health of 95/100.

@@ -13,8 +13,7 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
 	return withWorkspaceApi(request, async ({ userId, store }) => {
-		const { workspaceId } = await context.params;
-		const body = await parseWorkspaceBody(request, InvitationInput);
+		const [{ workspaceId }, body] = await Promise.all([context.params, parseWorkspaceBody(request, InvitationInput)]);
 		return workspaceJson({ invitation: await store.createInvitation(workspaceId, userId, body.email, body.role) }, 201);
 	});
 }
