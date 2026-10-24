@@ -443,3 +443,38 @@ or a verification flow before management. No production migration, resource,
 worker start, invitation email, provider connection change, merge or deployment
 was performed. The original checkout remains clean and untouched; implementation
 continues in this chat's managed worktree.
+
+Verified platform authority: published draft
+[#104](https://github.com/anirudh-makuluri/smart-deploy/pull/104), head
+`3371285b930ee47906210d0960041699707c260b`, stacked on #103 at `1024ac8`.
+Implements the user's verified-email requirement independently of the waiting
+list and pilot flags. Fresh browser identities, workspace management, existing
+CLI tokens, device approval/redemption, and worker credential issuance enforce
+current verified authority and applicable approval. Failed CLI redemption rolls
+back without issuing a token. Worker credential v2 is audience/session-bound
+with a purpose-derived HMAC key; no auth-secret rotation or legacy fallback.
+Connections require an explicit Origin allowlist and current platform session.
+Packets reauthorize; idle checks run every 30s with a 5s deadline and teardown.
+Release the API issuer and worker together, with valid DB/auth/approval config.
+
+Verification: 134 unit files / 563 tests, eight PostgreSQL files / 79 tests,
+both actual verification/invitee browser cases, both logout-recovery browser
+cases, full typecheck, lint, worker compilation, production build and diff
+checks pass. Real loopback WebSocket/database tests prove denied packets never
+reach handlers, revoked sessions cannot connect, sibling Origins are rejected,
+and CLI consumption rolls back after verification loss. Approval uses test
+doubles/local HTTP fixtures; this is not hosted or real email/OAuth proof.
+Complete pinned Doctor: 22 changed source files at 100/100, zero findings;
+unfiltered 582-file repository scan remains 82/100 (zero errors / 42 warnings).
+No suppression. Build tracing warnings remain. All local servers are stopped.
+
+Read-only production catalog checks confirmed client roles have no core auth
+table privileges and no login/superuser/RLS bypass. CLI tables have RLS enabled
+and no policies; their broader ACLs were not changed. No production rows or
+permissions were read/modified beyond catalog metadata; transactions rolled
+back. No provider connection, invitation email, resource provisioning, migration,
+worker start, merge or deployment. #103 CI/preview checks all pass at its exact
+recorded head; #104 CI is running. Merge order extends #91 -> ... -> #103 -> #104.
+Full >=95 and the remaining cookie/gateway/runtime/data/UI/tools/integrated
+gates remain. Continue with host-only platform cookies for the approved shared
+parent domain; do not enable untrusted sibling hosting before that boundary.
