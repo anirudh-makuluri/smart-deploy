@@ -36,6 +36,8 @@ export async function resetFoundationDatabase(client: Client): Promise<void> {
 		insert into public."user" (id, email, "emailVerified") values
 		  ('alice', 'alice@example.test', true), ('bob', 'bob@example.test', true),
 		  ('carol', 'carol@example.test', true), ('dave', 'dave@example.test', false);
+		create table public.session (id text primary key, "userId" text not null references public."user"(id) on delete cascade, "expiresAt" timestamptz not null);
+		insert into public.session (id, "userId", "expiresAt") select id || '-session', id, clock_timestamp() + interval '1 day' from public."user";
 	`);
 	await client.query(readFileSync(new URL("../../supabase/schema.sql", import.meta.url), "utf8"));
 	await client.query(`

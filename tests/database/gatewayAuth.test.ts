@@ -19,6 +19,8 @@ let appId: string;
 let bindingId: string;
 let otherBindingId: string;
 
+function principal(userId: string) { return { userId, sessionId: `${userId}-session` }; }
+
 function proof(): { verifier: string; challenge: string } {
 	const verifier = randomBytes(32).toString("base64url");
 	return { verifier, challenge: createHash("sha256").update(verifier).digest("base64url") };
@@ -26,7 +28,7 @@ function proof(): { verifier: string; challenge: string } {
 
 async function handoff(userId = "bob"): Promise<GatewayHandoff & { verifier: string }> {
 	const { verifier, challenge } = proof();
-	return { ...await auth.issue(bindingId, userId, challenge), verifier };
+	return { ...await auth.issue(bindingId, principal(userId), challenge), verifier };
 }
 
 async function session(userId = "bob"): Promise<string> {
@@ -38,7 +40,7 @@ beforeAll(async () => { await client.connect(); await prepareDatabaseTestRoles(c
 afterAll(async () => { await pool.end(); await client.end(); });
 beforeEach(async () => {
 	await resetFoundationDatabase(client);
-	for (const name of ["workspace_invitations", "app_use_grants", "app_gateway_auth"]) {
+	for (const name of ["workspace_invitations", "app_use_grants", "app_gateway_auth", "gateway_platform_sessions"]) {
 		await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
 	workspaceId = (await workspaces.createWorkspace("alice", "Team")).id;
@@ -52,6 +54,73 @@ beforeEach(async () => {
 });
 
 describe("gateway handoff and session store", () => {
+	it("purges only unbound legacy credentials on upgrade and preserves bound credentials on rerun", async () => {
+		const bound = await session();
+		await client.query("alter table public.app_gateway_codes alter column platform_session_id drop not null; alter table public.app_gateway_sessions alter column platform_session_id drop not null");
+		await client.query(`insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, expires_at)
+			values ($1, $2, $3, 'bob', $4, clock_timestamp() + interval '1 minute')`, ["a".repeat(64), bindingId, appId, proof().challenge]);
+		await client.query(`insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, expires_at)
+			values ($1, $2, $3, 'bob', clock_timestamp() + interval '1 minute')`, ["b".repeat(64), bindingId, appId]);
+		const upgrade = readFileSync(new URL("../../supabase/migrations/20261023_gateway_platform_sessions.sql", import.meta.url), "utf8");
+		await client.query(upgrade);
+		await client.query(upgrade);
+		expect((await client.query("select * from public.app_gateway_codes where platform_session_id is null")).rows).toEqual([]);
+		expect((await client.query("select * from public.app_gateway_sessions")).rows).toHaveLength(1);
+		expect(await auth.authorize(bindingId, bound)).not.toBeNull();
+	});
+	it("revokes all app credentials across platform sessions without affecting another user", async () => {
+		const first = await session();
+		await client.query("insert into public.session (id, \"userId\", \"expiresAt\") values ('bob-other-session', 'bob', clock_timestamp() + interval '1 day')");
+		const otherApp = (await client.query<{ app_id: string }>("select app_id from public.app_gateway_bindings where id = $1", [otherBindingId])).rows[0].app_id;
+		await apps.grantUse(otherApp, "alice", "bob");
+		const secondProof = proof();
+		const issued = await auth.issue(otherBindingId, { userId: "bob", sessionId: "bob-other-session" }, secondProof.challenge);
+		const second = await auth.redeem(otherBindingId, issued.callbackUrl, issued.code, secondProof.verifier);
+		const pending = await handoff();
+		const owner = await session("alice");
+		await client.query("delete from public.session where id = 'bob-session'");
+		expect(await auth.authorize(bindingId, first)).toBeNull();
+		expect(await auth.authorize(otherBindingId, second.token)).toBeNull();
+		await expect(auth.redeem(bindingId, pending.callbackUrl, pending.code, pending.verifier)).rejects.toMatchObject({ status: 401 });
+		expect(await auth.authorize(bindingId, owner)).not.toBeNull();
+		expect((await client.query("select id from public.session where id = 'bob-other-session'")).rows).toHaveLength(1);
+	});
+
+	it("requires the authenticated platform session to belong to the principal and remain active", async () => {
+		await expect(auth.issue(bindingId, { userId: "bob", sessionId: "alice-session" }, proof().challenge)).rejects.toMatchObject({ status: 401 });
+		await expect(auth.issue(bindingId, { userId: "bob", sessionId: "missing" }, proof().challenge)).rejects.toMatchObject({ status: 401 });
+		const token = await session();
+		await client.query("update public.session set \"expiresAt\" = clock_timestamp() - interval '1 minute' where id = 'bob-session'");
+		await expect(auth.issue(bindingId, principal("bob"), proof().challenge)).rejects.toMatchObject({ status: 401 });
+		expect(await auth.authorize(bindingId, token)).toBeNull();
+		await client.query("update public.session set \"expiresAt\" = clock_timestamp() + interval '1 day' where id = 'bob-session'");
+		expect(await auth.authorize(bindingId, token)).toBeNull();
+	});
+
+	it("caps app credentials at the originating platform-session expiry", async () => {
+		const expiry = (await client.query<{ expiresAt: Date }>("update public.session set \"expiresAt\" = clock_timestamp() + interval '30 seconds' where id = 'bob-session' returning \"expiresAt\"")).rows[0].expiresAt;
+		const issued = await handoff();
+		expect(issued.expiresAt.getTime()).toBeLessThanOrEqual(expiry.getTime());
+		const redeemed = await auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier);
+		expect(redeemed.expiresAt.getTime()).toBeLessThanOrEqual(expiry.getTime());
+	});
+
+	it("serializes logout with issuance and cannot use a stale principal after deletion", async () => {
+		const results = await Promise.allSettled([auth.issue(bindingId, principal("bob"), proof().challenge), client.query("delete from public.session where id = 'bob-session'")]);
+		expect(results[1].status).toBe("fulfilled");
+		if (results[0].status === "rejected") expect(results[0].reason).toMatchObject({ status: 401 });
+		expect((await client.query("select * from public.app_gateway_codes where user_id = 'bob'")).rows).toEqual([]);
+		await expect(auth.issue(bindingId, principal("bob"), proof().challenge)).rejects.toMatchObject({ status: 401 });
+	});
+
+	it("serializes logout with code redemption without leaving a live app session", async () => {
+		const issued = await handoff();
+		const results = await Promise.allSettled([auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier), client.query("delete from public.session where id = 'bob-session'")]);
+		expect(results[1].status).toBe("fulfilled");
+		if (results[0].status === "rejected") expect(results[0].reason).toMatchObject({ status: 401 });
+		expect((await client.query("select * from public.app_gateway_sessions where user_id = 'bob'")).rows).toEqual([]);
+	});
+
 	it("requires explicit bounded lifetimes and does not retain mutable caller configuration", async () => {
 		for (const lifetimes of [{ codeSeconds: 0, sessionSeconds: 1 }, { codeSeconds: 121, sessionSeconds: 1 }, { codeSeconds: 60, sessionSeconds: 3601 }, { codeSeconds: 1.5, sessionSeconds: 1 }]) {
 			expect(() => new GatewayAuthStore(pool, lifetimes)).toThrow("Explicit gateway lifetimes required");
@@ -59,7 +128,7 @@ describe("gateway handoff and session store", () => {
 		const lifetimes = { codeSeconds: 60, sessionSeconds: 900 };
 		const isolated = new GatewayAuthStore(pool, lifetimes);
 		lifetimes.codeSeconds = 9999;
-		await expect(isolated.issue(bindingId, "bob", proof().challenge)).resolves.toHaveProperty("code");
+		await expect(isolated.issue(bindingId, principal("bob"), proof().challenge)).resolves.toHaveProperty("code");
 	});
 
 	it("stores hashes only, uses a fixed callback, and rechecks current verified identity", async () => {
@@ -81,10 +150,10 @@ describe("gateway handoff and session store", () => {
 	});
 
 	it("requires current app use at issuance and never accepts an outsider or bare membership", async () => {
-		await expect(auth.issue(bindingId, "carol", proof().challenge)).rejects.toMatchObject({ status: 403 });
-		await expect(auth.issue(otherBindingId, "bob", proof().challenge)).rejects.toMatchObject({ status: 403 });
-		await expect(auth.issue(bindingId, "", proof().challenge)).rejects.toMatchObject({ status: 403 });
-		await expect(auth.issue(bindingId, "bob", "plain-verifier")).rejects.toMatchObject({ status: 400 });
+		await expect(auth.issue(bindingId, principal("carol"), proof().challenge)).rejects.toMatchObject({ status: 403 });
+		await expect(auth.issue(otherBindingId, principal("bob"), proof().challenge)).rejects.toMatchObject({ status: 403 });
+		await expect(auth.issue(bindingId, principal(""), proof().challenge)).rejects.toMatchObject({ status: 401 });
+		await expect(auth.issue(bindingId, principal("bob"), "plain-verifier")).rejects.toMatchObject({ status: 400 });
 		expect(await auth.authorize(bindingId, await session("alice"))).toEqual({ id: "alice", email: "alice@example.test" });
 	});
 
@@ -163,7 +232,7 @@ describe("gateway handoff and session store", () => {
 		expect(await auth.authorize(bindingId, admin)).toBeNull();
 		const verified = await session();
 		await client.query("update public.\"user\" set \"emailVerified\" = false where id = 'bob'");
-		await expect(auth.issue(bindingId, "bob", proof().challenge)).rejects.toMatchObject({ status: 403 });
+		await expect(auth.issue(bindingId, principal("bob"), proof().challenge)).rejects.toMatchObject({ status: 403 });
 		await client.query("update public.\"user\" set \"emailVerified\" = true where id = 'bob'");
 		expect(await auth.authorize(bindingId, verified)).toBeNull();
 	});
@@ -172,7 +241,7 @@ describe("gateway handoff and session store", () => {
 		const token = await session();
 		const issued = await handoff();
 		await client.query("update public.app_gateway_bindings set disabled_at = clock_timestamp() where id = $1", [bindingId]);
-		await expect(auth.issue(bindingId, "alice", proof().challenge)).rejects.toMatchObject({ status: 401 });
+		await expect(auth.issue(bindingId, principal("alice"), proof().challenge)).rejects.toMatchObject({ status: 401 });
 		await client.query("update public.app_gateway_bindings set disabled_at = null where id = $1", [bindingId]);
 		expect(await auth.authorize(bindingId, token)).toBeNull();
 		await expect(auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier)).rejects.toMatchObject({ status: 401 });
@@ -191,7 +260,7 @@ describe("gateway handoff and session store", () => {
 		if (redemption[0].status === "rejected") expect(redemption[0].reason).toMatchObject({ status: 401 });
 		expect((await client.query("select * from public.app_gateway_sessions")).rows).toEqual([]);
 		await apps.grantUse(appId, "alice", "bob");
-		const issuance = await Promise.allSettled([auth.issue(bindingId, "bob", proof().challenge), apps.revokeUse(appId, "alice", "bob")]);
+		const issuance = await Promise.allSettled([auth.issue(bindingId, principal("bob"), proof().challenge), apps.revokeUse(appId, "alice", "bob")]);
 		expect(issuance[1].status).toBe("fulfilled");
 		if (issuance[0].status === "rejected") expect(issuance[0].reason).toMatchObject({ status: 403 });
 		expect((await client.query("select * from public.app_gateway_codes")).rows).toEqual([]);
@@ -210,11 +279,11 @@ describe("gateway handoff and session store", () => {
 
 	it("rejects mixed-app bindings, noncanonical origins, and excess database lifetimes", async () => {
 		await expect(client.query("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://apps.test/path')", [appId])).rejects.toMatchObject({ code: "23514" });
-		await expect(client.query(`insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, expires_at)
-			values ($1, $2, $3, 'bob', $4, clock_timestamp() + interval '3 minutes')`, ["a".repeat(64), bindingId, appId, proof().challenge])).rejects.toMatchObject({ code: "23514" });
+		await expect(client.query(`insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, expires_at, platform_session_id)
+			values ($1, $2, $3, 'bob', $4, clock_timestamp() + interval '3 minutes', 'bob-session')`, ["a".repeat(64), bindingId, appId, proof().challenge])).rejects.toMatchObject({ code: "23514" });
 		const otherAppId = (await client.query<{ app_id: string }>("select app_id from public.app_gateway_bindings where id = $1", [otherBindingId])).rows[0].app_id;
-		await expect(client.query(`insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, expires_at)
-			values ($1, $2, $3, 'bob', clock_timestamp() + interval '1 minute')`, ["b".repeat(64), bindingId, otherAppId])).rejects.toMatchObject({ code: "23503" });
+		await expect(client.query(`insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, expires_at, platform_session_id)
+			values ($1, $2, $3, 'bob', clock_timestamp() + interval '1 minute', 'bob-session')`, ["b".repeat(64), bindingId, otherAppId])).rejects.toMatchObject({ code: "23503" });
 	});
 
 	it("denies client reads/writes and prevents service-role origin registration", async () => {

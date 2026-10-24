@@ -8,8 +8,8 @@ No production migration is part of this PR.
 
 ## Contract for subsequent gateway adapters
 
-`GatewayAuthStore.issue(bindingId, authenticatedUserId, challenge)` requires a
-principal resolved by Better Auth on the control plane, including the existing
+`GatewayAuthStore.issue(bindingId, {userId, sessionId}, challenge)` requires a
+live principal resolved by Better Auth on the control plane, including the existing
 platform approval gate. Never take that identity from a request body/header.
 Issuance must use the control plane's same-origin anti-CSRF checks; an incoming
 login/navigation GET must not itself approve a handoff or accept arbitrary state.
@@ -109,6 +109,8 @@ repository health of 95/100. The disposable database was stopped after testing.
 
 The service endpoints and credential boundary are now described in
 [APP_GATEWAY_API.md](./APP_GATEWAY_API.md); they remain default-off.
+Platform-session binding and global logout are described in
+[APP_GATEWAY_LOGOUT.md](./APP_GATEWAY_LOGOUT.md).
 Outstanding: browser transaction/cookie handling, cross-app browser proof,
 HTTP/WS proxy isolation, private AWS origin/networking,
 runtime binding lifecycle, rate limits, and hosted verification. Until those
