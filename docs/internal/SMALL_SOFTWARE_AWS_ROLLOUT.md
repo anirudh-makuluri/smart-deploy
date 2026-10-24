@@ -509,3 +509,36 @@ migration, cloud provisioning, invitation email, provider change, worker start,
 merge or deployment. Full >=95 and gateway/runtime/data/UI/tools/integrated
 gates remain. Next address confirmed UI row identity, immutable editing and
 keyboard/accessibility defects while continuing the full feature rollout.
+
+Environment editor: published draft
+[#106](https://github.com/anirudh-makuluri/smart-deploy/pull/106), head
+`fa41862806c9394e0a074430ee5e3a8a1ab17ae4`, stacked on #105 at `6a090c9`.
+Implemented in a separate managed worktree/branch. Stable row identities now
+survive additions, deletions, external reorder and named imports; edits create
+new objects instead of mutating caller data. Accessible names cover row inputs
+and delete controls without secret values. Reveal state follows the row and
+clears on deletion/closing/deployment switch. Delayed imports merge current
+edits; superseded/unmounted FileReaders are aborted and cannot commit.
+
+Verification: 136 unit files / 587 tests, including eleven real editor DOM
+regressions and both actual ConfigTabs composition tests, full typecheck/lint,
+worker compilation, configured production build and diff checks pass. Initial
+regressions failed before implementation; deployment-switch reset omission and
+a real-focus close/reopen plain-text secret were separately reproduced and
+fixed. Data fetching in the composition test is mocked; this is DOM evidence,
+not a native/hosted editor audit. The final closing regression justified another
+complete test/build/scan pass. Existing dynamic tracing warnings remain.
+Canonical index-rule guidance had version drift, and the icon prompt returned
+404; pinned local rule explanations and observed failures established fixes.
+
+Complete pinned Doctor: five changed source/test files 100/100; unfiltered
+588-file combined rollout improves 82 -> 83/100, zero errors, 42 -> 40 warnings.
+No suppression. Both targeted editor findings are removed. The full >=95 gate
+remains. #105 all CI/preview checks pass at its recorded head; #106 CI is running.
+Merge order extends #91 -> ... -> #104 -> #105 -> #106. Refreshed production main
+remains released #101 at `a8af9f3`; the original D:\own\smart-deploy checkout is
+still clean. All local servers are stopped. No production migration, billable
+resource, provider change, invitation email, worker start, merge or deployment.
+Continue remaining service-card keyboard/interaction defects and the separate
+gateway/runtime/data/UI/tools/integrated acceptance gates. No new user decision
+is pending.
