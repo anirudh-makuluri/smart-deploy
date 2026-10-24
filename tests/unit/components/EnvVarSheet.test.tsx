@@ -60,6 +60,17 @@ describe("environment variable editor identity", () => {
 		for (const button of screen.getAllByRole("button")) expect(button).toHaveAccessibleName();
 		expect(screen.queryByLabelText(/test-secret-value/)).toBeNull();
 	});
+	it("masks the previously focused secret after closing and reopening", () => {
+		const entries = [{ name: "TOKEN", value: "test-secret" }];
+		const props = { entries, onEntriesChange: vi.fn(), onOpenChange: vi.fn() };
+		const view = render(<EnvVarSheet {...props} open />);
+		act(() => screen.getByLabelText("Variable 1 value").focus());
+		expect(screen.getByLabelText("Variable 1 value")).toHaveAttribute("type", "text");
+		view.rerender(<EnvVarSheet {...props} open={false} />);
+		expect(screen.queryByLabelText("Variable 1 value")).toBeNull();
+		view.rerender(<EnvVarSheet {...props} open />);
+		expect(screen.getByLabelText("Variable 1 value")).toHaveAttribute("type", "password");
+	});
 	it("keeps duplicate and blank rows distinct while editing their names", () => {
 		render(<Editor initialEntries={[{ name: "DUPLICATE", value: "one" }, { name: "DUPLICATE", value: "two" }, { name: "", value: "" }]} />);
 		const second = screen.getByLabelText("Variable 2 value");

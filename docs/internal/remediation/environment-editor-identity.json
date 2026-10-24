@@ -78,7 +78,8 @@
     "Editing mutated caller-owned entry objects.",
     "Row inputs and remove buttons lacked accessible names.",
     "Delayed file completion could restore stale edits; superseded or unmounted readers must not commit.",
-    "Switching deployments must reset secret reveal state and cancel the previous import."
+    "Switching deployments must reset secret reveal state and cancel the previous import.",
+    "Closing and reopening retained plain-text reveal state despite the secret losing focus."
   ],
   "collateral": [
     "src/components/ConfigTabs.tsx",
@@ -94,8 +95,8 @@
   },
   "verification": {
     "unitFiles": 136,
-    "unitTests": 586,
-    "editorTests": 10,
+    "unitTests": 587,
+    "editorTests": 11,
     "configTabsTests": 2,
     "typecheck": true,
     "lint": true,

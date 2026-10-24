@@ -14,8 +14,9 @@ loads/reorders match entry references first, then unambiguous nonempty names.
 Duplicate and blank rows receive separate identities. Removed identities are
 never recycled within the editor instance.
 
-Secret reveal state follows the row identity. Removing the focused row clears
-that state; a subsequent row cannot inherit it. Row inputs and remove buttons
+Secret reveal state follows the row identity. Removing the focused row or
+closing the sheet clears that state; another row or a reopened sheet cannot
+inherit it. Row inputs and remove buttons
 have ordinal accessible names without secret values. Existing appearance,
 controlled name/value contract, normalization, paste behavior and import
 precedence remain. Nothing changes the secret storage API or cloud resources.
@@ -49,11 +50,13 @@ but reported plugin version 0.9.3, while the pinned scanner is 0.9.18. The icon
 prompt returned 404. Matched local `rules explain` output and the actual source/
 DOM failures establish applicability; no rule was suppressed or disabled.
 
-Final local verification passes: 136 unit files / 586 tests, including ten
+Final local verification passes: 136 unit files / 587 tests, including eleven
 editor regressions and both actual ConfigTabs composition tests; full typecheck,
 lint, worker compilation, configured production build and diff checks. The
 initial five regressions failed against the parent. The deployment-switch test
 also failed when its reset was temporarily removed, then passed when restored.
+An additional real-focus close/reopen regression reproduced a plain-text secret;
+clearing reveal state before closing fixes it.
 Existing dynamic build tracing warnings remain. No hosted or native browser
 editor audit was run for this increment, and no production change was made.
 

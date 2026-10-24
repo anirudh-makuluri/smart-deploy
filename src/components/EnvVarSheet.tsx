@@ -32,6 +32,7 @@ export default function EnvVarSheet({
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
 	const pendingRead = React.useRef<FileReader | null>(null);
 	const [focusedRowId, setFocusedRowId] = React.useState<string | null>(null);
+	if (!open && focusedRowId !== null) setFocusedRowId(null);
 	const { rows, addRow, removeRow, updateRow, replaceEntries, mergeEntries } = useEnvVarRows(entries, onEntriesChange);
 	React.useEffect(() => () => {
 		const reader = pendingRead.current;
