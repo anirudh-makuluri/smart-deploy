@@ -178,3 +178,8 @@ Complete membership/security audit coverage remains later work. RLS denies
 client access. The service role has only insert/select privileges on events;
 privileged database owners can still modify them. Event history restricts
 destructive app/user deletion and requires a reviewed retention/deletion policy.
+
+The next server-storage increment is documented in [APP_GATEWAY_AUTH.md](./APP_GATEWAY_AUTH.md).
+It adds handoff/session records and permanent credential invalidation. Gateway
+authentication, browser integration, and private runtime enforcement remain
+separate acceptance gates.
