@@ -4,14 +4,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const UPSTREAM = process.env.POSTHOG_UPSTREAM_HOST || "https://us.i.posthog.com";
+const ANALYTICS_HEADERS = ["accept", "accept-language", "content-type", "content-encoding", "user-agent"];
+const HOP_BY_HOP_HEADERS = ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"];
+
+function connectionHeaders(headers: Headers): string[] {
+	return (headers.get("connection") ?? "").split(",").map((name) => name.trim().toLowerCase()).filter(Boolean);
+}
 
 function withCors(res: NextResponse) {
 	res.headers.set("Access-Control-Allow-Origin", "*");
 	res.headers.set("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
 	res.headers.set(
 		"Access-Control-Allow-Headers",
-		"content-type, authorization, x-requested-with, accept, origin, user-agent"
+		"content-type, content-encoding, accept, accept-language"
 	);
+	res.headers.delete("Access-Control-Allow-Credentials");
 	res.headers.set("Access-Control-Max-Age", "86400");
 	return res;
 }
@@ -22,24 +29,28 @@ async function proxy(req: NextRequest, params: { path?: string[] }) {
 	const upstreamUrl = new URL(`${UPSTREAM.replace(/\/$/, "")}/${path}`);
 	upstreamUrl.search = url.search;
 
-	// Clone headers; drop hop-by-hop / problematic headers.
-	const headers = new Headers(req.headers);
-	headers.delete("host");
-	headers.delete("connection");
-	headers.delete("content-length");
+	// Ingestion uses the project token in the payload. Platform credentials and
+	// arbitrary private headers must never be sent to the analytics provider.
+	const headers = new Headers();
+	const connectionOnly = new Set(connectionHeaders(req.headers));
+	for (const name of ANALYTICS_HEADERS) {
+		const value = req.headers.get(name);
+		if (value !== null && !connectionOnly.has(name)) headers.set(name, value);
+	}
 
 	const upstreamRes = await fetch(upstreamUrl, {
 		method: req.method,
 		headers,
 		body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
 		cache: "no-store",
+		credentials: "omit",
 	});
 
 	const resHeaders = new Headers(upstreamRes.headers);
-	resHeaders.delete("content-encoding");
-	resHeaders.delete("content-length");
-	resHeaders.delete("transfer-encoding");
-	resHeaders.delete("connection");
+	for (const name of [...connectionHeaders(resHeaders), ...HOP_BY_HOP_HEADERS,
+		"content-encoding", "content-length", "set-cookie", "set-cookie2", "clear-site-data", "www-authenticate"]) {
+		resHeaders.delete(name);
+	}
 	// Ensure the browser treats it as non-cacheable in dev/prod.
 	resHeaders.set("Cache-Control", "no-store");
 

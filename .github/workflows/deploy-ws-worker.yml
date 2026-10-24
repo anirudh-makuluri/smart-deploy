@@ -22,6 +22,8 @@ concurrency:
 
 jobs:
   deploy:
+    # A web release must not start the on-demand pilot's stopped AWS worker.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.WORKER_AUTODEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

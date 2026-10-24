@@ -14,8 +14,8 @@ export default defineConfig({
 	},
 	webServer: {
 		command: "npm run dev",
-		url: "http://localhost:3000",
-		reuseExistingServer: true,
+		url: "http://localhost:3000/api/health",
+		reuseExistingServer: process.env.RUN_PROXY_BROWSER_TESTS !== "1",
 		timeout: 120_000,
 	},
 	projects: [
