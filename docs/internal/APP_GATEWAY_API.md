@@ -80,7 +80,10 @@ domain/cost decisions, isolated secret delivery, ingress/rate limits, browser
 transaction/state/CSRF/cookie handling, complete account-security-flow coverage,
 trusted upstream routing, HTTP/WS header and cookie
 isolation, direct-origin blocking, and creator/member/outsider browser proof.
-There is deliberately no public handoff-issuance endpoint yet.
+The separate platform-browser issuance contract is described in
+[APP_BROWSER_HANDOFF.md](./APP_BROWSER_HANDOFF.md). It uses platform authentication
+and same-origin guards rather than these machine credentials. The confirmation
+screen and gateway browser-transaction/cookie checks remain unimplemented.
 
 ## Verification boundary
 
