@@ -12,6 +12,8 @@ import HeaderBreadcrumbs from "@/components/header/HeaderBreadcrumbs";
 import HeaderMobileDock from "@/components/header/HeaderMobileDock";
 import { useHeaderSystemHealth } from "@/components/header/useHeaderSystemHealth";
 import { cn } from "@/lib/utils";
+import { PLATFORM_SIGN_OUT_ERROR, signOutPlatform } from "@/lib/platformSignOut";
+import { toast } from "sonner";
 
 export type HeaderHomeNavProps = {
 	onOpenMobileSidebar: () => void;
@@ -34,6 +36,7 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const systemHealth = useHeaderSystemHealth();
 	const [reportOpen, setReportOpen] = React.useState(false);
 	const [deploymentAgentOpen, setDeploymentAgentOpen] = React.useState(false);
+	const signingOutRef = React.useRef(false);
 
 	const owner = params?.owner as string;
 	const repo = params?.repo as string;
@@ -42,9 +45,17 @@ export default function Header({ homeNav, workspaceNav }: HeaderProps) {
 	const showMobileNavMenu = Boolean((isHome && homeNav) || (isRepoPage && workspaceNav));
 
 	async function handleSignOut() {
-		await authClient.signOut();
-		router.replace("/auth");
-		router.refresh();
+		if (signingOutRef.current) return;
+		signingOutRef.current = true;
+		try {
+			await signOutPlatform();
+			router.replace("/auth");
+			router.refresh();
+		} catch {
+			toast.error(PLATFORM_SIGN_OUT_ERROR);
+		} finally {
+			signingOutRef.current = false;
+		}
 	}
 
 	return (

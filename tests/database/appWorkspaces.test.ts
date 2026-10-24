@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const client = new Client({ connectionString: databaseTestConnectionString() });
 const migration = readFileSync(new URL("../../supabase/migrations/20261023_app_workspaces.sql", import.meta.url), "utf8");

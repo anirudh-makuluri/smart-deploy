@@ -5,7 +5,7 @@ import { AppStore } from "../../src/lib/apps/appStore";
 import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { authenticateGateway, createGatewayServiceCredential, type GatewayServiceCredential } from "../../src/lib/apps/gatewayServiceAuth";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 import { createHash, randomBytes } from "node:crypto";
 
 vi.mock("@/config", () => ({ default: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: false, GATEWAY_CODE_TTL_SECONDS: "60", GATEWAY_SESSION_TTL_SECONDS: "900" } }));

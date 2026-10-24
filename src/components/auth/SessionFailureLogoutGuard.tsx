@@ -1,17 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { PLATFORM_SIGN_OUT_ERROR, signOutPlatform } from "@/lib/platformSignOut";
 
 const FAILED_TO_GET_SESSION = "FAILED_TO_GET_SESSION";
-const AUTH_COOKIE_NAMES = [
-	"better-auth.session_token",
-	"__Secure-better-auth.session_token",
-	"better-auth.session_data",
-	"__Secure-better-auth.session_data",
-	"better-auth.dont_remember",
-	"__Secure-better-auth.dont_remember",
-];
 
 function extractErrorCode(error: unknown): string | undefined {
 	if (!error || typeof error !== "object") return undefined;
@@ -28,51 +23,47 @@ function extractErrorCode(error: unknown): string | undefined {
 	return undefined;
 }
 
-function clearAuthCookies() {
-	if (typeof document === "undefined" || typeof window === "undefined") return;
-
-	const hostname = window.location.hostname;
-	const parts = hostname.split(".");
-	const domains = new Set<string>([hostname, `.${hostname}`]);
-
-	if (parts.length >= 2) {
-		for (let i = 0; i <= parts.length - 2; i += 1) {
-			const candidate = parts.slice(i).join(".");
-			domains.add(candidate);
-			domains.add(`.${candidate}`);
-		}
-	}
-
-	for (const name of AUTH_COOKIE_NAMES) {
-		document.cookie = `${name}=; Max-Age=0; path=/`;
-		for (const domain of domains) {
-			document.cookie = `${name}=; Max-Age=0; path=/; domain=${domain}`;
-		}
-	}
-}
-
 /**
- * If session retrieval is broken, force sign-out to recover from a stuck auth state.
+ * Recover a broken session only after server-side sign-out succeeds.
  */
 export function SessionFailureLogoutGuard() {
-	const hasTriggeredRef = useRef(false);
+	const attemptRef = useRef<Promise<void> | null>(null);
 	const { error } = authClient.useSession();
+	const errorCode = extractErrorCode(error);
+	const router = useRouter();
 
 	useEffect(() => {
-		if (hasTriggeredRef.current) return;
-		if (extractErrorCode(error) !== FAILED_TO_GET_SESSION) return;
-
-		hasTriggeredRef.current = true;
-		void (async () => {
-			try {
-				await authClient.signOut();
-			} catch {
-				// Continue with redirect even when sign-out request fails.
-			}
-			clearAuthCookies();
-			window.location.assign("/auth");
-		})();
-	}, [error]);
+		if (errorCode !== FAILED_TO_GET_SESSION) return;
+		let active = true;
+		let retryAvailable = false;
+		let notification: string | number | undefined;
+		const recover = () => {
+			// Strict Mode replay observes the same request; explicit retry starts a new one.
+			attemptRef.current ??= signOutPlatform();
+			void attemptRef.current.then(() => {
+				if (!active) return;
+				router.replace("/auth");
+				router.refresh();
+			}, () => {
+				if (!active) return;
+				retryAvailable = true;
+				notification = toast.error(PLATFORM_SIGN_OUT_ERROR, {
+					duration: Infinity,
+					action: { label: "Retry sign-out", onClick: () => {
+						if (!active || !retryAvailable) return;
+						retryAvailable = false;
+						attemptRef.current = null;
+						recover();
+					} },
+				});
+			});
+		};
+		recover();
+		return () => {
+			active = false;
+			if (notification !== undefined) toast.dismiss(notification);
+		};
+	}, [errorCode, router]);
 
 	return null;
 }
