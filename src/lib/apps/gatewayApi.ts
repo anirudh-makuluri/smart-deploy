@@ -9,8 +9,8 @@ import { WorkspaceError } from "./workspaceStore";
 import type { AppUseIdentity } from "./appStore";
 
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-export const GatewaySessionInput = z.object({ token: Secret }).strict();
-export const GatewayRedemptionInput = z.object({ code: Secret, verifier: Secret, callbackUrl: z.string().max(300) }).strict();
+export const GatewaySessionInput = z.strictObject({ token: Secret });
+export const GatewayRedemptionInput = z.strictObject({ code: Secret, verifier: Secret, callbackUrl: z.string().max(300) });
 const MAX_BODY_BYTES = 4096;
 const BODY_TIMEOUT_MS = 5000;
 interface GatewayApiContext { bindingId: string; store: GatewayAuthStore }

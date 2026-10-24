@@ -3,16 +3,17 @@ import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import HeaderActions from "@/components/header/HeaderActions";
+import type { HeaderSystemHealth } from "@/components/header/useHeaderSystemHealth";
 
 vi.mock("next/image", () => ({
 	default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ""} />,
 }));
 
-const systemHealth = {
+const systemHealth: HeaderSystemHealth = {
 	status: "healthy",
 	message: "All systems operational",
 	services: [
-		{ name: "API", status: "healthy" as const },
+		{ name: "API", status: "healthy", message: "API is responding" },
 	],
 };
 

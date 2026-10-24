@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { DeployConfig, RepoRecord } from "@/app/types";
+import type { RepoRecord } from "@/app/types";
 import { countDeployedServicesForRepo, getDeploymentForService } from "@/lib/utils";
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
 function makeRepoRecord(overrides: Partial<RepoRecord> = {}): RepoRecord {
 	return {
@@ -11,30 +12,6 @@ function makeRepoRecord(overrides: Partial<RepoRecord> = {}): RepoRecord {
 		services: [{ name: "web", path: "apps/web", language: "ts", deployMode: "container" }],
 		is_monorepo: true,
 		updated_at: new Date().toISOString(),
-		...overrides,
-	};
-}
-
-function makeDeployment(overrides: Partial<DeployConfig> = {}): DeployConfig {
-	return {
-		id: "dep-1",
-		repoName: "shop",
-		repoUrl: "https://github.com/acme/shop",
-		branch: "main",
-		serviceName: "web",
-		status: "running",
-		commitSha: null,
-		envVars: null,
-		hostedSubdomain: null,
-		screenshotUrl: null,
-		firstDeployment: null,
-		lastDeployment: null,
-		revision: null,
-		cloudProvider: "aws",
-		deploymentTarget: "ecs",
-		region: "us-west-2",
-		cloudResources: null,
-		scanResults: {},
 		...overrides,
 	};
 }

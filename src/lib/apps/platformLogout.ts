@@ -9,7 +9,7 @@ export interface PlatformLogoutDependencies {
 	getPool: () => Pool;
 }
 
-/** Better Auth 1.6.23 can swallow a session-delete error. Complete revocation
+/** Better Auth can swallow a session-delete error. Complete revocation
  * transactionally before asking it to clear the browser cookie. */
 export async function verifiedPlatformLogout(request: Request, dependencies: PlatformLogoutDependencies): Promise<Response> {
 	try {

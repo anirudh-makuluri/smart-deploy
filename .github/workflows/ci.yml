@@ -55,3 +55,9 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Typecheck application and test fixtures
+        run: npm run typecheck
+
+      - name: Build WebSocket worker
+        run: npm run ws:build

@@ -9,7 +9,7 @@ import { gatewayLifetimes, parseGatewayBody } from "@/lib/apps/gatewayApi";
 import { WorkspaceError } from "@/lib/apps/workspaceStore";
 
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-const HandoffInput = z.object({ bindingId: z.string().uuid(), challenge: Secret, state: Secret }).strict();
+const HandoffInput = z.strictObject({ bindingId: z.uuid(), challenge: Secret, state: Secret });
 
 function json(body: unknown, status = 200): NextResponse {
 	return NextResponse.json(body, { status, headers: {

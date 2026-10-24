@@ -1,7 +1,7 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { repoType } from "@/app/types";
+import { makeRepo } from "../helpers/repoFixture";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import { useAppData } from "@/store/useAppData";
 
@@ -205,13 +205,13 @@ describe("useWorkerWebSocketSession", () => {
 		vi.useFakeTimers();
 		MockSocket.instances = [];
 		useAppData.setState({
-			activeRepo: {
-				id: 1,
+			activeRepo: makeRepo({
+				id: "1",
 				name: "smart-deploy",
 				full_name: "acme/smart-deploy",
 				html_url: "https://github.com/acme/smart-deploy",
 				owner: { login: "acme" },
-			} as repoType,
+			}),
 			activeServiceName: "web",
 		});
 	});
@@ -362,13 +362,13 @@ describe("useWorkerWebSocketSession", () => {
 
 		await act(async () => {
 			useAppData.setState({
-				activeRepo: {
-					id: 2,
+				activeRepo: makeRepo({
+					id: "2",
 					name: "Pluto",
 					full_name: "acme/Pluto",
 					html_url: "https://github.com/acme/Pluto",
 					owner: { login: "acme" },
-				} as repoType,
+				}),
 				activeServiceName: "server-node",
 			});
 		});

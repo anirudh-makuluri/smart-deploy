@@ -341,8 +341,19 @@ export type SDRemoteBuild = {
 	log_excerpt?: string | null;
 };
 
+export interface SDRailpackCommand {
+	cmd?: string;
+	[key: string]: unknown;
+}
+
+export interface SDRailpackStep {
+	name: string;
+	commands?: SDRailpackCommand[];
+	[key: string]: unknown;
+}
+
 export type SDRailpackPlan = {
-	steps?: Array<{ name: string; commands?: Array<{ cmd: string }> }>;
+	steps?: SDRailpackStep[];
 	deploy?: {
 		startCommand?: string;
 		variables?: Record<string, string>;
