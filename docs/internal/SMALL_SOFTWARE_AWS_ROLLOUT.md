@@ -376,6 +376,35 @@ for the refreshed dependency parent and 81/100 (zero errors/46 warnings) for the
 combined recovery candidate; the exact 17-file recovery diff is 100/100. Both
 dependency/recovery manifests preserve historical snapshots and record current
 bases and rebase evidence. The wider 95/100 and complete-feature gates remain.
-The user was asked to choose the first deployed-app database path under the
-$10 budget (DynamoDB documents/files versus PostgreSQL); that answer is pending.
-HTTP and accessibility work can continue independently.
+The user selected DynamoDB documents and S3 files for deployed-app data within
+the additional $10/month on-demand pilot budget. Existing platform Better Auth
+and Supabase dependencies remain. The user also approved verified invited-user
+access to only their granted private apps before general waiting-list approval;
+deployment and workspace management retain their existing approval/permission
+requirements. This needs consistent invitation, browser handoff, gateway, and
+session handling; the current implementation does not yet implement that
+exception. No paid resource or approval-list mutation follows from these choices.
+
+HTTP response increment: published draft
+[#102](https://github.com/anirudh-makuluri/smart-deploy/pull/102), head
+`3979eac6ad7d19e9f675463289ecc91ba9072616`, stacked on #100 at `e8e87ad`.
+Denied/malformed/truncated GitHub trees and failed important-file downloads now
+stop analysis before model invocation. Important files use the selected branch.
+GraphQL, analysis-save, and GitHub installation-token clients validate status and
+success envelopes. No malformed 200 is treated as a saved analysis. No immutable
+snapshot, inspection quota, or narrower build credential is claimed by this PR.
+
+Verification: 129 unit files / 501 tests, full typecheck, lint, worker compilation,
+production build, and diff checks pass locally. A route/helper integration feeds
+a GitHub 403 and verifies no model invocation. All upstream responses are test
+doubles. The first full-unit attempt was stopped when Windows npm dropped the
+worker-limit argument; the successful run used direct Vitest with two workers.
+Build retains existing dynamic tracing and local missing-auth-config warnings.
+Pinned Doctor 0.9.18 exact eight-file scan is complete at 100/100 with no findings;
+the complete unfiltered 570-file scan improves from 81 to 82/100 (zero errors,
+42 warnings). The repository 95/100 and complete-feature production gates remain.
+CI is running for #102. Refreshed #98 and #100 CI/preview checks now all pass at
+the rebased heads above. No rollout merge, production migration, cloud resource,
+worker start, invitation email, or provider-connection change was performed.
+Merge order extends #91 -> ... -> #98 -> #100 -> #102. The expired automation
+remains deleted; manual implementation continues under the user's instruction.
