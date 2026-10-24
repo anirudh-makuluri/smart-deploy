@@ -165,3 +165,10 @@ clearing. Other SmartDeploy logins remain signed in and may initiate fresh app
 logins, but old app credentials cannot revive. Expired-session cleanup only
 removes its linked credentials. Real Better Auth/database integration tests
 cover success, rollback, and cleanup; this is not browser/proxy/WS proof.
+
+[PR #97](https://github.com/anirudh-makuluri/smart-deploy/pull/97) adds the
+default-off same-origin platform-browser handoff issuer with fresh Better Auth
+and current database permission/session checks. Its state echo is correlation
+data, not browser transaction proof. The confirmation UI and trusted gateway
+transaction/state/cookie handling remain required before enablement; it supplies
+no proxy, private AWS origin, or protected runtime proof.
