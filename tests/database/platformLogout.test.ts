@@ -8,7 +8,7 @@ import { AppStore } from "../../src/lib/apps/appStore";
 import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { verifiedPlatformLogout } from "../../src/lib/apps/platformLogout";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const connectionString = databaseTestConnectionString();
 const client = new Client({ connectionString });

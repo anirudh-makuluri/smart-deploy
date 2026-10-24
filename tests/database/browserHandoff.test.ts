@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { AppStore } from "../../src/lib/apps/appStore";
 import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const mocks = vi.hoisted(() => ({ approved: vi.fn() }));
 vi.mock("@/config", () => ({ default: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: true,

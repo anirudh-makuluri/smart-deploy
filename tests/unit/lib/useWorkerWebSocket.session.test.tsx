@@ -5,9 +5,11 @@ import { makeRepo } from "../helpers/repoFixture";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import { useAppData } from "@/store/useAppData";
 
+const identity = vi.hoisted(() => ({ userId: "user-1" as string | null }));
+
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
-		useSession: () => ({ data: { user: { id: "user-1" } } }),
+		useSession: () => ({ data: identity.userId ? { user: { id: identity.userId } } : null }),
 	},
 }));
 
@@ -41,6 +43,9 @@ class MockSocket {
 		removeAllListeners: () => {
 			this.managerHandlers.clear();
 		},
+		off: (event: string, handler: (...args: unknown[]) => void) => {
+			this.managerHandlers.get(event)?.delete(handler);
+		},
 	};
 
 	constructor(url: string, options: Record<string, unknown>) {
@@ -53,6 +58,11 @@ class MockSocket {
 		const set = this.handlers.get(event) ?? new Set<(...args: unknown[]) => void>();
 		set.add(handler);
 		this.handlers.set(event, set);
+		return this;
+	}
+
+	off(event: string, handler: (...args: unknown[]) => void) {
+		this.handlers.get(event)?.delete(handler);
 		return this;
 	}
 
@@ -202,6 +212,7 @@ function HarnessWithAgent() {
 
 describe("useWorkerWebSocketSession", () => {
 	beforeEach(() => {
+		identity.userId = "user-1";
 		vi.useFakeTimers();
 		MockSocket.instances = [];
 		useAppData.setState({
@@ -266,6 +277,99 @@ describe("useWorkerWebSocketSession", () => {
 		expect(screen.getByTestId("socket-status").textContent).toBe("open");
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 		expect(MockSocket.instances.length).toBe(1);
+	});
+
+	it("removes its exact listeners and cancels pending reconnects on unmount", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		const socket = MockSocket.instances[0]!;
+		const external = vi.fn();
+		socket.on("deploy:log", external);
+		socket.io.on("reconnect_attempt", external);
+		act(() => socket.close());
+		expect(socket.reconnectTimer).not.toBeNull();
+		view.unmount();
+		expect(socket.manualDisconnect).toBe(true);
+		expect(socket.reconnectTimer).toBeNull();
+		expect([...socket.handlers.values()].flatMap((set) => [...set])).toEqual([external]);
+		expect([...socket.managerHandlers.values()].flatMap((set) => [...set])).toEqual([external]);
+		await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("replaces the connection and clears logs and cached credentials when the signed-in user changes", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		const oldSocket = MockSocket.instances[0]!;
+		act(() => oldSocket.emitServer("deploy:log", { msg: "First user's log" }));
+		expect(screen.getByTestId("log-count").textContent).toBe("1");
+		identity.userId = "user-2";
+		view.rerender(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		expect(oldSocket.manualDisconnect).toBe(true);
+		expect(MockSocket.instances).toHaveLength(2);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		act(() => oldSocket.emitServer("deploy:log", { msg: "Stale user's log" }));
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+	});
+
+	it("does not reconnect or retain displayed logs after sign-out", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		const socket = MockSocket.instances[0]!;
+		act(() => socket.emitServer("deploy:log", { msg: "Private log" }));
+		identity.userId = null;
+		view.rerender(<HarnessWithLogs />);
+		await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+		expect(screen.getByTestId("socket-status").textContent).toBe("closed");
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		expect(socket.manualDisconnect).toBe(true);
+		expect(MockSocket.instances).toHaveLength(1);
+	});
+
+	it("does not open a disposed socket when an in-flight token request completes", async () => {
+		let resolveResponse: (response: Response) => void = () => { throw new Error("Request not started"); };
+		vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+		const view = render(<Harness />);
+		const socket = MockSocket.instances[0]!;
+		view.unmount();
+		await act(async () => {
+			resolveResponse({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+			await Promise.resolve();
+		});
+		expect(socket.connected).toBe(false);
+		expect([...socket.handlers.values()].every((set) => set.size === 0)).toBe(true);
+	});
+
+	it("keeps a late previous-user token isolated from the new connection's reconnect cache", async () => {
+		let resolveOldToken: (response: Response) => void = () => { throw new Error("No old request"); };
+		const fetchMock = vi.spyOn(globalThis, "fetch")
+			.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveOldToken = resolve; }))
+			.mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<Harness />);
+		identity.userId = "user-2";
+		view.rerender(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		expect(screen.getByTestId("socket-status").textContent).toBe("open");
+		await act(async () => {
+			resolveOldToken({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 600000) }) } as Response);
+			await Promise.resolve();
+		});
+		act(() => MockSocket.instances[1]!.close());
+		await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(MockSocket.instances[0]!.connected).toBe(false);
+		expect(screen.getByTestId("socket-status").textContent).toBe("open");
 	});
 
 	it("streams deploy logs in real time for the active workspace", async () => {

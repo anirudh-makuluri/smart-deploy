@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AppStore } from "../../src/lib/apps/appStore";
 import { GatewayAuthStore, type GatewayHandoff } from "../../src/lib/apps/gatewayAuthStore";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const connectionString = databaseTestConnectionString();
 const client = new Client({ connectionString });

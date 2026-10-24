@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { Client, Pool } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers";
+import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const connectionString = databaseTestConnectionString();
 const client = new Client({ connectionString });

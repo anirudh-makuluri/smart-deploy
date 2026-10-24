@@ -31,6 +31,31 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
 
+      - name: Install browser for database-backed client checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify logout in the actual browser and server
+        run: npm run test:e2e:database
+        env:
+          RUN_DATABASE_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-browser-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          WAITING_LIST_ENABLED: 'false'
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logout-browser-evidence
+          path: test-results/
+
   build-and-test:
     runs-on: ubuntu-latest
 
