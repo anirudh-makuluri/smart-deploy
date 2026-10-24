@@ -1,4 +1,5 @@
 import { repoType } from "./app/types";
+import { isJsonObject, responseErrorMessage } from "./lib/httpResponse";
 
 const IMPORTANT_REPO_FILES = new Set([
 	"package.json",
@@ -7,6 +8,11 @@ const IMPORTANT_REPO_FILES = new Set([
 	"main.py",
 	"Procfile",
 ]);
+
+export interface RepositoryFiles {
+	filePaths: string[];
+	fileContents: Record<string, string>;
+}
 
 export async function getGithubRepos(token: string) {
 	try {
@@ -105,20 +111,24 @@ export async function getGithubRepos(token: string) {
 	}
 }
 
-export async function getRepoFilePaths(full_name: string, branch: string, token: string): Promise<{ filePaths: string[]; fileContents: Record<string, string> }> {
-	const treeRes = await fetch(`https://api.github.com/repos/${full_name}/git/trees/${branch}?recursive=1`, {
+export async function getRepoFilePaths(full_name: string, branch: string, token: string): Promise<RepositoryFiles> {
+	const treeRes = await fetch(`https://api.github.com/repos/${full_name}/git/trees/${encodeURIComponent(branch)}?recursive=1`, {
 		headers: { Authorization: `token ${token}` }
 	});
-	const treeData = await treeRes.json();
-
-	if (!treeData.tree) {
-		return { filePaths: [], fileContents: {} };
+	if (!treeRes.ok) {
+		throw new Error(await responseErrorMessage(treeRes, `Repository file tree request failed (${treeRes.status})`));
 	}
+	const treeData: unknown = await treeRes.json().catch(() => null);
+	if (!isJsonObject(treeData) || !Array.isArray(treeData.tree)) throw new Error("Repository file tree response was invalid");
+	if (treeData.truncated === true) throw new Error("Repository file tree is incomplete");
 
-	const filePaths: string[] =
-		treeData.tree?.flatMap((item: { type?: string; path?: string }) =>
-			item.type === "blob" && item.path ? [item.path] : []
-		) ?? [];
+	const filePaths: string[] = [];
+	for (const item of treeData.tree) {
+		if (!isJsonObject(item) || typeof item.type !== "string" || typeof item.path !== "string" || !item.path) {
+			throw new Error("Repository file tree response was invalid");
+		}
+		if (item.type === "blob") filePaths.push(item.path);
+	}
 
 
 	const fileContents: Record<string, string> = {};
@@ -126,20 +136,20 @@ export async function getRepoFilePaths(full_name: string, branch: string, token:
 	const importantPaths = filePaths.filter((file) => IMPORTANT_REPO_FILES.has(file));
 	const fetched = await Promise.all(
 		importantPaths.map(async (file) => {
-			const content = await getFileContentFromRepo(full_name, file, token);
-			return content ? ([file, content] as const) : null;
+			const content = await getFileContentFromRepo(full_name, file, branch, token);
+			return [file, content] as const;
 		})
 	);
 	for (const entry of fetched) {
-		if (entry) fileContents[entry[0]] = entry[1];
+		fileContents[entry[0]] = entry[1];
 	}
 
 	return { filePaths, fileContents }
 }
 
-async function getFileContentFromRepo(full_name: string, filePath: string, token: string): Promise<string | null> {
+async function getFileContentFromRepo(full_name: string, filePath: string, branch: string, token: string): Promise<string> {
 
-	const apiUrl = `https://api.github.com/repos/${full_name}/contents/${filePath}`;
+	const apiUrl = `https://api.github.com/repos/${full_name}/contents/${filePath}?ref=${encodeURIComponent(branch)}`;
 
 	const res = await fetch(apiUrl, {
 		headers: {
@@ -149,8 +159,7 @@ async function getFileContentFromRepo(full_name: string, filePath: string, token
 	});
 
 	if (!res.ok) {
-		console.warn(`⚠️ Failed to fetch ${filePath}: ${res.status}`);
-		return null;
+		throw new Error(await responseErrorMessage(res, `Repository file request failed (${res.status})`));
 	}
 
 	return await res.text();
