@@ -4,15 +4,9 @@ import { auth } from "@/lib/auth";
 import appConfig from "@/config";
 import { dbHelper } from "@/db-helper";
 import { platformApiApproval } from "@/lib/apps/platformApiApproval";
+import { platformSessionCookies } from "@/lib/authCookiePolicy";
 
-const SESSION_COOKIE_NAMES = [
-	"better-auth.session_token",
-	"__Secure-better-auth.session_token",
-	"better-auth.session_data",
-	"__Secure-better-auth.session_data",
-	"better-auth.dont_remember",
-	"__Secure-better-auth.dont_remember",
-];
+const SESSION_COOKIES = platformSessionCookies((process.env.BETTER_AUTH_URL || "").trim());
 
 async function isApprovedEmail(email: string | null | undefined) {
 	const trimmedEmail = (email || "").trim().toLowerCase();
@@ -49,10 +43,14 @@ async function isApprovedEmail(email: string | null | undefined) {
 }
 
 function clearSessionCookies(response: NextResponse) {
-	for (const cookieName of SESSION_COOKIE_NAMES) {
-		response.cookies.set(cookieName, "", {
+	for (const cookie of SESSION_COOKIES) {
+		response.cookies.set(cookie.name, "", {
+			secure: cookie.attributes.secure,
+			httpOnly: cookie.attributes.httpOnly,
+			path: cookie.attributes.path,
+			sameSite: "lax",
 			expires: new Date(0),
-			path: "/",
+			maxAge: 0,
 		});
 	}
 }
@@ -134,8 +132,8 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const hasSessionCookie = SESSION_COOKIE_NAMES.some(
-		(cookieName) => req.cookies?.has?.(cookieName) ?? false
+	const hasSessionCookie = SESSION_COOKIES.some(
+		(cookie) => req.cookies?.has?.(cookie.name) ?? false
 	);
 	const shouldCheckSession =
 		isAuthPage || isPrivateHome || (isLanding && hasSessionCookie);

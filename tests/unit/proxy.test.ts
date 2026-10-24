@@ -49,6 +49,13 @@ describe("proxy approval guard", () => {
 		expect(addToWaitingListMock).toHaveBeenCalledWith("removed@example.com", "Removed User");
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toBe("http://localhost:3000/waiting-list");
+		const expiredCookies = response.cookies.getAll();
+		expect(expiredCookies).toHaveLength(4);
+		for (const cookie of expiredCookies) {
+			expect(cookie.name).toMatch(/^__Host-smartdeploy\./);
+			expect(cookie).toMatchObject({ secure: true, httpOnly: true, path: "/", sameSite: "lax", maxAge: 0 });
+			expect(cookie.domain).toBeUndefined();
+		}
 	});
 
 	it("retains the login for private-app use while continuing to deny the platform home", async () => {

@@ -1,0 +1,46 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "host-only-auth-cookies",
+  "purpose": "Isolate platform authentication from sibling apps on the approved shared domain",
+  "baselineRevision": "3371285b930ee47906210d0960041699707c260b",
+  "candidateBaseRevision": "3371285b930ee47906210d0960041699707c260b",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": { "errorCount": 0, "warningCount": 42, "affectedFileCount": 29, "totalDiagnosticCount": 42, "score": 82, "scoreLabel": "Needs work" },
+  "after": { "errorCount": 0, "warningCount": 42, "affectedFileCount": 29, "totalDiagnosticCount": 42, "score": 82, "scoreLabel": "Needs work" },
+  "changedFileSummary": { "errorCount": 0, "warningCount": 0, "affectedFileCount": 0, "totalDiagnosticCount": 0, "score": 100, "scoreLabel": "Great" },
+  "diagnostics": [],
+  "confirmedIssues": [
+    "Legacy cookie names accepted a valid signed session injected by a sibling using a parent Domain cookie.",
+    "Proxy cookie deletion needed the same names and Secure/root-path attributes as the configured auth policy."
+  ],
+  "collateral": [
+    ".github/workflows/ci.yml",
+    "package.json",
+    "playwright.cookies.config.ts",
+    "src/lib/auth.ts",
+    "src/lib/authCookiePolicy.ts",
+    "src/proxy.ts",
+    "tests/e2e/platform-cookies.spec.ts",
+    "tests/unit/lib/authCookiePolicy.test.ts",
+    "tests/unit/proxy.test.ts",
+    "docs/internal/HOST_ONLY_PLATFORM_COOKIES.md"
+  ],
+  "cutover": "Fresh platform login required; retry OAuth flows begun before cutover. No legacy cookie fallback or secret rotation.",
+  "verification": {
+    "unitFiles": 135,
+    "unitTests": 575,
+    "browserScenarios": 5,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 7,
+    "fullDoctorFiles": 586,
+    "doctorScansComplete": true
+  },
+  "productionReady": false,
+  "productionMutations": false
+}
