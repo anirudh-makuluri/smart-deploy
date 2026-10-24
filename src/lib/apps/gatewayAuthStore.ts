@@ -39,6 +39,25 @@ export class GatewayAuthStore {
 		this.lifetimes = { ...lifetimes };
 	}
 
+	/** App-only waiting-list exception. Inherited management access is insufficient. */
+	async isInvitedMember(bindingId: string, userId: string): Promise<boolean> {
+		requireId(bindingId);
+		const result = await this.pool.query(`
+			select u.id from public.app_gateway_bindings b
+			join public.apps a on a.id = b.app_id
+			join public.app_workspaces w on w.id = a.workspace_id and w.kind = 'team' and w.owner_id <> $2
+			join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = $2 and m.role = 'member'
+			join public."user" u on u.id = m.user_id and u."emailVerified" = true
+			join public.app_use_grants g on g.app_id = a.id and g.user_id = u.id
+			where b.id = $1 and b.disabled_at is null and exists (
+				select 1 from public.app_workspace_invitations i where i.workspace_id = w.id
+				and i.accepted_by = u.id and i.accepted_at is not null and i.revoked_at is null
+				and i.role = 'member' and i.email = lower(trim(u.email))
+			)
+		`, [bindingId, userId]);
+		return result.rowCount === 1;
+	}
+
 	private async binding(client: PoolClient, bindingId: string): Promise<GatewayBinding> {
 		requireId(bindingId);
 		// Match the workspace lock order used by role, grant, and membership mutations.

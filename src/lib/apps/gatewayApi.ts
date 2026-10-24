@@ -69,14 +69,20 @@ export function gatewayLifetimes() {
 	return { codeSeconds: Number(code), sessionSeconds: Number(session) };
 }
 
-export async function requireGatewayIdentity(store: GatewayAuthStore, bindingId: string, token: string): Promise<AppUseIdentity> {
-	const identity = await store.authorize(bindingId, token);
-	if (!identity) throw new WorkspaceError(403, "App access unavailable.");
+export async function requirePrivateAppAdmission(store: GatewayAuthStore, bindingId: string, identity: AppUseIdentity): Promise<void> {
 	if (config.WAITING_LIST_ENABLED) {
 		const approval = await dbHelper.isApprovedUser(identity.email);
 		if (approval.error) throw new WorkspaceError(503, "App authorization unavailable.");
-		if (!approval.approved) throw new WorkspaceError(403, "App access unavailable.");
+		if (!approval.approved && !await store.isInvitedMember(bindingId, identity.id)) {
+			throw new WorkspaceError(403, "App access unavailable.");
+		}
 	}
+}
+
+export async function requireGatewayIdentity(store: GatewayAuthStore, bindingId: string, token: string): Promise<AppUseIdentity> {
+	const identity = await store.authorize(bindingId, token);
+	if (!identity) throw new WorkspaceError(403, "App access unavailable.");
+	await requirePrivateAppAdmission(store, bindingId, identity);
 	return identity;
 }
 

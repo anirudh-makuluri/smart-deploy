@@ -8,6 +8,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test:e2e:database": "playwright test tests/e2e/session-logout.spec.mts --workers=1",
+    "test:e2e:invitee": "playwright test tests/e2e/invited-platform-boundary.spec.mts --workers=1",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:database": "vitest run --config vitest.database.config.ts",

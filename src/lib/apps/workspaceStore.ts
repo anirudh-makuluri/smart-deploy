@@ -182,7 +182,7 @@ export class WorkspaceStore {
 		});
 	}
 
-	async acceptInvitation(userId: string, token: string): Promise<WorkspaceAccess> {
+	async acceptInvitation(userId: string, token: string, memberOnly = false): Promise<WorkspaceAccess> {
 		const hash = tokenHash(token);
 		return this.transaction(async (client) => {
 			const lookup = await client.query<{ workspaceId: string }>('select workspace_id as "workspaceId" from public.app_workspace_invitations where token_hash = $1', [hash]);
@@ -202,6 +202,7 @@ export class WorkspaceStore {
 			if (!user?.emailVerified || user.email.trim().toLowerCase() !== invitation.email) {
 				throw new WorkspaceError(403, "Sign in with the invitation's verified email address.");
 			}
+			if (memberOnly && invitation.role !== "member") throw new WorkspaceError(403, "Platform approval is required for administrator invitations.");
 			// Recheck the inviter's authority, so removal/demotion invalidates outstanding grants.
 			let inviter: WorkspaceAccess;
 			try { inviter = await this.access(client, workspaceId, invitation.invitedBy); }

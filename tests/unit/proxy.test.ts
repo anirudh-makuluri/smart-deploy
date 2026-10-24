@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
 const addToWaitingListMock = vi.fn();
-const mockConfig = { WAITING_LIST_ENABLED: true };
+const mockConfig = { WAITING_LIST_ENABLED: true, WORKSPACE_APPS_ENABLED: false, PRIVATE_APP_GATEWAY_ENABLED: false };
 
 vi.mock("@/lib/auth", () => ({
 	auth: {
@@ -27,6 +27,8 @@ describe("proxy approval guard", () => {
 		vi.clearAllMocks();
 		vi.unstubAllEnvs();
 		mockConfig.WAITING_LIST_ENABLED = true;
+		mockConfig.WORKSPACE_APPS_ENABLED = false;
+		mockConfig.PRIVATE_APP_GATEWAY_ENABLED = false;
 		vi.stubEnv("SUPABASE_URL", "https://supabase.example.com");
 		vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
 	});
@@ -47,6 +49,18 @@ describe("proxy approval guard", () => {
 		expect(addToWaitingListMock).toHaveBeenCalledWith("removed@example.com", "Removed User");
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toBe("http://localhost:3000/waiting-list");
+	});
+
+	it("retains the login for private-app use while continuing to deny the platform home", async () => {
+		mockConfig.WORKSPACE_APPS_ENABLED = true;
+		mockConfig.PRIVATE_APP_GATEWAY_ENABLED = true;
+		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "invitee@example.com" } });
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json([]));
+		const { proxy } = await import("@/proxy");
+		const response = await proxy({ nextUrl: new URL("https://control.test/home"), url: "https://control.test/home" } as never);
+		expect(response.status).toBe(307);
+		expect(response.headers.get("location")).toBe("https://control.test/waiting-list");
+		expect(response.headers.get("set-cookie")).toBeNull();
 	});
 
 	it("skips approved-user checks when waiting list is disabled", async () => {

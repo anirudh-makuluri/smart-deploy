@@ -56,6 +56,28 @@ jobs:
           name: logout-browser-evidence
           path: test-results/
 
+      - name: Verify invitee login cannot unlock platform APIs
+        run: npm run test:e2e:invitee
+        env:
+          RUN_INVITEE_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-browser-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          WAITING_LIST_ENABLED: 'true'
+          SUPABASE_URL: http://127.0.0.1:45558
+          SUPABASE_SERVICE_ROLE_KEY: local-approval-fixture-only
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save invitee browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invitee-browser-evidence
+          path: test-results/
+
   build-and-test:
     runs-on: ubuntu-latest
 
