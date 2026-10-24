@@ -7,6 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { AppStore } from "../../src/lib/apps/appStore";
 import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
+import { createGatewayServiceCredential } from "../../src/lib/apps/gatewayServiceAuth";
 import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
 
 const mocks = vi.hoisted(() => ({ approved: vi.fn() }));
@@ -18,6 +19,11 @@ vi.mock("@/lib/auth", () => ({ auth: { api: {
 	getSession: (input: { headers: Headers; query: { disableCookieCache: boolean; disableRefresh: boolean } }) => fixtureAuth.api.getSession(input),
 } } }));
 import { POST } from "../../src/app/api/apps/handoff/route";
+import { POST as acceptInvitation } from "../../src/app/api/workspace-invitations/accept/route";
+import { POST as redeem } from "../../src/app/api/gateway/redeem/route";
+import { POST as authorize } from "../../src/app/api/gateway/authorize/route";
+import { GET as listWorkspaces } from "../../src/app/api/workspaces/route";
+import { POST as createWorkspace } from "../../src/app/api/workspaces/route";
 
 const connectionString = databaseTestConnectionString();
 const client = new Client({ connectionString });
@@ -66,7 +72,7 @@ beforeEach(async () => {
 	await resetFoundationDatabase(client);
 	await client.query('delete from public."user"');
 	await (await getMigrations(options)).runMigrations();
-	for (const name of ["app_use_grants", "app_gateway_auth", "gateway_platform_sessions"]) {
+	for (const name of ["workspace_invitations", "app_use_grants", "app_gateway_auth", "gateway_service_credentials", "gateway_platform_sessions"]) {
 		await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
 	({ userId, cookie, sessionId } = await login("owner@example.test"));
@@ -79,6 +85,73 @@ beforeEach(async () => {
 });
 
 describe("signed Better Auth browser issuance with PostgreSQL", () => {
+	it("accepts an unapproved verified invitee, limits access to the granted app, and denies management and revoked use", async () => {
+		const member = await login("invitee@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "invitee@example.test", "member");
+		mocks.approved.mockResolvedValue({ approved: false });
+		const acceptance = new Request("https://control.test/api/workspace-invitations/accept", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: member.cookie }, body: JSON.stringify({ token: invitation.token }) });
+		expect((await acceptInvitation(acceptance)).status).toBe(200);
+		expect((await POST(request(transaction().input, member.cookie))).status).toBe(403);
+		await apps.grantUse(appId, userId, member.userId);
+		const tx = transaction();
+		const issued = await POST(request(tx.input, member.cookie));
+		expect(issued.status).toBe(200);
+		const handoff = await issued.json() as { code: string; callbackUrl: string };
+		const credential = createGatewayServiceCredential();
+		await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [credential.id, bindingId, credential.secretHash]);
+		const serviceRequest = (body: unknown) => new Request("https://control.test/api/gateway/test", { method: "POST",
+			headers: { authorization: `Bearer ${credential.token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+		const redeemed = await redeem(serviceRequest({ code: handoff.code, callbackUrl: handoff.callbackUrl, verifier: tx.verifier }));
+		expect(redeemed.status).toBe(200);
+		const body = await redeemed.json() as { token: string };
+		expect((await authorize(serviceRequest({ token: body.token }))).status).toBe(200);
+		const other = await apps.createApp(workspaceId, userId, "Not shared");
+		const otherBinding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://not-shared.test') returning id", [other.id])).rows[0].id;
+		expect((await POST(request({ ...transaction().input, bindingId: otherBinding }, member.cookie))).status).toBe(403);
+		expect((await listWorkspaces(new Request("https://control.test/api/workspaces", { headers: { cookie: member.cookie } }))).status).toBe(403);
+		expect((await createWorkspace(new Request("https://control.test/api/workspaces", { method: "POST", headers: { origin: "https://control.test", cookie: member.cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Denied" }) }))).status).toBe(403);
+		await apps.revokeUse(appId, userId, member.userId);
+		expect((await authorize(serviceRequest({ token: body.token }))).status).toBe(403);
+		expect((await POST(request(transaction().input, member.cookie))).status).toBe(403);
+	});
+
+	it("does not consume an administrator invitation before platform approval", async () => {
+		const member = await login("administrator@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "administrator@example.test", "admin");
+		mocks.approved.mockResolvedValue({ approved: false });
+		const acceptance = () => new Request("https://control.test/api/workspace-invitations/accept", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: member.cookie }, body: JSON.stringify({ token: invitation.token }) });
+		expect((await acceptInvitation(acceptance())).status).toBe(403);
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull();
+		expect((await client.query("select user_id from public.app_workspace_members where user_id = $1", [member.userId])).rowCount).toBe(0);
+		mocks.approved.mockResolvedValue({ approved: true });
+		expect((await acceptInvitation(acceptance())).status).toBe(200);
+		expect((await client.query("select role from public.app_workspace_members where user_id = $1", [member.userId])).rows[0].role).toBe("admin");
+	});
+
+	it("requires accepted invitation provenance, current verified email, ordinary membership, grant and enabled binding", async () => {
+		const member = await login("member-bound@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "member-bound@example.test", "member");
+		await client.query("insert into public.app_workspace_members (workspace_id, user_id, role) values ($1, $2, 'member')", [workspaceId, member.userId]);
+		await apps.grantUse(appId, userId, member.userId);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(false);
+		await workspaces.acceptInvitation(member.userId, invitation.token, true);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(true);
+		expect(await sessions.isInvitedMember(bindingId, userId)).toBe(false);
+		await client.query('update public."user" set email = \'changed@example.test\' where id = $1', [member.userId]);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(false);
+		await client.query('update public."user" set email = \'member-bound@example.test\', "emailVerified" = false where id = $1', [member.userId]);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(false);
+		await client.query('update public."user" set "emailVerified" = true where id = $1', [member.userId]);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(true);
+		await workspaces.setMemberRole(workspaceId, userId, member.userId, "admin");
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(false);
+		await workspaces.setMemberRole(workspaceId, userId, member.userId, "member");
+		await apps.grantUse(appId, userId, member.userId);
+		await client.query("update public.app_gateway_bindings set disabled_at = clock_timestamp() where id = $1", [bindingId]);
+		expect(await sessions.isInvitedMember(bindingId, member.userId)).toBe(false);
+	});
 	it("issues a hash-only platform-bound code and redeems it once with the correct proof", async () => {
 		const tx = transaction();
 		const response = await POST(request(tx.input));

@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { Client, Pool } from "pg";
-import { getMigrations } from "better-auth/db/migration";
+import { Client } from "pg";
 import { expect, test, type Page } from "@playwright/test";
-import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "../database/helpers.mjs";
+import { databaseTestConnectionString } from "../database/helpers.mjs";
 
 test.describe("real client and server logout recovery", () => {
 	test.skip(process.env.RUN_DATABASE_BROWSER_TESTS !== "1", "Requires an explicitly enabled disposable local database and app server.");
@@ -10,7 +8,6 @@ test.describe("real client and server logout recovery", () => {
 	// First authenticated navigation compiles the dashboard in the development server.
 	test.setTimeout(90_000);
 	let client: Client;
-	let pool: Pool;
 
 	test.beforeAll(async () => {
 		const connectionString = databaseTestConnectionString();
@@ -20,21 +17,12 @@ test.describe("real client and server logout recovery", () => {
 			throw new Error("Browser logout tests require the local server's explicit database, auth, and feature-flag environment.");
 		}
 		client = new Client({ connectionString });
-		pool = new Pool({ connectionString, max: 2 });
 		await client.connect();
-		await prepareDatabaseTestRoles(client);
-		await resetFoundationDatabase(client);
-		await client.query('delete from public."user"');
-		await (await getMigrations({ database: pool, secret: process.env.BETTER_AUTH_SECRET,
-			baseURL: process.env.BETTER_AUTH_URL, emailAndPassword: { enabled: true } })).runMigrations();
-		for (const name of ["app_use_grants", "app_gateway_auth", "gateway_platform_sessions"]) {
-			await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
-		}
 	});
 	test.afterEach(async () => {
 		if (client) await client.query("drop trigger if exists browser_test_logout_failure on public.session; drop function if exists public.browser_test_fail_logout()");
 	});
-	test.afterAll(async () => { await pool?.end(); await client?.end(); });
+	test.afterAll(async () => { await client?.end(); });
 
 	async function signIn(page: Page, email: string) {
 		// Unrelated platform overview and cloud health calls are stubbed; auth and logout use the real server/database.

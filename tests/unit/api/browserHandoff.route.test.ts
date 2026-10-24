@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	config: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: true,
 		BETTER_AUTH_URL: "https://control.test", GATEWAY_CODE_TTL_SECONDS: "60", GATEWAY_SESSION_TTL_SECONDS: "900" },
-	getSession: vi.fn(), issue: vi.fn(), approved: vi.fn(), pool: vi.fn(),
+	getSession: vi.fn(), issue: vi.fn(), approved: vi.fn(), pool: vi.fn(), invited: vi.fn(),
 }));
 vi.mock("@/config", () => ({ default: mocks.config }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: mocks.getSession } } }));
 vi.mock("@/db-helper", () => ({ dbHelper: { isApprovedUser: mocks.approved } }));
 vi.mock("@/lib/dbPool", () => ({ getDbPool: mocks.pool }));
-vi.mock("@/lib/apps/gatewayAuthStore", () => ({ GatewayAuthStore: class { issue = mocks.issue; } }));
+vi.mock("@/lib/apps/gatewayAuthStore", () => ({ GatewayAuthStore: class { issue = mocks.issue; isInvitedMember = mocks.invited; } }));
 import { POST } from "@/app/api/apps/handoff/route";
 import { WorkspaceError } from "@/lib/apps/workspaceStore";
 
@@ -24,11 +24,20 @@ beforeEach(() => {
 		BETTER_AUTH_URL: "https://control.test", GATEWAY_CODE_TTL_SECONDS: "60", GATEWAY_SESSION_TTL_SECONDS: "900" });
 	mocks.getSession.mockResolvedValue({ user: { id: "bob", email: "bob@example.test" }, session: { id: "live-platform-session" } });
 	mocks.approved.mockResolvedValue({ approved: true });
+	mocks.invited.mockResolvedValue(false);
 	mocks.issue.mockResolvedValue(handoff);
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("platform browser handoff issuance", () => {
+	it("permits only a current invited member's app when platform approval is absent", async () => {
+		mocks.approved.mockResolvedValue({ approved: false });
+		mocks.invited.mockResolvedValueOnce(true);
+		expect((await POST(request())).status).toBe(200);
+		expect(mocks.invited).toHaveBeenCalledWith(input.bindingId, "bob");
+		expect((await POST(request())).status).toBe(403);
+		expect(mocks.issue).toHaveBeenCalledTimes(1);
+	});
 	it("checks both flags before reading the session or body", async () => {
 		for (const flag of ["WORKSPACE_APPS_ENABLED", "PRIVATE_APP_GATEWAY_ENABLED"] as const) {
 			mocks.config[flag] = false;

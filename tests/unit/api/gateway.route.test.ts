@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	config: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: false, GATEWAY_CODE_TTL_SECONDS: "60", GATEWAY_SESSION_TTL_SECONDS: "900" },
-	authenticate: vi.fn(), pool: vi.fn(), authorize: vi.fn(), redeem: vi.fn(), revoke: vi.fn(), approved: vi.fn(),
+	authenticate: vi.fn(), pool: vi.fn(), authorize: vi.fn(), redeem: vi.fn(), revoke: vi.fn(), approved: vi.fn(), invited: vi.fn(),
 }));
 vi.mock("@/config", () => ({ default: mocks.config }));
 vi.mock("@/db-helper", () => ({ dbHelper: { isApprovedUser: mocks.approved } }));
@@ -11,6 +11,7 @@ vi.mock("@/lib/apps/gatewayAuthStore", () => ({ GatewayAuthStore: class {
 	authorize = mocks.authorize;
 	redeem = mocks.redeem;
 	revoke = mocks.revoke;
+	isInvitedMember = mocks.invited;
 } }));
 import { POST as authorize } from "@/app/api/gateway/authorize/route";
 import { POST as redeem } from "@/app/api/gateway/redeem/route";
@@ -30,10 +31,20 @@ beforeEach(() => {
 	mocks.redeem.mockResolvedValue({ token, expiresAt: new Date("2026-10-23T19:00:00Z") });
 	mocks.revoke.mockResolvedValue(undefined);
 	mocks.approved.mockResolvedValue({ approved: true });
+	mocks.invited.mockResolvedValue(false);
 });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("gateway service endpoints", () => {
+	it("rechecks the exact invited-app scope on every unapproved-user decision", async () => {
+		mocks.config.WAITING_LIST_ENABLED = true;
+		mocks.approved.mockResolvedValue({ approved: false });
+		mocks.invited.mockResolvedValueOnce(true);
+		expect((await authorize(request())).status).toBe(200);
+		expect(mocks.invited).toHaveBeenCalledWith("credential-binding", "bob");
+		expect((await authorize(request())).status).toBe(403);
+		expect(mocks.invited).toHaveBeenCalledTimes(2);
+	});
 	it("requires both independent feature flags before authentication or body consumption", async () => {
 		for (const flag of ["WORKSPACE_APPS_ENABLED", "PRIVATE_APP_GATEWAY_ENABLED"] as const) {
 			mocks.config[flag] = false;

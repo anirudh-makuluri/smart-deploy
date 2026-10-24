@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import appConfig from "@/config";
 import { dbHelper } from "@/db-helper";
+import { platformApiApproval } from "@/lib/apps/platformApiApproval";
 
 const SESSION_COOKIE_NAMES = [
 	"better-auth.session_token",
@@ -58,6 +59,7 @@ function clearSessionCookies(response: NextResponse) {
 
 export async function proxy(req : NextRequest) {
 	const pathname = req.nextUrl.pathname;
+	if (pathname.startsWith("/api/")) return await platformApiApproval(req) ?? NextResponse.next();
 	const accept = req.headers?.get?.("accept") ?? "";
 	const wantsMarkdown = accept.includes("text/markdown");
 
@@ -162,7 +164,9 @@ export async function proxy(req : NextRequest) {
 					await dbHelper.addToWaitingList(email, session.user?.name ?? null);
 				}
 				const response = NextResponse.redirect(new URL("/waiting-list", req.url));
-				clearSessionCookies(response);
+				// App-only invitees still need their platform session for handoff and
+				// global logout. This redirect grants no platform management access.
+				if (!appConfig.WORKSPACE_APPS_ENABLED || !appConfig.PRIVATE_APP_GATEWAY_ENABLED) clearSessionCookies(response);
 				return response;
 			}
 		}
@@ -186,6 +190,7 @@ export async function proxy(req : NextRequest) {
 
 export const config = {
   matcher: [
+		"/api/:path*",
 		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico|txt|xml|json)).*)",
-  ], // Exclude static assets, API routes, etc.
+  ],
 }

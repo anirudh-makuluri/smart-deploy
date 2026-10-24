@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	config: { WORKSPACE_APPS_ENABLED: true, WAITING_LIST_ENABLED: false },
+	config: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: false, BETTER_AUTH_URL: "https://smartdeploy.test" },
 	getSession: vi.fn(), approved: vi.fn(), pool: vi.fn(),
 	create: vi.fn(), list: vi.fn(), invite: vi.fn(), accept: vi.fn(), members: vi.fn(), remove: vi.fn(), invitations: vi.fn(), revoke: vi.fn(), setRole: vi.fn(),
 	createApp: vi.fn(), listApps: vi.fn(), grantUse: vi.fn(), revokeUse: vi.fn(), listGrants: vi.fn(), listEvents: vi.fn(),
@@ -54,6 +54,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.config.WORKSPACE_APPS_ENABLED = true;
 	mocks.config.WAITING_LIST_ENABLED = false;
+	mocks.config.PRIVATE_APP_GATEWAY_ENABLED = true;
 	mocks.getSession.mockResolvedValue({ user: { id: "actor", email: "actor@example.test" } });
 	mocks.approved.mockResolvedValue({ approved: true });
 	mocks.create.mockResolvedValue({ id: "new", ownerId: "actor", name: "Team", kind: "team" });
@@ -166,8 +167,36 @@ describe("workspace browser APIs", () => {
 
 	it("accepts tokens only in a POST body and uses the session identity", async () => {
 		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }))).status).toBe(200);
-		expect(mocks.accept).toHaveBeenCalledWith("actor", "s".repeat(43));
+		expect(mocks.accept).toHaveBeenCalledWith("actor", "s".repeat(43), false);
 		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43), userId: "victim" }))).status).toBe(400);
+	});
+
+	it("allows unapproved users to accept only ordinary-member invitations without opening management APIs", async () => {
+		mocks.config.WAITING_LIST_ENABLED = true;
+		mocks.approved.mockResolvedValue({ approved: false });
+		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }))).status).toBe(200);
+		expect(mocks.accept).toHaveBeenCalledWith("actor", "s".repeat(43), true);
+		expect((await createApp(request("workspaces/x/apps", { name: "Tracker" }), context)).status).toBe(403);
+		expect((await GET(new Request("https://smartdeploy.test/api/workspaces"))).status).toBe(403);
+		expect(mocks.createApp).not.toHaveBeenCalled();
+	});
+
+	it("does not enable the invitation exception without the private-app flag or on approval errors", async () => {
+		mocks.config.WAITING_LIST_ENABLED = true;
+		mocks.approved.mockResolvedValue({ approved: false });
+		mocks.config.PRIVATE_APP_GATEWAY_ENABLED = false;
+		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }))).status).toBe(403);
+		mocks.config.PRIVATE_APP_GATEWAY_ENABLED = true;
+		mocks.approved.mockResolvedValue({ approved: true, error: "lookup failed" });
+		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }))).status).toBe(503);
+		expect(mocks.accept).not.toHaveBeenCalled();
+	});
+
+	it("bounds invitation bodies and rejects sibling origins before reading identity or consuming invitations", async () => {
+		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }, "https://app.smartdeploy.test"))).status).toBe(403);
+		expect(mocks.getSession).not.toHaveBeenCalled();
+		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(5000) }))).status).toBe(413);
+		expect(mocks.accept).not.toHaveBeenCalled();
 	});
 
 	it("scopes removal and revocation to the authenticated actor", async () => {

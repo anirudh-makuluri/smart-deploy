@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import config from "@/config";
 import { auth } from "@/lib/auth";
-import { dbHelper } from "@/db-helper";
 import { getDbPool } from "@/lib/dbPool";
 import { GatewayAuthStore } from "@/lib/apps/gatewayAuthStore";
-import { gatewayLifetimes, parseGatewayBody } from "@/lib/apps/gatewayApi";
+import { gatewayLifetimes, parseGatewayBody, requirePrivateAppAdmission } from "@/lib/apps/gatewayApi";
 import { WorkspaceError } from "@/lib/apps/workspaceStore";
 
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
@@ -38,13 +37,9 @@ export async function POST(request: Request): Promise<NextResponse> {
 		// Bypass cookie-cache snapshots and avoid extending a session while minting.
 		const principal = await auth.api.getSession({ headers: request.headers, query: { disableCookieCache: true, disableRefresh: true } });
 		if (!principal) throw new WorkspaceError(401, "Sign in to continue.");
-		if (config.WAITING_LIST_ENABLED) {
-			const approval = await dbHelper.isApprovedUser(principal.user.email);
-			if (approval.error) throw new WorkspaceError(503, "App authorization unavailable.");
-			if (!approval.approved) throw new WorkspaceError(403, "App access unavailable.");
-		}
 		const input = await parseGatewayBody(request, HandoffInput);
 		const store = new GatewayAuthStore(getDbPool(), limits);
+		await requirePrivateAppAdmission(store, input.bindingId, { id: principal.user.id, email: principal.user.email });
 		const handoff = await store.issue(input.bindingId, { userId: principal.user.id, sessionId: principal.session.id }, input.challenge);
 		// Callback authority comes exclusively from the operator-owned binding.
 		// State is opaque correlation data: the gateway must verify its own browser
