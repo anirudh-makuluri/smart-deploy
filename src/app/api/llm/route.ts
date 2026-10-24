@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRepoFilePaths } from "@/github-helper";
+import { getRepoFilePaths, type RepositoryFiles } from "@/github-helper";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { getGithubAccessTokenForUserId } from "@/lib/githubAccessToken";
@@ -20,7 +20,13 @@ export async function POST(req: Request) {
 
 	if (include_extra_info === undefined) include_extra_info = false;
 
-	const { filePaths, fileContents } = await getRepoFilePaths(full_name, branch, token);
+	let repository: RepositoryFiles;
+	try {
+		repository = await getRepoFilePaths(full_name, branch, token);
+	} catch {
+		return NextResponse.json({ error: "Repository inspection failed. Check GitHub access and retry." }, { status: 502 });
+	}
+	const { filePaths, fileContents } = repository;
 	const prompt = createPrompt(filePaths, fileContents, include_extra_info, target_workdir);
 
 	try {

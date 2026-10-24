@@ -3,6 +3,7 @@ import {
 	createSign,
 	timingSafeEqual,
 } from "node:crypto";
+import { isJsonObject, responseErrorMessage } from "./httpResponse";
 
 type GithubAppConfig = {
 	appId: string;
@@ -10,12 +11,6 @@ type GithubAppConfig = {
 	clientSecret: string;
 	privateKey: string;
 	webhookSecret: string;
-};
-
-type GithubInstallationTokenResponse = {
-	token?: unknown;
-	expires_at?: unknown;
-	message?: unknown;
 };
 
 export type GithubInstallationAccessToken = {
@@ -111,13 +106,13 @@ export async function createGithubInstallationAccessToken(
 		}
 	);
 
-	const responseBody = (await response.json().catch(() => ({}))) as GithubInstallationTokenResponse;
 	if (!response.ok) {
-		const detail = typeof responseBody.message === "string" ? `: ${responseBody.message}` : "";
-		throw new Error(`GitHub App installation token request failed (${response.status})${detail}`);
+		const detail = await responseErrorMessage(response, "");
+		throw new Error(`GitHub App installation token request failed (${response.status})${detail ? `: ${detail}` : ""}`);
 	}
 
-	if (typeof responseBody.token !== "string" || !responseBody.token.trim()) {
+	const responseBody: unknown = await response.json().catch(() => null);
+	if (!isJsonObject(responseBody) || typeof responseBody.token !== "string" || !responseBody.token.trim()) {
 		throw new Error("GitHub App installation token response was missing a token.");
 	}
 	if (typeof responseBody.expires_at !== "string" || !responseBody.expires_at.trim()) {

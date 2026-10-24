@@ -1,0 +1,80 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "http-response-validation",
+  "baselineRevision": "e8e87ad7ef3c73febf807d3f9d7bfa79314661a4",
+  "candidateBaseRevision": "e8e87ad7ef3c73febf807d3f9d7bfa79314661a4",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 46,
+    "affectedFileCount": 32,
+    "totalDiagnosticCount": 46,
+    "score": 81,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [
+    {
+      "fingerprint": "7123ae6db9eace2b75030801004a38e79aec02844876ce32a127fd031a9abdd8",
+      "path": "src/github-helper.ts",
+      "id": "src/github-helper.ts::109:24::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "rule": "no-fetch-response-used-without-status-check",
+      "assessment": "Confirmed failure",
+      "evidence": "Source matched unchecked body reads. Regression tests reproduce denied GitHub requests as empty metadata, non-JSON/malformed GraphQL responses, and masked installation-token failures."
+    },
+    {
+      "fingerprint": "e23e73a42a513c49f18b7c53cf06ab028cffddaa454558fabefcd4cb448b7659",
+      "path": "src/lib/githubApp.ts",
+      "id": "src/lib/githubApp.ts::101:25::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "rule": "no-fetch-response-used-without-status-check",
+      "assessment": "Confirmed failure",
+      "evidence": "Source matched unchecked body reads. Regression tests reproduce denied GitHub requests as empty metadata, non-JSON/malformed GraphQL responses, and masked installation-token failures."
+    },
+    {
+      "fingerprint": "f1d5bff7540201ab2e9ab9a04ed2c4428e28325541a1b282c447305be14cf40a",
+      "path": "src/lib/graphqlClient.ts",
+      "id": "src/lib/graphqlClient.ts::32:20::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "rule": "no-fetch-response-used-without-status-check",
+      "assessment": "Confirmed failure",
+      "evidence": "Source matched unchecked body reads. Regression tests reproduce denied GitHub requests as empty metadata, non-JSON/malformed GraphQL responses, and masked installation-token failures."
+    },
+    {
+      "fingerprint": "a25a700366a33f16bf0c9bb50118e2ccd9d4e9890ca1fdd8bdd565867ce0bcec",
+      "path": "src/lib/graphqlClient.ts",
+      "id": "src/lib/graphqlClient.ts::333:20::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "rule": "no-fetch-response-used-without-status-check",
+      "assessment": "Confirmed failure",
+      "evidence": "Source matched unchecked body reads. Regression tests reproduce denied GitHub requests as empty metadata, non-JSON/malformed GraphQL responses, and masked installation-token failures."
+    }
+  ],
+  "collateral": [
+    "src/app/api/llm/route.ts",
+    "src/github-helper.ts",
+    "src/lib/githubApp.ts",
+    "src/lib/graphqlClient.ts",
+    "src/lib/httpResponse.ts",
+    "tests/unit/api/llm.repositoryFailure.test.ts",
+    "tests/unit/lib/githubAppTokenResponse.test.ts",
+    "tests/unit/lib/httpResponseFailures.test.ts",
+    "docs/internal/HTTP_RESPONSE_VALIDATION.md"
+  ],
+  "productionReady": false
+}
