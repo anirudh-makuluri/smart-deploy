@@ -10,6 +10,7 @@ Operator and maintainer guides moved out of the public docs index. End users sho
 | `BETTER_AUTH.md` | Authentication configuration |
 | `SELF_HOSTING.md` | Self-hosting Smart Deploy |
 | `MULTI_SERVICE_DETECTION.md` | Maintainer reference for detection code |
+| [APP_WORKSPACES.md](./APP_WORKSPACES.md) | App/workspace schema, policy boundary, migration, and database tests |
 | `FIELD_AUDIT.md` | GraphQL field audit |
 | `GRAPHQL_YOGA_MIGRATION.md` | GraphQL migration notes |
 | `TROUBLESHOOTING.md` | Legacy operator troubleshooting (superseded by user debug docs) |
