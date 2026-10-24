@@ -270,3 +270,33 @@ retaining Better Auth/Supabase platform dependencies. Production deployment is
 conditionally authorized only after the entire feature is verified; that gate
 has not been met. No production change or billable resource was made. The local
 database and browser servers are stopped. The expired automation remains deleted.
+
+Client recovery increment: published draft
+[#100](https://github.com/anirudh-makuluri/smart-deploy/pull/100), head
+`fba977935dd5486b9d9deb40e7956193e7077e85`, stacked on #98. Both header logout
+and automatic broken-session recovery now check the SDK's error result, retain
+the page/session on failure, and permit retry. Worker sockets follow the current
+user ID, have connection-local token caches, reset displayed state on account
+changes, and remove exact listeners on teardown. The old cleanup scanner match
+was a false positive: the prior effect already disconnected. The account-switch
+and sign-out behavior changes address separately confirmed defects.
+
+Local verification: 125 unit files / 470 tests, followed by all 21 final focused
+logout/socket cases (including a newly added delayed-token case); seven database
+files / 69 tests; two Chromium real-client/Next.js/PostgreSQL scenarios proving
+failed DB revocation retains login and retry removes the actual session; full
+typecheck; lint; production build; clean diff checks. Browser overview/cloud
+health and the deliberately broken session response are stubbed; sign-out and
+revocation are real. CI now runs these database-backed browser checks. The
+shared fixture changed only to an explicit ESM extension with updated imports;
+the database suite passed afterward. Both local servers were stopped.
+
+Full pinned unfiltered Doctor now reports 81/100, zero errors and 46 warnings;
+the exact 17-file increment reports 100/100 and no diagnostics. No suppression
+or threshold change. The navigation lint warning is resolved; dynamic tracing
+warnings remain. All #98 CI/preview checks passed at its recorded head. #100 CI
+is running; both PRs remain drafts while repository health and full feature
+acceptance are unfinished. Merge order extends #91 -> ... -> #98 -> #100.
+No production enablement, migration, billable resource, worker start, merge, or
+deployment occurred. The next independent review covers HTTP credential/status
+boundaries before remaining UI/runtime/data/tooling work.
