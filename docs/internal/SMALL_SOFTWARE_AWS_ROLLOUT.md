@@ -238,3 +238,35 @@ The user's conditional production gate is not satisfied, so no instance was
 started, PR merged, feature enabled, production migration applied, or release
 dispatched. See [the audit](./SMALL_SOFTWARE_RELEASE_READINESS.md) for exact
 evidence, diagnostic triage, boundaries, and required remaining work.
+
+Remediation continuation (October 23, renewed user authorization): published
+draft [#98](https://github.com/anirudh-makuluri/smart-deploy/pull/98), head
+`eae46593a65b2295c91868d8f11ff374bf20ac14`, stacked on #97 at `6383349`.
+Updated Next.js/Better Auth/Undici/Zod and compatible transitive dependencies;
+both full and production-only npm audits now report zero vulnerabilities. Zod
+strict input boundaries and normalization are preserved. New framework checking
+exposed incomplete test fixtures, repaired without removing assertions; CI now
+also runs full typechecking and worker compilation. Verification: 123 unit files /
+457 tests; seven PostgreSQL files / 69 tests; full typecheck; worker compilation;
+production build; six Chromium public-page tests; clean diff check. Full pinned
+Doctor 0.9.18 increased from 49/100 (49 findings) to 72/100 (47 findings), still
+below the required 95. Exact changed-file scan: 15 TypeScript files, 100/100,
+zero findings. Lint reports an existing recovery-navigation warning; dynamic
+repository tracing warnings remain in the build. CI is running on the new head.
+[Tracking issue #99](https://github.com/anirudh-makuluri/smart-deploy/issues/99)
+records owned remediation PRs; the manifest and validation details are in #98.
+
+The user approved the existing `smart-deploy.xyz` domain and an additional AWS
+budget of at most $10/month. Read-only AWS inspection found no RDS instance and
+only that hosted zone. AWS Price List quotes the existing Oregon t3.small worker
+at $0.0208/hour: 730 hours would cost $15.18 in compute alone. The user therefore
+accepted an on-demand pilot with idle shutdown and a startup delay. Do not start
+an always-on worker or add always-on ALB/RDS infrastructure under this budget.
+Prepare explicit resource/usage limits, startup/idle watchdogs, and conservative
+reservations before paid work. Shared-parent-domain app hosting additionally
+requires host-only platform cookies and sibling-origin isolation tests. These
+decisions supersede any earlier always-on/separate-domain assumptions, while
+retaining Better Auth/Supabase platform dependencies. Production deployment is
+conditionally authorized only after the entire feature is verified; that gate
+has not been met. No production change or billable resource was made. The local
+database and browser servers are stopped. The expired automation remains deleted.
