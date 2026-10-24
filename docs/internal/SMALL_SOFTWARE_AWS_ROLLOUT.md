@@ -478,3 +478,34 @@ recorded head; #104 CI is running. Merge order extends #91 -> ... -> #103 -> #10
 Full >=95 and the remaining cookie/gateway/runtime/data/UI/tools/integrated
 gates remain. Continue with host-only platform cookies for the approved shared
 parent domain; do not enable untrusted sibling hosting before that boundary.
+
+Host-only platform cookies: published draft
+[#105](https://github.com/anirudh-makuluri/smart-deploy/pull/105), head
+`6a090c957ae7ca5ad65b7f0d7850052fd6eb9fcf`, stacked on #104 at `3371285`.
+HTTPS authentication now uses __Host-smartdeploy cookies with Secure, HttpOnly,
+root path and no Domain, including dynamic OAuth state. The proxy detects and
+expires the same SDK-defined cookies. Explicit HTTP loopback development keeps
+its ordinary local cookie names. There is no legacy cookie fallback; cutover
+requires fresh login and retrying in-flight OAuth. No secret/provider changes.
+
+Verification: 135 unit files / 575 tests, five actual browser scenarios, full
+typecheck/lint, worker compilation, configured production build, YAML/manifest
+parsing and diff checks pass. The new native HTTPS Chromium/Better Auth/local
+PostgreSQL fixture demonstrates the prior parent-domain signed-cookie attack,
+rejects legacy fallback and sibling overwrite, verifies cookie non-forwarding
+to the sibling, and checks sign-out. Both existing invitee/verification and both
+logout-recovery cases pass too. Verification uses SQL fixtures, not real email
+or OAuth. All local servers are stopped; generated TLS fixture files removed.
+The first combined browser command was rejected by automatic approval review
+without a specific reason; explicit startup/test/cleanup commands succeeded.
+Pinned Doctor completes seven changed source/test files at 100/100; complete
+unfiltered 586-file scan remains 82/100 (zero errors / 42 warnings), with no
+suppression. Existing dynamic build tracing warnings remain.
+
+#104 CI/preview checks all pass at its recorded head; #105 CI is running. Merge
+order extends #91 -> ... -> #103 -> #104 -> #105. Billing #85 remains open at
+`14c67e452be54c6639ac2a7f3a69737b269c1999`, unchanged and separate. No production
+migration, cloud provisioning, invitation email, provider change, worker start,
+merge or deployment. Full >=95 and gateway/runtime/data/UI/tools/integrated
+gates remain. Next address confirmed UI row identity, immutable editing and
+keyboard/accessibility defects while continuing the full feature rollout.
