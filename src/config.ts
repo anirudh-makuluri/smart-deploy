@@ -5,7 +5,7 @@ const config = {
 
 	// Better Auth DB (Supabase Postgres connection string)
 	DATABASE_URL: process.env.DATABASE_URL || "",
-	// Enable only after the app/workspace and invitation migrations are applied.
+	// Enable only after all current app/workspace migrations are applied.
 	WORKSPACE_APPS_ENABLED: process.env.WORKSPACE_APPS_ENABLED === "true",
 
 	// GitHub App (OAuth credentials are used by Better Auth; the private key is server-only).
