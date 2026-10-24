@@ -94,7 +94,9 @@ Doctor 0.9.18 scans all 18 changed source files at 100/100 with no diagnostics.
 The complete unfiltered full scan remains 82/100 (zero errors / 42 warnings).
 No suppression or threshold change. All local database/browser servers are stopped.
 
-Platform approval semantics are preserved in this increment. Whether deployment
-and management should additionally require verified email is a pending user
-decision; the invited-app exception already requires current verification.
-This is separate from the full 95/100 and remaining feature release gates.
+This increment initially preserved the approval-only platform policy. The user
+subsequently required verified platform management too; the follow-up boundary
+is documented in [VERIFIED_PLATFORM_ACCESS.md](./VERIFIED_PLATFORM_ACCESS.md).
+The original validation snapshot above is retained. The invited-app exception
+already requires current verification. The full 95/100 and remaining feature
+release gates still apply.

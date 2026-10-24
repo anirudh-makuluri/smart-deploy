@@ -1,11 +1,15 @@
 import crypto from "crypto";
+import { isJsonObject } from "./httpResponse";
 
 const WS_TOKEN_TTL_MS = 5 * 60 * 1000;
 
-type WsAuthPayload = {
+export interface WebSocketAuthPayload {
+	audience: "smartdeploy-worker";
+	version: 2;
 	userID: string;
+	sessionID: string;
 	exp: number;
-};
+}
 
 function getSecret(): string {
 	const secret = (process.env.BETTER_AUTH_SECRET || "").trim();
@@ -24,16 +28,21 @@ function base64UrlDecode(value: string): string {
 }
 
 function signValue(value: string, secret: string): string {
-	return crypto.createHmac("sha256", secret).update(value).digest("base64url");
+	const key = crypto.createHmac("sha256", secret).update("smartdeploy-worker:v2").digest();
+	return crypto.createHmac("sha256", key).update(value).digest("base64url");
 }
 
-export function createWebSocketAuthToken(userID: string): string {
+export function createWebSocketAuthToken(userID: string, sessionID: string): string {
 	if (!userID?.trim()) {
 		throw new Error("userID is required to create a websocket token");
 	}
+	if (!sessionID.trim()) throw new Error("sessionID is required to create a websocket token");
 
-	const payload: WsAuthPayload = {
+	const payload: WebSocketAuthPayload = {
+		audience: "smartdeploy-worker",
+		version: 2,
 		userID: userID.trim(),
+		sessionID: sessionID.trim(),
 		exp: Date.now() + WS_TOKEN_TTL_MS,
 	};
 	const encodedPayload = base64UrlEncode(JSON.stringify(payload));
@@ -41,10 +50,12 @@ export function createWebSocketAuthToken(userID: string): string {
 	return `${encodedPayload}.${signature}`;
 }
 
-export function verifyWebSocketAuthToken(token: string): WsAuthPayload | null {
-	if (!token) return null;
+export function verifyWebSocketAuthToken(token: string): WebSocketAuthPayload | null {
+	if (!token || token.length > 2048) return null;
 
-	const [encodedPayload, signature] = token.split(".");
+	const parts = token.split(".");
+	if (parts.length !== 2) return null;
+	const [encodedPayload, signature] = parts;
 	if (!encodedPayload || !signature) return null;
 
 	const expectedSignature = signValue(encodedPayload, getSecret());
@@ -58,11 +69,14 @@ export function verifyWebSocketAuthToken(token: string): WsAuthPayload | null {
 	}
 
 	try {
-		const payload = JSON.parse(base64UrlDecode(encodedPayload)) as WsAuthPayload;
-		if (!payload.userID || !payload.exp || payload.exp < Date.now()) {
+		const payload: unknown = JSON.parse(base64UrlDecode(encodedPayload));
+		if (!isJsonObject(payload) || payload.audience !== "smartdeploy-worker" || payload.version !== 2
+			|| typeof payload.userID !== "string" || !payload.userID.trim()
+			|| typeof payload.sessionID !== "string" || !payload.sessionID.trim()
+			|| typeof payload.exp !== "number" || !Number.isFinite(payload.exp) || payload.exp <= Date.now()) {
 			return null;
 		}
-		return payload;
+		return { audience: "smartdeploy-worker", version: 2, userID: payload.userID, sessionID: payload.sessionID, exp: payload.exp };
 	} catch {
 		return null;
 	}

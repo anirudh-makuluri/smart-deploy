@@ -55,7 +55,7 @@ beforeEach(() => {
 	mocks.config.WORKSPACE_APPS_ENABLED = true;
 	mocks.config.WAITING_LIST_ENABLED = false;
 	mocks.config.PRIVATE_APP_GATEWAY_ENABLED = true;
-	mocks.getSession.mockResolvedValue({ user: { id: "actor", email: "actor@example.test" } });
+	mocks.getSession.mockResolvedValue({ user: { id: "actor", email: "actor@example.test", emailVerified: true } });
 	mocks.approved.mockResolvedValue({ approved: true });
 	mocks.create.mockResolvedValue({ id: "new", ownerId: "actor", name: "Team", kind: "team" });
 	mocks.list.mockResolvedValue([]);
@@ -112,6 +112,11 @@ describe("app access management browser APIs", () => {
 });
 
 describe("workspace browser APIs", () => {
+	it("denies unverified management even with waiting-list checks disabled", async () => {
+		mocks.getSession.mockResolvedValue({ user: { id: "actor", email: "actor@example.test", emailVerified: false } });
+		expect((await POST(request("workspaces", { name: "Team" }))).status).toBe(403);
+		expect(mocks.pool).not.toHaveBeenCalled();
+	});
 	it("fails closed without touching the database when disabled", async () => {
 		mocks.config.WORKSPACE_APPS_ENABLED = false;
 		expect((await POST(request("workspaces", { name: "Team" }))).status).toBe(503);

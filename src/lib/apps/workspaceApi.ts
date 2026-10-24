@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import config from "@/config";
 import { auth } from "@/lib/auth";
-import { dbHelper } from "@/db-helper";
 import { getDbPool } from "@/lib/dbPool";
 import { WorkspaceError, WorkspaceStore } from "./workspaceStore";
 import { AppStore } from "./appStore";
+import { PlatformAccessError, requirePlatformAccess } from "@/lib/platformAccess";
 
 export const WorkspaceNameInput = z.strictObject({ name: z.string().trim().min(1).max(120) });
 export const InvitationInput = z.strictObject({ email: z.string().trim().pipe(z.email().max(254)), role: z.enum(["member", "admin"]) });
@@ -37,15 +37,13 @@ export async function withWorkspaceApi(
 		if (request.method !== "GET" && request.headers.get("origin") !== new URL(request.url).origin) {
 			throw new WorkspaceError(403, "A same-origin browser request is required.");
 		}
-		const session = await auth.api.getSession({ headers: request.headers });
+		const session = await auth.api.getSession({ headers: request.headers, query: { disableCookieCache: true, disableRefresh: true } });
 		if (!session?.user?.id) throw new WorkspaceError(401, "Unauthorized.");
-		if (config.WAITING_LIST_ENABLED) {
-			const approval = await dbHelper.isApprovedUser(session.user.email);
-			if (!approval.approved) throw new WorkspaceError(403, "Your account is not approved for workspace access.");
-		}
+		await requirePlatformAccess(session.user);
 		const pool = getDbPool();
 		return await action({ userId: session.user.id, store: new WorkspaceStore(pool), apps: new AppStore(pool) });
 	} catch (error) {
+		if (error instanceof PlatformAccessError) return workspaceJson({ error: error.message }, error.status);
 		if (error instanceof WorkspaceError) return workspaceJson({ error: error.message }, error.status);
 		// Do not log invitation tokens, request bodies, or database row details.
 		console.error("Workspace request failed.");

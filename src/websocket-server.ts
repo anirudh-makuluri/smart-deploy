@@ -22,7 +22,7 @@ const port = Number(process.env.PORT || process.env.WS_PORT) || 4001;
 const allowedOrigins = parseAllowedOrigins(process.env.WS_ALLOWED_ORIGINS);
 const environment = process.env.NODE_ENV || "development";
 const version = getWorkerVersion(process.env.WORKER_VERSION);
-const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(any)";
+const allowedOriginsLabel = allowedOrigins.length > 0 ? allowedOrigins.join(", ") : "(none; socket connections denied)";
 const deploymentEventsToken = (
 	process.env.DEPLOYMENT_EVENTS_TOKEN ||
 	process.env.INTERNAL_DEPLOYMENT_EVENTS_TOKEN ||

@@ -75,6 +75,7 @@ test.describe("app-only login and actual platform API boundary", () => {
 		const signup = await page.request.post("/api/auth/sign-up/email", { headers: { origin: "http://localhost:3000" },
 			data: { email: approvedEmail, name: "Local approved user", password: "browser-local-password-123" } });
 		expect(signup.status()).toBe(200);
+		expect((await page.request.get("/api/ws-token")).status()).toBe(403);
 		await client.query('update public."user" set "emailVerified" = true where email = $1', [approvedEmail]);
 		await page.goto("/robots.txt");
 		const accepted = await page.evaluate(async () => {
@@ -83,6 +84,9 @@ test.describe("app-only login and actual platform API boundary", () => {
 			return { ws: ws.status, hasToken: typeof (await ws.json()).token === "string", graph: graph.status, data: (await graph.json()).data };
 		});
 		expect(accepted).toEqual({ ws: 200, hasToken: true, graph: 200, data: { __typename: "Query" } });
+		await client.query('update public."user" set "emailVerified" = false where email = $1', [approvedEmail]);
+		expect(await page.evaluate(async () => (await fetch("/api/ws-token")).status)).toBe(403);
+		await client.query('update public."user" set "emailVerified" = true where email = $1', [approvedEmail]);
 		approvedEmail = null;
 		expect(await page.evaluate(async () => (await fetch("/api/ws-token")).status)).toBe(403);
 		expect((await page.request.post("/api/auth/sign-out", { headers: { origin: "http://localhost:3000" }, data: {} })).status()).toBe(200);

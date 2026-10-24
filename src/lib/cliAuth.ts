@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getDbPool } from "@/lib/dbPool";
+import { PlatformAccessError, requirePlatformUser } from "@/lib/platformAccess";
 
 const DEVICE_AUTHORIZATION_LIFETIME_MS = 10 * 60 * 1000;
 const CLI_TOKEN_PREFIX = "sd_cli_";
@@ -31,7 +32,7 @@ export function createCliAccessToken(): { token: string; tokenHash: string } {
 
 function codeHash(value: string): string {
 	const normalized = value.trim();
-	if (!normalized) throw new Error("Authentication code is required.");
+	if (!normalized) throw new PlatformAccessError(400, "Authentication code is required.");
 	return hashCliSecret(normalized);
 }
 
@@ -59,13 +60,14 @@ export async function getDeviceAuthorizationStatus(approvalCode: string): Promis
 }
 
 export async function approveDeviceAuthorization(approvalCode: string, userId: string): Promise<DeviceAuthorizationStatus> {
+	await requirePlatformUser(userId);
 	const result = await getDbPool().query<{ status: DeviceAuthorizationStatus }>(
 		"update public.cli_device_authorizations set status = 'approved', user_id = $2, approved_at = now() where approval_code_hash = $1 and status = 'pending' and expires_at > now() returning status",
 		[codeHash(approvalCode), userId]
 	);
 	if (result.rows[0]) return result.rows[0].status;
 	const status = await getDeviceAuthorizationStatus(approvalCode);
-	if (!status) throw new Error("This CLI approval request does not exist.");
+	if (!status) throw new PlatformAccessError(404, "CLI approval request unavailable.");
 	return status;
 }
 
@@ -82,6 +84,7 @@ export async function consumeDeviceAuthorization(deviceCode: string): Promise<{ 
 			await client.query("rollback");
 			return null;
 		}
+		await requirePlatformUser(userId);
 		const accessToken = createCliAccessToken();
 		await client.query("insert into public.cli_access_tokens (user_id, token_hash) values ($1, $2)", [userId, accessToken.tokenHash]);
 		await client.query("commit");
@@ -101,7 +104,14 @@ export async function authenticateCliAccessToken(token: string): Promise<string 
 		"update public.cli_access_tokens set last_used_at = now() where token_hash = $1 and revoked_at is null and (expires_at is null or expires_at > now()) returning user_id",
 		[hashCliSecret(normalized)]
 	);
-	return result.rows[0]?.user_id ?? null;
+	const userId = result.rows[0]?.user_id;
+	if (!userId) return null;
+	try { await requirePlatformUser(userId); }
+	catch (error) {
+		if (error instanceof PlatformAccessError && error.status !== 503) return null;
+		throw error;
+	}
+	return userId;
 }
 
 export async function revokeCliAccessToken(token: string): Promise<boolean> {

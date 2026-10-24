@@ -20,13 +20,20 @@ function request(path = "/api/ws-token", headers: Record<string, string> = { coo
 beforeEach(() => {
 	vi.resetAllMocks();
 	Object.assign(mocks.config, { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: true });
-	mocks.session.mockResolvedValue({ user: { id: "invitee", email: "invitee@example.test" } });
+	mocks.session.mockResolvedValue({ user: { id: "invitee", email: "invitee@example.test", emailVerified: true } });
 	mocks.approved.mockResolvedValue({ approved: false });
 	mocks.cli.mockResolvedValue("invitee");
-	mocks.query.mockResolvedValue({ rows: [{ email: "invitee@example.test" }] });
+	mocks.query.mockResolvedValue({ rows: [{ id: "invitee", email: "invitee@example.test", emailVerified: true }] });
 });
 
 describe("app-only login cannot unlock platform APIs", () => {
+	it("requires verified identity even for an approved account and with the waiting list disabled", async () => {
+		mocks.session.mockResolvedValue({ user: { id: "invitee", email: "invitee@example.test", emailVerified: false } });
+		mocks.approved.mockResolvedValue({ approved: true });
+		expect((await proxy(request())).status).toBe(403);
+		mocks.config.WAITING_LIST_ENABLED = false;
+		expect((await proxy(request())).status).toBe(403);
+	});
 	it.each(["/api/graphql", "/api/ws-token", "/api/llm", "/api/github/access-token", "/api/cli/deployments/queue", "/api/cli/device/approve", "/api/deployments/env-secrets", "/api/workspaces", "/api/apps/any/grants"])("matches and denies unapproved login at %s", async (path) => {
 		expect(unstable_doesMiddlewareMatch({ config: proxyConfig, nextConfig: {}, url: `https://control.test${path}` })).toBe(true);
 		const response = await proxy(request(path));
@@ -102,6 +109,6 @@ describe("app-only login cannot unlock platform APIs", () => {
 	it("honors the existing explicit switch disabling the platform waiting list", async () => {
 		mocks.config.WAITING_LIST_ENABLED = false;
 		expect((await proxy(request())).headers.get("x-middleware-next")).toBe("1");
-		expect(mocks.session).not.toHaveBeenCalled();
+		expect(mocks.approved).not.toHaveBeenCalled();
 	});
 });

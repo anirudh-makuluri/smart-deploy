@@ -1,0 +1,83 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "verified-platform-access",
+  "purpose": "User-required verified platform identity and live-session worker authorization",
+  "baselineRevision": "1024ac803dd9cb9a9ed7ac7e6288493605e1eab7",
+  "candidateBaseRevision": "1024ac803dd9cb9a9ed7ac7e6288493605e1eab7",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "confirmedIssues": [
+    "Approval-only management accepted unverified email claims.",
+    "Worker credentials lacked a live platform-session binding and current authorization after connection.",
+    "CLI device redemption could issue a credential after authority changed."
+  ],
+  "collateral": [
+    "src/app/api/cli/device/approve/route.ts",
+    "src/app/api/cli/device/token/route.ts",
+    "src/app/api/ws-token/route.ts",
+    "src/db-helper.ts",
+    "src/lib/apps/platformApiApproval.ts",
+    "src/lib/apps/workspaceApi.ts",
+    "src/lib/cliAuth.ts",
+    "src/lib/platformAccess.ts",
+    "src/lib/workerSocketAuthorization.ts",
+    "src/lib/workerSocketServer.ts",
+    "src/lib/wsAuth.ts",
+    "src/websocket-server.ts",
+    "tests/e2e/invited-platform-boundary.spec.mts",
+    "tests/database/platformAccess.test.ts",
+    "tests/unit/api/cli-device-approve.route.test.ts",
+    "tests/unit/api/cli-device-token.route.test.ts",
+    "tests/unit/api/platformApiApproval.test.ts",
+    "tests/unit/api/workspaces.route.test.ts",
+    "tests/unit/api/ws-token.route.test.ts",
+    "tests/unit/lib/platformAccess.test.ts",
+    "tests/unit/lib/workerSocketAuthorization.test.ts",
+    "tests/unit/lib/wsAuth.test.ts",
+    "docs/internal/VERIFIED_PLATFORM_ACCESS.md",
+    "docs/internal/INVITED_APP_ACCESS.md"
+  ],
+  "productionReady": false,
+  "userDecision": "Require verified email for platform deployment/management in addition to applicable approval; independent of waiting-list or pilot flags.",
+  "workerCredentialVersion": 2,
+  "configuredIdleRevocationSeconds": 35,
+  "verification": {
+    "typecheck": true,
+    "databaseFiles": 8,
+    "lint": true,
+    "unitFiles": 134,
+    "browserScenarios": 4,
+    "unitTests": 563,
+    "productionBuild": true,
+    "workerBuild": true,
+    "databaseTests": 79
+  },
+  "productionMutations": false
+}
