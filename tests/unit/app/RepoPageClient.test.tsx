@@ -180,7 +180,7 @@ describe("RepoPageClient", () => {
 	});
 
 	it("waits for repo deployments to load before allowing a new draft deployment to be created", async () => {
-		let resolveDeployments: ((value: []) => void) | null = null;
+		let resolveDeployments: (value: []) => void = () => { throw new Error("Deployment request has not started."); };
 		fetchRepoDeployments.mockImplementation(
 			() =>
 				new Promise<[]>((
@@ -218,7 +218,7 @@ describe("RepoPageClient", () => {
 		expect(useAppData.getState().updateDeploymentById).not.toHaveBeenCalled();
 		expect(useAppData.getState().setActiveServiceName).not.toHaveBeenCalled();
 
-		resolveDeployments?.([]);
+		resolveDeployments([]);
 
 		await waitFor(() => {
 			expect(screen.getByText("ready")).toBeInTheDocument();

@@ -156,6 +156,14 @@ describe("workspace browser APIs", () => {
 		expect(mocks.invite).toHaveBeenCalledWith("workspace-a", "actor", "friend@example.test", "member");
 	});
 
+	it("trims invitation email before validation while rejecting extra authority fields", async () => {
+		const body = { email: " friend@example.test ", role: "member" };
+		expect((await invite(request("workspaces/x/invitations", body), context)).status).toBe(201);
+		expect(mocks.invite).toHaveBeenCalledWith("workspace-a", "actor", "friend@example.test", "member");
+		expect((await invite(request("workspaces/x/invitations", { ...body, userId: "victim" }), context)).status).toBe(400);
+		expect(mocks.invite).toHaveBeenCalledTimes(1);
+	});
+
 	it("accepts tokens only in a POST body and uses the session identity", async () => {
 		expect((await accept(request("workspace-invitations/accept", { token: "s".repeat(43) }))).status).toBe(200);
 		expect(mocks.accept).toHaveBeenCalledWith("actor", "s".repeat(43));

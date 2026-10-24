@@ -41,8 +41,8 @@ does it invoke Better Auth for signed-cookie clearing. It does not implement
 cookie cryptography or trust request-supplied user IDs. Unauthenticated logout
 has no principal whose other devices can be revoked.
 
-This order matters: the installed Better Auth 1.6.23 sign-out implementation
-catches session-deletion errors and can return success while its database row
+This order matters: the Better Auth 1.6.23 and 1.7.12 sign-out implementations
+catch session-deletion errors and can return success while the database row
 remains. The guarded path performs the security operation before that behavior
 can produce a misleading success. Revocation failure rolls the transaction back,
 returns 503, and never invokes cookie clearing. The user can retry with their

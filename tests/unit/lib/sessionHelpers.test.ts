@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { repoType } from "@/app/types";
+import { makeRepo } from "../helpers/repoFixture";
 
 const mockGetUserRepos = vi.fn();
 const mockSyncUserRepos = vi.fn();
@@ -16,15 +16,15 @@ vi.mock("@/github-helper", () => ({
 	getGithubRepos: (...args: unknown[]) => mockGetGithubRepos(...args),
 }));
 
-const persistedRepo = {
-	id: 1,
+const persistedRepo = makeRepo({
+	id: "1",
 	full_name: "acme/persisted",
-} as repoType;
+});
 
-const githubRepo = {
-	id: 2,
+const githubRepo = makeRepo({
+	id: "2",
 	full_name: "acme/current",
-} as repoType;
+});
 
 describe("ensureUserAndRepos", () => {
 	beforeEach(async () => {

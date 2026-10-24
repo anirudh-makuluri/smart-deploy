@@ -8,9 +8,10 @@ import {
 	serviceImageRefsFromArtifact,
 } from "@/lib/deploymentReleaseArtifacts";
 import { configSnapshotFromDeployConfig } from "@/lib/utils";
+import { makeDeployment } from "../helpers/deployConfigFixture";
 
 function makeDeployConfig(overrides: Partial<DeployConfig> = {}): DeployConfig {
-	return {
+	return makeDeployment({
 		id: "dep-1",
 		repoName: "shop",
 		repoUrl: "https://github.com/acme/shop",
@@ -61,7 +62,7 @@ function makeDeployConfig(overrides: Partial<DeployConfig> = {}): DeployConfig {
 			token_usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
 		},
 		...overrides,
-	};
+	});
 }
 
 describe("deployment release artifacts", () => {

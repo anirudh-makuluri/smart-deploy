@@ -7,11 +7,11 @@ import { getDbPool } from "@/lib/dbPool";
 import { WorkspaceError, WorkspaceStore } from "./workspaceStore";
 import { AppStore } from "./appStore";
 
-export const WorkspaceNameInput = z.object({ name: z.string().trim().min(1).max(120) }).strict();
-export const InvitationInput = z.object({ email: z.string().trim().email().max(254), role: z.enum(["member", "admin"]) }).strict();
-export const MemberInput = z.object({ userId: z.string().min(1).max(200) }).strict();
+export const WorkspaceNameInput = z.strictObject({ name: z.string().trim().min(1).max(120) });
+export const InvitationInput = z.strictObject({ email: z.string().trim().pipe(z.email().max(254)), role: z.enum(["member", "admin"]) });
+export const MemberInput = z.strictObject({ userId: z.string().min(1).max(200) });
 export const MemberRoleInput = MemberInput.extend({ role: z.enum(["member", "admin"]) });
-export const InvitationAcceptanceInput = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) }).strict();
+export const InvitationAcceptanceInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 
 export function workspaceJson(value: unknown, status = 200): NextResponse {
 	return NextResponse.json(value, { status, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
