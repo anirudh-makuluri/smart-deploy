@@ -33,6 +33,11 @@ the source and the existing analysis/blueprint workflow retained.
 - Confirmed in session 5: signing out of SmartDeploy must end all private-app
   sessions for that user, across their apps and originating platform logins.
   Implement and test this before enabling the private gateway.
+- Latest manual instruction authorizes AWS WebSocket startup and production
+  promotion after testing establishes confidence in the entire feature. The
+  [release readiness audit](./SMALL_SOFTWARE_RELEASE_READINESS.md) records why
+  that condition is not yet met. Retain this conditional authorization; do not
+  mistake incomplete acceptance gates for a need to ask permission again.
 
 ## PR sequence and acceptance criteria
 
@@ -219,3 +224,17 @@ or production deployment was performed. GitHub database/build/tests and React
 Doctor checks passed on the published `6383349` head; the automatic Vercel preview
 also passed. These checks do not prove a protected application runtime. Current
 implementation merge order is #91 -> #92 -> #93 -> #94 -> #95 -> #96 -> #97.
+
+Production-readiness continuation (October 23, at the user's request): rechecked
+live PR/CI state and the exact combined implementation head, compiled the worker,
+passed 26 additional WebSocket unit tests and all six existing Chromium browser
+tests. A full 559-file Doctor scan reports 49/100, below the required 95; this is
+the current whole-repository result, distinct from earlier snapshots and per-PR
+scores. Production dependency audit reports 38 entries including two critical.
+Read-only AWS CLI inspection found the configured production worker stopped;
+its HTTPS health probe timed out. The full private runtime, origin blocking,
+browser flow, product/data/tooling slices, and integrated proof remain incomplete.
+The user's conditional production gate is not satisfied, so no instance was
+started, PR merged, feature enabled, production migration applied, or release
+dispatched. See [the audit](./SMALL_SOFTWARE_RELEASE_READINESS.md) for exact
+evidence, diagnostic triage, boundaries, and required remaining work.
