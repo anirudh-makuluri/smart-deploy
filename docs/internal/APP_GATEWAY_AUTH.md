@@ -30,8 +30,10 @@ does not consume a valid code. Tokens are returned once and must never be logged
 The future gateway must create a per-browser login transaction, keep its verifier
 in trusted gateway state bound to the initiating browser, verify callback state,
 and reserve the callback path so customer code never sees it. It must prevent
-login CSRF and account/transaction swapping. These browser and authenticated
-service adapters remain unimplemented; store tests do not establish that boundary.
+login CSRF and account/transaction swapping. The machine adapter is described in
+APP_GATEWAY_API.md and the platform-browser issuer in APP_BROWSER_HANDOFF.md.
+The gateway browser-transaction/cookie adapter remains unimplemented; store tests
+do not establish that boundary.
 
 The S256 transform and 32-byte random verifier follow
 [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636). Exact redirect matching and

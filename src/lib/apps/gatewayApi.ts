@@ -60,7 +60,7 @@ export async function parseGatewayBody<T>(request: Request, schema: z.ZodType<T>
 	}
 }
 
-function lifetimes() {
+export function gatewayLifetimes() {
 	const code = config.GATEWAY_CODE_TTL_SECONDS;
 	const session = config.GATEWAY_SESSION_TTL_SECONDS;
 	if (!/^\d+$/.test(code) || !/^\d+$/.test(session) || Number(code) < 1 || Number(code) > 120 || Number(session) < 1 || Number(session) > 3600) {
@@ -87,7 +87,7 @@ export async function withGatewayApi(request: Request, action: (context: Gateway
 			|| ["origin", "cookie", "sec-fetch-site"].some((name) => request.headers.has(name))) {
 			throw new WorkspaceError(403, "A secure gateway service request is required.");
 		}
-		const limits = lifetimes();
+		const limits = gatewayLifetimes();
 		const pool = getDbPool();
 		const principal = await authenticateGateway(pool, request.headers.get("authorization"));
 		return await action({ bindingId: principal.bindingId, store: new GatewayAuthStore(pool, limits) });
