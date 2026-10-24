@@ -333,3 +333,49 @@ actual browser/database logout cases in #100. Full feature acceptance remains
 unfinished. The temporary duplicate proxy scaffolding in the rollout worktree
 was removed only after verifying its source/test hashes match the independently
 committed hotfix; subsequent HTTP-response work remains separate.
+
+Approved security cutover: the user explicitly authorized early deployment of
+#101 and expiry of any pre-fix logins, including its stated health exception.
+#101 merged as `a8af9f3d42e9248c1568be9e9a537837975537b9`; Vercel production
+succeeded. The live `/ph/e` OPTIONS response changed from allowing authorization
+to the new credential-free header set (204, no Allow-Credentials), and API health
+returns 200. AWS workflow
+[40069213272](https://github.com/anirudh-makuluri/smart-deploy/actions/runs/40069213272)
+and its deploy job were skipped; EC2 remains stopped. After verifying the fixed
+handler, the transaction at `2026-10-24T06:15:03.084Z` found zero active pre-fix
+sessions, deleted zero rows, and rolled back. No user/provider account changed.
+The exception applies only to #101, not the remaining rollout or AWS startup.
+Its managed worktree was submitted for recoverable archival after release.
+
+The rollout branches were rebased onto that release to inherit credential
+filtering and the worker deployment guard. Original local heads are retained
+under `refs/codex/rollout-before-hotfix/`; remote heads were checked and all nine
+updates pushed atomically with exact force-with-lease protection. No unrelated
+branch or billing PR changed. Current heads:
+
+| PR | Head |
+|----|------|
+| #91 | `b68513c975b55d407a8687b7e3b9a961cb6ce907` |
+| #92 | `10f846426e0446212e6dbec779005b2b90fcd567` |
+| #93 | `14b2d8178e2aa9d2ca75ca6cba8c8e3e6e21bdc2` |
+| #94 | `56af73dff6294ad4bedf6e4cb1b1f6d0a3d33a2d` |
+| #95 | `4b493a79c5fafd605e9d8319e01e8016497747eb` |
+| #96 | `2b70d9eed5fae156668258b0557076b8ac1f9f09` |
+| #97 | `b9ec51e242ce745737ffac784aefb1bae85c6742` |
+| #98 | `1f6a299c2c8d764cdaf47aed321584c72c09ff24` |
+| #100 | `e8e87ad7ef3c73febf807d3f9d7bfa79314661a4` |
+
+Combined verification after rebase: 126 unit files / 478 tests; seven PostgreSQL
+files / 69 tests; both real client/server/database logout browser cases; the
+real analytics browser/network case; full typecheck; worker compilation; lint;
+production build; full dependency audit with zero vulnerabilities. The only
+source conflict combined both browser fixtures' fresh-server requirements.
+The local database/browser servers are stopped. Fresh CI is running at the new
+published heads; do not carry old green receipts forward. Full Doctor is 73/100
+for the refreshed dependency parent and 81/100 (zero errors/46 warnings) for the
+combined recovery candidate; the exact 17-file recovery diff is 100/100. Both
+dependency/recovery manifests preserve historical snapshots and record current
+bases and rebase evidence. The wider 95/100 and complete-feature gates remain.
+The user was asked to choose the first deployed-app database path under the
+$10 budget (DynamoDB documents/files versus PostgreSQL); that answer is pending.
+HTTP and accessibility work can continue independently.
