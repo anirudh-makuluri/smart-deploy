@@ -1,0 +1,39 @@
+name: Analytics proxy security
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analytics-proxy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -- tests/e2e/analytics-proxy.spec.ts --workers=1
+        env:
+          RUN_PROXY_BROWSER_TESTS: '1'
+          POSTHOG_UPSTREAM_HOST: http://127.0.0.1:45557
+          DATABASE_URL: ''
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-browser-ci-only-secret-never-for-production
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: analytics-proxy-failure
+          path: test-results/

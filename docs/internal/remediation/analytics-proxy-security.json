@@ -1,0 +1,52 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "analytics-proxy-security",
+  "baselineRevision": "d02d6fc52024b658268ff9b22b79bc5df4d361f1",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 3,
+    "warningCount": 46,
+    "affectedFileCount": 34,
+    "totalDiagnosticCount": 49,
+    "score": 49,
+    "scoreLabel": "Critical"
+  },
+  "after": {
+    "errorCount": 3,
+    "warningCount": 46,
+    "affectedFileCount": 34,
+    "totalDiagnosticCount": 49,
+    "score": 49,
+    "scoreLabel": "Critical"
+  },
+  "confirmedIssues": [
+    "Platform cookies, bearer/proxy authorization, referrer and private headers were forwarded to the external analytics upstream.",
+    "Upstream cookie and site-data control headers were returned under the platform origin."
+  ],
+  "existingDiagnostics": [
+    {
+      "fingerprint": "c59bf0815c429da1d2589615240c84054f2d1ba9822cceb832e6426800f7cc69",
+      "assessment": "Rejected",
+      "rule": "no-fetch-response-used-without-status-check",
+      "resolution": "Unchanged scanner warning, no suppression.",
+      "id": "src/app/ph/[...path]/route.ts::31:28::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "confidence": "high",
+      "path": "src/app/ph/[...path]/route.ts",
+      "evidence": "A reverse proxy preserves the upstream HTTP status. Unit and actual browser/network tests verify 429, body and Retry-After remain intact; no error is treated as success."
+    }
+  ],
+  "collateral": [
+    ".github/workflows/analytics-proxy.yml",
+    ".github/workflows/deploy-ws-worker.yml",
+    "playwright.config.ts",
+    "src/app/ph/[...path]/route.ts",
+    "tests/unit/api/posthog-proxy.route.test.ts",
+    "tests/e2e/analytics-proxy.spec.ts",
+    "docs/internal/ANALYTICS_PROXY_SECURITY.md"
+  ],
+  "productionReady": false,
+  "requiresEarlyReleaseException": true
+}
