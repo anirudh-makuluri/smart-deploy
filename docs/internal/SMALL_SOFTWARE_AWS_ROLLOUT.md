@@ -408,3 +408,38 @@ the rebased heads above. No rollout merge, production migration, cloud resource,
 worker start, invitation email, or provider-connection change was performed.
 Merge order extends #91 -> ... -> #98 -> #100 -> #102. The expired automation
 remains deleted; manual implementation continues under the user's instruction.
+
+Invited-app admission: published draft
+[#103](https://github.com/anirudh-makuluri/smart-deploy/pull/103), head
+`1024ac803dd9cb9a9ed7ac7e6288493605e1eab7`, stacked on #102 at `3979eac`.
+Implements the approved ordinary-member invitation/app-use exception before
+general waiting-list approval. Requires accepted invitation provenance, current
+verified email/membership, and an explicit grant for that exact app; inherited
+management access is insufficient. Administrator invitations stay unconsumed
+until platform approval. Handoff and gateway decisions share this boundary.
+Retained app-only logins cannot unlock legacy platform APIs: the explicit Next
+API matcher enforces current browser/CLI approval and rejects sibling origins.
+Disabling the pilot does not turn retained logins into platform privileges.
+
+Local verification: 130 unit files / 530 tests, seven PostgreSQL files / 72 tests,
+two actual Chromium/Next/Better Auth/database invitee and approval-revocation
+scenarios, both existing logout-recovery browser scenarios, full typecheck,
+lint, worker compilation, production build, YAML parsing and diff checks pass.
+The browser approval HTTP backend is a local fake; verification uses a local
+SQL fixture. Schema preparation now finishes before Next starts; browser hooks
+no longer race Better Auth schema introspection. The bootstrap refuses nonlocal
+or non-test database URLs. All local servers are stopped. Complete pinned
+18-file Doctor: 100/100; complete unfiltered 575-file scan: 82/100, zero errors /
+42 warnings, unchanged. No suppression. #102 CI/preview checks all pass at its
+recorded head. #103 CI is running. Merge order extends #91 -> ... -> #102 -> #103.
+Full 95/100, runtime, data, UI, tooling and integrated hosted gates remain.
+
+The user subsequently required verified email for platform deployment and
+management too, in addition to applicable waiting-list approval. This resolves
+the question left open in #103's snapshot. Implement the stricter platform
+identity boundary as a separate increment, including browser, CLI and worker
+entrypoints and revocation checks. Unverified accounts must use verified OAuth
+or a verification flow before management. No production migration, resource,
+worker start, invitation email, provider connection change, merge or deployment
+was performed. The original checkout remains clean and untouched; implementation
+continues in this chat's managed worktree.
