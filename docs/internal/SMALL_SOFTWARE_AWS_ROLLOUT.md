@@ -300,3 +300,36 @@ acceptance are unfinished. Merge order extends #91 -> ... -> #98 -> #100.
 No production enablement, migration, billable resource, worker start, merge, or
 deployment occurred. The next independent review covers HTTP credential/status
 boundaries before remaining UI/runtime/data/tooling work.
+
+Independent production-branch security candidate: published draft
+[#101](https://github.com/anirudh-makuluri/smart-deploy/pull/101), head
+`54fb8cdc491eee253516a3a8d19b6c3bc5f49ef2`, directly against `main` at
+`d02d6fc52024b658268ff9b22b79bc5df4d361f1`. Source inspection found platform
+cookies/private headers copied to analytics and upstream cookie/site-data
+headers relayed back. The latest GitHub-recorded production revision contains
+that code; a fresh unauthenticated public-page probe confirms use of `/ph/`.
+No real account credential was used in the probe. Provider logs/historical
+credential retention were not inspected. This is an active routing risk, not
+proof of third-party account access.
+
+The hotfix has only analytics header filtering, regression coverage, and a
+worker auto-deploy opt-in guard so a web-only main merge cannot implicitly start
+AWS resources. It does not absorb the rollout, dependency upgrades, or billing.
+Local production-lockfile verification: original handler fails four of seven
+regressions; patched handler passes all seven; one actual Chromium/Next/local
+upstream scenario; lint; builds before/after; workflow YAML parsing. A read-only
+check of the configured production DB found expected session columns and zero
+active logins; nothing was mutated. The standalone main baseline remains Doctor
+49/100 (3 errors/46 warnings); exact four-file scan is 91/100 with an existing
+passthrough-status detector mismatch, including a staged-hook warning. These
+results are retained without suppression; neither meets 95. Early deployment
+needs an explicit exception to the user's full-feature gate and health rule.
+CI is running. No merge, deploy, AWS start, provider change, or session expiry
+was performed. Its cutover plan is in `docs/internal/ANALYTICS_PROXY_SECURITY.md`.
+
+Use #101 before any eventual production rollout. #98 and #100 now have all
+GitHub CI/preview checks passing at their recorded heads, including the two
+actual browser/database logout cases in #100. Full feature acceptance remains
+unfinished. The temporary duplicate proxy scaffolding in the rollout worktree
+was removed only after verifying its source/test hashes match the independently
+committed hotfix; subsequent HTTP-response work remains separate.
