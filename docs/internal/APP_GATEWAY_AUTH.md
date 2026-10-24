@@ -107,7 +107,9 @@ reported 100/100, zero diagnostics. The broader unchanged dependency-health
 baseline is documented in APP_WORKSPACES.md; this does not establish overall
 repository health of 95/100. The disposable database was stopped after testing.
 
-Outstanding: authenticated service channel, browser transaction/cookie handling,
-cross-app browser proof, HTTP/WS proxy isolation, private AWS origin/networking,
+The service endpoints and credential boundary are now described in
+[APP_GATEWAY_API.md](./APP_GATEWAY_API.md); they remain default-off.
+Outstanding: browser transaction/cookie handling, cross-app browser proof,
+HTTP/WS proxy isolation, private AWS origin/networking,
 runtime binding lifecycle, rate limits, and hosted verification. Until those
 pass, neither these records nor the app-use API justify a private-app UI label.
