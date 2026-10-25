@@ -1040,3 +1040,9 @@ controller, wake/idle, WebSockets, isolated data/secrets/quotas, UI/tools, full 
 and hosted acceptance remain. #119 all CI/preview pass; #85 unchanged/separate at
 14c67e4. No production migrations/flags/providers/emails/resources/startup/merge/
 deployment.
+
+#120 exact-head CI refresh: all checks pass at
+d6da294e7c420320b9e98621d92eba4a62ea739f, including Node 20 SDK/unit/build/typecheck/
+worker, database/browser, Doctor, analytics and Vercel preview checks. Still
+draft/unmerged; full >=95 and pilot acceptance remain unmet. Standalone workload
+TLS listener/container verification is in progress; no production/AWS startup.
