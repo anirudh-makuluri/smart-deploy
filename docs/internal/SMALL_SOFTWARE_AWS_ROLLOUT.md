@@ -958,3 +958,9 @@ Next authoritative runtime registration and startup; WS, certificates/private
 AWS ingress, wake/idle/budget, isolated preview/published data/secrets/quotas,
 UI/tools, full >=95 and hosted acceptance remain. No production flags/migrations/
 providers/emails/resources/startup/merge/deployment. No product question pending.
+
+#118 exact-head CI refresh: all checks pass at
+34ca8a69903d84ec515ce072d0c05079e74eb27a, including Node 20 native HTTPS/browser,
+full database/unit/build/typecheck/worker, Doctor, analytics and Vercel preview.
+Still draft/unmerged; full >=95 and complete runtime acceptance remain unmet.
+Runtime registration metadata is in progress. No production/AWS startup.
