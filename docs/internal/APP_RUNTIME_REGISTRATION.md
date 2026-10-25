@@ -97,3 +97,7 @@ Pinned Doctor 0.9.18: all six changed JS/TS files score 100 with no findings.
 The complete unfiltered repository report remains 84, zero errors and the same
 37 warning IDs across 26 files. There is no suppression or threshold change;
 the required full score of at least 95 is still unmet.
+
+[AWS_RUNTIME_VERIFICATION.md](AWS_RUNTIME_VERIFICATION.md) describes the next
+read-only AWS evidence component. Its observation is not registration/readiness;
+the trusted controller, release recheck and TLS proof still need integration.
