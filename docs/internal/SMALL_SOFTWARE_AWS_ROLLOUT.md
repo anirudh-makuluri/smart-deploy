@@ -999,3 +999,9 @@ WebSockets, private ingress/wake/idle/complete $10 budget enforcement, isolated
 data/secrets/quotas, UI/tools, full >=95 and hosted acceptance remain. #85 still
 open/separate at 14c67e4; #118 all exact-head CI/preview pass. No production
 migration/flags/provider change/invitation email/provisioning/startup/merge/deploy.
+
+#119 exact-head CI refresh: all checks pass at
+7b455cf8599470c817820a13d1250a31b1956ae6, including Node 20 database/browser,
+unit/build/typecheck/worker, Doctor, analytics and Vercel preview checks. Still
+draft/unmerged; full >=95 and full pilot acceptance remain unmet. Read-only AWS
+task/network verification is in progress. No production/AWS startup.
