@@ -680,7 +680,8 @@ and reclassification races are covered. Disposable PostgreSQL is stopped.
 Evidence: C:\Users\aniru\.codex\verification\smartdeploy-published-preview-1792906092745.
 Pinned Doctor: complete ten-file scope 100/100; unfiltered 591-file rollout
 remains 83/100, zero errors / 37 warnings across 26 files. No suppression.
-#109 all CI/preview checks pass at its recorded head; #110 checks running.
+#109 all CI/preview checks pass at its recorded head; #110 all CI/preview checks
+pass at `1817fcca12aaffb84ff5b76ad8c1b190e4ea036b`.
 Merge order extends #109 -> #110. Full >=95 and gateway/runtime/data/secrets/
 UI/tools/usage/integrated gates remain. No production mutation, feature
 enablement, provider change, invitation email, billable resource, worker start,
