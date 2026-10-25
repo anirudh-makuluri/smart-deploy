@@ -101,3 +101,8 @@ the required full score of at least 95 is still unmet.
 [AWS_RUNTIME_VERIFICATION.md](AWS_RUNTIME_VERIFICATION.md) describes the next
 read-only AWS evidence component. Its observation is not registration/readiness;
 the trusted controller, release recheck and TLS proof still need integration.
+
+[PRIVATE_RUNTIME_PREFLIGHT.md](PRIVATE_RUNTIME_PREFLIGHT.md) adds the required
+source fingerprint before external observation and rechecks it under the
+registration locks. The trusted controller and actual AWS/TLS composition remain
+separate integration work.

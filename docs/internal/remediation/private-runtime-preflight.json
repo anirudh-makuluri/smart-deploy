@@ -1,0 +1,82 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "private-runtime-preflight",
+  "purpose": "Reject changed release/configuration/environment metadata between trusted launch preparation and runtime registration",
+  "baselineRevision": "326f476df043b09e9b223cbabd063c2a29c6768d",
+  "candidateBaseRevision": "326f476df043b09e9b223cbabd063c2a29c6768d",
+  "baselineEvidence": "Exact #121 parent all CI/preview/container checks pass; prior full unfiltered working-source report preserved",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/apps/runtimeMetadata.ts",
+    "src/lib/apps/runtimeStore.ts",
+    "tests/database/appRuntimeRegistrations.test.ts",
+    "docs/internal/PRIVATE_RUNTIME_PREFLIGHT.md",
+    "docs/internal/APP_RUNTIME_REGISTRATION.md"
+  ],
+  "verification": {
+    "unitFiles": 152,
+    "unitTests": 1087,
+    "databaseFiles": 9,
+    "databaseTests": 146,
+    "registryCases": 39,
+    "newPreflightCases": 12,
+    "compiledNextDatabaseBrowserCases": 15,
+    "nativeProcessCases": 2,
+    "staleConfigMutationFailed": 1,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "nativeProcessTests": true,
+    "productionBuildAndBrowser": true,
+    "initialRepair": "Correct the JSON key-order fixture annotation to Record<string, unknown>; no runtime predicate weakened",
+    "unchangedDiagnosticIds": true,
+    "completeChangedFiles": 3,
+    "completeFullFiles": 650,
+    "browserFixture": "Compiled Next/Better Auth/PostgreSQL/native gateway -> workload TLS -> plain HTTP fixture app; not hosted AWS proof",
+    "databaseStopped": true,
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "containerRunLocal": false,
+    "containerReason": "Docker unavailable locally; unchanged container image/process pass in exact parent #121 Linux CI",
+    "buildWarning": "Existing dynamic filesystem tracing warnings retained",
+    "hostedEndToEnd": false,
+    "awsCalls": false
+  },
+  "limitations": [
+    "Privileged preparation/registration primitives only; management adapter still needs fresh approved platform session and live role.",
+    "Fingerprint is source consistency, not authentication, AWS attestation or TLS readiness; trusted controller composition/certificate lifecycle remain.",
+    "No cloud waits inside SQL transactions; drift requires preparation plus repeated external verification, not replacing a fingerprint after observation.",
+    "Egress/complete $10 budget controls, wake/idle, data/secrets/quotas, UI/tools, WebSockets, full Doctor >=95 and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

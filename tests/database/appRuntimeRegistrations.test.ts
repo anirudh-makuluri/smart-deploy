@@ -42,10 +42,64 @@ async function registration(target = binding) {
 	const key = createGatewayServiceCredential();
 	await client.query("insert into public.app_gateway_service_credentials(id, binding_id, secret_hash, expires_at) values ($1,$2,$3,clock_timestamp()+interval '1 hour')", [key.id, target.id, key.secretHash]);
 	const material = await gatewayCertificate({ bindingId: target.id, environment: target.environment, releaseId }); certificates.push(material);
-	const input: RuntimeRegistrationInput = { id: randomUUID(), bindingId: target.id, releaseId, credentialId: key.id, taskArn: `arn:aws:ecs:${scope.region}:${scope.accountId}:task/pilot/${randomUUID().replaceAll("-", "")}`, privateIp: "10.0.1.23", port: 443, certificatePem: material.cert, observedImageDigest: digest };
+	const preflight = await store.prepare(target.id, releaseId, "alice");
+	const input: RuntimeRegistrationInput = { id: randomUUID(), bindingId: target.id, releaseId, credentialId: key.id, taskArn: `arn:aws:ecs:${scope.region}:${scope.accountId}:task/pilot/${randomUUID().replaceAll("-", "")}`, privateIp: "10.0.1.23", port: 443, certificatePem: material.cert, observedImageDigest: digest, expectedSourceFingerprint: preflight.sourceFingerprint };
 	return { input, key, deploymentId, artifact };
 }
 describe("authoritative runtime registration metadata", () => {
+	it("prepares only pinned release metadata without configuration or secret values", async () => {
+		const { input, deploymentId } = await registration();
+		const prepared = await store.prepare(binding.id, input.releaseId, "bob");
+		expect(prepared).toEqual({ binding, releaseId: input.releaseId, deploymentId,
+			imageReference: `${scope.accountId}.dkr.ecr.${scope.region}.amazonaws.com/pilot/tracker@${digest}`,
+			imageDigest: digest, sourceFingerprint: input.expectedSourceFingerprint });
+		expect(prepared.sourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
+		expect(JSON.stringify(prepared)).not.toContain("preview-secret");
+		expect(prepared).not.toHaveProperty("deployConfig");
+	});
+	it.each(["carol", "dave"])("denies preflight by %s", async (actorId) => {
+		const { input } = await registration();
+		await expect(store.prepare(binding.id, input.releaseId, actorId)).rejects.toMatchObject({ status: actorId === "carol" ? 403 : 404 });
+	});
+	it("requires current verification before preparing even an owner's release", async () => {
+		const { input } = await registration();
+		await client.query('update public."user" set "emailVerified"=false where id=\'alice\'');
+		await expect(store.prepare(binding.id, input.releaseId, "alice")).rejects.toMatchObject({ status: 403 });
+	});
+	it("rejects a changed config even when the pinned image remains identical", async () => {
+		const { input } = await registration();
+		await client.query("update public.deployment_runs set release_artifact=jsonb_set(release_artifact,'{deployConfig,newRuntimeOption}','\"changed\"') where id=$1", [input.releaseId]);
+		await expect(store.register(input)).rejects.toMatchObject({ status: 409 });
+		expect((await client.query("select count(*)::int as count from public.app_runtime_registrations")).rows[0].count).toBe(0);
+		const prepared = await store.prepare(binding.id, input.releaseId, "alice");
+		expect(prepared.sourceFingerprint).not.toBe(input.expectedSourceFingerprint);
+		expect(prepared.imageDigest).toBe(input.observedImageDigest);
+		expect((await store.register({ ...input, expectedSourceFingerprint: prepared.sourceFingerprint })).id).toBe(input.id);
+	});
+	it("keeps canonical fingerprints stable across JSON ordering and completion timestamp refreshes", async () => {
+		const { input, artifact } = await registration();
+		const reordered: Record<string, unknown> = Object.fromEntries(Object.entries(artifact).reverse());
+		reordered.deployConfig = Object.fromEntries(Object.entries(artifact.deployConfig).reverse());
+		await client.query("update public.deployment_runs set release_artifact=$2, finished_at=finished_at+interval '1 second' where id=$1", [input.releaseId, JSON.stringify(reordered)]);
+		expect((await store.prepare(binding.id, input.releaseId, "alice")).sourceFingerprint).toBe(input.expectedSourceFingerprint);
+		expect((await store.register(input)).id).toBe(input.id);
+	});
+	it("binds the fingerprint to the deployment association as well as its artifact", async () => {
+		const { input, deploymentId } = await registration();
+		await client.query("update public.deployments set owner_id='bob' where id=$1", [deploymentId]);
+		await expect(store.register(input)).rejects.toMatchObject({ status: 409 });
+		expect((await store.prepare(binding.id, input.releaseId, "bob")).sourceFingerprint).not.toBe(input.expectedSourceFingerprint);
+	});
+	it("rejects replay of a preview fingerprint into published runtime context", async () => {
+		const preview = await registration();
+		const published = await registration(await store.createBinding(appId, "published", "alice"));
+		await expect(store.register({ ...published.input, expectedSourceFingerprint: preview.input.expectedSourceFingerprint })).rejects.toMatchObject({ status: 409 });
+		expect((await store.register(published.input)).id).toBe(published.input.id);
+	});
+	it.each([undefined, "", "a".repeat(63), "A".repeat(64)])("requires an explicit valid source fingerprint (%s)", async (expectedSourceFingerprint) => {
+		const { input } = await registration();
+		await expect(store.register({ ...input, expectedSourceFingerprint } as RuntimeRegistrationInput)).rejects.toMatchObject({ status: 400 });
+	});
 	it("is additive/rerunnable and keeps legacy gateway authentication working", async () => {
 		await client.query(migration);
 		expect((await client.query("select app_environment from public.deployments where id='deploy-a'")).rows[0].app_environment).toBeNull();

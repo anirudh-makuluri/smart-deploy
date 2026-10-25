@@ -13,6 +13,7 @@ export const RuntimeRegistrationInput = z.strictObject({
 	id: z.uuid(), bindingId: z.uuid(), releaseId: z.uuid(), credentialId: z.uuid(),
 	taskArn: z.string().max(512), privateIp: z.string(), port: z.number().int().min(1).max(65535),
 	certificatePem: z.string().min(1).max(8192), observedImageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+	expectedSourceFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export type RuntimeRegistrationInput = z.infer<typeof RuntimeRegistrationInput>;
 export interface RuntimeBinding { id: string; appId: string; workspaceId: string; origin: string; environment: AppEnvironment; managed: boolean }
@@ -26,6 +27,9 @@ export interface AppRuntime {
 	registeredAt: Date; retiredAt: Date | null;
 }
 export interface AppRuntimeRoute { runtimeId: string; generation: number }
+export interface RuntimeReleasePreflight {
+	binding: RuntimeBinding; releaseId: string; deploymentId: string; imageReference: string; imageDigest: string; sourceFingerprint: string;
+}
 const Digest = /^sha256:[a-f0-9]{64}$/;
 const Artifact = z.looseObject({
 	kind: z.literal("ecr_image"), cloudProvider: z.literal("aws"), deploymentTarget: z.literal("ecs"), region: z.string(),

@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { AppEnvironment } from "./types";
 import { loadWorkspaceAccess, requireId, requireWorkspaceManager, withWorkspaceTransaction, WorkspaceError } from "./workspaceStore";
 import { privateRuntimeOrigin, runtimeCredentialParameter, runtimeEndpoint, runtimeReleaseSource, RuntimeRegistrationInput, RuntimeScope,
-	type AppRuntime, type AppRuntimeRoute, type RuntimeBinding, type RuntimeSource } from "./runtimeMetadata";
+	type AppRuntime, type AppRuntimeRoute, type RuntimeBinding, type RuntimeSource, type RuntimeReleasePreflight } from "./runtimeMetadata";
 
 const FIELDS = `r.id, r.app_id as "appId", r.workspace_id as "workspaceId", r.binding_id as "bindingId", r.environment,
   r.release_id as "releaseId", r.deployment_id as "deploymentId", r.credential_id as "credentialId", r.task_arn as "taskArn",
@@ -69,21 +69,46 @@ export class AppRuntimeStore {
 		});
 	}
 
+	async #release(client: PoolClient, binding: RuntimeBinding, releaseId: string): Promise<RuntimeReleasePreflight> {
+		requireId(releaseId);
+		if (!binding.managed || binding.origin !== privateRuntimeOrigin(binding.id, this.#scope)) throw new WorkspaceError(409, "A managed private binding is required.");
+		const result = await client.query<RuntimeSource & { canonical: string }>(`select r.id, r.app_id as "appId", r.workspace_id as "workspaceId", r.repo_name as "repoName", r.service_name as "serviceName", r.commit_sha as "commitSha",
+      r.success, r.finished_at as "finishedAt", r.release_artifact as artifact,
+      jsonb_build_object('id', r.id, 'userId', r.user_id, 'appId', r.app_id, 'workspaceId', r.workspace_id,
+        'repo', r.repo_name, 'service', r.service_name, 'commit', r.commit_sha, 'success', r.success,
+        'finished', r.finished_at is not null, 'artifact', r.release_artifact)::text as canonical
+      from public.deployment_runs r where r.id = $1 for share`, [releaseId]);
+		const stored = result.rows[0]; if (!stored) throw new WorkspaceError(409, "Release unavailable.");
+		const source = runtimeReleaseSource(stored, binding, this.#scope);
+		const deployment = await client.query<{ canonical: string }>(`select jsonb_build_object('id', id, 'ownerId', owner_id,
+      'appId', app_id, 'workspaceId', workspace_id, 'environment', app_environment, 'provider', cloud_provider,
+      'target', deployment_target, 'region', region, 'repo', repo_name, 'service', service_name)::text as canonical
+      from public.deployments where id = $1 and app_id = $2 and workspace_id = $3 and app_environment = $4
+      and cloud_provider = 'aws' and deployment_target = 'ecs' and region = $5 and repo_name = $6 and service_name = $7 for share`,
+		[source.deploymentId, binding.appId, binding.workspaceId, binding.environment, this.#scope.region, stored.repoName, stored.serviceName]);
+		if (!deployment.rows[0]) throw new WorkspaceError(409, "Release deployment environment does not match.");
+		const sourceFingerprint = createHash("sha256").update(JSON.stringify([binding.id, binding.appId, binding.workspaceId, binding.environment, binding.origin,
+			stored.canonical, deployment.rows[0].canonical])).digest("hex");
+		return { binding, releaseId: stored.id, ...source, sourceFingerprint };
+	}
+
+	/** Short SQL snapshot for trusted launch preparation; no config/secret values leave history. */
+	async prepare(bindingId: string, releaseId: string, actorId: string): Promise<RuntimeReleasePreflight> {
+		return this.#transaction(async (client) => {
+			const binding = await this.#binding(client, bindingId); await this.#manager(client, binding.appId, actorId);
+			return this.#release(client, binding, releaseId);
+		});
+	}
+
 	async register(input: RuntimeRegistrationInput): Promise<AppRuntime> {
 		const parsed = RuntimeRegistrationInput.safeParse(input);
 		if (!parsed.success) throw new WorkspaceError(400, "Invalid runtime registration.");
 		return this.#transaction(async (client) => {
 			const binding = await this.#binding(client, input.bindingId);
 			const endpoint = runtimeEndpoint(parsed.data, binding, this.#scope);
-			const result = await client.query<RuntimeSource>(`select id, app_id as "appId", workspace_id as "workspaceId", repo_name as "repoName", service_name as "serviceName", commit_sha as "commitSha",
-        success, finished_at as "finishedAt", release_artifact as artifact from public.deployment_runs where id = $1 for share`, [input.releaseId]);
-			if (!result.rows[0]) throw new WorkspaceError(409, "Release unavailable.");
-			const source = runtimeReleaseSource(result.rows[0], binding, this.#scope);
+			const source = await this.#release(client, binding, input.releaseId);
+			if (source.sourceFingerprint !== input.expectedSourceFingerprint) throw new WorkspaceError(409, "Release changed after preflight; prepare it again.");
 			if (source.imageDigest !== input.observedImageDigest) throw new WorkspaceError(409, "Observed task image does not match the release.");
-			const deployment = await client.query(`select id from public.deployments where id = $1 and app_id = $2 and workspace_id = $3 and app_environment = $4
-        and cloud_provider = 'aws' and deployment_target = 'ecs' and region = $5 and repo_name = $6 and service_name = $7 for share`,
-			[source.deploymentId, binding.appId, binding.workspaceId, binding.environment, this.#scope.region, result.rows[0].repoName, result.rows[0].serviceName]);
-			if (!deployment.rowCount) throw new WorkspaceError(409, "Release deployment environment does not match.");
 			const credential = await client.query("select id from public.app_gateway_service_credentials where id = $1 and binding_id = $2 and revoked_at is null and expires_at > clock_timestamp() for share", [input.credentialId, binding.id]);
 			if (!credential.rowCount) throw new WorkspaceError(409, "A live exclusive gateway credential is required.");
 			await client.query(`insert into public.app_runtime_registrations(id, app_id, workspace_id, binding_id, environment, release_id, deployment_id, credential_id, task_arn, private_ip, port, certificate_pem)
