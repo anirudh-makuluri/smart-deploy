@@ -96,6 +96,9 @@ export async function withGatewayApi(request: Request, action: (context: Gateway
 		const limits = gatewayLifetimes();
 		const pool = getDbPool();
 		const principal = await authenticateGateway(pool, request.headers.get("authorization"));
+		if (request.headers.get("x-smartdeploy-binding-id") !== principal.bindingId) {
+			throw new WorkspaceError(403, "Gateway binding unavailable.");
+		}
 		return await action({ bindingId: principal.bindingId, store: new GatewayAuthStore(pool, limits) });
 	} catch (error) {
 		if (error instanceof WorkspaceError) return gatewayJson({ error: error.message }, error.status);

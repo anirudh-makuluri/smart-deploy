@@ -14,6 +14,14 @@ current unexpired, unrevoked credential determines exactly one active app gatewa
 binding. Request headers, JSON fields, URL query parameters, and browser cookies
 cannot select an app, binding, user, upstream, or target port.
 
+Every machine request also requires `X-SmartDeploy-Binding-Id` containing the
+gateway's operator-configured binding UUID. This assertion must exactly match
+the binding selected by the authenticated credential, before the body is read.
+It grants no authority: a missing/mismatched assertion returns 403, including
+when a valid key and session from another tenant were mistakenly installed.
+There is no legacy fallback. Ship API and gateway client together while the
+feature flags remain off; older clients without this header are incompatible.
+
 The bearer transport follows the header/TLS guidance in
 [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750). This is a private service
 credential protocol, not an OAuth/OIDC authorization server. TLS verification
@@ -83,7 +91,10 @@ isolation, direct-origin blocking, and creator/member/outsider browser proof.
 The separate platform-browser issuance contract is described in
 [APP_BROWSER_HANDOFF.md](./APP_BROWSER_HANDOFF.md). It uses platform authentication
 and same-origin guards rather than these machine credentials. The confirmation
-screen and gateway browser-transaction/cookie checks remain unimplemented.
+screen remains unimplemented. The subsequent
+[browser adapter](./GATEWAY_BROWSER_AUTH.md) supplies transaction/callback,
+redemption-client and app-cookie primitives with native HTTPS fixture checks;
+it is not yet a running customer proxy or the platform confirmation screen.
 
 ## Verification boundary
 

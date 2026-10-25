@@ -27,8 +27,8 @@ let otherBindingId: string;
 let credential: GatewayServiceCredential;
 let appId: string;
 
-function request(body: unknown, token = credential.token): Request {
-	return new Request("https://control.test/api/gateway/test", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+function request(body: unknown, token = credential.token, expectedBindingId = bindingId): Request {
+	return new Request("https://control.test/api/gateway/test", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json", "x-smartdeploy-binding-id": expectedBindingId }, body: JSON.stringify(body) });
 }
 
 beforeAll(async () => { await client.connect(); await prepareDatabaseTestRoles(client); });
@@ -50,6 +50,23 @@ beforeEach(async () => {
 });
 
 describe("operator-owned gateway service authentication", () => {
+	it("rejects a wrong configured tenant even when the service key and its own session are valid", async () => {
+		const tenant = await workspaces.createWorkspace("carol", "Other tenant");
+		const app = await apps.createApp(tenant.id, "carol", "Other tenant app");
+		const binding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://other-tenant.test') returning id", [app.id])).rows[0].id;
+		const key = createGatewayServiceCredential();
+		await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [key.id, binding, key.secretHash]);
+		const verifier = randomBytes(32).toString("base64url");
+		const code = await sessions.issue(binding, { userId: "carol", sessionId: "carol-session" }, createHash("sha256").update(verifier).digest("base64url"));
+		const issued = await sessions.redeem(binding, code.callbackUrl, code.code, verifier);
+		expect(await apps.getUseIdentity(appId, "carol")).toBeNull();
+		expect((await authorize(request({ token: issued.token }, key.token, bindingId))).status).toBe(403);
+		expect((await authorize(request({ token: issued.token }, key.token, binding))).status).toBe(200);
+		expect((await authorize(request({ token: issued.token }))).status).toBe(403);
+		const absent = request({ token: issued.token }, key.token, binding);
+		absent.headers.delete("x-smartdeploy-binding-id");
+		expect((await authorize(absent)).status).toBe(403);
+	});
 	it("keeps service credentials and sessions bound to one environment of the same app", async () => {
 		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
 		const previewCredential = createGatewayServiceCredential();
@@ -58,14 +75,15 @@ describe("operator-owned gateway service authentication", () => {
 		const code = await sessions.issue(preview, { userId: "alice", sessionId: "alice-session" }, createHash("sha256").update(verifier).digest("base64url"));
 		const input = { code: code.code, callbackUrl: code.callbackUrl, verifier };
 		expect((await redeem(request(input))).status).toBe(401);
-		const response = await redeem(request(input, previewCredential.token));
+		const response = await redeem(request(input, previewCredential.token, preview));
 		expect(response.status).toBe(200);
 		const body = await response.json() as { token: string };
 		expect((await authorize(request({ token: body.token }))).status).toBe(403);
-		expect((await authorize(request({ token: body.token }, previewCredential.token))).status).toBe(200);
+		expect((await authorize(request({ token: body.token }, previewCredential.token, preview))).status).toBe(200);
+		expect((await authorize(request({ token: body.token }, previewCredential.token, bindingId))).status).toBe(403);
 		const publishedCode = await sessions.issue(bindingId, { userId: "alice", sessionId: "alice-session" }, createHash("sha256").update(verifier).digest("base64url"));
 		const publishedSession = await sessions.redeem(bindingId, publishedCode.callbackUrl, publishedCode.code, verifier);
-		expect((await authorize(request({ token: publishedSession.token }, previewCredential.token))).status).toBe(403);
+		expect((await authorize(request({ token: publishedSession.token }, previewCredential.token, preview))).status).toBe(403);
 		expect((await authorize(request({ token: publishedSession.token }))).status).toBe(200);
 	});
 	it("runs creator/member redemption, authorization, and logout through real routes and PostgreSQL", async () => {

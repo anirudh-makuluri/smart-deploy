@@ -21,7 +21,7 @@ import { GatewaySessionInput, parseGatewayBody } from "@/lib/apps/gatewayApi";
 
 const token = "s".repeat(43);
 function request(body: unknown = { token }, headers: Record<string, string> = {}, url = "https://control.test/api/gateway/authorize"): Request {
-	return new Request(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer service-credential", ...headers }, body: JSON.stringify(body) });
+	return new Request(url, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer service-credential", "x-smartdeploy-binding-id": "credential-binding", ...headers }, body: JSON.stringify(body) });
 }
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -36,6 +36,14 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("gateway service endpoints", () => {
+	it("requires the configured binding assertion to match the authenticated key before reading bodies", async () => {
+		const absent = request();
+		absent.headers.delete("x-smartdeploy-binding-id");
+		expect((await authorize(absent)).status).toBe(403);
+		expect(absent.bodyUsed).toBe(false);
+		expect((await authorize(request({ token }, { "x-smartdeploy-binding-id": "different-binding" }))).status).toBe(403);
+		expect(mocks.authorize).not.toHaveBeenCalled();
+	});
 	it("does not accept environment authority in redemption or authorization bodies", async () => {
 		expect((await authorize(request({ token, environment: "published" }))).status).toBe(400);
 		expect((await redeem(request({ code: token, verifier: token, callbackUrl: "https://app.test/__smartdeploy/callback", environment: "published" }))).status).toBe(400);
@@ -161,7 +169,7 @@ describe("bounded gateway request parsing", () => {
 		const headersList: Record<string, string>[] = [{ "content-type": "text/plain" }, { "content-encoding": "gzip" }];
 		for (const headers of headersList) expect((await authorize(request({ token }, headers))).status).toBe(415);
 		expect((await authorize(request({ token: "bad" }))).status).toBe(400);
-		expect((await authorize(new Request("https://control.test/api/gateway/authorize", { method: "POST", headers: { "content-type": "application/json" }, body: "{" }))).status).toBe(400);
+		expect((await authorize(new Request("https://control.test/api/gateway/authorize", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer service-credential", "x-smartdeploy-binding-id": "credential-binding" }, body: "{" }))).status).toBe(400);
 	});
 
 	it("bounds advertised and actual bytes including missing or false Content-Length", async () => {

@@ -193,7 +193,7 @@ describe("signed Better Auth browser issuance with PostgreSQL", () => {
 		const credential = createGatewayServiceCredential();
 		await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [credential.id, bindingId, credential.secretHash]);
 		const serviceRequest = (body: unknown) => new Request("https://control.test/api/gateway/test", { method: "POST",
-			headers: { authorization: `Bearer ${credential.token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+			headers: { authorization: `Bearer ${credential.token}`, "content-type": "application/json", "x-smartdeploy-binding-id": bindingId }, body: JSON.stringify(body) });
 		const redeemed = await redeem(serviceRequest({ code: handoff.code, callbackUrl: handoff.callbackUrl, verifier: tx.verifier }));
 		expect(redeemed.status).toBe(200);
 		const body = await redeemed.json() as { token: string };

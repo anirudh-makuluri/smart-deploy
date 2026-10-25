@@ -68,6 +68,13 @@ Exact callback matching, S256 proof, and browser transaction binding follow
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html). This is an internal handoff
 protocol, not a complete OAuth/OIDC provider.
 
+Subsequent integration: [GATEWAY_BROWSER_AUTH.md](./GATEWAY_BROWSER_AUTH.md)
+implements the bounded gateway transaction/callback, authenticated redemption
+client and isolated app cookie. Native HTTPS tests use a synthetic control
+plane; the real confirmation UI and customer runtime remain unfinished. The
+machine client and API now require a matching configured-binding header and
+must be released together while gateway flags remain off.
+
 ## Verification and remaining boundary
 
 Unit tests cover feature/configuration gates, guard ordering, origin and metadata
