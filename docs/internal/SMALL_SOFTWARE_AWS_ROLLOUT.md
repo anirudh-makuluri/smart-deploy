@@ -818,3 +818,10 @@ unique upstream TLS before headers/body, then streaming/WS/private ingress,
 data/secrets/usage/cost, publishing UI/tools, full >=95 and hosted acceptance.
 No production migration/flags/provider change/invitation email/resource/AWS
 startup/merge/deployment. No product question is pending.
+
+#114 exact-head CI refresh: all checks pass at
+742798b027a0e5410d0c432443ca1de41c9a4f4f (build/unit/typecheck/worker,
+database/browser, Doctor, analytics browser proxy and Vercel preview). Draft and
+unmerged; full >=95 and complete runtime acceptance remain unmet. User confirmed
+Authorization stripping. Workload-specific upstream TLS is the next isolated
+slice; no production or AWS startup.
