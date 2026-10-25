@@ -656,3 +656,33 @@ admins, retaining current verification and platform-approval requirements.
 Earlier pending-question snapshots are superseded. A focused binding/policy
 increment is underway; this decision alone establishes no runtime protection or
 persistent-data separation. No other product decision is currently pending.
+
+Published/preview policy: draft
+[#110](https://github.com/anirudh-makuluri/smart-deploy/pull/110), head
+`1817fcca12aaffb84ff5b76ad8c1b190e4ea036b`, on #109 / `a94f602`.
+Operator-owned binding classification defaults to preview. Ordinary app-use
+grants admit only published bindings; verified/approved owners/admins can use
+previews. Issue, redeem, authorize and invited-member waiting-list checks all
+enforce the current classification. Request-body overrides and same-app
+environment crossover fail. Classification changes permanently invalidate
+pending codes/sessions. The migration expires pre-boundary app credentials once,
+preserves platform logins and reruns, and requires older issuers to be quiesced
+and actual published origins explicitly classified. No migration was applied
+outside the disposable local database.
+
+Local checks pass: 137 unit files / 623 tests; eight PostgreSQL files / 100 tests
+(12 new); full typecheck/lint, worker/configured production build and diff checks.
+Seven regressions fail against exact parent store/identity modules with the new
+migration fixtures. Actual signed-cookie and machine-credential routes are
+tested with mocked approval and SQL-verified local identities; no rendered UI or
+hosted/private-origin claim. Upgrade/rerun, privileges, demotion, stale tokens
+and reclassification races are covered. Disposable PostgreSQL is stopped.
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-published-preview-1792906092745.
+Pinned Doctor: complete ten-file scope 100/100; unfiltered 591-file rollout
+remains 83/100, zero errors / 37 warnings across 26 files. No suppression.
+#109 all CI/preview checks pass at its recorded head; #110 checks running.
+Merge order extends #109 -> #110. Full >=95 and gateway/runtime/data/secrets/
+UI/tools/usage/integrated gates remain. No production mutation, feature
+enablement, provider change, invitation email, billable resource, worker start,
+rollout merge or deployment. Next implement browser transaction/state/cookie
+adapter. No product question is pending.
