@@ -1139,3 +1139,14 @@ deploy. Trusted controller/AWS/TLS composition, certificate/credential lifecycle
 egress/complete $10 budget, wake/idle, isolated data/secrets/quotas, UI/tools,
 WebSockets, full Doctor>=95 and hosted acceptance remain unfinished. Data deletion/
 retention policy clarification remains pending; independent source work continued.
+
+#122 exact-head completion: all CI/preview checks pass at
+0cd7b6db9a11be4f2d9ae56529f78a26174d83fc. Run40245835897/build job121327078209
+executes 1,087 unit tests, two native process cases and one required Linux Docker
+case, including non-root/read-only execution and SIGTERM; all pass. Database/
+browser job121327078345 also passes. Generic CI build logs default-secret
+configuration warnings; it is not production authentication proof. The separate
+explicit-secret browser fixture passes. All current #119-#121 heads also refreshed
+passing. Local Docker remains unavailable; Linux CI is distinct from actual AWS/
+Fargate/IAM/direct-origin/hosted acceptance. Draft/unmerged, full Doctor84/100 and
+remaining pilot gates remain unmet. No production or AWS startup.
