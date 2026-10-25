@@ -716,3 +716,32 @@ cookie integration, HTTP/WS/origin isolation, AWS data/secrets, publishing UI,
 tools/usage, full >=95 and integrated acceptance. No production mutation,
 migration, feature enablement, provider change, invitation email, billable
 resource, worker start, merge or deployment. No product question is pending.
+
+Browser authentication adapter: draft
+[#112](https://github.com/anirudh-makuluri/smart-deploy/pull/112), head
+`6636bb72f58f445dce88fb4bf7e9fcb752fbaf81`, on #111 / `b834c1b`.
+Browser-bound S256 redemption creates a separate protected app-session cookie
+only after validated success; later requests freshly authorize. Mandatory
+X-SmartDeploy-Binding-Id matches the credential-selected binding before body
+reading, preventing valid other-tenant credentials from authorizing the
+configured app. This API/client protocol change needs coordinated release
+with flags off and has no legacy fallback. Ordinary traffic still needs an
+authenticated proxy; this adapter adds no listener or customer forwarding.
+
+Local verification passes: 140 unit files / 705 tests, eight PostgreSQL files /
+101 tests, 63 final focused cases, ten native HTTPS browser cases (four new
+adapter and six existing transaction cases), typecheck/lint/worker/configured
+production build/diff checks. The exact parent fails the binding regression
+(200 versus expected 403). A test-fixture type inference error was corrected.
+Native transport validates its generated CA, but control-plane identity/approval
+is synthetic: no real OAuth/SQL browser flow, customer upstream or hosted/AWS
+claim. Database and fixture servers stopped, generated certificates removed.
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-browser-auth-1792911349747.
+Complete pinned eleven-file Doctor 100; unfiltered 600-file scan remains 83,
+zero errors and the same 37 diagnostics across 26 files. #111 all CI/preview
+checks pass at b834c1b; #112 checks running. Merge order extends #111 -> #112.
+Full >=95, real confirmation UI, HTTP/WS/direct-origin isolation, AWS data/
+secrets/usage, publishing UI/tools and integrated acceptance remain. No
+production migration, feature enablement, provider change, invitation email,
+resource provisioning, worker start, merge or deployment. No product question
+is pending. Continue confirmation-page integration.
