@@ -777,3 +777,11 @@ AWS data/secrets/quotas/on-demand controls, publishing/share/invitation UI,
 app-scoped tools/usage and hosted acceptance. No production migration, flags,
 provider change, invitation email, resource, AWS startup, merge or deployment.
 No product question is pending.
+
+#113 final CI refresh: all CI/preview checks pass at exact head
+`84c63f24d394ff8f7a0f6913a471be24f154d7c4`, including the compiled Next HTTPS
+integration on Linux. It remains draft/unmerged. The user selected stripping
+Authorization from customer-app requests for the first pilot; verified identity
+will be supplied separately. A focused HTTP isolation policy and shared reserved
+path classifier are in progress. No product question is pending and no
+production or AWS startup has occurred.
