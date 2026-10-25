@@ -709,7 +709,8 @@ passing CI; not repeated locally here. Evidence:
 C:\Users\aniru\.codex\verification\smartdeploy-browser-transactions-1792908765365.
 Pinned Doctor completes four changed source/test/config files at 100/100;
 unfiltered 594-file rollout remains 83, zero errors / 37 warnings, without
-suppression. #110 all CI/preview checks pass at 1817fcc; #111 running. Merge order
+suppression. #110 all CI/preview checks pass at 1817fcc; #111 all CI/preview checks
+pass at b834c1b, including the expanded native cookie job. Merge order
 extends #110 -> #111. Remaining work: confirmation/callback/redemption/session
 cookie integration, HTTP/WS/origin isolation, AWS data/secrets, publishing UI,
 tools/usage, full >=95 and integrated acceptance. No production mutation,
