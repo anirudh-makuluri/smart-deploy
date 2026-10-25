@@ -785,3 +785,36 @@ Authorization from customer-app requests for the first pilot; verified identity
 will be supplied separately. A focused HTTP isolation policy and shared reserved
 path classifier are in progress. No product question is pending and no
 production or AWS startup has occurred.
+
+HTTP isolation policy: draft
+[#114](https://github.com/anirudh-makuluri/smart-deploy/pull/114), head
+`742798b027a0e5410d0c432443ca1de41c9a4f4f`, on #113 / `84c63f2`.
+The user confirmed stripping Authorization initially. Same-origin requests/forms
+and document links work; sibling data/assets/framing/writes fail even with an
+app cookie. Gateway/platform credentials, spoofed identity/routing and hop fields
+are excluded from customer requests. Responses reject gateway/parent cookies,
+site-wide clearing, CORS/public caching and broad callback worker scope. Dedicated
+workers remain supported. Fresh never-reused private origins are required;
+existing root workers are not removed and in-place conversion stays unsupported.
+Shared path guards close seven parent regressions for reserved prefixes, path
+parameters, double encoding and controls before customer forwarding/return paths.
+
+Local checks pass: 146 unit files / 820 tests (59 new); 17 native HTTPS cases
+(seven policy plus ten adapter/transaction); ten actual compiled Next/Better
+Auth/PostgreSQL login cases; typecheck/lint/worker/final production build/diff.
+Native policy uses seeded cookies/fixed identity, not real authorization/upstream;
+compiled proof retains actual signed-cookie/database/API composition with fixture
+approval/content and SQL verification. One new array-lookup warning was fixed;
+116 focused cases and seven policy browser cases pass after the allocation-only
+change. Complete pinned nine-file Doctor 100; unfiltered 618-file scan remains 84,
+zero errors and the same 37 warning IDs across 26 files. No suppression.
+Unchanged 107-test DB suite passes in exact #113 CI, not separately rerun locally
+here; actual compiled database/browser cases repeated. Fixtures/certificates
+cleaned and disposable DB stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-http-isolation-1792934898227.
+#113 all CI/preview checks pass at 84c63f2; #114 running. Merge order extends
+#113 -> #114. This adds policy, not a customer proxy or AWS boundary. Next verify
+unique upstream TLS before headers/body, then streaming/WS/private ingress,
+data/secrets/usage/cost, publishing UI/tools, full >=95 and hosted acceptance.
+No production migration/flags/provider change/invitation email/resource/AWS
+startup/merge/deployment. No product question is pending.
