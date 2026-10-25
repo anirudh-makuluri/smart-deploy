@@ -614,3 +614,35 @@ Full >=95 and gateway/runtime/data/UI/tools/integrated gates remain unmet.
 Preview audience remains a pending user decision. No production migration,
 resource provisioning, provider change, invitation email, worker start, rollout
 merge or deployment occurred.
+
+Invitation inspection: published draft
+[#109](https://github.com/anirudh-makuluri/smart-deploy/pull/109), head
+`a94f60266c4f57c2cf2d93710af0decd9311b3d8`, stacked on #108 at `da99bf2`.
+Backend support for an informed confirmation screen: bounded same-origin HTTPS
+POST returns only workspace name/ID, invited role and expiry to the intended
+current verified account. It never joins, grants app use or consumes the token.
+Inspection and acceptance share current validation; acceptance rechecks and
+retains its atomic single-use update. Member-only waiting-list policy and
+separate management protections remain. No preview-audience policy is inferred.
+
+Final local checks pass: 137 unit files / 621 tests, both focused API suites
+(54 tests), eight PostgreSQL files / 88 tests, typecheck/lint/worker/configured
+production build/diff checks. Nine new database cases include three actual route
+cases with installed Better Auth signed cookies. Approval service responses
+are mocked and verified identities use SQL fixtures; this is not rendered
+browser, real email/OAuth or hosted/AWS proof. An initial moved workspace-ID
+reference introduced 48 database acceptance failures; fixed before publication
+and the entire unchanged database suite rerun successfully. No suppression.
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-invitation-inspection-1792894689410.
+The disposable local PostgreSQL server is stopped.
+
+Complete pinned Doctor: eight changed source/test files 100/100; unfiltered
+591-file rollout remains 83/100, zero errors / 37 warnings across 26 files.
+The baseline reuses #108's verified final source snapshot scanned before its
+commit; scanner sourceRevision reflects the then-HEAD b380f11, with contents
+now committed as da99bf2. #108 all CI/preview checks pass at da99bf2; #109 checks
+are running. Merge order extends #108 -> #109. Confirmation UI, credential-safe
+invitation-link/login transport, full >=95 and gateway/runtime/data/UI/tools/
+integrated gates remain. Preview audience remains a pending user decision.
+No migration, feature enablement, production mutation, provider change,
+invitation email, cloud resource, worker start, rollout merge or deployment.
