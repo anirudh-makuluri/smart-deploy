@@ -1,13 +1,16 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer, request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { connect as tlsConnect } from "node:tls";
 import { Client, Pool } from "pg";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { GatewayBrowserAuth } from "../../src/lib/gateway/browserAuth";
+import { GatewayAuthenticatedHttp } from "../../src/lib/gateway/authenticatedHttp";
+import { gatewayCertificate } from "../helpers/gatewayCertificate";
 import { GATEWAY_SESSION_COOKIE } from "../../src/lib/gateway/cookies";
 import { createGatewayServiceCredential } from "../../src/lib/apps/gatewayServiceAuth";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
@@ -38,7 +41,11 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 	let platformCookieReachedApp = false;
 	let browserHeadersReachedMachineApi = false;
 	let managementRequests = 0;
-	const gateways = new Map<string, GatewayBrowserAuth>();
+	const gateways = new Map<string, GatewayAuthenticatedHttp>();
+	const upstreams: ReturnType<typeof createServer>[] = [];
+	const upstreamCertificates: Awaited<ReturnType<typeof gatewayCertificate>>[] = [];
+	let upstreamRequests = 0;
+	let secretsReachedUpstream = false;
 	const approved = new Set<string>();
 	let workspaces: WorkspaceStore;
 	let apps: AppStore;
@@ -83,10 +90,11 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 				const origin = request.headers.host === "app.localhost" ? PUBLISHED : PREVIEW;
 				const input = new Request(new URL(request.url ?? "/", origin), { method: request.method, headers });
 				const managed = await gateway.handle(input);
-				if (managed) { for (const [name, value] of managed.headers) if (name !== "set-cookie") response.setHeader(name, value); const cookies = managed.headers.getSetCookie(); if (cookies.length) response.setHeader("Set-Cookie", cookies); response.writeHead(managed.status).end(Buffer.from(await managed.arrayBuffer())); return; }
-				const identity = await gateway.identity(input);
-				if (!identity) { response.writeHead(303, { Location: "/__smartdeploy/login?returnPath=" + encodeURIComponent(request.url ?? "/") }).end(); return; }
-				response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" }).end(`<!doctype html><title>Private fixture</title><link rel="icon" href="data:,"><p>Private fixture: ${identity.email}</p>`);
+				// Small fixture responses only. Native listener streaming/backpressure is separate work.
+				const body = Buffer.from(await managed.arrayBuffer());
+				for (const [name, value] of managed.headers) if (name !== "set-cookie") response.setHeader(name, value);
+				const cookies = managed.headers.getSetCookie(); if (cookies.length) response.setHeader("Set-Cookie", cookies);
+				response.writeHead(managed.status).end(body);
 			} catch { response.writeHead(403).end("Private fixture denied."); }
 		});
 		await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(34434, "127.0.0.1", resolve); });
@@ -119,14 +127,38 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 			const binding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin, environment) values ($1, $2, $3) returning id", [appId, origin, environment])).rows[0].id;
 			if (environment === "published") bindingId = binding;
 			const key = createGatewayServiceCredential(); await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [key.id, binding, key.secretHash]);
-			gateways.set(new URL(origin).host, new GatewayBrowserAuth({ appOrigin: origin, platformOrigin: PLATFORM, bindingId: binding, serviceCredential: key.token, timeoutMs: 5000, transactions: { ttlSeconds: 300, maxEntries: 100 } }, transport));
+			const workload = { bindingId: binding, environment: environment === "published" ? "published" as const : "preview" as const, releaseId: randomUUID() };
+			const material = await gatewayCertificate(workload); upstreamCertificates.push(material);
+			const upstream = createServer({ key: material.key, cert: material.cert, minVersion: "TLSv1.3", ALPNProtocols: ["http/1.1"] }, (incoming, outgoing) => {
+				incoming.resume(); upstreamRequests++;
+				const authorization = Boolean(incoming.headers.authorization);
+				const platformCookie = (incoming.headers.cookie ?? "").includes("__Host-smartdeploy.session_token=");
+				const gatewayCookie = (incoming.headers.cookie ?? "").includes(GATEWAY_SESSION_COOKIE + "=");
+				secretsReachedUpstream ||= authorization || platformCookie || gatewayCookie;
+				let identity: { id: string; email: string };
+				try { identity = JSON.parse(Buffer.from(String(incoming.headers["x-smartdeploy-identity"]), "base64url").toString()); }
+				catch { outgoing.writeHead(500).end("Missing verified fixture identity."); return; }
+				if (incoming.url === "/request-evidence") { outgoing.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ identity, bindingId: incoming.headers["x-smartdeploy-binding-id"], environment: incoming.headers["x-smartdeploy-environment"], authorization, platformCookie, gatewayCookie })); return; }
+				outgoing.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Private fixture</title><link rel="icon" href="data:,"><p>Private fixture: ${identity.email}</p>`);
+			});
+			upstreams.push(upstream); await new Promise<void>((resolve, reject) => { upstream.once("error", reject); upstream.listen(0, "127.0.0.1", resolve); });
+			const address = upstream.address(); if (!address || typeof address === "string") throw new Error("Private upstream fixture unavailable.");
+			gateways.set(new URL(origin).host, new GatewayAuthenticatedHttp({
+				browser: { appOrigin: origin, platformOrigin: PLATFORM, bindingId: binding, serviceCredential: key.token, timeoutMs: 5000, transactions: { ttlSeconds: 300, maxEntries: 100 } },
+				context: { appOrigin: origin, bindingId: binding, environment: workload.environment },
+				upstream: { ...workload, privateIp: "10.0.1.23", port: address.port, certificatePem: material.cert, timeoutMs: 1000, maxConnections: 8 },
+				limits: { maxRequestBytes: 65536, maxResponseBytes: 65536, timeoutMs: 10000, idleMs: 5000, maxConnections: 8 },
+			}, transport, (configuration) => tlsConnect({ ...configuration, host: "127.0.0.1" })));
 		}
 	});
-	test.beforeEach(async ({ page }) => { platformCookieReachedApp = false; browserHeadersReachedMachineApi = false; managementRequests = 0;
+	test.beforeEach(async ({ page }) => { platformCookieReachedApp = false; browserHeadersReachedMachineApi = false; managementRequests = 0; upstreamRequests = 0; secretsReachedUpstream = false;
 		page.on("request", (request) => { const pathname = new URL(request.url()).pathname; if (pathname === "/api/ws-token" || pathname === "/ws") managementRequests++; });
 		await client.query("delete from public.app_gateway_codes; delete from public.app_gateway_sessions"); });
 	test.afterAll(async () => {
+		for (const gateway of gateways.values()) gateway.close();
 		if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+		for (const upstream of upstreams) await new Promise<void>((resolve, reject) => upstream.close((error) => error ? reject(error) : resolve()));
+		for (const material of upstreamCertificates) await material.dispose();
 		if (application && application.exitCode === null) {
 			await new Promise<void>((resolve) => { const timer = setTimeout(() => application.kill(), 10000); application.once("exit", () => { clearTimeout(timer); resolve(); }); if (application.connected) application.send({ stop: true }); else application.kill(); });
 		}
@@ -190,6 +222,21 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 	test("allows an approved owner to confirm an unpublished preview", async ({ page, context }) => {
 		await visit(page, context, owner, PREVIEW); await expect(page.getByText("Unpublished workspace preview", { exact: true })).toBeVisible();
 		await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PREVIEW + "/items?sort=new"); await expect(page.getByText("Private fixture: " + owner.email)).toBeVisible();
+	});
+	test("forwards verified context while keeping browser and gateway credentials out of the actual app", async ({ page, context }) => {
+		await visit(page, context, member); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PUBLISHED + "/items?sort=new");
+		const result = await page.evaluate(async () => {
+			const response = await fetch("/request-evidence", { headers: { Authorization: "Bearer fixture-browser-secret", "X-SmartDeploy-Identity": "spoof", "X-SmartDeploy-Environment": "preview" } });
+			return { status: response.status, body: await response.json() };
+		});
+		expect(result.status).toBe(200); expect(result.body).toEqual({ identity: { id: member.id, email: member.email }, bindingId, environment: "published", authorization: false, platformCookie: false, gatewayCookie: false });
+		expect(upstreamRequests).toBeGreaterThanOrEqual(2); expect(secretsReachedUpstream).toBe(false); expect(browserHeadersReachedMachineApi).toBe(false);
+	});
+	test("denies an existing app session immediately after its use grant is revoked", async ({ page, context }) => {
+		await visit(page, context, member); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PUBLISHED + "/items?sort=new");
+		const before = upstreamRequests; await apps.revokeUse(appId, owner.id, member.id);
+		try { expect(await page.evaluate(async () => (await fetch("/request-evidence")).status)).toBe(403); expect(upstreamRequests).toBe(before); }
+		finally { await apps.grantUse(appId, owner.id, member.id); }
 	});
 	test("revokes both published and preview app sessions on platform sign-out", async ({ page, context }) => {
 		for (const origin of [PUBLISHED, PREVIEW]) { await visit(page, context, owner, origin); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(origin + "/items?sort=new"); }

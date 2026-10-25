@@ -4,7 +4,9 @@
 for one trusted operator-selected app origin, binding, environment and release.
 Context and upstream binding/environment must match. It is a forwarding
 component, not a public listener, runtime registry or authentication provider.
-Before each `forward(request, currentIdentity)`, the consumer must handle
+The subsequent [authenticated composition](GATEWAY_AUTHENTICATED_HTTP.md)
+handles browser routes and fresh identity. Before each low-level
+`forward(request, currentIdentity)`, its consumer must handle
 reserved browser routes, freshly authorize the session with `GatewayBrowserAuth`,
 and resolve the current authoritative runtime for that same binding/environment.
 Never take the identity, certificate or target from browser input. The browser
@@ -84,8 +86,8 @@ category filtering; full >=95 remains unmet. Unchanged database/browser suites
 pass in exact parent #115 CI, including Node 20 TLS and compiled confirmation
 checks; they were not separately repeated locally for this transport component.
 
-Still required: an authenticated listener/runtime registrar and multi-user native
-browser proof of their composition; WebSocket origin/revalidation/limits; unique
+Still required: a native listener/runtime registrar and production streaming
+bridge proof; WebSocket origin/revalidation/limits; unique
 certificate issuance and private AWS ingress/direct-origin denial; on-demand
 wake/idle/budget controls; app data/secrets/usage; publish/share/invitation UI and
 tools; repository Doctor >=95 and complete hosted acceptance. Nothing is merged,

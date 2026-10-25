@@ -1,0 +1,81 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "authenticated-http-gateway",
+  "purpose": "Compose protected browser sign-in and fresh session authorization before fixed-runtime TLS HTTP forwarding",
+  "baselineRevision": "097217c15dc2b88ab7f684d5bc7324a08f721168",
+  "candidateBaseRevision": "097217c15dc2b88ab7f684d5bc7324a08f721168",
+  "baselineEvidence": "Verified #116 final source snapshot saved before commit; identical source now 097217c",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/gateway/authenticatedHttp.ts",
+    "tests/helpers/gatewayCertificate.ts",
+    "tests/unit/lib/gatewayAuthenticatedHttp.test.ts",
+    "tests/e2e/app-login-confirmation.spec.ts",
+    "docs/internal/GATEWAY_AUTHENTICATED_HTTP.md",
+    "docs/internal/GATEWAY_HTTP_STREAMING.md"
+  ],
+  "verification": {
+    "unitFiles": 149,
+    "unitTests": 934,
+    "newUnitTests": 12,
+    "freshAuthorizationMutationFailed": 1,
+    "compiledNextDatabaseBrowserCases": 12,
+    "newBrowserCases": 2,
+    "identityProof": "Real signed Better Auth cookies and PostgreSQL control API before real verified TLS app HTTP",
+    "fixtureLimits": "SQL-verified accounts, simulated approval, fixed app content, loopback private-IP routing with TLS checks retained",
+    "browserFrontBridge": "Small bounded fixture responses buffered; not production listener backpressure/upload proof",
+    "currentGrantRevocation": "Next authorized app request denied before any new upstream request",
+    "credentialIsolation": "Browser Authorization, platform/gateway cookies and spoofed context excluded from actual app; machine API gets no browser headers",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "buildSource": "Compiled browser global setup builds source; later auth mutation restored byte-for-byte before full unit/worker checks",
+    "buildWarning": "Unchanged serviceDetectionClassification.ts broad filesystem tracing warning retained",
+    "completeChangedFiles": 4,
+    "completeFullFiles": 627,
+    "unchangedDiagnosticIds": true,
+    "databaseSuite": "Unchanged full suite passes in #116 CI; new compiled PostgreSQL/browser composition repeated locally",
+    "databaseStopped": true,
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Fixed registered runtime composition, not authoritative runtime registration, a process entry point, native listener or AWS ingress.",
+    "Pending control RPCs remain deadline-bound; retirement discards results, and undistributed callback sessions can expire normally.",
+    "Fresh authorization occurs at HTTP request admission, not repeatedly during a bounded response; delivered bytes cannot be revoked.",
+    "Native listener cancellation/backpressure/global caps, WS, certificate provisioning and direct-origin denial remain required.",
+    "Full Doctor >=95, wake/idle/budget, data/secrets/quotas, UI/tools and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}
