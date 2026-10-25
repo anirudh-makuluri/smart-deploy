@@ -855,3 +855,28 @@ provisioned or started; no production migration/flags/provider change/email.
 database/browser, full build/worker/typecheck, Doctor, analytics proxy and Vercel
 preview. Draft/unmerged; full >=95 and complete runtime acceptance remain unmet.
 Bounded HTTP streaming is in progress; no production or AWS startup.
+
+### Bounded HTTP streaming — draft #116
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/116
+Head 097217c15dc2b88ab7f684d5bc7324a08f721168; base feat/verified-upstream-tls /
+9fe1ae2 (#115). Merge order extends #115 -> #116. Compose browser/header/cookie
+policy and verified workload TLS before any HTTP bytes. Sequential bounded
+uploads, pull response bytes, validate headers before body, preserve encoded
+content/status/redirects without follow, reject upgrades. Explicit lifetime/idle/
+body/concurrency caps; caller/consumer cancellation, early app completion and
+runtime retirement close resources. Unknown or dishonest streams can deliver a
+bounded prefix before abort; listener must terminate late output errors.
+Local: 148 files/922 tests including 50 native HTTPS transport cases, expected
+single cookie-policy mutation regression; typecheck/lint/worker/build/diff pass.
+All 50 focused cases pass after fixture-only Duplex type correction. Fixed
+identity is supplied; this does not prove authentication. TLS files removed and
+servers/sockets closed. Four new code files Doctor 100; full unfiltered 624-file
+scan remains 84, zero errors and same 37 warning IDs/26 files. No suppression.
+Unchanged DB/browser suites pass in exact #115 CI, not repeated locally here;
+#116 CI running. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-http-streaming-1792939658872.
+Next authenticated composition and native listener/runtime mapping. WS, unique
+certificates/private AWS ingress, wake/idle/budget, data/secrets/quotas, UI/tools,
+full >=95 and hosted acceptance remain. No production flags/migrations/provider
+changes/invitations/resources/startup/merge/deployment.
