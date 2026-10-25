@@ -542,3 +542,47 @@ resource, provider change, invitation email, worker start, merge or deployment.
 Continue remaining service-card keyboard/interaction defects and the separate
 gateway/runtime/data/UI/tools/integrated acceptance gates. No new user decision
 is pending.
+
+Service-card interaction and maintainability: published draft
+[#107](https://github.com/anirudh-makuluri/smart-deploy/pull/107), head
+`b380f11a17893886fa044685e19993476250d76b`, stacked on #106 at `fa41862`.
+Implemented in a separate managed worktree/branch. Native workspace button and
+live deployment link are siblings; visible service/path/status label the button.
+The card surface retains pointer activation and links open independently with
+no opener. Typed status presentation preserves all six states. A separate
+catalog header preserves refresh/add/busy behavior and removes the list's
+measured complexity-17 warning. No backend/resource contract changed.
+
+Final verification: 136 unit files / 600 tests, all 15 service-list tests,
+typecheck/lint, worker compilation, configured production build and diff checks
+pass. Chromium uses actual components, production CSS and the exact parent
+source with synthetic data/callbacks and a public-only browser shim. Desktop
+dark, narrow light and narrow RTL cases pass keyboard/focus, text/padding/link
+hit-tests, new-tab/no-opener isolation, URL truncation, overflow and outside
+overlay precedence. All normal-state comparisons have zero changed pixels;
+focus states were inspected. This is isolated component proof, not hosted/auth
+or AWS end-to-end evidence. The first candidate's unnecessary link z-index
+failed overlay hit-testing and was removed before publication.
+
+One full-unit attempt failed to load seven suites with ENOENT after global
+Temp transform files vanished; 129 suites / 587 executed tests had passed.
+Older evidence directories also disappeared, for unknown reasons. No test was
+suppressed. A private child-process TEMP/TMP rerun passed all 598 tests, followed
+by all 600 after header coverage. New evidence is retained outside global Temp
+at C:\Users\aniru\.codex\verification\smartdeploy-service-card-1792890473933.
+The clean #106 parent scan was regenerated after the evidence loss.
+
+Complete pinned Doctor: three changed source/test files 100/100; unfiltered
+589-file rollout remains 83/100 while warnings drop 40 -> 38 (zero errors,
+28 -> 27 affected files). Both targeted warnings are removed without suppression.
+#106 CI/preview checks all pass at its exact recorded head; #107 CI is running.
+Merge order extends #91 -> ... -> #105 -> #106 -> #107. All local fixture servers
+are stopped. Production main remains released #101 at `a8af9f3`; no rollout
+merge, production migration, resource provisioning, invitation email, provider
+change or worker start occurred. Full >=95 and gateway/runtime/data/UI/tools/
+integrated gates remain unmet.
+
+A material preview-access question is pending: whether app-use colleagues may
+open unpublished previews or only published apps. Recommended published-only,
+with previews limited to workspace owners/admins. Do not assume an answer for
+preview session/data authorization; continue independent work meanwhile.
