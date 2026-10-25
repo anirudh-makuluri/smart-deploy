@@ -1,5 +1,12 @@
 # AWS private application gateway
 
+The load-balancer architecture below is historical design research. Current
+regional fixed costs exceed the user's subsequently approved $10 additional
+on-demand pilot budget. See [AWS_ON_DEMAND_PILOT_PLAN.md](./AWS_ON_DEMAND_PILOT_PLAN.md)
+for the current candidate, live read-only inventory and cost/security gates.
+The existing domain and DynamoDB/S3 choices are now resolved; no new domain
+purchase or platform identity migration is planned.
+
 Status: proposed implementation design; no runtime routing, security group, IAM,
 domain, or production configuration has been changed by this document.
 
