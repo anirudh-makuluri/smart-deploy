@@ -1,0 +1,83 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "invitation-inspection",
+  "purpose": "Informed invitation confirmation without consuming or granting access",
+  "baselineRevision": "da99bf246ab9a0b071dbd6b94b29d13e635390cd",
+  "candidateBaseRevision": "da99bf246ab9a0b071dbd6b94b29d13e635390cd",
+  "baselineEvidence": "Final verified PR #108 source snapshot, scanned before its commit while HEAD was b380f11; same source contents now committed as da99bf2",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/app/api/workspace-invitations/inspect/route.ts",
+    "src/lib/apps/invitationAcceptanceApi.ts",
+    "src/lib/apps/platformApiApproval.ts",
+    "src/lib/apps/workspaceStore.ts",
+    "tests/database/browserHandoff.test.ts",
+    "tests/database/workspaceInvitations.test.ts",
+    "tests/unit/api/platformApiApproval.test.ts",
+    "tests/unit/api/workspaces.route.test.ts",
+    "docs/internal/APP_WORKSPACES.md",
+    "docs/internal/INVITATION_INSPECTION.md"
+  ],
+  "verification": {
+    "unitFiles": 137,
+    "unitTests": 621,
+    "focusedApiTests": 54,
+    "databaseFiles": 8,
+    "databaseTests": 88,
+    "newDatabaseTests": 9,
+    "realSignedCookieRouteCases": 3,
+    "approvalService": "mocked",
+    "verifiedIdentity": "local SQL fixture",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 8,
+    "fullDoctorFiles": 591,
+    "doctorScansComplete": true,
+    "renderedBrowserAudit": false,
+    "hostedEndToEnd": false,
+    "databaseServerStopped": true,
+    "initialCandidateFailure": {
+      "failedTests": 48,
+      "totalTests": 88,
+      "cause": "Workspace ID reference retained after moving validation into a shared loader",
+      "fix": "Use the validated workspace ID; reran all unchanged database tests successfully"
+    }
+  },
+  "limitations": [
+    "Confirmation UI and credential-safe invitation-link/login transport remain subsequent work.",
+    "No app-use grant, preview-audience decision or private runtime is implemented here.",
+    "Full repository >=95 and complete-feature production gates remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

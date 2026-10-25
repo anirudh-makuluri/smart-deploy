@@ -5,7 +5,7 @@ import { PlatformAccessError, requirePlatformAccess, requirePlatformUser } from 
 import { authenticateCliAccessToken, getCliBearerToken } from "@/lib/cliAuth";
 
 const APP_OR_PUBLIC_PATHS = new Set([
-	"/api/apps/handoff", "/api/workspace-invitations/accept",
+	"/api/apps/handoff", "/api/workspace-invitations/accept", "/api/workspace-invitations/inspect",
 	"/api/gateway/authorize", "/api/gateway/redeem", "/api/gateway/logout",
 	"/api/health", "/api/docs-markdown", "/api/metrics/public", "/api/metrics/artifacts/public",
 	"/api/github/webhook", "/api/cli/device/start", "/api/cli/device/token", "/api/cli/logout",

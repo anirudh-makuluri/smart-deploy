@@ -102,9 +102,14 @@ no-store and use a no-referrer policy. Unknown request fields are rejected.
 | `POST /api/workspaces/:workspaceId/invitations` | Owner/admin creates `{email, role}`; only owners can grant admin. Returns the raw token once in the response body. |
 | `DELETE /api/workspaces/:workspaceId/invitations/:invitationId` | Revoke a pending invitation in that workspace. Only owners can revoke admin invitations. |
 | `POST /api/workspace-invitations/accept` | Accept `{token}` using the session identity and the current database-verified email. |
+| `POST /api/workspace-invitations/inspect` | Inspect `{token}` as the intended verified account; returns workspace name/ID, invited role and expiry without joining or consuming. |
 
 Tokens are 256-bit random values, expire after 24 hours, and are stored only as
 SHA-256 hashes. No invitation email is sent and no raw-token URL is generated.
+Inspection shares acceptance's current identity, invitation and inviter checks;
+it reserves no access and acceptance always rechecks. See
+[INVITATION_INSPECTION.md](./INVITATION_INSPECTION.md) for the narrower waiting-list
+exception, transport requirements and verification boundaries.
 A future sharing screen should keep the token in a URL fragment until posting
 it to the acceptance endpoint; do not put it in query strings or logs.
 

@@ -20,6 +20,7 @@ vi.mock("@/lib/auth", () => ({ auth: { api: {
 } } }));
 import { POST } from "../../src/app/api/apps/handoff/route";
 import { POST as acceptInvitation } from "../../src/app/api/workspace-invitations/accept/route";
+import { POST as inspectInvitation } from "../../src/app/api/workspace-invitations/inspect/route";
 import { POST as redeem } from "../../src/app/api/gateway/redeem/route";
 import { POST as authorize } from "../../src/app/api/gateway/authorize/route";
 import { GET as listWorkspaces } from "../../src/app/api/workspaces/route";
@@ -85,6 +86,59 @@ beforeEach(async () => {
 });
 
 describe("signed Better Auth browser issuance with PostgreSQL", () => {
+	it("inspects a member invitation with a real unapproved signed login without joining or consuming", async () => {
+		const member = await login("inspect-member@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "inspect-member@example.test", "member");
+		mocks.approved.mockResolvedValue({ approved: false });
+		const inspection = () => new Request("https://control.test/api/workspace-invitations/inspect", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: member.cookie }, body: JSON.stringify({ token: invitation.token }) });
+		for (let attempt = 0; attempt < 2; attempt++) {
+			const response = await inspectInvitation(inspection());
+			expect(response.status).toBe(200);
+			expect(response.headers.get("cache-control")).toBe("no-store");
+			expect(await response.json()).toEqual({ workspace: { id: workspaceId, name: "Team" }, role: "member", expiresAt: invitation.expiresAt.toISOString() });
+		}
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull();
+		expect((await client.query("select * from public.app_workspace_members where user_id = $1", [member.userId])).rowCount).toBe(0);
+		expect((await POST(request(transaction().input, member.cookie))).status).toBe(403);
+		await workspaces.revokeInvitation(workspaceId, userId, invitation.id);
+		expect((await inspectInvitation(inspection())).status).toBe(410);
+		const acceptance = new Request("https://control.test/api/workspace-invitations/accept", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: member.cookie }, body: JSON.stringify({ token: invitation.token }) });
+		expect((await acceptInvitation(acceptance)).status).toBe(410);
+	});
+
+	it("does not reveal invitation details from forged, wrong-user, unverified or expired signed logins", async () => {
+		const member = await login("inspect-identity@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "inspect-identity@example.test", "member");
+		const inspection = (cookieValue: string) => new Request("https://control.test/api/workspace-invitations/inspect", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: cookieValue }, body: JSON.stringify({ token: invitation.token }) });
+		expect((await inspectInvitation(inspection(""))).status).toBe(401);
+		expect((await inspectInvitation(inspection("__Secure-better-auth.session_token=forged"))).status).toBe(401);
+		expect((await inspectInvitation(inspection(cookie))).status).toBe(403);
+		await client.query('update public."user" set "emailVerified" = false where id = $1', [member.userId]);
+		expect((await inspectInvitation(inspection(member.cookie))).status).toBe(403);
+		await client.query('update public."user" set "emailVerified" = true where id = $1', [member.userId]);
+		await client.query('update public.session set "expiresAt" = clock_timestamp() - interval \'1 second\' where id = $1', [member.sessionId]);
+		expect((await inspectInvitation(inspection(member.cookie))).status).toBe(401);
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull();
+	});
+
+	it("requires platform approval to inspect an admin invitation and does not consume it", async () => {
+		const member = await login("inspect-admin@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "inspect-admin@example.test", "admin");
+		const inspection = () => new Request("https://control.test/api/workspace-invitations/inspect", { method: "POST",
+			headers: { origin: "https://control.test", "content-type": "application/json", cookie: member.cookie }, body: JSON.stringify({ token: invitation.token }) });
+		mocks.approved.mockResolvedValue({ approved: false });
+		expect((await inspectInvitation(inspection())).status).toBe(403);
+		mocks.approved.mockResolvedValue({ approved: true });
+		const response = await inspectInvitation(inspection());
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ role: "admin" });
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull();
+		expect((await client.query("select * from public.app_workspace_members where user_id = $1", [member.userId])).rowCount).toBe(0);
+	});
+
 	it("accepts an unapproved verified invitee, limits access to the granted app, and denies management and revoked use", async () => {
 		const member = await login("invitee@example.test");
 		const invitation = await workspaces.createInvitation(workspaceId, userId, "invitee@example.test", "member");

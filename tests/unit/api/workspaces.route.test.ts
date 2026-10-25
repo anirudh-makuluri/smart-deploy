@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
 	config: { WORKSPACE_APPS_ENABLED: true, PRIVATE_APP_GATEWAY_ENABLED: true, WAITING_LIST_ENABLED: false, BETTER_AUTH_URL: "https://smartdeploy.test" },
 	getSession: vi.fn(), approved: vi.fn(), pool: vi.fn(),
-	create: vi.fn(), list: vi.fn(), invite: vi.fn(), accept: vi.fn(), members: vi.fn(), remove: vi.fn(), invitations: vi.fn(), revoke: vi.fn(), setRole: vi.fn(),
+	create: vi.fn(), list: vi.fn(), invite: vi.fn(), accept: vi.fn(), inspect: vi.fn(), members: vi.fn(), remove: vi.fn(), invitations: vi.fn(), revoke: vi.fn(), setRole: vi.fn(),
 	createApp: vi.fn(), listApps: vi.fn(), grantUse: vi.fn(), revokeUse: vi.fn(), listGrants: vi.fn(), listEvents: vi.fn(),
 }));
 vi.mock("@/config", () => ({ default: mocks.config }));
@@ -25,6 +25,7 @@ vi.mock("@/lib/apps/workspaceStore", async (original) => {
 		listWorkspaces = mocks.list;
 		createInvitation = mocks.invite;
 		acceptInvitation = mocks.accept;
+		inspectInvitation = mocks.inspect;
 		listMembers = mocks.members;
 		removeMember = mocks.remove;
 		setMemberRole = mocks.setRole;
@@ -38,6 +39,7 @@ import { POST as invite } from "@/app/api/workspaces/[workspaceId]/invitations/r
 import { DELETE as remove, PATCH as setRole } from "@/app/api/workspaces/[workspaceId]/members/route";
 import { DELETE as revoke } from "@/app/api/workspaces/[workspaceId]/invitations/[invitationId]/route";
 import { POST as accept } from "@/app/api/workspace-invitations/accept/route";
+import { POST as inspect } from "@/app/api/workspace-invitations/inspect/route";
 import { WorkspaceError } from "@/lib/apps/workspaceStore";
 import { GET as listApps, POST as createApp } from "@/app/api/workspaces/[workspaceId]/apps/route";
 import { GET as grants, POST as grantUse, DELETE as revokeUse } from "@/app/api/apps/[appId]/grants/route";
@@ -61,10 +63,79 @@ beforeEach(() => {
 	mocks.list.mockResolvedValue([]);
 	mocks.invite.mockResolvedValue({ id: "invite", token: "s".repeat(43) });
 	mocks.accept.mockResolvedValue({ workspace: { id: "workspace-a" }, role: "member" });
+	mocks.inspect.mockResolvedValue({ workspace: { id: "workspace-a", name: "Team" }, role: "member", expiresAt: "2026-10-26T00:00:00.000Z" });
 	mocks.createApp.mockResolvedValue({ id: "app-a", workspaceId: "workspace-a", name: "Tracker", createdBy: "actor", legacyDeploymentId: null });
 	mocks.listApps.mockResolvedValue([]);
 	mocks.listGrants.mockResolvedValue([]);
 	mocks.listEvents.mockResolvedValue([]);
+});
+
+describe("invitation inspection", () => {
+	const path = "workspace-invitations/inspect";
+	const body = { token: "s".repeat(43) };
+	it("returns details without accepting and uses a fresh session identity", async () => {
+		const response = await inspect(request(path, body));
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ workspace: { id: "workspace-a", name: "Team" }, role: "member", expiresAt: "2026-10-26T00:00:00.000Z" });
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+		expect(mocks.getSession).toHaveBeenCalledWith({ headers: expect.any(Headers), query: { disableCookieCache: true, disableRefresh: true } });
+		expect(mocks.inspect).toHaveBeenCalledWith("actor", body.token, false);
+		expect(mocks.accept).not.toHaveBeenCalled();
+	});
+	it("limits unapproved invitees to member invitations without opening management", async () => {
+		mocks.config.WAITING_LIST_ENABLED = true;
+		mocks.approved.mockResolvedValue({ approved: false });
+		expect((await inspect(request(path, body))).status).toBe(200);
+		expect(mocks.inspect).toHaveBeenCalledWith("actor", body.token, true);
+		expect((await GET(new Request("https://smartdeploy.test/api/workspaces"))).status).toBe(403);
+	});
+	it("rejects sibling, cross-site, query-token and non-POST requests before session lookup", async () => {
+		const crossSite = request(path, body);
+		crossSite.headers.set("sec-fetch-site", "cross-site");
+		const cases = [request(path, body, "https://app.smartdeploy.test"), crossSite,
+			new Request(`https://smartdeploy.test/api/${path}?token=${body.token}`, { method: "POST", headers: { origin: "https://smartdeploy.test" } }),
+			new Request(`https://smartdeploy.test/api/${path}`, { headers: { origin: "https://smartdeploy.test" } })];
+		for (const item of cases) expect((await inspect(item)).status).toBe(403);
+		expect(mocks.getSession).not.toHaveBeenCalled();
+		expect(mocks.inspect).not.toHaveBeenCalled();
+	});
+	it("requires enabled features and a current login and fails closed on approval errors", async () => {
+		mocks.config.WORKSPACE_APPS_ENABLED = false;
+		expect((await inspect(request(path, body))).status).toBe(503);
+		mocks.config.WORKSPACE_APPS_ENABLED = true;
+		mocks.getSession.mockResolvedValueOnce(null);
+		expect((await inspect(request(path, body))).status).toBe(401);
+		mocks.config.WAITING_LIST_ENABLED = true;
+		mocks.approved.mockResolvedValueOnce({ approved: false });
+		mocks.config.PRIVATE_APP_GATEWAY_ENABLED = false;
+		expect((await inspect(request(path, body))).status).toBe(403);
+		mocks.config.PRIVATE_APP_GATEWAY_ENABLED = true;
+		mocks.approved.mockResolvedValueOnce({ error: "unavailable" });
+		expect((await inspect(request(path, body))).status).toBe(503);
+		expect(mocks.inspect).not.toHaveBeenCalled();
+	});
+	it("bounds JSON and rejects supplied identities or authority fields", async () => {
+		expect((await inspect(request(path, { ...body, userId: "victim" }))).status).toBe(400);
+		expect((await inspect(request(path, { ...body, role: "admin" }))).status).toBe(400);
+		expect((await inspect(request(path, { token: "x".repeat(5000) }))).status).toBe(413);
+		const wrongType = request(path, body);
+		wrongType.headers.set("content-type", "text/plain");
+		expect((await inspect(wrongType)).status).toBe(415);
+		expect(mocks.inspect).not.toHaveBeenCalled();
+	});
+	it("redacts unexpected errors and preserves explicit unavailable-invitation denial", async () => {
+		mocks.inspect.mockRejectedValueOnce(new WorkspaceError(410, "Invitation unavailable."));
+		expect((await inspect(request(path, body))).status).toBe(410);
+		mocks.inspect.mockRejectedValueOnce(new Error("secret database row"));
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const response = await inspect(request(path, body));
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: "Invitation inspection unavailable." });
+			expect(log).toHaveBeenCalledExactlyOnceWith("Invitation inspection unavailable.");
+		} finally { log.mockRestore(); }
+	});
 });
 
 describe("app access management browser APIs", () => {

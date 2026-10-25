@@ -7,8 +7,8 @@ import { WorkspaceError, WorkspaceStore } from "./workspaceStore";
 import { InvitationAcceptanceInput, workspaceJson } from "./workspaceApi";
 import { parseGatewayBody } from "./gatewayApi";
 
-/** The waiting-list exception can consume a member invitation, never run an arbitrary workspace action. */
-export async function acceptWorkspaceInvitation(request: Request): Promise<NextResponse> {
+/** Both operations authorize the current invitee without granting management access. */
+async function invitationRequest(request: Request, operation: "inspect" | "accept"): Promise<NextResponse> {
 	try {
 		if (!config.WORKSPACE_APPS_ENABLED) throw new WorkspaceError(503, "Workspace applications are not enabled.");
 		const platform = new URL(config.BETTER_AUTH_URL);
@@ -31,11 +31,23 @@ export async function acceptWorkspaceInvitation(request: Request): Promise<NextR
 			if (memberOnly && !config.PRIVATE_APP_GATEWAY_ENABLED) throw new WorkspaceError(403, "App access unavailable.");
 		}
 		const body = await parseGatewayBody(request, InvitationAcceptanceInput);
-		const accepted = await new WorkspaceStore(getDbPool()).acceptInvitation(principal.user.id, body.token, memberOnly);
-		return workspaceJson(accepted);
+		const store = new WorkspaceStore(getDbPool());
+		const result = operation === "inspect"
+			? await store.inspectInvitation(principal.user.id, body.token, memberOnly)
+			: await store.acceptInvitation(principal.user.id, body.token, memberOnly);
+		return workspaceJson(result);
 	} catch (error) {
 		if (error instanceof WorkspaceError) return workspaceJson({ error: error.message }, error.status);
-		console.error("Invitation acceptance unavailable.");
-		return workspaceJson({ error: "Invitation acceptance unavailable." }, 503);
+		const message = operation === "inspect" ? "Invitation inspection unavailable." : "Invitation acceptance unavailable.";
+		console.error(message);
+		return workspaceJson({ error: message }, 503);
 	}
+}
+
+export async function acceptWorkspaceInvitation(request: Request): Promise<NextResponse> {
+	return invitationRequest(request, "accept");
+}
+
+export async function inspectWorkspaceInvitation(request: Request): Promise<NextResponse> {
+	return invitationRequest(request, "inspect");
 }

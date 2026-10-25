@@ -25,6 +25,12 @@ interface StoredInvitation extends WorkspaceInvitation {
 	active: boolean;
 }
 
+export interface WorkspaceInvitationDetails {
+	workspace: { id: string; name: string };
+	role: WorkspaceMemberRole;
+	expiresAt: Date;
+}
+
 export function requireId(value: string): void {
 	if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
 		throw new WorkspaceError(400, "Invalid identifier.");
@@ -182,46 +188,59 @@ export class WorkspaceStore {
 		});
 	}
 
+	private async loadInvitation(client: PoolClient, userId: string, hash: string, memberOnly: boolean): Promise<{ workspace: AppWorkspace; invitation: StoredInvitation }> {
+		const lookup = await client.query<{ workspaceId: string }>('select workspace_id as "workspaceId" from public.app_workspace_invitations where token_hash = $1', [hash]);
+		const workspaceId = lookup.rows[0]?.workspaceId;
+		if (!workspaceId) throw new WorkspaceError(410, "Invitation unavailable.");
+		const workspaceResult = await client.query<AppWorkspace>(`select ${WORKSPACE_FIELDS} from public.app_workspaces where id = $1 for update`, [workspaceId]);
+		const workspace = workspaceResult.rows[0];
+		const result = await client.query<StoredInvitation>(`
+			select id, workspace_id as "workspaceId", email, role, invited_by as "invitedBy", expires_at as "expiresAt",
+			       (accepted_at is null and revoked_at is null and expires_at > clock_timestamp()) as active
+			from public.app_workspace_invitations where token_hash = $1 for update
+		`, [hash]);
+		const invitation = result.rows[0];
+		if (!workspace || workspace.kind !== "team" || !invitation?.active) throw new WorkspaceError(410, "Invitation unavailable.");
+		const identity = await client.query<{ email: string; emailVerified: boolean }>('select email, "emailVerified" from public."user" where id = $1 for share', [userId]);
+		const user = identity.rows[0];
+		if (!user?.emailVerified || user.email.trim().toLowerCase() !== invitation.email) {
+			throw new WorkspaceError(403, "Sign in with the invitation's verified email address.");
+		}
+		if (memberOnly && invitation.role !== "member") throw new WorkspaceError(403, "Platform approval is required for administrator invitations.");
+		// Recheck the inviter's authority, so removal/demotion invalidates outstanding grants.
+		let inviter: WorkspaceAccess;
+		try { inviter = await this.access(client, workspaceId, invitation.invitedBy); }
+		catch (error) {
+			if (error instanceof WorkspaceError) throw new WorkspaceError(410, "Invitation unavailable.");
+			throw error;
+		}
+		if (inviter.role === "member" || (invitation.role === "admin" && inviter.role !== "owner")) {
+			throw new WorkspaceError(410, "Invitation unavailable.");
+		}
+		return { workspace, invitation };
+	}
+
+	async inspectInvitation(userId: string, token: string, memberOnly = false): Promise<WorkspaceInvitationDetails> {
+		const hash = tokenHash(token);
+		return this.transaction(async (client) => {
+			const { workspace, invitation } = await this.loadInvitation(client, userId, hash, memberOnly);
+			return { workspace: { id: workspace.id, name: workspace.name }, role: invitation.role, expiresAt: invitation.expiresAt };
+		});
+	}
+
 	async acceptInvitation(userId: string, token: string, memberOnly = false): Promise<WorkspaceAccess> {
 		const hash = tokenHash(token);
 		return this.transaction(async (client) => {
-			const lookup = await client.query<{ workspaceId: string }>('select workspace_id as "workspaceId" from public.app_workspace_invitations where token_hash = $1', [hash]);
-			const workspaceId = lookup.rows[0]?.workspaceId;
-			if (!workspaceId) throw new WorkspaceError(410, "Invitation unavailable.");
-			const workspaceResult = await client.query<AppWorkspace>(`select ${WORKSPACE_FIELDS} from public.app_workspaces where id = $1 for update`, [workspaceId]);
-			const workspace = workspaceResult.rows[0];
-			const result = await client.query<StoredInvitation>(`
-				select id, workspace_id as "workspaceId", email, role, invited_by as "invitedBy", expires_at as "expiresAt",
-				       (accepted_at is null and revoked_at is null and expires_at > clock_timestamp()) as active
-				from public.app_workspace_invitations where token_hash = $1 for update
-			`, [hash]);
-			const invitation = result.rows[0];
-			if (!workspace || workspace.kind !== "team" || !invitation?.active) throw new WorkspaceError(410, "Invitation unavailable.");
-			const identity = await client.query<{ email: string; emailVerified: boolean }>('select email, "emailVerified" from public."user" where id = $1 for share', [userId]);
-			const user = identity.rows[0];
-			if (!user?.emailVerified || user.email.trim().toLowerCase() !== invitation.email) {
-				throw new WorkspaceError(403, "Sign in with the invitation's verified email address.");
-			}
-			if (memberOnly && invitation.role !== "member") throw new WorkspaceError(403, "Platform approval is required for administrator invitations.");
-			// Recheck the inviter's authority, so removal/demotion invalidates outstanding grants.
-			let inviter: WorkspaceAccess;
-			try { inviter = await this.access(client, workspaceId, invitation.invitedBy); }
-			catch (error) {
-				if (error instanceof WorkspaceError) throw new WorkspaceError(410, "Invitation unavailable.");
-				throw error;
-			}
-			if (inviter.role === "member" || (invitation.role === "admin" && inviter.role !== "owner")) {
-				throw new WorkspaceError(410, "Invitation unavailable.");
-			}
+			const { workspace, invitation } = await this.loadInvitation(client, userId, hash, memberOnly);
 			const consumed = await client.query(`
 				update public.app_workspace_invitations set accepted_at = clock_timestamp(), accepted_by = $2
 				where id = $1 and accepted_at is null and revoked_at is null and expires_at > clock_timestamp() returning id
 			`, [invitation.id, userId]);
 			if (!consumed.rowCount) throw new WorkspaceError(410, "Invitation unavailable.");
 			if (userId !== workspace.ownerId) {
-				await client.query("insert into public.app_workspace_members (workspace_id, user_id, role) values ($1, $2, $3) on conflict (workspace_id, user_id) do nothing", [workspaceId, userId, invitation.role]);
+				await client.query("insert into public.app_workspace_members (workspace_id, user_id, role) values ($1, $2, $3) on conflict (workspace_id, user_id) do nothing", [workspace.id, userId, invitation.role]);
 			}
-			return this.access(client, workspaceId, userId);
+			return this.access(client, workspace.id, userId);
 		});
 	}
 

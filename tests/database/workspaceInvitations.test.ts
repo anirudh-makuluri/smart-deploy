@@ -20,6 +20,74 @@ beforeEach(async () => {
 });
 
 describe("workspace membership and invitation transactions", () => {
+	it("inspects minimal details repeatedly without consuming, joining or granting app access", async () => {
+		await client.query(readFileSync(new URL("../../supabase/migrations/20261023_app_use_grants.sql", import.meta.url), "utf8"));
+		const invitation = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		const expected = { workspace: { id: workspaceId, name: "Team" }, role: "member", expiresAt: invitation.expiresAt };
+		expect(await store.inspectInvitation("bob", invitation.token)).toEqual(expected);
+		expect(await store.inspectInvitation("bob", invitation.token)).toEqual(expected);
+		expect(await store.listWorkspaces("bob")).toEqual([]);
+		const row = (await client.query("select accepted_at, accepted_by, revoked_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0];
+		expect(row).toEqual({ accepted_at: null, accepted_by: null, revoked_at: null });
+		expect((await client.query("select count(*)::int as count from public.app_use_grants")).rows[0].count).toBe(0);
+		expect((await store.acceptInvitation("bob", invitation.token)).role).toBe("member");
+		await expect(store.inspectInvitation("bob", invitation.token)).rejects.toMatchObject({ status: 410 });
+	});
+
+	it("reveals no details to a wrong or unverified identity and uses current database identity", async () => {
+		const invitation = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		await expect(store.inspectInvitation("carol", invitation.token)).rejects.toMatchObject({ status: 403 });
+		await expect(store.inspectInvitation("missing", invitation.token)).rejects.toMatchObject({ status: 403 });
+		await client.query('update public."user" set "emailVerified" = false where id = \'bob\'');
+		await expect(store.inspectInvitation("bob", invitation.token)).rejects.toMatchObject({ status: 403 });
+		await client.query('update public."user" set "emailVerified" = true, email = \'changed@example.test\' where id = \'bob\'');
+		await expect(store.inspectInvitation("bob", invitation.token)).rejects.toMatchObject({ status: 403 });
+		await client.query('update public."user" set email = \'bob@example.test\' where id = \'bob\'');
+		expect((await store.inspectInvitation("bob", invitation.token)).workspace.id).toBe(workspaceId);
+	});
+
+	it("denies malformed, expired, revoked and replaced invitation inspection", async () => {
+		await expect(store.inspectInvitation("bob", "not-a-token")).rejects.toMatchObject({ status: 410 });
+		await expect(store.inspectInvitation("bob", "s".repeat(43))).rejects.toMatchObject({ status: 410 });
+		const first = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		const replacement = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		await expect(store.inspectInvitation("bob", first.token)).rejects.toMatchObject({ status: 410 });
+		await store.revokeInvitation(workspaceId, "alice", replacement.id);
+		await expect(store.inspectInvitation("bob", replacement.token)).rejects.toMatchObject({ status: 410 });
+		const expired = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		await client.query("update public.app_workspace_invitations set created_at = clock_timestamp() - interval '2 days', expires_at = clock_timestamp() - interval '1 day' where id = $1", [expired.id]);
+		await expect(store.inspectInvitation("bob", expired.token)).rejects.toMatchObject({ status: 410 });
+	});
+
+	it("inspection cannot reserve access across revocation before acceptance", async () => {
+		const invitation = await store.createInvitation(workspaceId, "alice", "bob@example.test", "member");
+		await store.inspectInvitation("bob", invitation.token);
+		await store.revokeInvitation(workspaceId, "alice", invitation.id);
+		await expect(store.acceptInvitation("bob", invitation.token)).rejects.toMatchObject({ status: 410 });
+		expect(await store.listWorkspaces("bob")).toEqual([]);
+	});
+
+	it("inspection rechecks inviter authority after demotion or removal", async () => {
+		const admin = await store.createInvitation(workspaceId, "alice", "bob@example.test", "admin");
+		await store.acceptInvitation("bob", admin.token);
+		const invitation = await store.createInvitation(workspaceId, "bob", "carol@example.test", "member");
+		await store.inspectInvitation("carol", invitation.token);
+		await client.query("update public.app_workspace_members set role = 'member' where user_id = 'bob'");
+		await expect(store.inspectInvitation("carol", invitation.token)).rejects.toMatchObject({ status: 410 });
+		await client.query("update public.app_workspace_members set role = 'admin' where user_id = 'bob'");
+		await store.removeMember(workspaceId, "alice", "bob");
+		await expect(store.inspectInvitation("carol", invitation.token)).rejects.toMatchObject({ status: 410 });
+	});
+
+	it("member-only inspection cannot reveal or consume administrator invitations", async () => {
+		const invitation = await store.createInvitation(workspaceId, "alice", "bob@example.test", "admin");
+		await expect(store.inspectInvitation("bob", invitation.token, true)).rejects.toMatchObject({ status: 403 });
+		expect((await store.inspectInvitation("bob", invitation.token, false)).role).toBe("admin");
+		expect(await store.listWorkspaces("bob")).toEqual([]);
+		await expect(store.acceptInvitation("bob", invitation.token, true)).rejects.toMatchObject({ status: 403 });
+		expect((await store.acceptInvitation("bob", invitation.token, false)).role).toBe("admin");
+	});
+
 	it("lists only owned or joined workspaces", async () => {
 		expect(await store.listWorkspaces("bob")).toEqual([]);
 		expect(await store.listWorkspaces("alice")).toMatchObject([{ id: workspaceId, name: "Team", role: "owner" }]);

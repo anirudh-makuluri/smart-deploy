@@ -51,13 +51,13 @@ describe("app-only login cannot unlock platform APIs", () => {
 		expect(mocks.session).not.toHaveBeenCalled();
 	});
 
-	it.each(["/api/apps/handoff", "/api/workspace-invitations/accept", "/api/gateway/authorize", "/api/auth/sign-out", "/api/health", "/api/docs-markdown"])("leaves %s to its specific authentication policy", async (path) => {
+	it.each(["/api/apps/handoff", "/api/workspace-invitations/accept", "/api/workspace-invitations/inspect", "/api/gateway/authorize", "/api/auth/sign-out", "/api/health", "/api/docs-markdown"])("leaves %s to its specific authentication policy", async (path) => {
 		expect((await proxy(request(path))).headers.get("x-middleware-next")).toBe("1");
 		expect(mocks.session).not.toHaveBeenCalled();
 	});
 
 	it("does not exempt management paths sharing an app/auth-like prefix", async () => {
-		for (const path of ["/api/apps/handoff-admin", "/api/authentication", "/api/gateway-admin", "/api/gateway/new-management-action"]) {
+		for (const path of ["/api/apps/handoff-admin", "/api/workspace-invitations/inspect-admin", "/api/authentication", "/api/gateway-admin", "/api/gateway/new-management-action"]) {
 			expect((await proxy(request(path))).status).toBe(403);
 		}
 	});
