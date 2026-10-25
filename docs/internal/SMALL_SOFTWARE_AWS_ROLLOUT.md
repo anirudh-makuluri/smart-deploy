@@ -887,3 +887,34 @@ cases on Node 20, database/browser, build/worker/typecheck, Doctor, analytics pr
 and Vercel preview. Draft/unmerged; full >=95 and complete runtime acceptance
 remain unmet. Authenticated HTTP composition and compiled browser-to-upstream
 verification are in progress. No production or AWS startup.
+
+### Authenticated HTTP composition — draft #117
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/117
+Head 4b3371eafcf8308ae00fbd3a9ca7aabcdd117d3b; base
+feat/gateway-http-streaming / 097217c (#116). Merge order #116 -> #117.
+Only Request input: protected browser routes, fresh current session/grant/
+environment authorization then verified TLS app HTTP; no identity override.
+Consistent browser/forwarding origin/binding, private login vs fetch 401,
+pending admission and retirement. Bounded RPCs can finish after cancellation;
+results are discarded before app forwarding. Admission authorization does not
+recheck mid-response; bytes already delivered cannot be revoked.
+Local 149 files/934 unit tests (12 new), 12 compiled production Next/PostgreSQL/
+HTTPS browser cases (two new), typecheck/lint/worker/build/diff pass. Expected
+authorization-bypass mutation failure, exact source restored. Native browser
+now reaches real TLS app upstream: no browser Authorization, platform/gateway
+cookies or spoofed context; revoking an admitted member's grant blocks next
+fetch before any new app request. All-session logout still denies both envs.
+Approval and verification remain fixture/SQL-controlled, app content fixed,
+network loopback with real TLS checks. Front fixture buffers small bounded
+responses; not native production bridge streaming/upload proof or hosted/OAuth/
+AWS acceptance. Existing unchanged filesystem tracing build warning retained.
+Complete four-file Doctor 100; full unfiltered 627-file scan 84, zero errors and
+same 37 warning IDs/26 files. No suppression. Fixtures/certificates cleaned and
+PostgreSQL stopped. Full unchanged DB/browser suites pass in #116 CI; new
+compiled composition repeated locally. #117 CI running. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-authenticated-http-1792940815352.
+Next native listener/current runtime registration, then WS/certificates/private
+AWS ingress and wake/idle/budget, data/secrets/quotas, UI/tools, full >=95 and
+hosted acceptance. No production flags/migrations/provider changes/invitations/
+resources/startup/merge/deployment.
