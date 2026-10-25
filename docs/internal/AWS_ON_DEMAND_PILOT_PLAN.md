@@ -90,3 +90,14 @@ local creator/member/outsider checks, reviewed infrastructure diffs, complete
 cost controls and the user's existing conditional production gate are satisfied.
 No live migration, provisioning, DNS/provider change, worker start or deployment
 is performed by this plan.
+
+## Data environment decision (October 25)
+
+The user explicitly selected separate preview/published documents, files and
+secrets. Publishing promotes code without automatically copying preview data,
+files or secret values. Scope application resource/broker credentials, storage
+namespaces and secret references by app plus environment. Published setup must
+resolve its own configuration; preview secret values must not be inherited
+through a copied DeployConfig. Keep DeployConfig the build/runtime source of
+truth and existing Better Auth/Supabase platform dependencies unchanged. This
+records product policy only; no new resources, IAM, credentials or data copy.

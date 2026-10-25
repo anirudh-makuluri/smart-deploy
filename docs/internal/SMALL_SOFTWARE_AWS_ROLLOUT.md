@@ -924,3 +924,10 @@ resources/startup/merge/deployment.
 browser cases on Node 20 and full database/build/unit/typecheck/worker/Doctor/
 analytics/Vercel checks. Draft/unmerged; full >=95 and complete runtime acceptance
 remain unmet. Native listener bridge is in progress. No production/AWS startup.
+
+User decision (October 25): isolate preview and published documents, files and
+secrets. Publishing promotes code without automatically copying preview data,
+files or secret values. Apply app + environment namespaces and secret references;
+published configuration must not inherit preview secret values through copied
+DeployConfig. Recorded in AWS_ON_DEMAND_PILOT_PLAN.md. Existing platform auth/DB
+unchanged; no resource provisioning or data mutation. No product question pending.
