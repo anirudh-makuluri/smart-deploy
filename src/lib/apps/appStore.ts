@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import type { WorkspaceApp, WorkspaceMemberRole } from "./types";
+import type { AppEnvironment, WorkspaceApp, WorkspaceMemberRole } from "./types";
 import { loadWorkspaceAccess, requireId, requireWorkspaceManager, withWorkspaceTransaction, WorkspaceError } from "./workspaceStore";
 
 export interface AppUseIdentity { id: string; email: string }
@@ -8,7 +8,7 @@ export interface AppAccessEvent { actorId: string; subjectId: string; action: "g
 
 const APP_FIELDS = 'id, workspace_id as "workspaceId", name, created_by as "createdBy", legacy_deployment_id as "legacyDeploymentId"';
 
-export async function loadAppUseIdentity(client: Pool | PoolClient, appId: string, userId: string): Promise<AppUseIdentity | null> {
+export async function loadAppUseIdentity(client: Pool | PoolClient, appId: string, userId: string, environment: AppEnvironment = "published"): Promise<AppUseIdentity | null> {
 	if (!userId) return null;
 	requireId(appId);
 	const result = await client.query<AppUseIdentity>(`
@@ -17,9 +17,9 @@ export async function loadAppUseIdentity(client: Pool | PoolClient, appId: strin
 		join public."user" u on u.id = $2 and u."emailVerified" = true
 		left join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
 		where a.id = $1 and (w.owner_id = u.id or m.role = 'admin' or (
-		  m.role = 'member' and exists (select 1 from public.app_use_grants g where g.app_id = a.id and g.user_id = u.id)
+		  $3 = 'published' and m.role = 'member' and exists (select 1 from public.app_use_grants g where g.app_id = a.id and g.user_id = u.id)
 		))
-	`, [appId, userId]);
+	`, [appId, userId, environment]);
 	return result.rows[0] ?? null;
 }
 

@@ -2,12 +2,13 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { loadAppUseIdentity, type AppUseIdentity } from "./appStore";
 import { requireId, withWorkspaceTransaction, WorkspaceError } from "./workspaceStore";
+import type { AppEnvironment } from "./types";
 
 export interface GatewayAuthLifetimes { codeSeconds: number; sessionSeconds: number }
 export interface GatewayHandoff { code: string; callbackUrl: string; expiresAt: Date }
 export interface GatewaySession { token: string; expiresAt: Date }
 export interface PlatformSessionIdentity { userId: string; sessionId: string }
-interface GatewayBinding { id: string; appId: string; origin: string }
+interface GatewayBinding { id: string; appId: string; origin: string; environment: AppEnvironment }
 
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CALLBACK_PATH = "/__smartdeploy/callback";
@@ -49,7 +50,7 @@ export class GatewayAuthStore {
 			join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = $2 and m.role = 'member'
 			join public."user" u on u.id = m.user_id and u."emailVerified" = true
 			join public.app_use_grants g on g.app_id = a.id and g.user_id = u.id
-			where b.id = $1 and b.disabled_at is null and exists (
+			where b.id = $1 and b.disabled_at is null and b.environment = 'published' and exists (
 				select 1 from public.app_workspace_invitations i where i.workspace_id = w.id
 				and i.accepted_by = u.id and i.accepted_at is not null and i.revoked_at is null
 				and i.role = 'member' and i.email = lower(trim(u.email))
@@ -68,30 +69,33 @@ export class GatewayAuthStore {
 		if (!lookup.rows[0]) throw new WorkspaceError(401, "Gateway credential unavailable.");
 		await client.query("select id from public.app_workspaces where id = $1 for update", [lookup.rows[0].workspaceId]);
 		const result = await client.query<GatewayBinding>(`
-			select b.id, b.app_id as "appId", b.origin from public.app_gateway_bindings b
+			select b.id, b.app_id as "appId", b.origin, b.environment from public.app_gateway_bindings b
 			join public.apps a on a.id = b.app_id
 			where b.id = $1 and b.disabled_at is null and a.workspace_id = $2 for share of b, a
 		`, [bindingId, lookup.rows[0].workspaceId]);
 		if (!result.rows[0]) throw new WorkspaceError(401, "Gateway credential unavailable.");
+		if (result.rows[0].environment !== "published" && result.rows[0].environment !== "preview") {
+			throw new WorkspaceError(503, "Gateway binding unavailable.");
+		}
 		callbackUrl(result.rows[0].origin);
 		return result.rows[0];
 	}
 
-	private async identity(client: PoolClient, appId: string, userId: string): Promise<AppUseIdentity> {
+	private async identity(client: PoolClient, binding: GatewayBinding, userId: string): Promise<AppUseIdentity> {
 		await client.query('select id from public."user" where id = $1 for share', [userId]);
-		const identity = await loadAppUseIdentity(client, appId, userId);
+		const identity = await loadAppUseIdentity(client, binding.appId, userId, binding.environment);
 		if (!identity) throw new WorkspaceError(403, "App access unavailable.");
 		return identity;
 	}
 
-	private async authorizedPlatformSession(client: PoolClient, appId: string, principal: PlatformSessionIdentity): Promise<Date> {
+	private async authorizedPlatformSession(client: PoolClient, binding: GatewayBinding, principal: PlatformSessionIdentity): Promise<Date> {
 		// Lock the platform session before the user, matching logout's delete/trigger.
 		const result = await client.query<{ userId: string; expiresAt: Date }>(`
 			select "userId", "expiresAt" from public.session where id = $1 and "userId" = $2
 			and "expiresAt" > clock_timestamp() for share
 		`, [principal.sessionId, principal.userId]);
 		if (!result.rows[0]) throw new WorkspaceError(401, "Platform session unavailable.");
-		await this.identity(client, appId, result.rows[0].userId);
+		await this.identity(client, binding, result.rows[0].userId);
 		return result.rows[0].expiresAt;
 	}
 
@@ -99,7 +103,7 @@ export class GatewayAuthStore {
 		if (!SECRET_PATTERN.test(challenge)) throw new WorkspaceError(400, "S256 challenge required.");
 		return withWorkspaceTransaction(this.pool, async (client) => {
 			const binding = await this.binding(client, bindingId);
-			const platformExpiry = await this.authorizedPlatformSession(client, binding.appId, principal);
+			const platformExpiry = await this.authorizedPlatformSession(client, binding, principal);
 			const code = randomBytes(32).toString("base64url");
 			const result = await client.query<{ expiresAt: Date }>(`
 				insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, created_at, expires_at, platform_session_id)
@@ -124,7 +128,7 @@ export class GatewayAuthStore {
 				where token_hash = $1 and binding_id = $2 and app_id = $3 and challenge = $4 and expires_at > clock_timestamp()
 			`, [hash, bindingId, binding.appId, challenge]);
 			if (!lookup.rows[0]) throw new WorkspaceError(401, "Gateway credential unavailable.");
-			const platformExpiry = await this.authorizedPlatformSession(client, binding.appId, lookup.rows[0]);
+			const platformExpiry = await this.authorizedPlatformSession(client, binding, lookup.rows[0]);
 			const consumed = await client.query(`
 				delete from public.app_gateway_codes where token_hash = $1 and expires_at > clock_timestamp() returning token_hash
 			`, [hash]);
@@ -148,12 +152,13 @@ export class GatewayAuthStore {
 		const result = await this.pool.query<AppUseIdentity>(`
 			select u.id, u.email from public.app_gateway_sessions s
 			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and b.disabled_at is null
+			and b.environment in ('published', 'preview')
 			join public.apps a on a.id = s.app_id join public.app_workspaces w on w.id = a.workspace_id
 			join public."user" u on u.id = s.user_id and u."emailVerified" = true
 			join public.session p on p.id = s.platform_session_id and p."userId" = u.id and p."expiresAt" > clock_timestamp()
 			left join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
 			where s.token_hash = $1 and s.binding_id = $2 and s.expires_at > clock_timestamp()
-			and (w.owner_id = u.id or m.role = 'admin' or (m.role = 'member' and exists (
+			and (w.owner_id = u.id or m.role = 'admin' or (b.environment = 'published' and m.role = 'member' and exists (
 			  select 1 from public.app_use_grants g where g.app_id = a.id and g.user_id = u.id
 			)))
 		`, [secretHash(token), bindingId]);

@@ -76,16 +76,52 @@ beforeEach(async () => {
 	for (const name of ["workspace_invitations", "app_use_grants", "app_gateway_auth", "gateway_service_credentials", "gateway_platform_sessions"]) {
 		await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
+	await client.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
 	({ userId, cookie, sessionId } = await login("owner@example.test"));
 	const workspace = await workspaces.createWorkspace(userId, "Team");
 	workspaceId = workspace.id;
 	const app = await apps.createApp(workspaceId, userId, "App");
 	appId = app.id;
-	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://app.test') returning id", [appId])).rows[0].id;
+	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://app.test') returning id", [appId])).rows[0].id;
 	mocks.approved.mockReset().mockResolvedValue({ approved: true });
 });
 
 describe("signed Better Auth browser issuance with PostgreSQL", () => {
+	it("denies previews to an approved signed-in member with an app-use grant while allowing the published binding", async () => {
+		const member = await login("published-only@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "published-only@example.test", "member");
+		await workspaces.acceptInvitation(member.userId, invitation.token);
+		await apps.grantUse(appId, userId, member.userId);
+		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
+		expect((await POST(request({ ...transaction().input, bindingId: preview }, member.cookie))).status).toBe(403);
+		expect(await codes()).toBe(0);
+		expect((await POST(request(transaction().input, member.cookie))).status).toBe(200);
+	});
+
+	it("permits approved owners/admins to initiate previews and rechecks management after demotion", async () => {
+		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
+		const ownerTx = transaction();
+		const ownerResponse = await POST(request({ ...ownerTx.input, bindingId: preview }));
+		expect(ownerResponse.status).toBe(200);
+		const ownerCode = await ownerResponse.json() as { code: string; callbackUrl: string };
+		const ownerSession = await sessions.redeem(preview, ownerCode.callbackUrl, ownerCode.code, ownerTx.verifier);
+		expect((await sessions.authorize(preview, ownerSession.token))?.id).toBe(userId);
+		const admin = await login("preview-admin@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "preview-admin@example.test", "admin");
+		await workspaces.acceptInvitation(admin.userId, invitation.token);
+		const adminTx = transaction();
+		const adminResponse = await POST(request({ ...adminTx.input, bindingId: preview }, admin.cookie));
+		expect(adminResponse.status).toBe(200);
+		const adminCode = await adminResponse.json() as { code: string; callbackUrl: string };
+		mocks.approved.mockResolvedValue({ approved: false });
+		expect((await POST(request({ ...transaction().input, bindingId: preview }, admin.cookie))).status).toBe(403);
+		mocks.approved.mockResolvedValue({ approved: true });
+		await workspaces.setMemberRole(workspaceId, userId, admin.userId, "member");
+		await apps.grantUse(appId, userId, admin.userId);
+		await expect(sessions.redeem(preview, adminCode.callbackUrl, adminCode.code, adminTx.verifier)).rejects.toMatchObject({ status: 401 });
+		expect((await POST(request({ ...transaction().input, bindingId: preview }, admin.cookie))).status).toBe(403);
+	});
+
 	it("inspects a member invitation with a real unapproved signed login without joining or consuming", async () => {
 		const member = await login("inspect-member@example.test");
 		const invitation = await workspaces.createInvitation(workspaceId, userId, "inspect-member@example.test", "member");
@@ -149,6 +185,8 @@ describe("signed Better Auth browser issuance with PostgreSQL", () => {
 		expect((await POST(request(transaction().input, member.cookie))).status).toBe(403);
 		await apps.grantUse(appId, userId, member.userId);
 		const tx = transaction();
+		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
+		expect((await POST(request({ ...transaction().input, bindingId: preview }, member.cookie))).status).toBe(403);
 		const issued = await POST(request(tx.input, member.cookie));
 		expect(issued.status).toBe(200);
 		const handoff = await issued.json() as { code: string; callbackUrl: string };
@@ -161,7 +199,7 @@ describe("signed Better Auth browser issuance with PostgreSQL", () => {
 		const body = await redeemed.json() as { token: string };
 		expect((await authorize(serviceRequest({ token: body.token }))).status).toBe(200);
 		const other = await apps.createApp(workspaceId, userId, "Not shared");
-		const otherBinding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://not-shared.test') returning id", [other.id])).rows[0].id;
+		const otherBinding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://not-shared.test') returning id", [other.id])).rows[0].id;
 		expect((await POST(request({ ...transaction().input, bindingId: otherBinding }, member.cookie))).status).toBe(403);
 		expect((await listWorkspaces(new Request("https://control.test/api/workspaces", { headers: { cookie: member.cookie } }))).status).toBe(403);
 		expect((await createWorkspace(new Request("https://control.test/api/workspaces", { method: "POST", headers: { origin: "https://control.test", cookie: member.cookie, "content-type": "application/json" }, body: JSON.stringify({ name: "Denied" }) }))).status).toBe(403);

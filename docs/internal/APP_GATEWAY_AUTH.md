@@ -1,5 +1,11 @@
 # Private app handoff storage
 
+Published-only colleague access and owner/admin preview access are specified in
+[PUBLISHED_PREVIEW_ACCESS.md](./PUBLISHED_PREVIEW_ACCESS.md). Apply the environment
+migration last with older issuers quiesced. Unclassified bindings become previews;
+the first upgrade expires prior app credentials without ending platform logins.
+This control-plane policy does not establish private runtime or data isolation.
+
 This increment supplies server/database primitives. It exposes no HTTP endpoint,
 sets no cookie, changes no runtime routing, and does not make existing app URLs
 private. Apply `20261023_app_gateway_auth.sql` only after the workspace,

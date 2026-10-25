@@ -26,14 +26,18 @@ function proof(): { verifier: string; challenge: string } {
 	return { verifier, challenge: createHash("sha256").update(verifier).digest("base64url") };
 }
 
-async function handoff(userId = "bob"): Promise<GatewayHandoff & { verifier: string }> {
+async function handoff(userId = "bob", targetBindingId = bindingId): Promise<GatewayHandoff & { verifier: string }> {
 	const { verifier, challenge } = proof();
-	return { ...await auth.issue(bindingId, principal(userId), challenge), verifier };
+	return { ...await auth.issue(targetBindingId, principal(userId), challenge), verifier };
 }
 
-async function session(userId = "bob"): Promise<string> {
-	const issued = await handoff(userId);
-	return (await auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier)).token;
+async function session(userId = "bob", targetBindingId = bindingId): Promise<string> {
+	const issued = await handoff(userId, targetBindingId);
+	return (await auth.redeem(targetBindingId, issued.callbackUrl, issued.code, issued.verifier)).token;
+}
+
+async function previewBinding(): Promise<string> {
+	return (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.apps.example.test') returning id", [appId])).rows[0].id;
 }
 
 beforeAll(async () => { await client.connect(); await prepareDatabaseTestRoles(client); });
@@ -43,17 +47,145 @@ beforeEach(async () => {
 	for (const name of ["workspace_invitations", "app_use_grants", "app_gateway_auth", "gateway_platform_sessions"]) {
 		await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
+	await client.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
 	workspaceId = (await workspaces.createWorkspace("alice", "Team")).id;
 	const invite = await workspaces.createInvitation(workspaceId, "alice", "bob@example.test", "member");
 	await workspaces.acceptInvitation("bob", invite.token);
 	appId = (await apps.createApp(workspaceId, "alice", "Tracker")).id;
 	const other = await apps.createApp(workspaceId, "alice", "Other");
 	await apps.grantUse(appId, "alice", "bob");
-	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://tracker.apps.example.test') returning id", [appId])).rows[0].id;
-	otherBindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://other.apps.example.test') returning id", [other.id])).rows[0].id;
+	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://tracker.apps.example.test') returning id", [appId])).rows[0].id;
+	otherBindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://other.apps.example.test') returning id", [other.id])).rows[0].id;
 });
 
 describe("gateway handoff and session store", () => {
+	it("defaults new bindings to preview and limits previews to verified owners/admins", async () => {
+		const preview = await previewBinding();
+		expect((await client.query("select environment from public.app_gateway_bindings where id = $1", [preview])).rows[0].environment).toBe("preview");
+		await expect(handoff("bob", preview)).rejects.toMatchObject({ status: 403 });
+		await expect(handoff("carol", preview)).rejects.toMatchObject({ status: 403 });
+		expect(await auth.authorize(bindingId, await session())).toEqual({ id: "bob", email: "bob@example.test" });
+		expect(await auth.authorize(preview, await session("alice", preview))).toEqual({ id: "alice", email: "alice@example.test" });
+		await workspaces.setMemberRole(workspaceId, "alice", "bob", "admin");
+		const token = await session("bob", preview);
+		expect(await auth.authorize(preview, token)).toEqual({ id: "bob", email: "bob@example.test" });
+		await client.query('update public."user" set "emailVerified" = false where id = \'bob\'');
+		expect(await auth.authorize(preview, token)).toBeNull();
+		await expect(handoff("bob", preview)).rejects.toMatchObject({ status: 403 });
+	});
+
+	it("does not carry published codes or sessions into another environment of the same app", async () => {
+		const preview = await previewBinding();
+		const issued = await handoff("alice");
+		await expect(auth.redeem(preview, "https://preview.apps.example.test/__smartdeploy/callback", issued.code, issued.verifier)).rejects.toMatchObject({ status: 401 });
+		const published = await auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier);
+		expect(await auth.authorize(preview, published.token)).toBeNull();
+		const previewToken = await session("alice", preview);
+		expect(await auth.authorize(bindingId, previewToken)).toBeNull();
+		expect(await auth.authorize(preview, previewToken)).not.toBeNull();
+	});
+
+	it("restricts the invited-member waiting-list exception to published bindings", async () => {
+		const preview = await previewBinding();
+		expect(await auth.isInvitedMember(bindingId, "bob")).toBe(true);
+		expect(await auth.isInvitedMember(preview, "bob")).toBe(false);
+		expect(await auth.isInvitedMember(preview, "alice")).toBe(false);
+	});
+
+	it("rechecks preview policy at redemption and authorization even for preexisting member credentials", async () => {
+		const preview = await previewBinding();
+		const code = randomBytes(32).toString("base64url");
+		const token = randomBytes(32).toString("base64url");
+		const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+		const { verifier, challenge } = proof();
+		// Simulate credentials from an older issuer, bypassing the current issue-time guard.
+		await client.query(`insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, expires_at, platform_session_id)
+			values ($1, $2, $3, 'bob', $4, clock_timestamp() + interval '1 minute', 'bob-session')`, [hash(code), preview, appId, challenge]);
+		await client.query(`insert into public.app_gateway_sessions (token_hash, binding_id, app_id, user_id, expires_at, platform_session_id)
+			values ($1, $2, $3, 'bob', clock_timestamp() + interval '1 minute', 'bob-session')`, [hash(token), preview, appId]);
+		await expect(auth.redeem(preview, "https://preview.apps.example.test/__smartdeploy/callback", code, verifier)).rejects.toMatchObject({ status: 403 });
+		expect(await auth.authorize(preview, token)).toBeNull();
+		expect((await client.query("select count(*)::int as count from public.app_gateway_sessions where binding_id = $1", [preview])).rows[0].count).toBe(1);
+	});
+
+	it("invalidates a binding's codes/sessions on environment changes without reviving them on reversal", async () => {
+		const member = await session();
+		const owner = await session("alice");
+		const issued = await handoff();
+		const unaffected = await session("alice", otherBindingId);
+		await client.query("update public.app_gateway_bindings set environment = 'preview' where id = $1", [bindingId]);
+		expect(await auth.authorize(bindingId, member)).toBeNull();
+		expect(await auth.authorize(bindingId, owner)).toBeNull();
+		await expect(auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier)).rejects.toMatchObject({ status: 401 });
+		await expect(handoff()).rejects.toMatchObject({ status: 403 });
+		expect(await auth.authorize(otherBindingId, unaffected)).not.toBeNull();
+		await client.query("update public.app_gateway_bindings set environment = 'published' where id = $1", [bindingId]);
+		expect(await auth.authorize(bindingId, member)).toBeNull();
+		expect(await auth.authorize(bindingId, owner)).toBeNull();
+		expect(await auth.authorize(bindingId, await session())).not.toBeNull();
+	});
+
+	it("removes preview access after admin demotion even when published app-use access remains", async () => {
+		const preview = await previewBinding();
+		await workspaces.setMemberRole(workspaceId, "alice", "bob", "admin");
+		const token = await session("bob", preview);
+		const issued = await handoff("bob", preview);
+		await workspaces.setMemberRole(workspaceId, "alice", "bob", "member");
+		await apps.grantUse(appId, "alice", "bob");
+		expect(await auth.authorize(preview, token)).toBeNull();
+		await expect(auth.redeem(preview, issued.callbackUrl, issued.code, issued.verifier)).rejects.toMatchObject({ status: 401 });
+		await expect(handoff("bob", preview)).rejects.toMatchObject({ status: 403 });
+		expect(await auth.authorize(bindingId, await session())).not.toBeNull();
+	});
+
+	it("rejects invalid environment values and prevents service-role classification changes", async () => {
+		await expect(client.query("update public.app_gateway_bindings set environment = 'unknown' where id = $1", [bindingId])).rejects.toMatchObject({ code: "23514" });
+		await expect(client.query("update public.app_gateway_bindings set environment = null where id = $1", [bindingId])).rejects.toMatchObject({ code: "23502" });
+		await client.query("grant usage on schema public to service_role; set role service_role");
+		try {
+			await expect(client.query("update public.app_gateway_bindings set environment = 'preview' where id = $1", [bindingId])).rejects.toMatchObject({ code: "42501" });
+			expect((await client.query("select environment from public.app_gateway_bindings where id = $1", [bindingId])).rows[0].environment).toBe("published");
+		} finally { await client.query("reset role"); }
+	});
+
+	it("upgrades unclassified bindings conservatively, expires old app credentials once and preserves reruns", async () => {
+		const token = await session();
+		const issued = await handoff();
+		// Recreate the pre-environment schema in this disposable database only.
+		await client.query("alter table public.app_gateway_bindings drop column environment cascade");
+		await client.query(migration);
+		const upgrade = readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8");
+		await client.query(upgrade);
+		expect((await client.query("select distinct environment from public.app_gateway_bindings")).rows).toEqual([{ environment: "preview" }]);
+		expect(await auth.authorize(bindingId, token)).toBeNull();
+		await expect(auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier)).rejects.toMatchObject({ status: 401 });
+		await expect(handoff()).rejects.toMatchObject({ status: 403 });
+		expect((await client.query("select count(*)::int as count from public.session")).rows[0].count).toBe(4);
+		await client.query("update public.app_gateway_bindings set environment = 'published' where id = $1", [bindingId]);
+		const fresh = await session();
+		await client.query(upgrade);
+		await client.query("update public.app_gateway_bindings set environment = environment where id = $1", [bindingId]);
+		expect(await auth.authorize(bindingId, fresh)).not.toBeNull();
+	});
+
+	it("serializes environment reclassification with member issuance and redemption", async () => {
+		const issued = await handoff();
+		const result = await Promise.allSettled([
+			auth.redeem(bindingId, issued.callbackUrl, issued.code, issued.verifier),
+			client.query("update public.app_gateway_bindings set environment = 'preview' where id = $1", [bindingId]),
+		]);
+		expect(result[1].status).toBe("fulfilled");
+		if (result[0].status === "rejected") expect([401, 403]).toContain(result[0].reason.status);
+		expect((await client.query("select * from public.app_gateway_sessions where binding_id = $1", [bindingId])).rows).toEqual([]);
+		await client.query("update public.app_gateway_bindings set environment = 'published' where id = $1", [bindingId]);
+		const issuance = await Promise.allSettled([
+			handoff(), client.query("update public.app_gateway_bindings set environment = 'preview' where id = $1", [bindingId]),
+		]);
+		expect(issuance[1].status).toBe("fulfilled");
+		if (issuance[0].status === "rejected") expect(issuance[0].reason).toMatchObject({ status: 403 });
+		expect((await client.query("select * from public.app_gateway_codes where binding_id = $1", [bindingId])).rows).toEqual([]);
+	});
+
 	it("purges only unbound legacy credentials on upgrade and preserves bound credentials on rerun", async () => {
 		const bound = await session();
 		await client.query("alter table public.app_gateway_codes alter column platform_session_id drop not null; alter table public.app_gateway_sessions alter column platform_session_id drop not null");
@@ -278,7 +410,7 @@ describe("gateway handoff and session store", () => {
 	});
 
 	it("rejects mixed-app bindings, noncanonical origins, and excess database lifetimes", async () => {
-		await expect(client.query("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://apps.test/path')", [appId])).rejects.toMatchObject({ code: "23514" });
+		await expect(client.query("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://apps.test/path')", [appId])).rejects.toMatchObject({ code: "23514" });
 		await expect(client.query(`insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, expires_at, platform_session_id)
 			values ($1, $2, $3, 'bob', $4, clock_timestamp() + interval '3 minutes', 'bob-session')`, ["a".repeat(64), bindingId, appId, proof().challenge])).rejects.toMatchObject({ code: "23514" });
 		const otherAppId = (await client.query<{ app_id: string }>("select app_id from public.app_gateway_bindings where id = $1", [otherBindingId])).rows[0].app_id;
@@ -295,7 +427,7 @@ describe("gateway handoff and session store", () => {
 		} finally { await client.query("reset role"); }
 		await client.query("set role service_role");
 		try {
-			await expect(client.query("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://attacker.test')", [appId])).rejects.toMatchObject({ code: "42501" });
+			await expect(client.query("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://attacker.test')", [appId])).rejects.toMatchObject({ code: "42501" });
 			await expect(client.query("update public.app_gateway_bindings set origin = 'https://attacker.test'")).rejects.toMatchObject({ code: "42501" });
 			expect((await client.query("select id from public.app_gateway_bindings where id = $1 for share", [bindingId])).rows).toHaveLength(1);
 			await client.query("update public.app_gateway_bindings set disabled_at = clock_timestamp() where id = $1", [bindingId]);

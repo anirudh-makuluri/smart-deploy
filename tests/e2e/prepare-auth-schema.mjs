@@ -34,6 +34,7 @@ try {
 	for (const name of ["app_workspaces", "workspace_invitations", "app_use_grants", "app_gateway_auth", "gateway_service_credentials", "gateway_platform_sessions"]) {
 		await pool.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
+	await pool.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
 } finally {
 	await pool.end();
 }

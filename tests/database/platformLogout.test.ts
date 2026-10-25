@@ -56,6 +56,7 @@ beforeEach(async () => {
 	// Library-generated schema in the disposable database, never production.
 	await (await getMigrations(options)).runMigrations();
 	for (const name of ["app_use_grants", "app_gateway_auth", "gateway_platform_sessions"]) await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
+	await client.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
 	const signup = await auth.handler(authRequest("sign-up/email", { name: "Owner", email: "owner@example.test", password: "local-test-password-123" }));
 	expect(signup.status).toBe(200);
 	const body = await signup.json() as { user: { id: string } };

@@ -30,6 +30,10 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("platform browser handoff issuance", () => {
+	it("rejects caller-supplied environment classification before issuing a handoff", async () => {
+		expect((await POST(request({ ...input, environment: "published" }))).status).toBe(400);
+		expect(mocks.issue).not.toHaveBeenCalled();
+	});
 	it("permits only a current invited member's app when platform approval is absent", async () => {
 		mocks.approved.mockResolvedValue({ approved: false });
 		mocks.invited.mockResolvedValueOnce(true);

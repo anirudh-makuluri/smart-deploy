@@ -36,6 +36,12 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("gateway service endpoints", () => {
+	it("does not accept environment authority in redemption or authorization bodies", async () => {
+		expect((await authorize(request({ token, environment: "published" }))).status).toBe(400);
+		expect((await redeem(request({ code: token, verifier: token, callbackUrl: "https://app.test/__smartdeploy/callback", environment: "published" }))).status).toBe(400);
+		expect(mocks.authorize).not.toHaveBeenCalled();
+		expect(mocks.redeem).not.toHaveBeenCalled();
+	});
 	it("rechecks the exact invited-app scope on every unapproved-user decision", async () => {
 		mocks.config.WAITING_LIST_ENABLED = true;
 		mocks.approved.mockResolvedValue({ approved: false });

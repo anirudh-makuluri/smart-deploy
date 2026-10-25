@@ -1,6 +1,7 @@
 export type WorkspaceKind = "personal" | "team";
 export type WorkspaceMemberRole = "admin" | "member";
 export type WorkspaceRole = "owner" | WorkspaceMemberRole;
+export type AppEnvironment = "published" | "preview";
 
 export interface AppWorkspace {
 	id: string;

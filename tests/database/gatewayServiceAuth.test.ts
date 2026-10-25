@@ -36,19 +36,38 @@ afterAll(async () => { await pool.end(); await client.end(); });
 beforeEach(async () => {
 	await resetFoundationDatabase(client);
 	for (const name of ["app_use_grants", "app_gateway_auth", "gateway_service_credentials", "gateway_platform_sessions"]) await client.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
+	await client.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
 	const workspace = await workspaces.createWorkspace("alice", "Team");
 	const app = await apps.createApp(workspace.id, "alice", "App");
 	appId = app.id;
 	await client.query("insert into public.app_workspace_members (workspace_id, user_id, role) values ($1, 'bob', 'member')", [workspace.id]);
 	await apps.grantUse(appId, "alice", "bob");
 	const other = await apps.createApp(workspace.id, "alice", "Other");
-	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://app.test') returning id", [app.id])).rows[0].id;
-	otherBindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://other.test') returning id", [other.id])).rows[0].id;
+	bindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://app.test') returning id", [app.id])).rows[0].id;
+	otherBindingId = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, environment, origin) values ($1, 'published', 'https://other.test') returning id", [other.id])).rows[0].id;
 	credential = createGatewayServiceCredential();
 	await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [credential.id, bindingId, credential.secretHash]);
 });
 
 describe("operator-owned gateway service authentication", () => {
+	it("keeps service credentials and sessions bound to one environment of the same app", async () => {
+		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
+		const previewCredential = createGatewayServiceCredential();
+		await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [previewCredential.id, preview, previewCredential.secretHash]);
+		const verifier = randomBytes(32).toString("base64url");
+		const code = await sessions.issue(preview, { userId: "alice", sessionId: "alice-session" }, createHash("sha256").update(verifier).digest("base64url"));
+		const input = { code: code.code, callbackUrl: code.callbackUrl, verifier };
+		expect((await redeem(request(input))).status).toBe(401);
+		const response = await redeem(request(input, previewCredential.token));
+		expect(response.status).toBe(200);
+		const body = await response.json() as { token: string };
+		expect((await authorize(request({ token: body.token }))).status).toBe(403);
+		expect((await authorize(request({ token: body.token }, previewCredential.token))).status).toBe(200);
+		const publishedCode = await sessions.issue(bindingId, { userId: "alice", sessionId: "alice-session" }, createHash("sha256").update(verifier).digest("base64url"));
+		const publishedSession = await sessions.redeem(bindingId, publishedCode.callbackUrl, publishedCode.code, verifier);
+		expect((await authorize(request({ token: publishedSession.token }, previewCredential.token))).status).toBe(403);
+		expect((await authorize(request({ token: publishedSession.token }))).status).toBe(200);
+	});
 	it("runs creator/member redemption, authorization, and logout through real routes and PostgreSQL", async () => {
 		for (const userId of ["alice", "bob"]) {
 			const verifier = randomBytes(32).toString("base64url");
