@@ -586,3 +586,31 @@ A material preview-access question is pending: whether app-use colleagues may
 open unpublished previews or only published apps. Recommended published-only,
 with previews limited to workspace owners/admins. Do not assume an answer for
 preview session/data authorization; continue independent work meanwhile.
+
+Report confirmation: published draft
+[#108](https://github.com/anirudh-makuluri/smart-deploy/pull/108), head
+`da99bf246ab9a0b071dbd6b94b29d13e635390cd`, stacked on #107 at `b380f11`.
+An HTML or malformed successful response previously claimed report success and
+discarded the draft. The client now requires the existing ok:true/UUID receipt;
+otherwise it retains the draft and restores explicit retry. HTTP failures were
+already rejected. No route/schema contract changed; ambiguous retry can still
+create a duplicate report because no idempotency protocol is introduced.
+
+All 137 unit files / 614 tests pass, including fourteen focused regressions
+(ten failed against the exact parent). Typecheck/lint/worker/configured build
+and diff checks pass. Actual-component Chromium with production CSS and a
+synthetic loopback endpoint reproduces parent data loss, then verifies candidate
+HTML/false acknowledgements retain identical retry payloads and only a valid
+receipt closes/resets. The retained-draft image was inspected. This is isolated
+browser/transport proof, not hosted/authenticated/Supabase/AWS end-to-end proof.
+Local fixture servers are stopped. Evidence is retained outside global Temp at
+C:\Users\aniru\.codex\verification\smartdeploy-report-response-1792893117311.
+
+Complete pinned Doctor: both changed source/test files 100/100; unfiltered
+590-file rollout remains 83/100 with zero errors, 38 -> 37 warnings and 27 -> 26
+affected files, without suppression. #107 all CI/preview checks pass at its
+recorded head; #108 CI/preview is running. Merge order extends #107 -> #108.
+Full >=95 and gateway/runtime/data/UI/tools/integrated gates remain unmet.
+Preview audience remains a pending user decision. No production migration,
+resource provisioning, provider change, invitation email, worker start, rollout
+merge or deployment occurred.
