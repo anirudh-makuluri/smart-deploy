@@ -1094,3 +1094,14 @@ No login/provider mutation, weaker pin or skip. Code/test source remains identic
 to the verified local snapshot. New exact-head CI/container running. Evidence
 dockerhub-image.json in the existing workload verification folder. No production
 or AWS startup.
+
+#121 exact-head completion: all CI/preview checks pass at
+326f476df043b09e9b223cbabd063c2a29c6768d. Run40242751244/job121317884643 executes
+1,087 unit tests, two native process tests and one required Linux container test,
+all pass. The pinned Node24 image serves actual TLS-to-app traffic, asserts
+non-root/read-only and exact three-file /app contents, exits zero on SIGTERM.
+Database/browser job121317884898 also passes. The initial fb55679 ECR Public429
+failure remains recorded; identical pinned Docker Hub content repairs it without
+login, weaker pin or skips. Local Docker remains unavailable; Linux CI proof is
+not AWS/VPC/IAM/hosted acceptance. Draft/unmerged; full Doctor84/100 and remaining
+feature gates unmet. No production or AWS startup.
