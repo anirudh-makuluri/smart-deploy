@@ -609,7 +609,7 @@ C:\Users\aniru\.codex\verification\smartdeploy-report-response-1792893117311.
 Complete pinned Doctor: both changed source/test files 100/100; unfiltered
 590-file rollout remains 83/100 with zero errors, 38 -> 37 warnings and 27 -> 26
 affected files, without suppression. #107 all CI/preview checks pass at its
-recorded head; #108 CI/preview is running. Merge order extends #107 -> #108.
+recorded head; #108 all CI/preview checks pass at `da99bf2`. Merge order extends #107 -> #108.
 Full >=95 and gateway/runtime/data/UI/tools/integrated gates remain unmet.
 Preview audience remains a pending user decision. No production migration,
 resource provisioning, provider change, invitation email, worker start, rollout
