@@ -1083,3 +1083,14 @@ rejects upgrades, so raw transport is not customer WebSocket support. Egress/
 complete $10 admission, wake/idle, data/secrets/quotas, UI/tools, full >=95 and
 hosted acceptance remain. No production migrations/flags/providers/emails/
 provisioning/AWS startup/merge/deploy.
+
+#121 initial fb55679 CI passed unit/build/native-process checks but ECR Public
+returned 429 Data limit exceeded on the shared runner before container execution
+(run40242143588/job121316020528). This was a failed build, not a container pass.
+Repair head326f476df043b09e9b223cbabd063c2a29c6768d verifies the identical official
+Docker Hub manifest/config SHA256 and changes only registry URI, preserving image
+digest1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420.
+No login/provider mutation, weaker pin or skip. Code/test source remains identical
+to the verified local snapshot. New exact-head CI/container running. Evidence
+dockerhub-image.json in the existing workload verification folder. No production
+or AWS startup.
