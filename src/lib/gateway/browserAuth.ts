@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BrowserTransactions, type BrowserTransactionLimits, type BrowserTransactionStart } from "./browserTransactions";
 import { GatewayControlClient, GatewayControlError, secureOrigin, type GatewayControlOptions, type GatewayFetch, type GatewayIdentity } from "./controlClient";
 import { sessionCookie, sessionToken } from "./cookies";
+import { gatewayPathKind } from "./paths";
 
 const PREFIX = "/__smartdeploy";
 const CALLBACK = PREFIX + "/callback";
@@ -70,22 +71,9 @@ export class GatewayBrowserAuth {
 		if (request.url.length > 4096) return failure(400);
 		const url = new URL(request.url);
 		if (url.hash) return failure(400);
-		let decoded = url.pathname;
-		let reserved = false;
-		for (let depth = 0; depth < 4; depth++) {
-			let canonical: URL;
-			try { canonical = new URL(decoded.replaceAll("\\", "/"), this.#app); }
-			catch { return failure(400); }
-			if (canonical.origin !== this.#app.origin) return failure(400);
-			if (/^\/+__smartdeploy(?:\/|$)/i.test(canonical.pathname)) { reserved = true; break; }
-			let next: string;
-			try { next = decodeURIComponent(decoded); }
-			catch { return failure(400); }
-			if (next === decoded) break;
-			if (depth === 3) return failure(400);
-			decoded = next;
-		}
-		if (!reserved) return null;
+		const kind = gatewayPathKind(url);
+		if (kind === "invalid") return failure(400);
+		if (kind === "public") return null;
 		if (request.method !== "GET") return failure(405);
 		if (!navigation(request, this.#app.origin)) return failure(403);
 		if (url.pathname === PREFIX + "/login") return this.#start(url);

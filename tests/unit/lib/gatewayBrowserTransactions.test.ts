@@ -94,7 +94,7 @@ describe("gateway browser-bound login transactions", () => {
 	it.each([0, -1, 10001, 1.5, Infinity, NaN])("rejects invalid capacity %s", (maxEntries) => {
 		expect(() => new BrowserTransactions({ ttlSeconds: 1, maxEntries })).toThrow();
 	});
-	it.each(["https://evil.test", "//evil.test/", "/\\evil.test", "/ok\r\nLocation: bad", "/ok#secret", "/__smartdeploy/callback", "/%5f_smartdeploy/callback", "/a/../__smartdeploy/callback", "/bad%ZZ"])("rejects external, reserved or malformed return path: %s", (path) => {
+	it.each(["https://evil.test", "//evil.test/", "/\\evil.test", "/ok\r\nLocation: bad", "/ok#secret", "/__smartdeploy/callback", "/%5f_smartdeploy/callback", "/a/../__smartdeploy/callback", "/bad%ZZ", "/__smartdeploy;params/callback", "/__smartdeploy-extra", "/%255f_smartdeploy/callback", "/file%00name"])("rejects external, reserved or malformed return path: %s", (path) => {
 		expect(() => new BrowserTransactions(LIMITS).start(BINDING, path)).toThrow("Invalid app return path.");
 	});
 	it("bounds the return path's encoded byte length", () => {

@@ -95,7 +95,7 @@ describe("gateway login and callback HTTP adapter", () => {
 		expect(transport.mock.calls.map(([url]) => url.pathname)).toEqual(["/api/gateway/redeem", "/api/gateway/logout"]);
 	});
 
-	it.each(["/__smartdeploy/new", "/__SMARTDEPLOY/callback", "/%5f_smartdeploy/callback", "/%255f_smartdeploy/callback", "/%2f[", "/bad%ZZ"])("keeps malformed/reserved variants out of customer routing: %s", async (path) => {
+	it.each(["/__smartdeploy/new", "/__SMARTDEPLOY/callback", "/%5f_smartdeploy/callback", "/%255f_smartdeploy/callback", "/%2f[", "/bad%ZZ", "/__smartdeploy;params/callback", "/__smartdeploy%00/callback", "/file%00name"])("keeps malformed/reserved variants out of customer routing: %s", async (path) => {
 		const { auth, transport } = fixture();
 		const response = await auth.handle(request(path));
 		expect(response).not.toBeNull();

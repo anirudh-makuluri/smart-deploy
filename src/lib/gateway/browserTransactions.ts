@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { gatewayPathKind } from "./paths";
 
 export const GATEWAY_LOGIN_COOKIE = "__Host-smartdeploy-app-login";
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -22,10 +23,7 @@ function returnPath(value: string): string {
 	if (Buffer.byteLength(value, "utf8") > 2048 || !value.startsWith("/") || value.startsWith("//")
 		|| /[\\\u0000-\u0020\u007f#]/.test(value)) throw new Error("Invalid app return path.");
 	const url = new URL(value, RETURN_ORIGIN);
-	let decoded: string;
-	try { decoded = decodeURIComponent(url.pathname); }
-	catch { throw new Error("Invalid app return path."); }
-	if (url.origin !== RETURN_ORIGIN || /^\/+__smartdeploy(?:\/|$)/i.test(decoded)) {
+	if (url.origin !== RETURN_ORIGIN || gatewayPathKind(url) !== "public") {
 		throw new Error("Invalid app return path.");
 	}
 	return url.pathname + url.search;
