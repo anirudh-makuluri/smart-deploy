@@ -34,8 +34,10 @@ The consumer owns the returned socket, error handling, HTTP framing and disposal
 It must add body/header/deadline/idle limits, streaming backpressure and global
 admission/usage controls. Creating many connectors would bypass a per-connector
 cap; the runtime registry must reuse one bounded instance per authorized runtime
-and enforce global limits separately. No listener or customer HTTP/WS proxy is
-introduced. Existing application traffic and deployment behavior are unchanged.
+and enforce global limits separately. The subsequent
+[bounded HTTP transport](GATEWAY_HTTP_STREAMING.md) consumes this connector;
+authenticated listener/runtime integration and WebSocket transport remain.
+Existing application traffic and deployment behavior are unchanged.
 
 ## Verification
 
@@ -71,7 +73,8 @@ and database suites were not separately repeated locally for this connector.
 
 This is local transport proof, not AWS routing, security-group, direct-origin
 denial, certificate provisioning, hosted acceptance or an implemented proxy.
-Private-gateway flags stay off. Full repository Doctor >=95, HTTP/WS streaming,
+Private-gateway flags stay off. Full repository Doctor >=95, authenticated HTTP
+composition and WebSocket streaming,
 AWS ingress and wake/idle controls, durable data/secrets/quotas, publishing UI and
 app-scoped tools remain release gates. Nothing is merged, deployed or started.
 

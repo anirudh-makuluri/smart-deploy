@@ -23,8 +23,9 @@ public. No database migration or cloud mutation is added.
 4. Apply request/body/concurrency limits and stream with backpressure. Do not
    follow customer redirects on the server. Validate all response headers with
    `responseHeaders` before sending any response bytes; a rejected cookie/header
-   aborts the response and cancels the upstream body. These adapters are not
-   implemented by this policy-only slice.
+   aborts the response and cancels the upstream body. The subsequent
+   [bounded HTTP transport](GATEWAY_HTTP_STREAMING.md) composes this policy and
+   workload TLS; authenticated listener/runtime integration remains required.
 
 The constructor copies canonical HTTPS origin, binding UUID and published/
 preview classification. Request Host/forwarded/identity headers cannot replace

@@ -1,0 +1,78 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "gateway-http-streaming",
+  "purpose": "Bounded fixed-runtime HTTP forwarding over verified workload TLS with browser/header/cookie isolation",
+  "baselineRevision": "9fe1ae2f99dda1e4e29788d8a3a20a15fc8e69d9",
+  "candidateBaseRevision": "9fe1ae2f99dda1e4e29788d8a3a20a15fc8e69d9",
+  "baselineEvidence": "Verified #115 final source snapshot saved before commit; identical source now 9fe1ae2",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/gateway/httpProxy.ts",
+    "src/lib/gateway/httpExchange.ts",
+    "src/lib/gateway/httpLease.ts",
+    "tests/unit/lib/gatewayHttpProxy.test.ts",
+    "docs/internal/GATEWAY_HTTP_STREAMING.md",
+    "docs/internal/GATEWAY_HTTP_ISOLATION.md",
+    "docs/internal/GATEWAY_UPSTREAM_TLS.md"
+  ],
+  "verification": {
+    "unitFiles": 148,
+    "unitTests": 922,
+    "newUnitTests": 50,
+    "cookiePolicyMutationFailed": 1,
+    "nativeHttp": "Real HTTPS upstream and workload TLS; only private-IP network route mapped to loopback",
+    "fixtureIdentity": "Fixed fixture identity passed to transport; no authentication proof",
+    "partialDelivery": "Known oversized lengths rejected before forwarding; unknown/dishonest streams may deliver bounded prefix before abort",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "finalFocusedTests": 50,
+    "finalChange": "Fixture Socket tracking corrected to actual HTTPS event Duplex type; no runtime change",
+    "productionBuildEnvironment": "Local dummy auth, both private feature flags disabled",
+    "completeChangedFiles": 4,
+    "completeFullFiles": 624,
+    "unchangedDiagnosticIds": true,
+    "databaseAndBrowser": "Unchanged, exact parent #115 CI passes; not separately repeated locally",
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Transport component only: caller must freshly authorize session, handle reserved routes and select current authoritative runtime.",
+    "Listener bridge must preserve input cancellation/response backpressure, apply private error headers and abort output on late errors.",
+    "No runtime registrar/certificate issuance, public listener, WebSocket transport or AWS ingress/direct-origin enforcement.",
+    "Per-instance caps and encoded-byte limits are not global admission, decompression protection or complete budget/usage controls.",
+    "Full Doctor >=95, on-demand wake/idle/cost, data/secrets/quotas, UI/tools and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}
