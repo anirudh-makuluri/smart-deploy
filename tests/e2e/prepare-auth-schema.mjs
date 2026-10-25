@@ -36,6 +36,7 @@ try {
 		await pool.query(readFileSync(new URL(`../../supabase/migrations/20261023_${name}.sql`, import.meta.url), "utf8"));
 	}
 	await pool.query(readFileSync(new URL("../../supabase/migrations/20261024_gateway_environments.sql", import.meta.url), "utf8"));
+	await pool.query(readFileSync(new URL("../../supabase/migrations/20261025_app_runtime_registrations.sql", import.meta.url), "utf8"));
 } finally {
 	await pool.end();
 }

@@ -58,7 +58,7 @@ export class GatewayAuthStore {
 			join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = $2 and m.role = 'member'
 			join public."user" u on u.id = m.user_id and u."emailVerified" = true
 			join public.app_use_grants g on g.app_id = a.id and g.user_id = u.id
-			where b.id = $1 and b.disabled_at is null and b.environment = 'published' and exists (
+			where b.id = $1 and public.app_gateway_binding_available(b.id) and b.environment = 'published' and exists (
 				select 1 from public.app_workspace_invitations i where i.workspace_id = w.id
 				and i.accepted_by = u.id and i.accepted_at is not null and i.revoked_at is null
 				and i.role = 'member' and i.email = lower(trim(u.email))
@@ -79,7 +79,7 @@ export class GatewayAuthStore {
 		const result = await client.query<GatewayBinding>(`
 			select b.id, b.app_id as "appId", b.origin, b.environment from public.app_gateway_bindings b
 			join public.apps a on a.id = b.app_id
-			where b.id = $1 and b.disabled_at is null and a.workspace_id = $2 for share of b, a
+			where b.id = $1 and public.app_gateway_binding_available(b.id) and a.workspace_id = $2 for share of b, a
 		`, [bindingId, lookup.rows[0].workspaceId]);
 		if (!result.rows[0]) throw new WorkspaceError(401, "Gateway credential unavailable.");
 		if (result.rows[0].environment !== "published" && result.rows[0].environment !== "preview") {
@@ -180,7 +180,7 @@ export class GatewayAuthStore {
 		// One current database snapshot for session, binding, identity, and policy.
 		const result = await this.pool.query<AppUseIdentity>(`
 			select u.id, u.email from public.app_gateway_sessions s
-			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and b.disabled_at is null
+			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and public.app_gateway_binding_available(b.id)
 			and b.environment in ('published', 'preview')
 			join public.apps a on a.id = s.app_id join public.app_workspaces w on w.id = a.workspace_id
 			join public."user" u on u.id = s.user_id and u."emailVerified" = true

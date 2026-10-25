@@ -16,9 +16,7 @@ export async function authenticateGateway(pool: Pool, authorization: string | nu
 	const match = /^Bearer sd_gateway_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/i.exec(authorization ?? "");
 	if (!match) throw new WorkspaceError(401, "Gateway authentication required.");
 	const result = await pool.query<GatewayPrincipal>(`
-		select c.binding_id as "bindingId" from public.app_gateway_service_credentials c
-		join public.app_gateway_bindings b on b.id = c.binding_id and b.disabled_at is null
-		where c.id = $1 and c.secret_hash = $2 and c.revoked_at is null and c.expires_at > clock_timestamp()
+		select binding_id as "bindingId" from public.authenticate_app_gateway_credential($1::uuid, $2::text)
 	`, [match[1], createHash("sha256").update(match[2], "utf8").digest("hex")]);
 	if (!result.rows[0]) throw new WorkspaceError(401, "Gateway authentication required.");
 	return result.rows[0];

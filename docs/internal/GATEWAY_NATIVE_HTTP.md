@@ -100,4 +100,8 @@ on-demand wake/idle/budget enforcement; app data/secrets/quotas; publish/share/
 invitation UI/tools; full Doctor >=95 and complete hosted acceptance. No
 production flags, migrations, providers, emails, AWS startup or deployment.
 
+The next control-plane metadata slice is described in
+[APP_RUNTIME_REGISTRATION.md](APP_RUNTIME_REGISTRATION.md). It validates and
+selects registrations but does not attest AWS state or start this server.
+
 Node 20 reference: [HTTP server options, lifecycle and protocol events](https://nodejs.org/docs/latest-v20.x/api/http.html#httpcreateserveroptions-requestlistener).

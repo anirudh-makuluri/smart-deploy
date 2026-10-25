@@ -87,6 +87,19 @@ alter table public.app_gateway_sessions enable row level security;
 revoke all on public.app_gateway_bindings, public.app_gateway_codes, public.app_gateway_sessions from public;
 revoke all on public.app_gateway_bindings from service_role;
 grant select on public.app_gateway_bindings to service_role;
+do $migration$
+begin
+  if to_regprocedure('public.app_gateway_binding_available(uuid)') is null then
+    execute $ddl$
+      create function public.app_gateway_binding_available(p_id uuid) returns boolean language sql
+      set search_path = pg_catalog, public as $function$
+        select exists (select 1 from public.app_gateway_bindings where id = p_id and disabled_at is null)
+      $function$
+    $ddl$;
+  end if;
+end $migration$;
+revoke all on function public.app_gateway_binding_available(uuid) from public;
+grant execute on function public.app_gateway_binding_available(uuid) to service_role;
 -- Allows row locking and emergency disable/re-enable, not origin/app registration.
 grant update (disabled_at) on public.app_gateway_bindings to service_role;
 revoke all on public.app_gateway_codes, public.app_gateway_sessions from service_role;
