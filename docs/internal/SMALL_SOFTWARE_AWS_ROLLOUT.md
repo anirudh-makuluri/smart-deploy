@@ -1046,3 +1046,40 @@ d6da294e7c420320b9e98621d92eba4a62ea739f, including Node 20 SDK/unit/build/typec
 worker, database/browser, Doctor, analytics and Vercel preview checks. Still
 draft/unmerged; full >=95 and pilot acceptance remain unmet. Standalone workload
 TLS listener/container verification is in progress; no production/AWS startup.
+
+### Workload TLS listener and packaging — draft #121
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/121
+Head fb556797087de70f9b564de9e36b76cec3f558bc; base
+feat/aws-runtime-verification / d6da294 (#120). Merge #120 before #121.
+Three dependency-free Node CJS files implement scoped current certificate/key,
+exact SNI, TLS1.3/HTTP1.1 ALPN and fixed IPv4 loopback app target. No default
+certificate, user auth or platform/gateway key in task. Private AWS ingress and
+separate trusted gateway remain mandatory. Bounded wire bytes, backpressure,
+half-close, idle/lifetime/handshake/connections and graceful drain/forced stop.
+Image copies only those files under non-root UID/GID10001. Official Node ECR
+Public Linux/amd64 Node24.22.1 manifest pinned to
+sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420;
+anonymous SHA256/platform metadata verified, not vulnerability-scan evidence.
+Local: 152 unit files/1,087 tests (43 new), two compiled entrypoint cases,
+15 compiled Next/Better Auth/PostgreSQL/native gateway browser cases through
+actual workload TLS -> HTTP app, typecheck/full lint/worker/standalone/build/diff
+pass. SNI-guard removal causes expected single backend-admission failure; restored.
+Strict identity projection/drain-admission fixtures and Node option declaration
+gaps corrected without relaxing TLS. Browser verifies credentials, grants/logout,
+cookies/uploads across the new hop; approval/verification/content are fixtures,
+loopback transport, no hosted/AWS proof. Native process has only whitelisted env;
+Windows termination is not POSIX SIGTERM proof. Docker unavailable locally;
+required new Linux CI builds/runs non-root/read-only/cap-drop/resource-bound image,
+checks exact /app files, actual TLS and SIGTERM. Container result pending.
+Eleven-file Doctor100; full unfiltered650-file report84, zero errors and identical
+37 warning IDs/26 files. No suppression. Build tracing warnings retained.
+Fixtures/keys cleaned and local database/servers stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-workload-tls-1792966215950.
+#120 all exact-head CI/preview pass; #121 running. No production caller, launch/
+registration/source-fingerprint guard, certificate/SSM lifecycle, actual AWS
+ingress/readiness, image publication/scanning or live resources. Public gateway
+rejects upgrades, so raw transport is not customer WebSocket support. Egress/
+complete $10 admission, wake/idle, data/secrets/quotas, UI/tools, full >=95 and
+hosted acceptance remain. No production migrations/flags/providers/emails/
+provisioning/AWS startup/merge/deploy.
