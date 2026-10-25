@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderGit2, LayoutGrid, History, User } from "lucide-react";
+import { FolderGit2, LayoutGrid, History, User, Coins } from "lucide-react";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 import { useAppData } from "@/store/useAppData";
 import { isLiveDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
@@ -127,6 +127,21 @@ export default function DashboardSideBar({
 					>
 						<FolderGit2 className="size-4 shrink-0" aria-hidden />
 						{collapsed ? <span className="sr-only">Repositories</span> : <span>Repositories</span>}
+					</button>
+					<button
+						type="button"
+						onClick={() => onViewChange("credits")}
+						title="Credits"
+						className={cn(
+							navButtonBase,
+							collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
+							activeView === "credits"
+								? "border-primary/40 bg-primary/10 text-primary"
+								: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
+						)}
+					>
+						<Coins className="size-4 shrink-0" aria-hidden />
+						{collapsed ? <span className="sr-only">Credits</span> : <span>Credits</span>}
 					</button>
 				</div>
 				{!collapsed && (

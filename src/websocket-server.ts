@@ -8,6 +8,7 @@ import * as deployLogsStore from "./lib/deployLogsStore";
 import { handleInternalDeploymentRunEvent } from "./lib/internalDeploymentRunEvents";
 import { getAllowedOriginHeader, parseAllowedOrigins } from "./lib/wsOrigin";
 import { startDeploymentHealthReconciler } from "./lib/deploymentHealthReconciler";
+import { startUptimeBillingReconciler } from "./lib/billing/uptimeBilling";
 import { createWorkerSocketServer, type WorkerServerSocket } from "./lib/workerSocketServer";
 import { createWorkerHealthPayload, getWorkerVersion } from "./lib/workerHealth";
 import {
@@ -293,6 +294,7 @@ server.listen(port, "0.0.0.0", () => {
 	console.log(`WebSocket server running on 0.0.0.0:${port}`);
 	console.log(`[ws] allowed origins: ${allowedOriginsLabel}`);
 	startDeploymentHealthReconciler();
+	startUptimeBillingReconciler();
 });
 
 // Log uncaught exceptions and rejections, but don't broadcast to clients

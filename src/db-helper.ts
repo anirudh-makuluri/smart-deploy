@@ -1,7 +1,7 @@
 import { getSupabaseServer } from "./lib/supabaseServer";
 import { getDbPool } from "./lib/dbPool";
 import type { PoolClient } from "pg";
-import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoRecord, StaticServiceType } from "./app/types";
+import { DeployConfig, DeploymentHistoryEntry, DeployStep, repoType, DetectedServiceInfo, RepoRecord, StaticServiceType, TopupPackage, CreditLedgerEntry, CreditLedgerType } from "./app/types";
 import type { DeployLogLine, DeployStepSummary } from "./lib/aws/deployRunLogs";
 import { deployStepsFromLogLines } from "./lib/aws/deployRunLogs";
 import { withDeployInfraDefaults } from "./lib/deployInfraDefaults";
@@ -1626,6 +1626,418 @@ export const dbHelper = {
 		} catch (error) {
 			console.error("isApprovedUser error:", error);
 			return { approved: false, error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getTopupPackages: async function (): Promise<{ error?: string; packages: TopupPackage[] }> {
+		try {
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("topup_packages")
+				.select("id, credits, price_cents, currency, active, sort_order")
+				.eq("active", true)
+				.order("sort_order", { ascending: true });
+
+			if (error) return { error: error.message, packages: [] };
+			const packages = (data ?? []).map((row) => ({
+				id: String(row.id),
+				credits: Number(row.credits),
+				priceCents: Number(row.price_cents),
+				currency: String(row.currency),
+				active: Boolean(row.active),
+				sortOrder: Number(row.sort_order),
+			}));
+			return { packages };
+		} catch (error) {
+			console.error("getTopupPackages error:", error);
+			return { error: error instanceof Error ? error.message : String(error), packages: [] };
+		}
+	},
+
+	getTopupPackageById: async function (packageId: string): Promise<{ error?: string; pkg: TopupPackage | null }> {
+		try {
+			const trimmedId = packageId.trim();
+			if (!trimmedId) return { pkg: null };
+
+			const supabase = getSupabaseServer();
+			const { data, error } = await supabase
+				.from("topup_packages")
+				.select("id, credits, price_cents, currency, active, sort_order")
+				.eq("id", trimmedId)
+				.eq("active", true)
+				.maybeSingle();
+
+			if (error) return { error: error.message, pkg: null };
+			if (!data) return { pkg: null };
+			return {
+				pkg: {
+					id: String(data.id),
+					credits: Number(data.credits),
+					priceCents: Number(data.price_cents),
+					currency: String(data.currency),
+					active: Boolean(data.active),
+					sortOrder: Number(data.sort_order),
+				},
+			};
+		} catch (error) {
+			console.error("getTopupPackageById error:", error);
+			return { error: error instanceof Error ? error.message : String(error), pkg: null };
+		}
+	},
+
+	ensureUserBillingAccount: async function (userId: string): Promise<{ error?: string }> {
+		try {
+			const trimmedUserId = userId.trim();
+			if (!trimmedUserId) return { error: "User ID is required" };
+
+			await insertTableRow("user_billing_accounts", {
+				user_id: trimmedUserId,
+				credit_balance: 0,
+			});
+			return {};
+		} catch (error) {
+			const code = typeof error === "object" && error !== null && "code" in error
+				? String((error as { code?: unknown }).code ?? "")
+				: "";
+			if (code === "23505") return {};
+			console.error("ensureUserBillingAccount error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getUserBillingAccount: async function (userId: string): Promise<{
+		error?: string;
+		stripeCustomerId: string | null;
+		creditBalance: number;
+	}> {
+		try {
+			const trimmedUserId = userId.trim();
+			if (!trimmedUserId) return { error: "User ID is required", stripeCustomerId: null, creditBalance: 0 };
+
+			const result = await getDbPool().query<{
+				stripe_customer_id: string | null;
+				credit_balance: number;
+			}>(
+				`select stripe_customer_id, credit_balance
+				 from user_billing_accounts
+				 where user_id = $1`,
+				[trimmedUserId]
+			);
+			const row = result.rows[0];
+			if (!row) {
+				const ensured = await dbHelper.ensureUserBillingAccount(trimmedUserId);
+				if (ensured.error) return { error: ensured.error, stripeCustomerId: null, creditBalance: 0 };
+				return { stripeCustomerId: null, creditBalance: 0 };
+			}
+			return {
+				stripeCustomerId: row.stripe_customer_id,
+				creditBalance: Number(row.credit_balance ?? 0),
+			};
+		} catch (error) {
+			console.error("getUserBillingAccount error:", error);
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				stripeCustomerId: null,
+				creditBalance: 0,
+			};
+		}
+	},
+
+	setUserStripeCustomerId: async function (args: {
+		userId: string;
+		stripeCustomerId: string;
+	}): Promise<{ error?: string }> {
+		try {
+			const userId = args.userId.trim();
+			const stripeCustomerId = args.stripeCustomerId.trim();
+			if (!userId || !stripeCustomerId) return { error: "User ID and Stripe customer ID are required" };
+
+			await dbHelper.ensureUserBillingAccount(userId);
+			await updateTableRows(
+				"user_billing_accounts",
+				{ stripe_customer_id: stripeCustomerId, updated_at: new Date().toISOString() },
+				{ user_id: userId }
+			);
+			return {};
+		} catch (error) {
+			console.error("setUserStripeCustomerId error:", error);
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	},
+
+	getCreditLedgerEntries: async function (args: {
+		userId: string;
+		limit: number;
+	}): Promise<{ error?: string; entries: CreditLedgerEntry[] }> {
+		try {
+			const userId = args.userId.trim();
+			const limit = Math.min(Math.max(args.limit, 1), 100);
+			if (!userId) return { error: "User ID is required", entries: [] };
+
+			const result = await getDbPool().query(
+				`select id, user_id, amount, type, reference_id, country_code, tax_amount_cents, tax_rate, created_at
+				 from credit_ledger
+				 where user_id = $1
+				 order by created_at desc
+				 limit $2`,
+				[userId, limit]
+			);
+			const entries = result.rows.map((row) => ({
+				id: String(row.id),
+				userId: String(row.user_id),
+				amount: Number(row.amount),
+				type: String(row.type) as CreditLedgerType,
+				referenceId: row.reference_id ? String(row.reference_id) : null,
+				countryCode: row.country_code ? String(row.country_code) : null,
+				taxAmountCents: row.tax_amount_cents == null ? null : Number(row.tax_amount_cents),
+				taxRate: row.tax_rate == null ? null : Number(row.tax_rate),
+				createdAt: new Date(row.created_at as string | Date).toISOString(),
+			}));
+			return { entries };
+		} catch (error) {
+			console.error("getCreditLedgerEntries error:", error);
+			return { error: error instanceof Error ? error.message : String(error), entries: [] };
+		}
+	},
+
+	claimStripeWebhookEvent: async function (args: {
+		eventId: string;
+		eventType: string;
+	}): Promise<{ error?: string; claimed: boolean }> {
+		try {
+			await insertTableRow("stripe_webhook_events", {
+				event_id: args.eventId,
+				event_type: args.eventType,
+			});
+			return { claimed: true };
+		} catch (error) {
+			const code = typeof error === "object" && error !== null && "code" in error
+				? String((error as { code?: unknown }).code ?? "")
+				: "";
+			if (code === "23505") return { claimed: false };
+			console.error("claimStripeWebhookEvent error:", error);
+			return { error: error instanceof Error ? error.message : String(error), claimed: false };
+		}
+	},
+
+	grantCreditsFromTopup: async function (args: {
+		userId: string;
+		credits: number;
+		referenceId: string;
+		countryCode: string | null;
+		taxAmountCents: number | null;
+		taxRate: number | null;
+		metadata: Record<string, unknown>;
+	}): Promise<{ error?: string; granted: boolean; duplicate: boolean }> {
+		let client: PoolClient | null = null;
+		let transactionOpen = false;
+		try {
+			const userId = args.userId.trim();
+			const referenceId = args.referenceId.trim();
+			const credits = Math.round(args.credits);
+			if (!userId || !referenceId || credits <= 0) {
+				return { error: "Invalid top-up grant payload", granted: false, duplicate: false };
+			}
+
+			client = await getDbPool().connect();
+			await client.query("begin");
+			transactionOpen = true;
+
+			const existing = await client.query(
+				`select id from credit_ledger where reference_id = $1 and type = 'topup' limit 1`,
+				[referenceId]
+			);
+			if ((existing.rowCount ?? 0) > 0) {
+				await client.query("rollback");
+				transactionOpen = false;
+				return { granted: false, duplicate: true };
+			}
+
+			await client.query(
+				`insert into user_billing_accounts (user_id, credit_balance)
+				 values ($1, 0)
+				 on conflict (user_id) do nothing`,
+				[userId]
+			);
+
+			await client.query(
+				`insert into credit_ledger (
+					user_id, amount, type, reference_id, country_code, tax_amount_cents, tax_rate, metadata
+				 ) values ($1, $2, 'topup', $3, $4, $5, $6, $7::jsonb)`,
+				[
+					userId,
+					credits,
+					referenceId,
+					args.countryCode,
+					args.taxAmountCents,
+					args.taxRate,
+					JSON.stringify(args.metadata),
+				]
+			);
+
+			await client.query(
+				`update user_billing_accounts
+				 set credit_balance = credit_balance + $2,
+				     updated_at = now()
+				 where user_id = $1`,
+				[userId, credits]
+			);
+
+			await client.query("commit");
+			transactionOpen = false;
+			return { granted: true, duplicate: false };
+		} catch (error) {
+			if (transactionOpen && client) {
+				try {
+					await client.query("rollback");
+				} catch (rollbackError) {
+					console.error("grantCreditsFromTopup rollback error:", rollbackError);
+				}
+			}
+			console.error("grantCreditsFromTopup error:", error);
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				granted: false,
+				duplicate: false,
+			};
+		} finally {
+			client?.release();
+		}
+	},
+
+	listRunningDeploymentsForUptimeBilling: async function (): Promise<{
+		error?: string;
+		deployments: Array<{
+			id: string;
+			userId: string;
+			repoName: string;
+			serviceName: string;
+		}>;
+	}> {
+		try {
+			const result = await getDbPool().query<{
+				id: string;
+				owner_id: string;
+				repo_name: string;
+				service_name: string;
+			}>(
+				`select id, owner_id, repo_name, service_name
+				 from deployments
+				 where status = 'running'
+				   and deployment_target = 'ecs'
+				   and hosted_subdomain is not null
+				   and trim(hosted_subdomain) <> ''`
+			);
+			return {
+				deployments: result.rows.map((row) => ({
+					id: String(row.id),
+					userId: String(row.owner_id),
+					repoName: String(row.repo_name),
+					serviceName: String(row.service_name),
+				})),
+			};
+		} catch (error) {
+			console.error("listRunningDeploymentsForUptimeBilling error:", error);
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				deployments: [],
+			};
+		}
+	},
+
+	debitCredits: async function (args: {
+		userId: string;
+		credits: number;
+		referenceId: string;
+		metadata: Record<string, unknown>;
+	}): Promise<{
+		error?: string;
+		debited: boolean;
+		duplicate: boolean;
+		insufficientBalance: boolean;
+	}> {
+		let client: PoolClient | null = null;
+		let transactionOpen = false;
+		try {
+			const userId = args.userId.trim();
+			const referenceId = args.referenceId.trim();
+			const credits = Math.round(args.credits);
+			if (!userId || !referenceId || credits <= 0) {
+				return {
+					error: "Invalid debit payload",
+					debited: false,
+					duplicate: false,
+					insufficientBalance: false,
+				};
+			}
+
+			client = await getDbPool().connect();
+			await client.query("begin");
+			transactionOpen = true;
+
+			const existing = await client.query(
+				`select id from credit_ledger where reference_id = $1 and type = 'usage' limit 1`,
+				[referenceId]
+			);
+			if ((existing.rowCount ?? 0) > 0) {
+				await client.query("rollback");
+				transactionOpen = false;
+				return { debited: false, duplicate: true, insufficientBalance: false };
+			}
+
+			await client.query(
+				`insert into user_billing_accounts (user_id, credit_balance)
+				 values ($1, 0)
+				 on conflict (user_id) do nothing`,
+				[userId]
+			);
+
+			const balanceResult = await client.query<{ credit_balance: number }>(
+				`select credit_balance from user_billing_accounts where user_id = $1 for update`,
+				[userId]
+			);
+			const balance = Number(balanceResult.rows[0]?.credit_balance ?? 0);
+			if (balance < credits) {
+				await client.query("rollback");
+				transactionOpen = false;
+				return { debited: false, duplicate: false, insufficientBalance: true };
+			}
+
+			await client.query(
+				`insert into credit_ledger (
+					user_id, amount, type, reference_id, metadata
+				 ) values ($1, $2, 'usage', $3, $4::jsonb)`,
+				[userId, -credits, referenceId, JSON.stringify(args.metadata)]
+			);
+
+			await client.query(
+				`update user_billing_accounts
+				 set credit_balance = credit_balance - $2,
+				     updated_at = now()
+				 where user_id = $1`,
+				[userId, credits]
+			);
+
+			await client.query("commit");
+			transactionOpen = false;
+			return { debited: true, duplicate: false, insufficientBalance: false };
+		} catch (error) {
+			if (transactionOpen && client) {
+				try {
+					await client.query("rollback");
+				} catch (rollbackError) {
+					console.error("debitCredits rollback error:", rollbackError);
+				}
+			}
+			console.error("debitCredits error:", error);
+			return {
+				error: error instanceof Error ? error.message : String(error),
+				debited: false,
+				duplicate: false,
+				insufficientBalance: false,
+			};
+		} finally {
+			client?.release();
 		}
 	},
 };

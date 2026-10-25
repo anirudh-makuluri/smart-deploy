@@ -410,3 +410,37 @@ export type SDArtifactsResponse = {
 };
 
 export type ScanResultsPayload = SDArtifactsResponse | Record<string, never>;
+
+// ── Billing / credits ──
+
+export type CreditLedgerType = "topup" | "usage" | "refund" | "admin";
+
+export type TopupPackage = {
+	id: string;
+	credits: number;
+	priceCents: number;
+	currency: string;
+	active: boolean;
+	sortOrder: number;
+};
+
+export type CreditBalance = {
+	balance: number;
+};
+
+export type CreditLedgerEntry = {
+	id: string;
+	userId: string;
+	amount: number;
+	type: CreditLedgerType;
+	referenceId: string | null;
+	countryCode: string | null;
+	taxAmountCents: number | null;
+	taxRate: number | null;
+	createdAt: string;
+};
+
+export type BillingCheckoutResponse = {
+	checkoutUrl: string;
+	sessionId: string;
+};

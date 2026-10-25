@@ -28,6 +28,10 @@ vi.mock("@/components/DeploymentHistoryTable", () => ({
 	default: () => <div>DeploymentHistoryTable</div>,
 }));
 
+vi.mock("@/components/dashboard/DashboardCreditsView", () => ({
+	default: () => <div>DashboardCreditsView</div>,
+}));
+
 vi.mock("@/lib/utils", async () => {
 	const actual = await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
 	return {
