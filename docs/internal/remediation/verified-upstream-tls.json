@@ -1,0 +1,73 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "verified-upstream-tls",
+  "purpose": "Verify unique app/environment/release TLS peer before exposing a socket for HTTP forwarding",
+  "baselineRevision": "742798b027a0e5410d0c432443ca1de41c9a4f4f",
+  "candidateBaseRevision": "742798b027a0e5410d0c432443ca1de41c9a4f4f",
+  "baselineEvidence": "Final verified #114 source snapshot saved before commit; identical source now committed as 742798b",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/gateway/upstreamTls.ts",
+    "tests/unit/lib/gatewayUpstreamTls.test.ts",
+    "docs/internal/GATEWAY_UPSTREAM_TLS.md",
+    "docs/internal/GATEWAY_HTTP_ISOLATION.md"
+  ],
+  "verification": {
+    "unitFiles": 147,
+    "unitTests": 872,
+    "newUnitTests": 52,
+    "exactPinMutationFailed": 1,
+    "nativeTls": "Real loopback TLS/TCP connections; only private-IP route replaced, all identity and protocol checks retained",
+    "alternateLeaf": "Independent positive chain/hostname proof followed by exact-pin rejection",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "productionBuildEnvironment": "Local dummy platform auth with both private feature flags disabled",
+    "completeChangedFiles": 2,
+    "completeFullFiles": 620,
+    "unchangedDiagnosticIds": true,
+    "databaseAndBrowser": "Unchanged; exact parent #114 CI passes. Not separately repeated locally for this connector.",
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "node": "Local 22.22.0; Node 20 APIs used and CI runs Node 20",
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Transport primitive only: no running customer HTTP/WS proxy, fresh authorization, runtime registrar or AWS ingress enforcement.",
+    "Trusted runtime registration and unique certificate issuance/private-key delivery/rotation remain required.",
+    "RFC1918 validation is not VPC/task authorization or direct-origin prevention.",
+    "Connection limits apply to one reused connector; global admission/body/stream/idle/cost controls remain required.",
+    "Full Doctor >=95, data/secrets/quotas, publish/share/invitations/tools and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

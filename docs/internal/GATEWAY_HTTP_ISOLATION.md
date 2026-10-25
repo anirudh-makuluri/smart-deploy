@@ -17,7 +17,9 @@ public. No database migration or cloud mutation is added.
 3. Call `requestHeaders` with that current verified identity. Resolve the
    authoritative runtime for the same app/environment/release. Verify its
    unique TLS workload identity before forwarding any header, cookie or body.
-   A private address alone is insufficient; TLS transport remains subsequent work.
+   A private address alone is insufficient. The subsequent
+   [workload TLS connector](GATEWAY_UPSTREAM_TLS.md) provides peer verification;
+   composing it with the streaming proxy remains required.
 4. Apply request/body/concurrency limits and stream with backpressure. Do not
    follow customer redirects on the server. Validate all response headers with
    `responseHeaders` before sending any response bytes; a rejected cookie/header
