@@ -640,8 +640,11 @@ Complete pinned Doctor: eight changed source/test files 100/100; unfiltered
 591-file rollout remains 83/100, zero errors / 37 warnings across 26 files.
 The baseline reuses #108's verified final source snapshot scanned before its
 commit; scanner sourceRevision reflects the then-HEAD b380f11, with contents
-now committed as da99bf2. #108 all CI/preview checks pass at da99bf2; #109 checks
-are running. Merge order extends #108 -> #109. Confirmation UI, credential-safe
+now committed as da99bf2. #108 all CI/preview checks pass at da99bf2; #109 all
+CI/preview checks pass at a94f602. CI run 40154785954 includes unit/build/type/
+worker checks and database/browser regressions; proxy-browser run 40154785956
+and Doctor run 40154785944 pass too. These existing browser checks do not prove
+the missing invitation UI or private runtime. Merge order extends #108 -> #109. Confirmation UI, credential-safe
 invitation-link/login transport, full >=95 and gateway/runtime/data/UI/tools/
 integrated gates remain. Preview audience remains a pending user decision.
 No migration, feature enablement, production mutation, provider change,
