@@ -849,3 +849,9 @@ Next compose bounded HTTP streaming with fresh authorization and runtime binding
 WS/private ingress, on-demand/cost controls, data/secrets/quotas, publishing UI,
 app tools, full >=95 and hosted acceptance remain. Nothing merged, deployed,
 provisioned or started; no production migration/flags/provider change/email.
+
+#115 exact-head CI refresh: all checks pass at
+9fe1ae2f99dda1e4e29788d8a3a20a15fc8e69d9, including native TLS on Node 20,
+database/browser, full build/worker/typecheck, Doctor, analytics proxy and Vercel
+preview. Draft/unmerged; full >=95 and complete runtime acceptance remain unmet.
+Bounded HTTP streaming is in progress; no production or AWS startup.
