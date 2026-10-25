@@ -687,3 +687,31 @@ UI/tools/usage/integrated gates remain. No production mutation, feature
 enablement, provider change, invitation email, billable resource, worker start,
 rollout merge or deployment. Next implement browser transaction/state/cookie
 adapter. No product question is pending.
+
+Browser transaction primitive: draft
+[#111](https://github.com/anirudh-makuluri/smart-deploy/pull/111), head
+`b834c1b19b65e5a75f402aabf8167c948874ac67`, on #110 / `1817fcc`.
+Server-private PKCE verifier and hashed nonce/state bind a single-use claim to
+the initiating browser and configured binding. Expiry/capacity are explicit and
+bounded; protected host-only cookies are generated fresh. Wrong-browser/state/
+binding requests cannot burn a valid flow. The latest pending attempt on a host
+wins after nonce rotation; earlier tabs restart. This ephemeral single-process
+map is not distributed session storage or public rate limiting.
+
+Local checks pass: 138 unit files / 659 tests, 36 focused cases, six native
+Chromium HTTPS cases, typecheck/lint/worker/configured production build/diff.
+Browser cases cover swaps, simultaneous callbacks, JavaScript pre-seeding,
+sibling injection/non-forwarding, tabs, capacity and expiry. The synthetic
+claiming fixture has no real identity, control-plane redemption, consent UI,
+customer upstream or AWS resources. Servers close and generated TLS files are
+removed. Unchanged database/policy code retains #110's 100 PostgreSQL tests and
+passing CI; not repeated locally here. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-browser-transactions-1792908765365.
+Pinned Doctor completes four changed source/test/config files at 100/100;
+unfiltered 594-file rollout remains 83, zero errors / 37 warnings, without
+suppression. #110 all CI/preview checks pass at 1817fcc; #111 running. Merge order
+extends #110 -> #111. Remaining work: confirmation/callback/redemption/session
+cookie integration, HTTP/WS/origin isolation, AWS data/secrets, publishing UI,
+tools/usage, full >=95 and integrated acceptance. No production mutation,
+migration, feature enablement, provider change, invitation email, billable
+resource, worker start, merge or deployment. No product question is pending.
