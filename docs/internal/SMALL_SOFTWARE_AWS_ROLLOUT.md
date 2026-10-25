@@ -825,3 +825,27 @@ database/browser, Doctor, analytics browser proxy and Vercel preview). Draft and
 unmerged; full >=95 and complete runtime acceptance remain unmet. User confirmed
 Authorization stripping. Workload-specific upstream TLS is the next isolated
 slice; no production or AWS startup.
+
+### Workload TLS connector — draft #115
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/115
+Head 9fe1ae2f99dda1e4e29788d8a3a20a15fc8e69d9; base
+feat/gateway-http-isolation / 742798b (#114). Merge order extends #114 -> #115.
+One configured RFC1918 IPv4 and unique binding/environment/release certificate;
+normal validation, hostname, exact leaf pin, TLS 1.3 and HTTP/1.1 ALPN before
+returning a socket for HTTP. Handshake and socket caps/cancellation; redacted
+errors. No listener, runtime registrar, certificate issuance, proxy or AWS change.
+Local: 147 files/872 unit tests including 52 new native TLS/configuration cases;
+valid alternate chain/hostname proof and expected one-test pin-removal regression;
+typecheck/lint/worker/production build/diff pass. Explicit minimal OpenSSL fixture
+config corrects inherited duplicate extensions without relaxing verification.
+Fixture sockets/servers close and exact generated certificate/key files removed.
+Both changed code files Doctor 100; complete unfiltered 620-file scan 84, zero
+errors, same 37 warning IDs/26 files. No suppression. Full >=95 remains unmet.
+Unchanged DB/browser suites pass in exact #114 CI, not repeated locally for this
+connector; #115 CI running including Node 20. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-upstream-tls-1792938168435.
+Next compose bounded HTTP streaming with fresh authorization and runtime binding;
+WS/private ingress, on-demand/cost controls, data/secrets/quotas, publishing UI,
+app tools, full >=95 and hosted acceptance remain. Nothing merged, deployed,
+provisioned or started; no production migration/flags/provider change/email.
