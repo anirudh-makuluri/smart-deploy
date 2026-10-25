@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, FolderPlus, RefreshCw } from "lucide-react";
+import { FolderPlus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,14 +13,8 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { DetectedServiceInfo, DeployConfig, repoType } from "@/app/types";
-import {
-	isDraftDeploymentStatus,
-	isInProgressDeploymentStatus,
-	isLiveDeploymentStatus,
-	resolveDeploymentStatus,
-} from "@/lib/deploymentStatus";
-import { getDeploymentDisplayUrl, getDeploymentForService } from "@/lib/utils";
-import RepoRecordIcon from "@/components/RepoRecordIcon";
+import { getDeploymentForService } from "@/lib/utils";
+import { RepoServiceCard } from "@/components/repo-services/RepoServiceCard";
 
 export type RepoCatalogActions = {
 	busy: boolean;
@@ -40,6 +34,59 @@ type RepoServicesListProps = {
 	openWorkspaceForService: (svc: DetectedServiceInfo) => void | Promise<void>;
 	catalogActions?: RepoCatalogActions;
 };
+
+interface RepoServicesHeaderProps {
+	owner: string;
+	repoName: string;
+	serviceCount: number;
+	catalogActions: RepoCatalogActions | null;
+	showActions: boolean;
+	onAddService: () => void;
+}
+
+function RepoServicesHeader({ owner, repoName, serviceCount, catalogActions, showActions, onAddService }: RepoServicesHeaderProps) {
+	const busy = catalogActions?.busy ?? false;
+	return (
+		<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+			<div>
+				<h1 className="text-xl font-semibold text-foreground">
+					{owner} / {repoName}
+				</h1>
+				<p className="text-sm text-muted-foreground mt-0.5">
+					{serviceCount} service{serviceCount !== 1 ? "s" : ""}
+				</p>
+			</div>
+			<div className="flex flex-wrap items-center gap-2">
+				{catalogActions && showActions && (
+					<>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="shrink-0"
+							disabled={busy}
+							onClick={() => void catalogActions.onRefresh?.()}
+						>
+							<RefreshCw className={`size-4 mr-1.5 ${busy ? "animate-spin" : ""}`} />
+							Refresh detection
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="shrink-0"
+							disabled={busy}
+							onClick={onAddService}
+						>
+							<FolderPlus className="size-4 mr-1.5" />
+							Add service
+						</Button>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
 
 export default function RepoServicesList({
 	owner,
@@ -70,44 +117,8 @@ export default function RepoServicesList({
 
 	return (
 		<div className="flex flex-col h-full p-6">
-			<div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-				<div>
-					<h1 className="text-xl font-semibold text-foreground">
-						{owner} / {repoName}
-					</h1>
-					<p className="text-sm text-muted-foreground mt-0.5">
-						{services.length} service{services.length !== 1 ? "s" : ""}
-					</p>
-				</div>
-				<div className="flex flex-wrap items-center gap-2">
-					{catalogActions && !loading && !error && (
-						<>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								className="shrink-0"
-								disabled={busy}
-								onClick={() => void catalogActions.onRefresh?.()}
-							>
-								<RefreshCw className={`size-4 mr-1.5 ${busy ? "animate-spin" : ""}`} />
-								Refresh detection
-							</Button>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								className="shrink-0"
-								disabled={busy}
-								onClick={() => setSheet("add")}
-							>
-								<FolderPlus className="size-4 mr-1.5" />
-								Add service
-							</Button>
-						</>
-					)}
-				</div>
-			</div>
+			<RepoServicesHeader owner={owner} repoName={repoName} serviceCount={services.length}
+				catalogActions={catalogActions ?? null} showActions={!loading && !error} onAddService={() => setSheet("add")} />
 
 			{loading && (
 				<div className="text-muted-foreground py-8 text-center">Loading services…</div>
@@ -131,111 +142,11 @@ export default function RepoServicesList({
 			)}
 			{!loading && !error && services.length > 0 && (
 				<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-					{services.map((svc) => {
-						const deployment = getDeploymentForService(
-							repoDeployments,
-							repoUrl,
-							svc.name,
-							resolvedRepo.name
-						);
-						const status = deployment
-							? resolveDeploymentStatus({
-								status: deployment.status,
-								hostedSubdomain: deployment.hostedSubdomain,
-								screenshotUrl: deployment.screenshotUrl,
-							})
-							: undefined;
-						const isOnline = isLiveDeploymentStatus(status);
-						const isDraft = deployment && isDraftDeploymentStatus(status);
-						const hasNoDeployment = !deployment;
-						const isFailed = status === "failed";
-						const isPaused = status === "paused";
-						const isStopped = status === "stopped";
-						const isInProgress = isInProgressDeploymentStatus(status);
-						const displayUrl = deployment ? getDeploymentDisplayUrl(deployment) : undefined;
-
-						const handleCardClick = () => {
-							void openWorkspaceForService(svc);
-						};
-
-						return (
-							<button
-								type="button"
-								key={`${svc.path}::${svc.name}`}
-								onClick={handleCardClick}
-								className={`w-full hover:cursor-pointer rounded-xl border p-4 text-left bg-card hover:border-primary/40 transition-colors ${isFailed ? "border-destructive/60" : "border-border"
-									}`}
-							>
-								<div className="flex items-center gap-3">
-									<RepoRecordIcon deployMode={svc.deployMode} serviceType={svc.serviceType} framework={svc.framework} />
-									<div className="min-w-0 flex-1">
-										<div className="font-semibold text-foreground truncate">
-											{svc.name}
-										</div>
-									</div>
-								</div>
-								<div className="mt-1 text-xs text-muted-foreground font-mono truncate" title={svc.path}>
-									{svc.path === "." ? "Root directory" : svc.path}
-								</div>
-								<div className="mt-3 flex flex-col gap-2">
-									<div className="flex items-center gap-2">
-										{isDraft && (
-											<span className="text-sm text-muted-foreground">
-												Draft (Not Deployed)
-											</span>
-										)}
-										{hasNoDeployment && (
-											<span className="text-sm text-muted-foreground">
-												Not Deployed
-											</span>
-										)}
-										{isFailed && (
-											<>
-												<span className="text-sm text-destructive flex items-center gap-1">
-													Failed
-												</span>
-												<span className="flex items-center gap-0.5 text-destructive/80">
-													<AlertTriangle className="size-4" />
-												</span>
-											</>
-										)}
-										{isOnline && (
-											<span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
-												<span className="size-2 rounded-full bg-green-500" />
-												Online
-											</span>
-										)}
-										{isPaused && (
-											<span className="text-sm text-amber-600 dark:text-amber-400">
-												Paused
-											</span>
-										)}
-										{isStopped && (
-											<span className="text-sm text-muted-foreground">
-												Stopped
-											</span>
-										)}
-										{isInProgress && (
-											<span className="text-sm text-blue-600 dark:text-blue-400">
-												Deploying
-											</span>
-										)}
-									</div>
-									{displayUrl && isOnline && (
-										<a
-											href={displayUrl}
-											target="_blank"
-											rel="noopener noreferrer"
-											onClick={(e) => e.stopPropagation()}
-											className="text-sm text-blue-600 dark:text-blue-400 hover:underline text-left truncate"
-										>
-											{displayUrl}
-										</a>
-									)}
-								</div>
-							</button>
-						);
-					})}
+					{services.map((svc) => (
+						<RepoServiceCard key={`${svc.path}::${svc.name}`} service={svc}
+							deployment={getDeploymentForService(repoDeployments, repoUrl, svc.name, resolvedRepo.name) ?? null}
+							onOpenWorkspace={openWorkspaceForService} />
+					))}
 				</div>
 			)}
 

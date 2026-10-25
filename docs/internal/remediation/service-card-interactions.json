@@ -1,0 +1,142 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "service-card-interactions",
+  "purpose": "Independent native workspace and live-link controls with cohesive service presentation",
+  "baselineRevision": "fa41862806c9394e0a074430ee5e3a8a1ab17ae4",
+  "candidateBaseRevision": "fa41862806c9394e0a074430ee5e3a8a1ab17ae4",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 40,
+    "affectedFileCount": 28,
+    "totalDiagnosticCount": 40,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 38,
+    "affectedFileCount": 27,
+    "totalDiagnosticCount": 38,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [
+    {
+      "filePath": "src/components/RepoServicesList.tsx",
+      "plugin": "react-doctor",
+      "rule": "no-high-complexity-react-function",
+      "severity": "warning",
+      "title": "React function has high control-flow complexity",
+      "message": "`RepoServicesList` has cyclomatic complexity 17, cognitive complexity 10, and maximum nesting depth 1, so its React logic is hard to understand and change. Extract independent branches into components or hooks.",
+      "help": "Extract independent render branches and state logic into focused components or hooks until the control flow is easy to follow.",
+      "line": 44,
+      "column": 16,
+      "offset": 1299,
+      "length": 7950,
+      "endLine": 280,
+      "category": "Maintainability",
+      "fingerprint": "de3340cd209af28971287c84b915089686fe88ca175fced2554e38d914a38d9f",
+      "id": "src/components/RepoServicesList.tsx::44:16::react-doctor/no-high-complexity-react-function::5e3b44dfe7628980fb28b87cf79ba5804d299b955ff6f1f075b41b0d2e83dd90",
+      "normalizedFilePath": "src/components/RepoServicesList.tsx",
+      "tags": [
+        "react-jsx-only",
+        "test-noise"
+      ]
+    },
+    {
+      "filePath": "src/components/RepoServicesList.tsx",
+      "plugin": "react-doctor",
+      "rule": "html-no-nested-interactive",
+      "severity": "warning",
+      "title": "Interactive control contains another focusable control",
+      "message": "This focusable `<a>` is nested inside an interactive ancestor whose descendants lose their own semantics. Move the inner control outside.",
+      "help": "Move the inner control beside its interactive ancestor so each action has independent semantics and focus behavior.",
+      "line": 225,
+      "column": 12,
+      "offset": 7480,
+      "length": 1,
+      "endLine": 231,
+      "category": "Accessibility",
+      "matchByOccurrence": true,
+      "fingerprint": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+      "id": "src/components/RepoServicesList.tsx::225:12::react-doctor/html-no-nested-interactive::7fc1c3d197136d94f6b6b478235833510fc5766caa7c4f5731f2ee0a158d58ec",
+      "normalizedFilePath": "src/components/RepoServicesList.tsx",
+      "tags": []
+    }
+  ],
+  "confirmedIssues": [
+    "The live URL was nested inside the workspace button.",
+    "The list controller had measured cyclomatic complexity 17."
+  ],
+  "candidateRegressionFixed": "Native overlay hit-testing caught an unnecessary link z-index; ordinary paint order fixes the failure.",
+  "collateral": [
+    "src/components/RepoServicesList.tsx",
+    "src/components/repo-services/RepoServiceCard.tsx",
+    "tests/unit/components/RepoServicesList.test.tsx",
+    "docs/internal/SERVICE_CARD_INTERACTIONS.md"
+  ],
+  "guidance": "Canonical pages reported plugin 0.9.3 and differed on cross-type nesting; matched pinned local explanations, HTML standard, source and DOM/browser evidence used.",
+  "verification": {
+    "unitFiles": 136,
+    "unitTests": 600,
+    "focusedTests": 15,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 3,
+    "fullDoctorFiles": 589,
+    "doctorScansComplete": true,
+    "nativeCases": [
+      {
+        "name": "desktop-dark",
+        "width": 1280,
+        "height": 720,
+        "direction": "ltr",
+        "reducedMotion": "no-preference",
+        "changedPixels": 0
+      },
+      {
+        "name": "mobile-light",
+        "width": 390,
+        "height": 844,
+        "direction": "ltr",
+        "reducedMotion": "reduce",
+        "changedPixels": 0
+      },
+      {
+        "name": "mobile-rtl",
+        "width": 390,
+        "height": 844,
+        "direction": "rtl",
+        "reducedMotion": "reduce",
+        "changedPixels": 0
+      }
+    ],
+    "nativeScope": "actual components with production CSS, synthetic data/callback; no auth or AWS backend",
+    "nativeSourceHandoff": "exact parent source compared with candidate; synthetic data, controlled font/public environment, production CSS",
+    "hostedEndToEnd": false,
+    "initialFailedRun": {
+      "failedToLoadSuites": 7,
+      "passedFiles": 129,
+      "passedExecutedTests": 587,
+      "error": "ENOENT in global Temp client transform cache; older evidence directories also disappeared",
+      "deletionCause": "unknown",
+      "rerun": "all tests unchanged with private child-process TEMP/TMP; no suppression"
+    }
+  },
+  "productionReady": false,
+  "productionMutations": false
+}
