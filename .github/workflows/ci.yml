@@ -143,6 +143,15 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Verify compiled workload TLS process
+        run: npm run test:workload
+
+      - name: Build isolated workload TLS image
+        run: docker build --platform linux/amd64 -f infra/workload-tls.Dockerfile -t smartdeploy-workload-tls:ci dist/workload-tls
+
+      - name: Verify isolated workload TLS container
+        run: npm run test:workload:container
+
       - name: Typecheck application and test fixtures
         run: npm run typecheck
 

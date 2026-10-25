@@ -11,6 +11,7 @@ import { Client, Pool } from "pg";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { GatewayAuthenticatedHttp } from "../../src/lib/gateway/authenticatedHttp";
 import { createGatewayHttpsServer } from "../../src/lib/gateway/nativeServer";
+import { createWorkloadTlsListener, type WorkloadTlsListener } from "../../src/lib/workload-tls/tunnel";
 import { gatewayCertificate } from "../helpers/gatewayCertificate";
 import { GATEWAY_SESSION_COOKIE } from "../../src/lib/gateway/cookies";
 import { createGatewayServiceCredential } from "../../src/lib/apps/gatewayServiceAuth";
@@ -43,7 +44,8 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 	let browserHeadersReachedMachineApi = false;
 	let managementRequests = 0;
 	const gateways = new Map<string, GatewayAuthenticatedHttp>();
-	const upstreams: ReturnType<typeof createServer>[] = [];
+	const upstreams: ReturnType<typeof createHttpServer>[] = [];
+	const workloadListeners: WorkloadTlsListener[] = [];
 	const upstreamCertificates: Awaited<ReturnType<typeof gatewayCertificate>>[] = [];
 	let upstreamRequests = 0;
 	let secretsReachedUpstream = false;
@@ -112,7 +114,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 			const key = createGatewayServiceCredential(); await client.query("insert into public.app_gateway_service_credentials (id, binding_id, secret_hash, expires_at) values ($1, $2, $3, clock_timestamp() + interval '1 hour')", [key.id, binding, key.secretHash]);
 			const workload = { bindingId: binding, environment: environment === "published" ? "published" as const : "preview" as const, releaseId: randomUUID() };
 			const material = await gatewayCertificate(workload); upstreamCertificates.push(material);
-			const upstream = createServer({ key: material.key, cert: material.cert, minVersion: "TLSv1.3", ALPNProtocols: ["http/1.1"] }, (incoming, outgoing) => {
+			const upstream = createHttpServer((incoming, outgoing) => {
 				incoming.resume(); upstreamRequests++;
 				const authorization = Boolean(incoming.headers.authorization);
 				const platformCookie = (incoming.headers.cookie ?? "").includes("__Host-smartdeploy.session_token=");
@@ -128,10 +130,16 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 			});
 			upstreams.push(upstream); await new Promise<void>((resolve, reject) => { upstream.once("error", reject); upstream.listen(0, "127.0.0.1", resolve); });
 			const address = upstream.address(); if (!address || typeof address === "string") throw new Error("Private upstream fixture unavailable.");
+			const workloadListener = createWorkloadTlsListener({ ...workload, certificatePem: material.cert, privateKeyPem: material.key.toString(),
+				appPort: address.port, tlsPort: 8443, maxConnections: 8, timeoutMs: 15000, idleMs: 5000, handshakeMs: 1000, shutdownMs: 1000,
+				maxInboundBytes: 1024 * 1024, maxOutboundBytes: 1024 * 1024 });
+			workloadListeners.push(workloadListener);
+			await new Promise<void>((resolve, reject) => { workloadListener.server.once("error", reject); workloadListener.server.listen(0, "127.0.0.1", resolve); });
+			const tlsAddress = workloadListener.server.address(); if (!tlsAddress || typeof tlsAddress === "string") throw new Error("Workload TLS fixture unavailable.");
 			gateways.set(new URL(origin).host, new GatewayAuthenticatedHttp({
 				browser: { appOrigin: origin, platformOrigin: PLATFORM, bindingId: binding, serviceCredential: key.token, timeoutMs: 5000, transactions: { ttlSeconds: 300, maxEntries: 100 } },
 				context: { appOrigin: origin, bindingId: binding, environment: workload.environment },
-				upstream: { ...workload, privateIp: "10.0.1.23", port: address.port, certificatePem: material.cert, timeoutMs: 1000, maxConnections: 8 },
+				upstream: { ...workload, privateIp: "10.0.1.23", port: tlsAddress.port, certificatePem: material.cert, timeoutMs: 1000, maxConnections: 8 },
 				limits: { maxRequestBytes: 65536, maxResponseBytes: 65536, timeoutMs: 10000, idleMs: 5000, maxConnections: 8 },
 			}, transport, (configuration) => tlsConnect({ ...configuration, host: "127.0.0.1" })));
 		}
@@ -152,6 +160,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 	test.afterAll(async () => {
 		for (const gateway of gateways.values()) gateway.close();
 		if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+		for (const workloadListener of workloadListeners) await workloadListener.stop(0);
 		for (const upstream of upstreams) await new Promise<void>((resolve, reject) => upstream.close((error) => error ? reject(error) : resolve()));
 		for (const material of upstreamCertificates) await material.dispose();
 		if (application && application.exitCode === null) {

@@ -108,6 +108,10 @@ The full >=95 requirement remains unmet. Unchanged database/browser suites pass
 in exact parent #119 CI; they are not separately repeated locally for this
 read-only component. The manifest records these proof boundaries.
 
+[WORKLOAD_TLS_LISTENER.md](WORKLOAD_TLS_LISTENER.md) describes the candidate
+task-local transport and image. It still needs a trusted launch/controller,
+actual AWS TLS/ingress verification and the remaining release gates.
+
 AWS references: [task description](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTasks.html),
 [task-definition description](https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeTaskDefinition.html),
 [Fargate task networking](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-task-networking.html),

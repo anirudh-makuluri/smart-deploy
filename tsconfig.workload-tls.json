@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022"], "module": "commonjs", "moduleResolution": "node",
+    "rootDir": "./src/lib/workload-tls", "outDir": "./dist/workload-tls", "strict": true,
+    "esModuleInterop": true, "types": ["node"], "skipLibCheck": true,
+    "declaration": false, "sourceMap": false, "incremental": false
+  },
+  "include": ["src/lib/workload-tls/*.ts"]
+}
