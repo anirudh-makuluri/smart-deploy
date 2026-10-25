@@ -80,12 +80,24 @@
     "baseImage": {
       "tag": "public.ecr.aws/docker/library/node:24-alpine",
       "indexDigest": "sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
-      "image": "public.ecr.aws/docker/library/node@sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420",
+      "image": "docker.io/library/node@sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420",
       "nodeVersion": "24.22.1",
       "platform": "linux/amd64",
-      "inspectedAt": "2026-10-25T22:10:33.941Z"
+      "inspectedAt": "2026-10-25T22:10:33.941Z",
+      "originalEcrPublicImage": "public.ecr.aws/docker/library/node@sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420",
+      "identicalOfficialRegistryManifest": {
+        "image": "docker.io/library/node@sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420",
+        "nodeVersion": "24.22.1",
+        "platform": "linux/amd64",
+        "identicalEcrPublicManifest": true,
+        "manifestDigest": "sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420",
+        "configDigest": "sha256:fecf2188af16d8979528abb79909513c78971103c52f677d69584e93c3a0ffcf",
+        "inspectedAt": "2026-10-25T22:59:09.282Z"
+      }
     },
     "vulnerabilityScan": false,
+    "initialCiFailure": "fb55679 passed unit/build/native process checks; ECR Public image metadata pull hit 429 data limit on shared runner before container execution",
+    "registryRepair": "Official Docker Hub manifest and config SHA-256 match the ECR Public artifact; only registry URI changed, without auth setup or weaker pin",
     "databaseSuite": "Unchanged 134 database tests pass in exact parent #120 CI; changed 15-case compiled browser transport repeated locally",
     "buildWarning": "Existing dynamic filesystem tracing warnings retained",
     "databaseStopped": true,

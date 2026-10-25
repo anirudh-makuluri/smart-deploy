@@ -66,11 +66,14 @@ The image copies just those files into `/app`, runs as UID/GID 10001, and has no
 application package dependencies. The Node distribution itself retains its base
 image tooling. Runtime read-only filesystem/capability policy must be configured in ECS;
 the container test explicitly uses read-only root, no capabilities, no new
-privileges and resource limits. The candidate base is Node 24.22.1 Linux/amd64
-from the official Node mirror in ECR Public, pinned to manifest
+privileges and resource limits. The candidate base is official Node 24.22.1
+Linux/amd64 from Docker Hub, pinned to manifest
 `sha256:1200d815de24f8dcca745fbf7651d166034a35adbcad8860a8538ffff44f1420`.
-Anonymous registry inspection verified manifest and config SHA-256 identities
-and platform/version metadata. This is not vulnerability-scan evidence. Image
+Anonymous ECR Public and Docker Hub inspection verified identical manifest and
+config SHA-256 identities and platform/version metadata. The first CI attempt
+passed unit/build/native-process checks but ECR Public returned 429 data-limit
+errors on its shared runner. Only the source registry changed; the image digest
+is unchanged. This is not vulnerability-scan evidence. Image
 publication/scanning, IAM and resource provisioning remain separate release work.
 
 ## Verification boundaries
