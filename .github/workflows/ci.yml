@@ -82,6 +82,7 @@ jobs:
         run: npm run test:e2e:cookies
         env:
           RUN_COOKIE_BROWSER_TESTS: '1'
+          RUN_GATEWAY_BROWSER_TESTS: '1'
           TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
           DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
           BETTER_AUTH_SECRET: local-cookie-ci-only-secret-never-for-production

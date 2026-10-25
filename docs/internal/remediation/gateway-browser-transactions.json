@@ -1,0 +1,72 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "gateway-browser-transactions",
+  "purpose": "Bounded single-use browser/state/binding proof for gateway login",
+  "baselineRevision": "1817fcca12aaffb84ff5b76ad8c1b190e4ea036b",
+  "candidateBaseRevision": "1817fcca12aaffb84ff5b76ad8c1b190e4ea036b",
+  "baselineEvidence": "Final verified #110 source snapshot, scanned before commit while HEAD was a94f602; source now committed as 1817fcc",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "playwright.cookies.config.ts",
+    "src/lib/gateway/browserTransactions.ts",
+    "tests/e2e/gateway-browser-transactions.spec.ts",
+    "tests/unit/lib/gatewayBrowserTransactions.test.ts",
+    ".github/workflows/ci.yml",
+    "docs/internal/GATEWAY_BROWSER_TRANSACTIONS.md"
+  ],
+  "verification": {
+    "unitFiles": 138,
+    "unitTests": 659,
+    "focusedTests": 36,
+    "nativeHttpsBrowserCases": 6,
+    "nativeScope": "Actual transaction class, synthetic loopback HTTPS browser flow; no real identity/control-plane/code redemption/upstream/AWS",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 4,
+    "fullDoctorFiles": 594,
+    "doctorScansComplete": true,
+    "database": "Not repeated locally; unchanged policy/database code verified by #110 with 100 PostgreSQL tests and passing CI",
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Single-process ephemeral state; restart requires fresh login and replicas require shared state or guaranteed affinity.",
+    "Only the latest pending login on a host can finish after its nonce rotates; earlier tabs restart.",
+    "Bounded retained entries are not public admission/rate limits.",
+    "Confirmation UI, callback HTTP validation, redemption transport, app-session cookies and customer proxy remain subsequent integration.",
+    "Full repository >=95 and complete-feature production gates remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}
