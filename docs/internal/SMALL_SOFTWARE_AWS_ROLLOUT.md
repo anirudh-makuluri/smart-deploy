@@ -1105,3 +1105,37 @@ failure remains recorded; identical pinned Docker Hub content repairs it without
 login, weaker pin or skips. Local Docker remains unavailable; Linux CI proof is
 not AWS/VPC/IAM/hosted acceptance. Draft/unmerged; full Doctor84/100 and remaining
 feature gates unmet. No production or AWS startup.
+
+Manual continuation October 25, approximately 16:20-16:41 America/Phoenix:
+published draft https://github.com/anirudh-makuluri/smart-deploy/pull/122 at
+0cd7b6db9a11be4f2d9ae56529f78a26174d83fc, branch feat/private-runtime-preflight,
+base feat/workload-tls-listener (#121, 326f476); merge #121 first. Canonical
+SQL source preflight covers the complete artifact/configuration, release and
+deployment association plus binding/environment/origin. A pinned image alone
+cannot authorize a changed configuration. Required fingerprint is recomputed
+under registration locks; missing/changed/replayed fingerprints fail. Verified
+managers prepare only IDs/pinned image/hash, without returning config or secrets.
+This is privileged consistency checking, not an HTTP principal or AWS/TLS proof;
+external checks must repeat on drift. No cloud wait inside SQL transactions.
+
+Local: 152 unit files/1,087 tests; nine PostgreSQL files/146 tests (39 registry,
+12 new, all39 repeated on final source); two compiled workload process cases;
+all15 compiled Next/Better Auth/PostgreSQL/native gateway -> workload TLS -> HTTP
+browser cases; typecheck/full lint/worker/workload/production build/diff pass.
+Removing fingerprint comparison causes expected stale-config failure; exact
+source restored. Initial JSON-order fixture annotation corrected. Three-file
+Doctor100; full unfiltered650-file84, zero errors and identical37 warning IDs/
+26 files, no suppression. Build tracing warnings retained. Fixtures/keys cleaned;
+database and servers stopped. Docker unavailable locally; unchanged container
+passes exact parent #121 Linux CI. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-private-runtime-preflight-1792970551305.
+Exact publisher identity anirudh-makuluri verified; only intended six files
+committed, staged diff check and commit hook passed. Attached PR; issue99 updated.
+#121 remains draft/unmerged at verified326f476; billing #85 remains separate/open
+at14c67e452be54c6639ac2a7f3a69737b269c1999. #122 exact-head CI pending.
+
+No production caller, migration, AWS calls/provisioning/startup or rollout merge/
+deploy. Trusted controller/AWS/TLS composition, certificate/credential lifecycle,
+egress/complete $10 budget, wake/idle, isolated data/secrets/quotas, UI/tools,
+WebSockets, full Doctor>=95 and hosted acceptance remain unfinished. Data deletion/
+retention policy clarification remains pending; independent source work continued.
