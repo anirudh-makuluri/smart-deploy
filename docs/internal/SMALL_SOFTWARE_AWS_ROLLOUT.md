@@ -918,3 +918,9 @@ Next native listener/current runtime registration, then WS/certificates/private
 AWS ingress and wake/idle/budget, data/secrets/quotas, UI/tools, full >=95 and
 hosted acceptance. No production flags/migrations/provider changes/invitations/
 resources/startup/merge/deployment.
+
+#117 exact-head CI refresh: all checks pass at
+4b3371eafcf8308ae00fbd3a9ca7aabcdd117d3b, including composed real-TLS app
+browser cases on Node 20 and full database/build/unit/typecheck/worker/Doctor/
+analytics/Vercel checks. Draft/unmerged; full >=95 and complete runtime acceptance
+remain unmet. Native listener bridge is in progress. No production/AWS startup.
