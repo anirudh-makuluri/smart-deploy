@@ -649,3 +649,10 @@ invitation-link/login transport, full >=95 and gateway/runtime/data/UI/tools/
 integrated gates remain. Preview audience remains a pending user decision.
 No migration, feature enablement, production mutation, provider change,
 invitation email, cloud resource, worker start, rollout merge or deployment.
+
+Preview-audience decision resolved: the user selected published-app access only
+for colleagues with app-use grants. Previews are reserved for workspace owners/
+admins, retaining current verification and platform-approval requirements.
+Earlier pending-question snapshots are superseded. A focused binding/policy
+increment is underway; this decision alone establishes no runtime protection or
+persistent-data separation. No other product decision is currently pending.
