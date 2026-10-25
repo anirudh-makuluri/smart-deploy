@@ -86,8 +86,10 @@ category filtering; full >=95 remains unmet. Unchanged database/browser suites
 pass in exact parent #115 CI, including Node 20 TLS and compiled confirmation
 checks; they were not separately repeated locally for this transport component.
 
-Still required: a native listener/runtime registrar and production streaming
-bridge proof; WebSocket origin/revalidation/limits; unique
+The subsequent [native HTTPS bridge](GATEWAY_NATIVE_HTTP.md) covers protocol
+conversion and streaming in local tests. Still required: listener startup,
+authoritative runtime registration and hosted proof; WebSocket
+origin/revalidation/limits; unique
 certificate issuance and private AWS ingress/direct-origin denial; on-demand
 wake/idle/budget controls; app data/secrets/usage; publish/share/invitation UI and
 tools; repository Doctor >=95 and complete hosted acceptance. Nothing is merged,

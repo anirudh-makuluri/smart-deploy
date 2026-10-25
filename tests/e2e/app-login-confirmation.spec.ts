@@ -10,6 +10,7 @@ import { connect as tlsConnect } from "node:tls";
 import { Client, Pool } from "pg";
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { GatewayAuthenticatedHttp } from "../../src/lib/gateway/authenticatedHttp";
+import { createGatewayHttpsServer } from "../../src/lib/gateway/nativeServer";
 import { gatewayCertificate } from "../helpers/gatewayCertificate";
 import { GATEWAY_SESSION_COOKIE } from "../../src/lib/gateway/cookies";
 import { createGatewayServiceCredential } from "../../src/lib/apps/gatewayServiceAuth";
@@ -80,24 +81,6 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		const openssl = process.env.OPENSSL_PATH || (process.platform === "win32" && existsSync(windowsOpenSSL) ? windowsOpenSSL : "openssl");
 		execFileSync(openssl, ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,DNS:app.localhost,DNS:preview.localhost", "-keyout", keyPath, "-out", certPath], { stdio: "ignore", windowsHide: true });
 		const certificate = await readFile(certPath);
-		server = createServer({ key: await readFile(keyPath), cert: certificate }, async (request, response) => {
-			try {
-				const gateway = gateways.get(request.headers.host ?? "");
-				if (!gateway) { response.writeHead(403).end(); return; }
-				platformCookieReachedApp ||= (request.headers.cookie ?? "").includes("__Host-smartdeploy.session_token=");
-				const headers = new Headers();
-				for (const [name, value] of Object.entries(request.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-				const origin = request.headers.host === "app.localhost" ? PUBLISHED : PREVIEW;
-				const input = new Request(new URL(request.url ?? "/", origin), { method: request.method, headers });
-				const managed = await gateway.handle(input);
-				// Small fixture responses only. Native listener streaming/backpressure is separate work.
-				const body = Buffer.from(await managed.arrayBuffer());
-				for (const [name, value] of managed.headers) if (name !== "set-cookie") response.setHeader(name, value);
-				const cookies = managed.headers.getSetCookie(); if (cookies.length) response.setHeader("Set-Cookie", cookies);
-				response.writeHead(managed.status).end(body);
-			} catch { response.writeHead(403).end("Private fixture denied."); }
-		});
-		await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(34434, "127.0.0.1", resolve); });
 		// Keep Next outside Playwright's Babel hooks, which cannot transform its sectioned source maps.
 		application = spawn(process.execPath, ["tests/e2e/app-login-server.mjs"], { windowsHide: true,
 			env: { ...process.env, NODE_ENV: "production", APP_LOGIN_TEST_KEY: keyPath, APP_LOGIN_TEST_CERT: certPath }, stdio: ["ignore", "pipe", "pipe", "ipc"] });
@@ -138,6 +121,8 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 				let identity: { id: string; email: string };
 				try { identity = JSON.parse(Buffer.from(String(incoming.headers["x-smartdeploy-identity"]), "base64url").toString()); }
 				catch { outgoing.writeHead(500).end("Missing verified fixture identity."); return; }
+				if (incoming.url === "/echo") { let body = ""; incoming.on("data", (chunk: Buffer) => { body += chunk.toString(); }); incoming.once("end", () => outgoing.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ body, identity }))); return; }
+				if (incoming.url === "/unsafe-cookie") { outgoing.writeHead(200, { "Set-Cookie": `${GATEWAY_SESSION_COOKIE}=evil; Path=/; Secure` }).end("must not reach browser"); return; }
 				if (incoming.url === "/request-evidence") { outgoing.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ identity, bindingId: incoming.headers["x-smartdeploy-binding-id"], environment: incoming.headers["x-smartdeploy-environment"], authorization, platformCookie, gatewayCookie })); return; }
 				outgoing.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html><title>Private fixture</title><link rel="icon" href="data:,"><p>Private fixture: ${identity.email}</p>`);
 			});
@@ -150,6 +135,16 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 				limits: { maxRequestBytes: 65536, maxResponseBytes: 65536, timeoutMs: 10000, idleMs: 5000, maxConnections: 8 },
 			}, transport, (configuration) => tlsConnect({ ...configuration, host: "127.0.0.1" })));
 		}
+		server = createGatewayHttpsServer({ key: await readFile(keyPath), cert: certificate,
+			limits: { maxRequestBytes: 65536, maxResponseBytes: 65536, timeoutMs: 15000, idleMs: 5000, maxConnections: 16 },
+			routes: [PUBLISHED, PREVIEW].map((origin) => {
+				const gateway = gateways.get(new URL(origin).host); if (!gateway) throw new Error("Missing registered fixture runtime.");
+				return { origin, close: () => gateway.close(), handle: (request) => {
+					platformCookieReachedApp ||= (request.headers.get("cookie") ?? "").includes("__Host-smartdeploy.session_token="); return gateway.handle(request);
+				} };
+			}),
+		});
+		await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(34434, "127.0.0.1", resolve); });
 	});
 	test.beforeEach(async ({ page }) => { platformCookieReachedApp = false; browserHeadersReachedMachineApi = false; managementRequests = 0; upstreamRequests = 0; secretsReachedUpstream = false;
 		page.on("request", (request) => { const pathname = new URL(request.url()).pathname; if (pathname === "/api/ws-token" || pathname === "/ws") managementRequests++; });
@@ -237,6 +232,24 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		const before = upstreamRequests; await apps.revokeUse(appId, owner.id, member.id);
 		try { expect(await page.evaluate(async () => (await fetch("/request-evidence")).status)).toBe(403); expect(upstreamRequests).toBe(before); }
 		finally { await apps.grantUse(appId, owner.id, member.id); }
+	});
+	test("streams a same-origin upload through the native listener and verified app transport", async ({ page, context }) => {
+		await visit(page, context, member); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PUBLISHED + "/items?sort=new");
+		const result = await page.evaluate(async () => { const response = await fetch("/echo", { method: "POST", headers: { "content-type": "text/plain" }, body: "fixture-upload" }); return { status: response.status, body: await response.json() }; });
+		expect(result.status).toBe(200); expect(result.body).toEqual({ body: "fixture-upload", identity: { id: member.id, email: member.email } }); expect(secretsReachedUpstream).toBe(false);
+	});
+	test("delivers readable anonymous POST denial without forwarding input or cutting off the response", async ({ page, context }) => {
+		await visit(page, context, member); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PUBLISHED + "/items?sort=new");
+		await context.clearCookies({ name: GATEWAY_SESSION_COOKIE }); const before = upstreamRequests;
+		const result = await page.evaluate(async () => { const response = await fetch("/echo", { method: "POST", body: "must-not-forward" }); return { status: response.status, body: await response.json() }; });
+		expect(result).toEqual({ status: 401, body: { error: "App access unavailable." } }); expect(upstreamRequests).toBe(before);
+	});
+	test("rejects a real app cookie overwrite while preserving the valid app session", async ({ page, context }) => {
+		await visit(page, context, member); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(PUBLISHED + "/items?sort=new");
+		const cookie = (await context.cookies()).find((value) => value.name === GATEWAY_SESSION_COOKIE)?.value;
+		expect(await page.evaluate(async () => (await fetch("/unsafe-cookie")).status)).toBe(502);
+		expect((await context.cookies()).find((value) => value.name === GATEWAY_SESSION_COOKIE)?.value).toBe(cookie);
+		expect(await page.evaluate(async () => (await fetch("/request-evidence")).status)).toBe(200);
 	});
 	test("revokes both published and preview app sessions on platform sign-out", async ({ page, context }) => {
 		for (const origin of [PUBLISHED, PREVIEW]) { await visit(page, context, owner, origin); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(origin + "/items?sort=new"); }

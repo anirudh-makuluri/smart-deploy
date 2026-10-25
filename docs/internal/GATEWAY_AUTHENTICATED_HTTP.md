@@ -33,11 +33,11 @@ separate unfinished work.
 
 Errors use generic private/no-store JSON with anti-framing and content-type
 protections. No control-plane exception bodies or app metadata are exposed.
-Canceled/denied input is disposed. A native listener bridge must preserve
-cancellation without destroying the inbound socket before writing an early
-error response, stream successful output with backpressure, and terminate late
-stream failures. It must enforce strict host selection, parser/connection limits,
-and authoritative runtime mapping. Global admission/rate/usage/cost limits are
+Canceled/denied input is disposed. The subsequent
+[native HTTPS bridge](GATEWAY_NATIVE_HTTP.md) preserves cancellation and early
+error delivery, streams output and enforces protocol/connection bounds. Its
+caller must still supply authoritative runtime mapping and startup integration.
+Global admission/rate/usage/cost limits are
 still required beyond one instance's caps.
 
 ## Integrated proof
@@ -55,9 +55,10 @@ requests. All 12 browser cases pass locally, with build/typecheck included.
 
 This remains a guarded loopback fixture: accounts are marked verified in SQL,
 approval is simulated, app content is fixed, and task networking is mapped to
-loopback while preserving TLS peer checks. The fixture's front HTTP bridge
-buffers only its small bounded responses; it does not prove a production native
-listener's streaming/backpressure or upload behavior. The preceding 50 transport
+loopback while preserving TLS peer checks. The initial #117 front bridge buffered
+small bounded responses. The subsequent native bridge replaces it; the suite now
+passes 15 cases including uploads, readable anonymous POST denial and cookie
+overwrite rejection. The preceding 50 transport
 cases separately exercise native upstream streaming/cancellation. No OAuth or
 email delivery, AWS routing/direct-origin denial, customer image or hosted
 acceptance is claimed. Generated keys/certificates and servers are cleaned,
@@ -82,7 +83,7 @@ at 100/100; the unfiltered 627-file scan remains 84/100, zero errors and the sam
 remains unmet. Unchanged full database/browser suites pass in exact parent #116
 CI; the new compiled PostgreSQL/browser composition is repeated locally here.
 
-Still required: native listener bridge and authoritative runtime registration;
+Still required: listener startup and authoritative runtime registration;
 WebSocket limits/revalidation; unique certificate provisioning and private AWS
 ingress/direct-origin prevention; on-demand wake/idle/budget controls; app data,
 secrets and quotas; publishing/sharing/invitation UI and app tools; full Doctor
