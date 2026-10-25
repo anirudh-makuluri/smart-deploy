@@ -931,3 +931,30 @@ files or secret values. Apply app + environment namespaces and secret references
 published configuration must not inherit preview secret values through copied
 DeployConfig. Recorded in AWS_ON_DEMAND_PILOT_PLAN.md. Existing platform auth/DB
 unchanged; no resource provisioning or data mutation. No product question pending.
+
+### Native HTTPS protocol bridge — draft #118
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/118
+Head 34ca8a69903d84ec515ce072d0c05079e74eb27a; base
+feat/authenticated-http-gateway / 4b3371e (#117). Merge order #117 -> #118.
+Unbound native HTTPS factory with strict registered Host/protocol/path/raw-header/
+framing limits; pull input, sequential output, preserved protected callback
+cookies, lifetime/idle/connection caps. Cancel unread input without destroying
+the socket before early 401/413 finish. No default tenant, automatic Continue,
+tunnel/upgrade or second response after late errors. No listen/process/cloud.
+Local: 150 files/956 tests (22 protocol), 15 compiled production Next/PostgreSQL/
+browser cases (three new), typecheck/lint/worker/build/diff pass. Actual bridge
+replaces buffered fixture: uploads, readable anonymous POST with zero app
+requests and real app cookie overwrite rejection/session preservation pass.
+Expected input-destroy mutation socket-hang-up regression; source restored.
+Header timeout fixed to remain within request timeout. Pinned five-file Doctor
+100; full unfiltered 631-file scan 84, zero errors and same 37 warning IDs/26 files.
+No suppression; existing filesystem tracing warning retained. Fixtures and
+certificates cleaned, PostgreSQL stopped. Approval/verification/app content
+remain controlled fixtures and routing is loopback with real TLS checks; no
+hosted/OAuth/AWS/customer-container proof. #117 all CI/preview pass; #118 running.
+Evidence C:\Users\aniru\.codex\verification\smartdeploy-native-bridge-1792943394781.
+Next authoritative runtime registration and startup; WS, certificates/private
+AWS ingress, wake/idle/budget, isolated preview/published data/secrets/quotas,
+UI/tools, full >=95 and hosted acceptance remain. No production flags/migrations/
+providers/emails/resources/startup/merge/deployment. No product question pending.
