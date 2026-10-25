@@ -745,3 +745,35 @@ secrets/usage, publishing UI/tools and integrated acceptance remain. No
 production migration, feature enablement, provider change, invitation email,
 resource provisioning, worker start, merge or deployment. No product question
 is pending. Continue confirmation-page integration.
+
+App confirmation: draft
+[#113](https://github.com/anirudh-makuluri/smart-deploy/pull/113), head
+`84c63f24d394ff8f7a0f6913a471be24f154d7c4`, on #112 / `6636bb7`.
+Current authorized metadata is read without issuing/joining; explicit Continue
+confirms the displayed identity. Required expectedIdentity equality is checked
+against fresh Better Auth and the locked current database row. Changed IDs/
+emails return 409, missing assertions 400. Coordinate browser/issuer release
+with flags off and no fallback. The page excludes unrelated management worker/
+session-recovery providers, prohibits framing/cache/referrers, disables approval
+until hydrated, validates the exact receipt and cancels stale requests.
+
+Local checks pass: 145 unit files / 761 tests (56 new); eight PostgreSQL files /
+107 tests (six new); ten compiled Next HTTPS browser cases; typecheck/lint/worker
+compilation/production build/diff. Native proof composes real installed Better
+Auth signed cookies, SQL policy, issuance/service-key/S256/cookies and global
+logout across published/preview sessions. Approval and app content are fixtures;
+verification is SQL-established. No real GitHub OAuth/email, customer upstream,
+hosted or AWS claim. Desktop/mobile screenshots reviewed, no horizontal overflow.
+Two pre-fix regressions fail, then all 24 affected-suite tests pass. Earlier
+fixture module/source-map, standard-port, development-reload and hidden-alert
+problems were corrected without relaxing origin/CSRF/database constraints.
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-login-confirmation-1792913956273.
+Complete pinned 22-file Doctor 100; unfiltered 614-file report 84 (prior 83),
+zero errors and the same 37 warning IDs across 26 files. Full >=95 still unmet.
+All fixture ports/certificates cleaned, disposable database stopped. #112 all
+CI/preview checks pass at 6636bb7; #113 CI running. Merge order extends
+#112 -> #113. Next private HTTP/WS proxy, upstream and direct-origin isolation,
+AWS data/secrets/quotas/on-demand controls, publishing/share/invitation UI,
+app-scoped tools/usage and hosted acceptance. No production migration, flags,
+provider change, invitation email, resource, AWS startup, merge or deployment.
+No product question is pending.
