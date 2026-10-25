@@ -85,6 +85,14 @@ budget alert alone is not enforcement. Stop new work before reservations exceed
 the budget and prove idle shutdown preserves persistent data. Preserve existing
 non-pilot jobs when coordinating the shared worker's lifecycle.
 
+Further gate found during runtime verification: unrestricted outbound task
+traffic bypasses storage-broker quotas. App ingress/response bounds and private
+security-group rules alone do not bound that egress bill. Before provisioning,
+the network design must meter/enforce all app outbound traffic or explicitly
+restrict it; include bootstrap image/log/secret traffic in the cost envelope.
+The public-IP candidate above is not a completed budget-enforcement design.
+No replacement route/service has been provisioned or chosen implicitly.
+
 Keep all deployment/startup flags off until full-repository >=95, integrated
 local creator/member/outsider checks, reviewed infrastructure diffs, complete
 cost controls and the user's existing conditional production gate are satisfied.

@@ -1005,3 +1005,38 @@ migration/flags/provider change/invitation email/provisioning/startup/merge/depl
 unit/build/typecheck/worker, Doctor, analytics and Vercel preview checks. Still
 draft/unmerged; full >=95 and full pilot acceptance remain unmet. Read-only AWS
 task/network verification is in progress. No production/AWS startup.
+
+### Read-only AWS runtime verification — draft #120
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/120
+Head d6da294e7c420320b9e98621d92eba4a62ea739f; base
+feat/app-runtime-registration / 7b455cf (#119). Merge #119 before #120.
+SDK Describe checks exact task/revision/context/all-container images and the
+private ENI, subnet/VPC, complete security groups and exclusive gateway-group
+interface attachment. Final task re-read catches shutdown/address drift. Fixed
+Linux/X86_64 Fargate 1.4.0 quarter-CPU/512-MiB/default-storage profile; two pinned
+app/TLS containers, no app task IAM role/Exec/shared volumes/unsupported overrides,
+scoped app/environment SSM and runtime TLS-key references. Public/extra/broad/
+peering/CIDR/prefix-list ingress, foreign source group/owner, additional gateway
+group interfaces, partial/paginated responses fail. SDK attempts/sockets/deadline/
+pending/cancellation bounded; admission held until actual SDK work settles,
+late results discarded and clients destroyed on close. Redacted errors.
+Local: 151 unit files/1,044 tests (88 new), typecheck/full lint/worker/configured
+production build/diff pass. Public IPv4 predicate mutation causes expected single
+failure; source restored. Initial test-only Node override conflicted with shared
+window setup; standard environment fixes fixture failure. SDK commands are real,
+clients/response metadata mocked: no AWS requests, SigV4/IAM/live Fargate or
+direct-origin proof. Unchanged DB/browser suites pass in exact parent #119 CI,
+not repeated locally. Build uses disposable local DB/disabled flags and stops it;
+full-suite TLS fixtures cleaned. Six-file Doctor 100; full unfiltered 640-file
+report 84, zero errors and identical 37 warning IDs/26 files. No suppression;
+existing filesystem tracing warnings retained. CI running. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-aws-runtime-verification-1792957373293.
+Read-only, non-atomic metadata component; no production caller/launch/registration
+adapter, release-fingerprint SQL recheck, actual workload TLS/readiness, IAM policy
+verification or SSM/image provisioning. Egress/complete $10 budget enforcement
+remain gates: outbound traffic bypasses storage-broker quotas. Workload listener,
+controller, wake/idle, WebSockets, isolated data/secrets/quotas, UI/tools, full >=95
+and hosted acceptance remain. #119 all CI/preview pass; #85 unchanged/separate at
+14c67e4. No production migrations/flags/providers/emails/resources/startup/merge/
+deployment.
