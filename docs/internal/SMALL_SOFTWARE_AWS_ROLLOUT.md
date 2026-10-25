@@ -880,3 +880,10 @@ Next authenticated composition and native listener/runtime mapping. WS, unique
 certificates/private AWS ingress, wake/idle/budget, data/secrets/quotas, UI/tools,
 full >=95 and hosted acceptance remain. No production flags/migrations/provider
 changes/invitations/resources/startup/merge/deployment.
+
+#116 exact-head CI refresh: all checks pass at
+097217c15dc2b88ab7f684d5bc7324a08f721168, including new native HTTPS transport
+cases on Node 20, database/browser, build/worker/typecheck, Doctor, analytics proxy
+and Vercel preview. Draft/unmerged; full >=95 and complete runtime acceptance
+remain unmet. Authenticated HTTP composition and compiled browser-to-upstream
+verification are in progress. No production or AWS startup.
