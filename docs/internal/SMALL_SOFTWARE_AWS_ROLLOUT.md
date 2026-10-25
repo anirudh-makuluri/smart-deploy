@@ -964,3 +964,38 @@ providers/emails/resources/startup/merge/deployment. No product question pending
 full database/unit/build/typecheck/worker, Doctor, analytics and Vercel preview.
 Still draft/unmerged; full >=95 and complete runtime acceptance remain unmet.
 Runtime registration metadata is in progress. No production/AWS startup.
+
+### Runtime registration metadata — draft #119
+
+https://github.com/anirudh-makuluri/smart-deploy/pull/119
+Head 7b455cf8599470c817820a13d1250a31b1956ae6; base
+feat/gateway-native-http-bridge / 34ca8a6 (#118). Merge #118 before #119.
+Privileged app/environment registrations reference successful immutable AWS/ECS
+release snapshots and deployment associations. Fresh private UUID origins are
+permanently reserved. Serialized CAS activation switches the route, revokes the
+old key and retires the old runtime. Pending/stale managed keys fail; issuance
+and session checks require a live selected runtime. Sessions survive replacement
+on the same binding but fail after unpublish. Preview/published selections/keys
+stay separate; no documents/files/configuration/secrets copied.
+Local: 150 unit files/956 tests; nine PostgreSQL files/134 tests (27 registry),
+15 compiled Next/Better Auth/PostgreSQL/native HTTPS browser cases;
+typecheck/lint/worker/build/diff pass. Competing selectors yield one winner;
+source mutation waiting on registration cannot modify the committed snapshot.
+Availability-predicate removal causes expected unpublish failure; source restored.
+Fixture PID typing corrected. Two new Zod migration warnings fixed with v4
+looseObject; affected 27 DB cases and all 15 browser cases repeated successfully,
+with final focused schema lint and compilation. Earlier full lint passes.
+Six-file Doctor 100; full unfiltered report 84, zero errors and identical
+37 warning IDs/26 files. No suppression. Existing build tracing warning remains.
+Fixtures/certificates cleaned and PostgreSQL stopped. Browser bindings remain
+legacy fixtures; approval/verification/app content controlled, loopback TLS,
+no hosted or actual AWS-attested runtime proof. CI running. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-runtime-registration-1792954224144.
+No registration API/run adapter, actual ECS/all-container/ENI/VPC/subnet/SG
+verification, credential/certificate provisioning, loader/process/listen or DNS
+cutover. The caller must verify AWS evidence before registration. Deactivate is
+unpublish, not idle stop; later wake recovery and ordered cleanup remain.
+WebSockets, private ingress/wake/idle/complete $10 budget enforcement, isolated
+data/secrets/quotas, UI/tools, full >=95 and hosted acceptance remain. #85 still
+open/separate at 14c67e4; #118 all exact-head CI/preview pass. No production
+migration/flags/provider change/invitation email/provisioning/startup/merge/deploy.
