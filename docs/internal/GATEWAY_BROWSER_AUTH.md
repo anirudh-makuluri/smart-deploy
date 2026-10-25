@@ -68,7 +68,8 @@ run alongside them. Fixture servers close and their two generated TLS files
 are removed. The control plane and identities are synthetic: these checks do
 not prove real Better Auth/SQL integration, hosted OAuth or customer traffic.
 
-Pending: platform confirmation UI with fresh identity/policy inspection;
+The platform confirmation UI and fresh identity/policy inspection are supplied
+by [APP_LOGIN_CONFIRMATION.md](./APP_LOGIN_CONFIRMATION.md). Pending:
 full HTTP/WS header/cookie/stream isolation; private authenticated upstreams
 and direct-origin blocking; DynamoDB/S3 data quotas and secrets; publishing UI;
 app-scoped tools/usage; ingress limits; integrated multi-user acceptance;

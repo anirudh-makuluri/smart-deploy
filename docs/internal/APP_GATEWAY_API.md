@@ -91,10 +91,13 @@ isolation, direct-origin blocking, and creator/member/outsider browser proof.
 The separate platform-browser issuance contract is described in
 [APP_BROWSER_HANDOFF.md](./APP_BROWSER_HANDOFF.md). It uses platform authentication
 and same-origin guards rather than these machine credentials. The confirmation
-screen remains unimplemented. The subsequent
+screen is supplied by [APP_LOGIN_CONFIRMATION.md](./APP_LOGIN_CONFIRMATION.md).
+The subsequent
 [browser adapter](./GATEWAY_BROWSER_AUTH.md) supplies transaction/callback,
 redemption-client and app-cookie primitives with native HTTPS fixture checks;
-it is not yet a running customer proxy or the platform confirmation screen.
+it is not yet a running customer proxy. The confirmation slice separately
+composes the real page, Better Auth/database and adapter over local HTTPS;
+hosted runtime and origin-enforcement proof remain outstanding.
 
 ## Verification boundary
 

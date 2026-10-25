@@ -59,6 +59,30 @@ beforeEach(async () => {
 });
 
 describe("gateway handoff and session store", () => {
+	it("inspects only current authorized bindings without minting credentials", async () => {
+		expect(await auth.inspect(bindingId, principal("bob"))).toEqual({ bindingId, app: { id: appId, name: "Tracker" },
+			workspace: { id: workspaceId, name: "Team" }, origin: "https://tracker.apps.example.test", environment: "published",
+			identity: { id: "bob", email: "bob@example.test" } });
+		for (const table of ["app_gateway_codes", "app_gateway_sessions"]) expect((await client.query(`select count(*) from public.${table}`)).rows[0].count).toBe("0");
+		await expect(auth.inspect(otherBindingId, principal("bob"))).rejects.toMatchObject({ status: 403 });
+		await expect(auth.inspect(await previewBinding(), principal("bob"))).rejects.toMatchObject({ status: 403 });
+		await expect(auth.inspect(bindingId, principal("carol"))).rejects.toMatchObject({ status: 403 });
+		await client.query('update public."user" set "emailVerified" = false where id = \'bob\'');
+		await expect(auth.inspect(bindingId, principal("bob"))).rejects.toMatchObject({ status: 403 });
+	});
+	it("rechecks the displayed identity under the issuance locks when database identity changes", async () => {
+		const display = await auth.inspect(bindingId, principal("bob"));
+		await client.query('update public."user" set email = \'new@example.test\' where id = \'bob\'');
+		await expect(auth.issue(bindingId, principal("bob"), proof().challenge, display.identity)).rejects.toMatchObject({ status: 409 });
+		expect((await client.query("select count(*) from public.app_gateway_codes")).rows[0].count).toBe("0");
+		expect(await auth.issue(bindingId, principal("bob"), proof().challenge, { id: "bob", email: "new@example.test" })).toHaveProperty("code");
+	});
+	it("denies inspection after platform-session expiry or binding disable", async () => {
+		await client.query('update public.session set "expiresAt" = clock_timestamp() - interval \'1 second\' where id = \'bob-session\'');
+		await expect(auth.inspect(bindingId, principal("bob"))).rejects.toMatchObject({ status: 401 });
+		await client.query("update public.app_gateway_bindings set disabled_at = clock_timestamp() where id = $1", [bindingId]);
+		await expect(auth.inspect(bindingId, principal("alice"))).rejects.toMatchObject({ status: 401 });
+	});
 	it("defaults new bindings to preview and limits previews to verified owners/admins", async () => {
 		const preview = await previewBinding();
 		expect((await client.query("select environment from public.app_gateway_bindings where id = $1", [preview])).rows[0].environment).toBe("preview");

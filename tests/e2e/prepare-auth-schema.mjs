@@ -5,9 +5,10 @@ import { readFileSync } from "node:fs";
 // Better Auth initializes schema inspection when Next loads auth. Prepare its
 // complete shape before starting that process, rather than racing a beforeAll.
 const connectionString = process.env.TEST_DATABASE_URL;
-const enabled = process.env.RUN_DATABASE_BROWSER_TESTS === "1" || process.env.RUN_INVITEE_BROWSER_TESTS === "1";
+const loginTest = process.env.RUN_APP_LOGIN_BROWSER_TESTS === "1";
+const enabled = process.env.RUN_DATABASE_BROWSER_TESTS === "1" || process.env.RUN_INVITEE_BROWSER_TESTS === "1" || loginTest;
 if (!enabled || !connectionString || process.env.DATABASE_URL !== connectionString
-	|| process.env.BETTER_AUTH_URL !== "http://localhost:3000" || !process.env.BETTER_AUTH_SECRET) {
+	|| process.env.BETTER_AUTH_URL !== (loginTest ? "https://localhost:34433" : "http://localhost:3000") || !process.env.BETTER_AUTH_SECRET) {
 	throw new Error("Explicit disposable browser-test configuration required.");
 }
 const target = new URL(connectionString);

@@ -15,7 +15,8 @@ user's platform cookie. The only accepted fields are:
 {
   "bindingId": "<operator-owned binding UUID>",
   "challenge": "<43-character base64url S256 challenge>",
-  "state": "<43-character base64url browser transaction state>"
+  "state": "<43-character base64url browser transaction state>",
+  "expectedIdentity": { "id": "<displayed account ID>", "email": "<displayed account email>" }
 }
 ```
 
@@ -30,9 +31,14 @@ Identity comes from Better Auth with cookie-cache snapshots and refresh disabled
 The store then checks the actual live platform-session row, current verified
 identity, current membership/app-use policy, and active operator binding under
 its existing transaction/locking rules. A supplied user ID or platform-session
-ID cannot select the principal. When enabled, the platform waiting-list approval
+ID cannot select the principal. The required expectedIdentity is an equality
+assertion against the displayed account, not authority to choose a user. A
+changed ID/email returns 409 before issuance; the store repeats that comparison
+under its user/session locks. Missing assertions return 400. Browser client and
+issuer must release together while flags stay off; no legacy fallback.
+When enabled, the platform waiting-list approval
 gate is freshly checked; lookup errors fail closed. Authentication/approval
-checks precede body consumption and issuance.
+checks precede issuance; fresh authentication precedes body consumption.
 
 Success returns `{code, callbackUrl, expiresAt, state}`. The callback URL is always
 the registered binding origin plus `/__smartdeploy/callback`. The request cannot
@@ -47,7 +53,7 @@ the correct verifier. Database/unexpected errors are redacted and return 503.
 
 This endpoint alone is not a complete browser login protocol. State is echoed
 opaque correlation data, not an authenticated credential or a server assertion
-that a browser transaction exists. A future platform confirmation screen must
+that a browser transaction exists. The platform confirmation screen must
 call this POST only after explicit user intent; receiving a navigation/link must
 not automatically issue a handoff.
 
@@ -73,7 +79,10 @@ implements the bounded gateway transaction/callback, authenticated redemption
 client and isolated app cookie. Native HTTPS tests use a synthetic control
 plane; the real confirmation UI and customer runtime remain unfinished. The
 machine client and API now require a matching configured-binding header and
-must be released together while gateway flags remain off.
+must be released together while gateway flags remain off. The current
+[confirmation screen](./APP_LOGIN_CONFIRMATION.md) now prepares authorized
+display metadata without issuing, and requires an explicit Continue action.
+The historical API-only verification below does not describe that later slice.
 
 ## Verification and remaining boundary
 

@@ -94,6 +94,30 @@ jobs:
           name: cookie-browser-evidence
           path: test-results/
 
+      - name: Verify real app confirmation and gateway over HTTPS
+        run: npm run test:e2e:app-login
+        env:
+          RUN_APP_LOGIN_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: https://localhost:34433
+          BETTER_AUTH_SECRET: local-confirmation-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          GATEWAY_CODE_TTL_SECONDS: '60'
+          GATEWAY_SESSION_TTL_SECONDS: '900'
+          WAITING_LIST_ENABLED: 'true'
+          SUPABASE_URL: http://127.0.0.1:45559
+          SUPABASE_SERVICE_ROLE_KEY: local-confirmation-approval-only
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save app confirmation browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-confirmation-browser-evidence
+          path: test-results/
+
   build-and-test:
     runs-on: ubuntu-latest
 

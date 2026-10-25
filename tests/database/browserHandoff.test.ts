@@ -25,6 +25,7 @@ import { POST as redeem } from "../../src/app/api/gateway/redeem/route";
 import { POST as authorize } from "../../src/app/api/gateway/authorize/route";
 import { GET as listWorkspaces } from "../../src/app/api/workspaces/route";
 import { POST as createWorkspace } from "../../src/app/api/workspaces/route";
+import { loadAppLoginConfirmation } from "../../src/lib/apps/loginConfirmation";
 
 const connectionString = databaseTestConnectionString();
 const client = new Client({ connectionString });
@@ -41,6 +42,7 @@ let sessionId: string;
 let bindingId: string;
 let workspaceId: string;
 let appId: string;
+const identitiesByCookie = new Map<string, { id: string; email: string }>();
 
 async function login(email: string): Promise<{ userId: string; sessionId: string; cookie: string }> {
 	const response = await fixtureAuth.handler(new Request("https://control.test/api/auth/sign-up/email", { method: "POST",
@@ -52,6 +54,7 @@ async function login(email: string): Promise<{ userId: string; sessionId: string
 	const principal = await fixtureAuth.api.getSession({ headers: new Headers({ cookie }), query: { disableCookieCache: true, disableRefresh: true } });
 	if (!principal) throw new Error("Fixture login unavailable.");
 	await client.query('update public."user" set "emailVerified" = true where id = $1', [principal.user.id]);
+	identitiesByCookie.set(cookie, { id: principal.user.id, email });
 	return { userId: principal.user.id, sessionId: principal.session.id, cookie };
 }
 function transaction() {
@@ -59,9 +62,10 @@ function transaction() {
 	return { verifier, input: { bindingId, challenge: createHash("sha256").update(verifier).digest("base64url"), state: randomBytes(32).toString("base64url") } };
 }
 function request(body: unknown, cookieValue = cookie): Request {
+	const payload = body && typeof body === "object" && !Array.isArray(body) ? { expectedIdentity: identitiesByCookie.get(cookieValue), ...body } : body;
 	return new Request("https://control.test/api/apps/handoff", { method: "POST", headers: {
 		origin: "https://control.test", "sec-fetch-site": "same-origin", "content-type": "application/json", cookie: cookieValue,
-	}, body: JSON.stringify(body) });
+	}, body: JSON.stringify(payload) });
 }
 async function codes(): Promise<number> {
 	return Number((await client.query<{ count: string }>("select count(*) from public.app_gateway_codes")).rows[0].count);
@@ -70,6 +74,7 @@ async function codes(): Promise<number> {
 beforeAll(async () => { await client.connect(); await prepareDatabaseTestRoles(client); });
 afterAll(async () => { await pool.end(); await client.end(); });
 beforeEach(async () => {
+	identitiesByCookie.clear();
 	await resetFoundationDatabase(client);
 	await client.query('delete from public."user"');
 	await (await getMigrations(options)).runMigrations();
@@ -87,6 +92,41 @@ beforeEach(async () => {
 });
 
 describe("signed Better Auth browser issuance with PostgreSQL", () => {
+	it("prepares current authorized display details without issuing or joining and returns a fixed sign-in destination anonymously", async () => {
+		const input = transaction().input;
+		const details = await loadAppLoginConfirmation(input, new Headers({ cookie }));
+		expect(details).toEqual({ status: "ready", request: input, app: { bindingId, app: { id: appId, name: "App" },
+			workspace: { id: workspaceId, name: "Team" }, environment: "published", origin: "https://app.test",
+			identity: { id: userId, email: "owner@example.test" } } });
+		expect(await codes()).toBe(0);
+		expect(Number((await client.query("select count(*) from public.app_gateway_sessions")).rows[0].count)).toBe(0);
+		const anonymous = await loadAppLoginConfirmation(input, new Headers());
+		expect(anonymous.status).toBe("signin");
+		if (anonymous.status === "signin") expect(new URL(anonymous.callbackURL, "https://control.test").pathname).toBe("/apps/authorize");
+		mocks.approved.mockResolvedValue({ approved: false });
+		expect(await loadAppLoginConfirmation(input, new Headers({ cookie }))).toEqual({ status: "denied" });
+	});
+	it("keeps confirmation metadata app-scoped for invited members and excludes unpublished previews", async () => {
+		const member = await login("confirm-member@example.test");
+		const invitation = await workspaces.createInvitation(workspaceId, userId, "confirm-member@example.test", "member");
+		await workspaces.acceptInvitation(member.userId, invitation.token);
+		await apps.grantUse(appId, userId, member.userId);
+		mocks.approved.mockResolvedValue({ approved: false });
+		const input = transaction().input;
+		expect((await loadAppLoginConfirmation(input, new Headers({ cookie: member.cookie }))).status).toBe("ready");
+		const preview = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin) values ($1, 'https://preview.test') returning id", [appId])).rows[0].id;
+		expect(await loadAppLoginConfirmation({ ...input, bindingId: preview }, new Headers({ cookie: member.cookie }))).toEqual({ status: "denied" });
+		await apps.revokeUse(appId, userId, member.userId);
+		expect(await loadAppLoginConfirmation(input, new Headers({ cookie: member.cookie }))).toEqual({ status: "denied" });
+		expect(await codes()).toBe(0);
+	});
+	it("rejects a changed account or email at browser issuance without minting a code", async () => {
+		const input = transaction().input;
+		expect((await POST(request({ ...input, expectedIdentity: { id: userId, email: "old@example.test" } }))).status).toBe(409);
+		expect((await POST(request({ ...input, expectedIdentity: { id: "other", email: "owner@example.test" } }))).status).toBe(409);
+		expect(await codes()).toBe(0);
+		expect((await POST(request(input))).status).toBe(200);
+	});
 	it("denies previews to an approved signed-in member with an app-use grant while allowing the published binding", async () => {
 		const member = await login("published-only@example.test");
 		const invitation = await workspaces.createInvitation(workspaceId, userId, "published-only@example.test", "member");

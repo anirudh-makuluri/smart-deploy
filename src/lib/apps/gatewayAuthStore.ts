@@ -8,6 +8,14 @@ export interface GatewayAuthLifetimes { codeSeconds: number; sessionSeconds: num
 export interface GatewayHandoff { code: string; callbackUrl: string; expiresAt: Date }
 export interface GatewaySession { token: string; expiresAt: Date }
 export interface PlatformSessionIdentity { userId: string; sessionId: string }
+export interface GatewayAppInspection {
+	bindingId: string;
+	app: { id: string; name: string };
+	workspace: { id: string; name: string };
+	origin: string;
+	environment: AppEnvironment;
+	identity: AppUseIdentity;
+}
 interface GatewayBinding { id: string; appId: string; origin: string; environment: AppEnvironment }
 
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -88,22 +96,43 @@ export class GatewayAuthStore {
 		return identity;
 	}
 
-	private async authorizedPlatformSession(client: PoolClient, binding: GatewayBinding, principal: PlatformSessionIdentity): Promise<Date> {
+	private async authorizedPlatformSession(client: PoolClient, binding: GatewayBinding, principal: PlatformSessionIdentity, expectedIdentity: AppUseIdentity | null = null): Promise<Date> {
 		// Lock the platform session before the user, matching logout's delete/trigger.
 		const result = await client.query<{ userId: string; expiresAt: Date }>(`
 			select "userId", "expiresAt" from public.session where id = $1 and "userId" = $2
 			and "expiresAt" > clock_timestamp() for share
 		`, [principal.sessionId, principal.userId]);
 		if (!result.rows[0]) throw new WorkspaceError(401, "Platform session unavailable.");
-		await this.identity(client, binding, result.rows[0].userId);
+		const identity = await this.identity(client, binding, result.rows[0].userId);
+		if (expectedIdentity && (identity.id !== expectedIdentity.id || identity.email !== expectedIdentity.email)) {
+			throw new WorkspaceError(409, "Your account changed. Restart app sign-in.");
+		}
 		return result.rows[0].expiresAt;
 	}
 
-	async issue(bindingId: string, principal: PlatformSessionIdentity, challenge: string): Promise<GatewayHandoff> {
+	/** Read-only display snapshot, protected by the same current session/role locks as issuance. */
+	async inspect(bindingId: string, principal: PlatformSessionIdentity): Promise<GatewayAppInspection> {
+		return withWorkspaceTransaction(this.pool, async (client) => {
+			const binding = await this.binding(client, bindingId);
+			await this.authorizedPlatformSession(client, binding, principal);
+			const result = await client.query<{ appName: string; workspaceId: string; workspaceName: string; email: string }>(`
+				select a.name as "appName", w.id as "workspaceId", w.name as "workspaceName", u.email
+				from public.apps a join public.app_workspaces w on w.id = a.workspace_id
+				join public."user" u on u.id = $2 where a.id = $1
+			`, [binding.appId, principal.userId]);
+			const details = result.rows[0];
+			if (!details) throw new WorkspaceError(403, "App access unavailable.");
+			return { bindingId: binding.id, app: { id: binding.appId, name: details.appName },
+				workspace: { id: details.workspaceId, name: details.workspaceName }, origin: binding.origin,
+				environment: binding.environment, identity: { id: principal.userId, email: details.email } };
+		});
+	}
+
+	async issue(bindingId: string, principal: PlatformSessionIdentity, challenge: string, expectedIdentity: AppUseIdentity | null = null): Promise<GatewayHandoff> {
 		if (!SECRET_PATTERN.test(challenge)) throw new WorkspaceError(400, "S256 challenge required.");
 		return withWorkspaceTransaction(this.pool, async (client) => {
 			const binding = await this.binding(client, bindingId);
-			const platformExpiry = await this.authorizedPlatformSession(client, binding, principal);
+			const platformExpiry = await this.authorizedPlatformSession(client, binding, principal, expectedIdentity);
 			const code = randomBytes(32).toString("base64url");
 			const result = await client.query<{ expiresAt: Date }>(`
 				insert into public.app_gateway_codes (token_hash, binding_id, app_id, user_id, challenge, created_at, expires_at, platform_session_id)

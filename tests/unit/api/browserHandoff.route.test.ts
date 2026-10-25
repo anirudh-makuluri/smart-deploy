@@ -13,7 +13,8 @@ vi.mock("@/lib/apps/gatewayAuthStore", () => ({ GatewayAuthStore: class { issue 
 import { POST } from "@/app/api/apps/handoff/route";
 import { WorkspaceError } from "@/lib/apps/workspaceStore";
 
-const input = { bindingId: "fa03e952-f705-42e2-9706-6a0b425de83d", challenge: "c".repeat(43), state: "s".repeat(43) };
+const expectedIdentity = { id: "bob", email: "bob@example.test" };
+const input = { bindingId: "fa03e952-f705-42e2-9706-6a0b425de83d", challenge: "c".repeat(43), state: "s".repeat(43), expectedIdentity };
 const handoff = { code: "k".repeat(43), callbackUrl: "https://app.test/__smartdeploy/callback", expiresAt: new Date("2026-10-23T23:00:00Z") };
 function request(body: unknown = input, headers: Record<string, string> = {}, url = "https://control.test/api/apps/handoff") {
 	return new Request(url, { method: "POST", headers: { origin: "https://control.test", "content-type": "application/json", "sec-fetch-site": "same-origin", ...headers }, body: JSON.stringify(body) });
@@ -30,6 +31,15 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("platform browser handoff issuance", () => {
+	it("requires the identity displayed at confirmation and never selects a user from that assertion", async () => {
+		for (const expectedIdentity of [{ id: "other", email: "bob@example.test" }, { id: "bob", email: "other@example.test" }]) {
+			expect((await POST(request({ ...input, expectedIdentity }))).status).toBe(409);
+		}
+		const legacy = { bindingId: input.bindingId, challenge: input.challenge, state: input.state };
+		expect((await POST(request(legacy))).status).toBe(400);
+		expect(mocks.issue).not.toHaveBeenCalled();
+		expect(mocks.approved).not.toHaveBeenCalled();
+	});
 	it("rejects caller-supplied environment classification before issuing a handoff", async () => {
 		expect((await POST(request({ ...input, environment: "published" }))).status).toBe(400);
 		expect(mocks.issue).not.toHaveBeenCalled();
@@ -103,7 +113,7 @@ describe("platform browser handoff issuance", () => {
 	it("derives identity/session from Better Auth and callback from storage without caching, cookies, or CORS", async () => {
 		const response = await POST(request(input, { "x-user-id": "attacker", "x-session-id": "fake", "x-forwarded-host": "attacker.test" }));
 		expect(response.status).toBe(200);
-		expect(mocks.issue).toHaveBeenCalledWith(input.bindingId, { userId: "bob", sessionId: "live-platform-session" }, input.challenge);
+		expect(mocks.issue).toHaveBeenCalledWith(input.bindingId, { userId: "bob", sessionId: "live-platform-session" }, input.challenge, expectedIdentity);
 		expect(await response.json()).toEqual({ ...handoff, expiresAt: handoff.expiresAt.toISOString(), state: input.state });
 		for (const name of ["location", "set-cookie", "access-control-allow-origin"]) expect(response.headers.get(name)).toBeNull();
 		expect(response.headers.get("cache-control")).toBe("no-store");
