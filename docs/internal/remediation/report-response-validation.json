@@ -1,0 +1,91 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "report-response-validation",
+  "purpose": "Retain report drafts until a valid server receipt is confirmed",
+  "baselineRevision": "b380f11a17893886fa044685e19993476250d76b",
+  "candidateBaseRevision": "b380f11a17893886fa044685e19993476250d76b",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 38,
+    "affectedFileCount": 27,
+    "totalDiagnosticCount": 38,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [
+    {
+      "filePath": "src/components/UserReportSheet.tsx",
+      "plugin": "react-doctor",
+      "rule": "no-fetch-response-used-without-status-check",
+      "severity": "warning",
+      "title": "fetch Response consumed without status check",
+      "message": "`fetch()` resolves (does not reject) on HTTP 4xx/5xx, so this unchecked body read may treat an HTTP error payload like a successful response. Check `response.ok`/`response.status`, or deliberately handle the API's error payload, before reading the body.",
+      "help": "Check `response.ok` (or `response.status`) before consuming a `fetch` Response with `.json()`/`.text()`/`.blob()`. `fetch` resolves on HTTP 4xx/5xx, so an unchecked response parses the error body as success or crashes on an always-truthy guard.",
+      "line": 62,
+      "column": 27,
+      "offset": 1618,
+      "length": 246,
+      "endLine": 73,
+      "category": "Bugs",
+      "fingerprint": "314564254b9d1cc08e5a9f357a4d99b6338f3167d099db3bd5a66af834041e12",
+      "id": "src/components/UserReportSheet.tsx::62:27::react-doctor/no-fetch-response-used-without-status-check::16e1208188bbd3fba56ebfbda112b48489f7e63a91839b9b8e3137335a8226d4",
+      "normalizedFilePath": "src/components/UserReportSheet.tsx",
+      "tags": [
+        "test-noise"
+      ]
+    }
+  ],
+  "confirmedIssues": [
+    "Malformed successful responses falsely confirmed submission and discarded the draft; HTTP failures were already rejected."
+  ],
+  "collateral": [
+    "src/components/UserReportSheet.tsx",
+    "tests/unit/components/UserReportSheet.test.tsx",
+    "docs/internal/REPORT_RESPONSE_VALIDATION.md"
+  ],
+  "verification": {
+    "unitFiles": 137,
+    "unitTests": 614,
+    "focusedTests": 14,
+    "regressionFailuresBefore": 10,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 2,
+    "fullDoctorFiles": 590,
+    "doctorScansComplete": true,
+    "nativeParent": "b380f11a17893886fa044685e19993476250d76b",
+    "nativeScope": "Actual sheet/toaster and production CSS with synthetic loopback response endpoint; no auth, Supabase or AWS",
+    "nativeVariants": 2,
+    "nativeCandidateRequests": 3,
+    "sameDraftAcrossRetries": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Explicit retry after ambiguous receipt can create a duplicate; no idempotency protocol added.",
+    "Full repository >=95 and complete-feature production gates remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}
