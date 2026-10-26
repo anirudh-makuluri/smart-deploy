@@ -1338,3 +1338,93 @@ b6b81f3201d668ef2d878a6f9051745a3831a263, stacked on #125/fix/github-push-dispat
 draft, attached, intended 16 files. Publisher identity reverified. Exact-head CI
 is pending. Issue99 ownership-guarded table updated. Next slice uses separate
 feat/gateway-document-access branch. No production changes.
+
+#126 exact-head completion: all checks and Vercel preview pass at b6b81f3.
+Run40272492614/build121408118260 passes the required Linux container and complete
+674-file Doctor gate100/100 as well as unit/storage/native-process checks.
+Database121408118026 passes151SQL and all inherited browser suites, including
+15compiledprivate-app and5public/analytics cases. Issue99/PR evidence updated;
+no hosted acceptance or production changes. The gateway browser-data follow-up
+has136focusedunitcases and3actualnativeHTTPS/Chromium cases passing. That browser
+transport/storage is an explicit in-memory fixture, not real SQL/AWS/redeploy
+proof. Full serial follow-up validation is active before publishing it.
+
+Published #127 https://github.com/anirudh-makuluri/smart-deploy/pull/127 at
+e42429779746bc18efb63a559fb5e3cb21e9b81d, base#126/feat/private-app-document-api,
+draft and attached. The explicitly enabled native broker uses the HttpOnly app
+session and exact same-origin POST proof, never forwards data calls to customer
+HTTP or accepts caller scope, and validates bounded machine replies. Review also
+fixed normalization expansion beyond the stored eight-KiB limit (5012-byte
+exponential-number input previously normalized to9012). No mutation retries.
+
+Final local proof:162unitfiles/1209tests,151SQLtests,33realDynamoDBLocalcases,
+2nativeTLSprocesscases,15compiledprivate-app,5compiledpublic/analytics and21
+combinedcookie/nativebrowsercases all pass. The three new Chromium/HTTPS broker
+cases are included in21; rejected sibling-form requests verifiably carry the app
+cookie. Fixture control/data remain in-memory, not real AWS/redeploy/hosted proof.
+Typecheck/full lint/production/worker/workload builds and final diff checks pass.
+Full unfiltered Doctor0.9.18:677files100/100,zeroerrors/warnings/skips; pinned hook
+passes. Initial header inference and disabled-route status fixture errors repaired.
+Full units/storage/worker checks rerun after normalization fix; browser capture
+assertion followed by its three-case rerun/lint and another complete Doctor gate.
+Owned fixtures/emulator/database stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-gateway-documents-1792996694268.
+Exact-head CI/Linux container pending. Next branch feat/private-runtime-gateway-loader
+starts on #127. No rollout merge, provisioning, migrations, enablement or deploy.
+
+#127 exact-head CI completion: all checks and Vercel preview pass at e424297.
+Run40283309497/build121441185466 passes1209unit,33DynamoDBLocal,2nativeprocess,
+1requiredLinuxcontainer and complete677-file Doctor100/100. Database121441185263
+passes151SQL,21cookie/nativebrowser,15compiledprivate-app,5public/analytics and
+inheritedauthbrowser checks. PR evidence updated; draft/unmerged, no hosted proof.
+
+Active uncommitted runtime-loader slice is on feat/private-runtime-gateway-loader,
+based on#127. It loads only current selected SQL metadata, exact SecureString SSM
+path/ARN/credential, live credential authentication and pinned private TLS; rechecks
+selection before returning a gateway. Reloads preserve unchanged login state,
+retire changed selections, fail closed on error/staleness and expire within an
+explicit two-hour maximum. An operator-only compiled gateway entrypoint requires
+explicit flags/config/files, verified database TLS, bounded SQL/SDK IO and graceful
+shutdown. It starts no AWS resource or platform migration. Durable AWS resource
+teardown, trusted AWS observation/registration controller and hosted proof remain.
+
+Focused proof:44newunitcases,2actualPostgreSQL/pinnedTLS integration cases and2
+compiledgatewayprocess cases pass. SQL/SSM/control transport in the standalone
+process fixture is explicitly fake; workload/frontendTLS and process expiry are
+real. The SQL cases use real current/key/session/grant queries with mocked SSM
+and storage. Initial fixture TLS overload/socket typing, wrong grant method name,
+CJS lint and Windows ESM file-URL errors were corrected. Full initial Doctor:
+688files100/100,zeroerrors/warnings/skips. Full serial validation is now active.
+
+Published #128 https://github.com/anirudh-makuluri/smart-deploy/pull/128 at
+8ea3e37d8665a6025be5b46cea08478616e578a1, base#127/feat/gateway-document-access,
+draft and attached. Final full serial local proof:165unitfiles/1253tests,
+10SQLfiles/153tests,33DynamoDBLocal,2compiledworkloadprocess,2compiledgatewayprocess,
+15compiledprivate-app,5compiledpublic/analytics and21cookie/nativebrowser cases
+all pass. Typecheck/full lint/production/worker/workload builds, final diff and
+pinned commit hook pass; complete688-file Doctor100/100,zeroerrors/warnings/skips.
+Owned fixtures/TLS material/emulator/database stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-managed-gateway-1793027426842.
+Exact-head CI/Linux container pending. No production mutations. New branch
+feat/aws-demo-guard starts on#128 for durable cleanup/budget preparation.
+
+Fresh read-only inventory on October26: publisher/account identity remain expected,
+main is still a8af9f3; AWS328342419078 uses default-user in us-west-2. Worker
+i-0c66e86b605f71ef9 remains stopped. Its legacy SG allows only80/443 plus unusable
+0.0.0.0/32 SSH; it does not expose the intended8444 gateway target port. An added
+ALB-source-only gateway SG can preserve those existing rules/connections. No
+instance, group, connection, migration, flag, certificate or provider was changed.
+
+Current public AWS Price List reads: t3.small0.0208/hour(SKU8UZJBKH62FYWW5EG),
+ALB0.0225/hour(7AKU6NT3G9ZEJTB5),LCU0.008/hour(2ETY8Y426S4237JU),
+FargateLinuxvCPU0.04048/hour(EKCCQUSFCBDDTKTS),memory0.004445/GiB-hour
+(NTC2QZFJW79R5XVK),publicIPv40.005/address-hour(NBHXEKTE88TJDDQF),
+DDBstandardwrite0.000000625/unit(4G4G98VBTENWGY5R),read0.000000125/unit
+(K6UMRY3TVDVCBP56),storage0.25/GiB-month beyondFreeTier(UNCJFSHZ2ZQGDPJV).
+Python Decimal conservative3h calculation (three .25vCPU/.5GiB tasks,worker,ALB,
+1LCU,sixIPv4,DDB25read/writeunits/sec,2MiBretainedfullmonth) is0.55797078125USD.
+This is only the base subtotal: builds,ECR,logs,transfer,taxes and teardown failure
+margin remain before final budget admission. It is not a hard total-cost claim.
+No Free Tier credits assumed. CloudFormation/Serverless/Cost skills and relevant
+references loaded; cfn-lint/cfn-guard and Python bindings are absent locally.
+No tool installation, template deployment or provisioning has occurred.
