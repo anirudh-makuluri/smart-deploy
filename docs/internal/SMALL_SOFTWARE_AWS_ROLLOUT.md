@@ -1428,3 +1428,60 @@ margin remain before final budget admission. It is not a hard total-cost claim.
 No Free Tier credits assumed. CloudFormation/Serverless/Cost skills and relevant
 references loaded; cfn-lint/cfn-guard and Python bindings are absent locally.
 No tool installation, template deployment or provisioning has occurred.
+
+October26 follow-up: the user explicitly approved isolated cfn-lint/cfn-guard
+installation, superseding the missing-validator state above. Both are installed
+under C:\Users\aniru\.codex\verification\cloudformation-tools, without global or
+PATH changes. cfn-lint1.58.0 and official checksum-verified Guard3.2.1 validate the
+new cleanup-only template: zero schema findings, all six compliance rules pass,
+all eight unsafe mutations fail their expected rule. Basic AWS validate-template
+passes with15parameters/CAPABILITY_IAM; it is not a deployed change set.
+
+#128 exact-head CI/preview refresh is complete at8ea3e37. Run40349423079,
+build121665082582 actually runs both compiled gateway process cases, the required
+Linux container case and full688-file Doctor100/100. All pass. The PR and
+issue99 row are updated. Billing#85 remains separate/open14c67e4. No rollout
+merge or production mutation.
+
+Active uncommitted slice feat/aws-demo-guard is based on#128. It renders a
+separate cleanup stack directly from hashed reviewed TypeScript, with a shared
+two-hour-maximum expiry, one-minute schedule and bounded thirty-minute retry
+window, encrypted failure queue/seven-day logs, concurrencyone,45s application
+deadline/60s Lambda limit. Independent ownership-checked paths stop only the
+leased worker, three exact tagged services, one tagged ALB and six tagged SSM
+parameters, then request owned workload-stack deletion. It never reads secret
+values or deletes application data. Existing ENI groups are freshly read; group
+replacement has no CAS, so the demo lease must exclude other network writers.
+Completion requires observed terminal AWS states rather than accepted requests.
+
+Focused28unit cases pass, including generated inline CommonJS execution with
+the real local SDK before expiry, plus deadline and late-response mutation
+checks. Access Analyzer returns no findings for both identity policies and both
+trust policies. Nine explicit IAM simulations pass: matching worker/ENI leases
+allow exact operations; wrong leases, other worker, shared ALB, document-table
+deletion, file-bucket deletion and SSM secret reads are denied. These read-only
+checks do not establish actual role/deletion/ingress behavior. Complete initial
+696-file Doctor100/100 after repairing six diagnostics without suppression.
+Full serial local verification is active. Actual-manifest change-set validation,
+workload/provisioning/admission composition, complete cost estimate, hosted UI
+and end-to-end proof remain. The existing AWS worker remains stopped; no
+schedule, role, stack, parameter, certificate, flag or cloud resource was created.
+
+Published draft#129 https://github.com/anirudh-makuluri/smart-deploy/pull/129 at
+c2319bb80cce57f02b95966e60e9295d1660e8a6, base#128/
+feat/private-runtime-gateway-loader. Attached; exact-head CI pending. Full serial
+broader proof passes169unitfiles/1281tests,153SQL,33DynamoDBLocal,2gatewayprocess,
+2workloadprocess,15compiledprivate-app,5public/analytics,21cookie/nativebrowser,
+typecheck/full lint/production/worker/workload builds. Subsequent guard-only edge
+refinements add strict trailing-newline rejection and observational handling of
+zero-task INACTIVE service records after tag removal. All39finalfocused tests,
+typecheck/focusedlint/workerbuild/finaltemplate/schema/sixrules/eightmutations
+pass. Final complete696-file Doctor100/100,zeroerrors/warnings/skips, no
+suppression. Final AWS basic template check passes; actual-manifest deployed
+change-set validation remains pending. All fixtures and owned local PostgreSQL
+stopped. Evidence C:\Users\aniru\.codex\verification\smartdeploy-demo-guard-1793032523772
+and demo-guard-* reports in the verification root. The user selected a colleague
+account for hosted QA; a strictly CA-verified read-only database lookup confirmed
+it exists and is verified. No invitation, account edit or email was performed.
+Creator/colleague distinction still needs verification during hosted acceptance.
+No rollout merge, production migration/configuration, AWS provisioning or start.
