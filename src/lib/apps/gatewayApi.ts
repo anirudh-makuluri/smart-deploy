@@ -23,25 +23,32 @@ export function gatewayJson(value: unknown, status = 200): NextResponse {
 }
 
 /** Bound actual streamed bytes, including when Content-Length is missing or false. */
-export async function parseGatewayBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
+export async function parseGatewayBody<T>(request: Request, schema: z.ZodType<T>, maxBytes = MAX_BODY_BYTES, signal: AbortSignal = request.signal): Promise<T> {
+	if (!Number.isInteger(maxBytes) || maxBytes < 1 || maxBytes > 32768) throw new WorkspaceError(503, "Gateway body limit unavailable.");
 	if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json"
 		|| (request.headers.has("content-encoding") && request.headers.get("content-encoding") !== "identity")) {
 		throw new WorkspaceError(415, "Uncompressed JSON required.");
 	}
 	const length = request.headers.get("content-length");
-	if (length !== null && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) throw new WorkspaceError(413, "Request body too large.");
+	if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) throw new WorkspaceError(413, "Request body too large.");
 	if (!request.body) throw new WorkspaceError(400, "Invalid JSON.");
 	const reader = request.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let size = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new WorkspaceError(408, "Request body timed out.")), BODY_TIMEOUT_MS); });
+	let abort: () => void = () => {};
+	const deadline = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new WorkspaceError(408, "Request body timed out.")), BODY_TIMEOUT_MS);
+		abort = () => reject(new WorkspaceError(408, "Request body timed out."));
+		signal.addEventListener("abort", abort, { once: true });
+		if (signal.aborted) abort();
+	});
 	try {
 		while (true) {
 			const part = await Promise.race([reader.read(), deadline]);
 			if (part.done) break;
 			size += part.value.byteLength;
-			if (size > MAX_BODY_BYTES) throw new WorkspaceError(413, "Request body too large.");
+			if (size > maxBytes) throw new WorkspaceError(413, "Request body too large.");
 			chunks.push(part.value);
 		}
 		const bytes = new Uint8Array(size);
@@ -55,6 +62,7 @@ export async function parseGatewayBody<T>(request: Request, schema: z.ZodType<T>
 		throw new WorkspaceError(400, "Invalid JSON.");
 	} finally {
 		clearTimeout(timer);
+		signal.removeEventListener("abort", abort);
 		void reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}

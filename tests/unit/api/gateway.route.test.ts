@@ -36,6 +36,22 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("gateway service endpoints", () => {
+	it("cancels a stalled body when the caller's shorter deadline aborts", async () => {
+		const cancel = vi.fn();
+		const body = new ReadableStream<Uint8Array>({ cancel });
+		const req = new Request("https://control.test/api/gateway/authorize", { method: "POST", headers: { "content-type": "application/json" }, body, duplex: "half" } as RequestInit);
+		const controller = new AbortController();
+		const parsed = parseGatewayBody(req, GatewaySessionInput, 4096, controller.signal);
+		const assertion = expect(parsed).rejects.toMatchObject({ status: 408 });
+		controller.abort();
+		await assertion;
+		expect(cancel).toHaveBeenCalledTimes(1);
+	});
+	it.each([0, 32769, Infinity, 1.5])("rejects an unsafe configured body limit without consumption (%s)", async limit => {
+		const req = request();
+		await expect(parseGatewayBody(req, GatewaySessionInput, limit)).rejects.toMatchObject({ status: 503 });
+		expect(req.bodyUsed).toBe(false);
+	});
 	it("requires the configured binding assertion to match the authenticated key before reading bodies", async () => {
 		const absent = request();
 		absent.headers.delete("x-smartdeploy-binding-id");

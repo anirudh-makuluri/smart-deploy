@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import { loadAppUseIdentity, type AppUseIdentity } from "./appStore";
 import { requireId, withWorkspaceTransaction, WorkspaceError } from "./workspaceStore";
 import type { AppEnvironment } from "./types";
+import { DataScope } from "./documentSchema";
 
 export interface GatewayAuthLifetimes { codeSeconds: number; sessionSeconds: number }
 export interface GatewayHandoff { code: string; callbackUrl: string; expiresAt: Date }
@@ -16,6 +17,8 @@ export interface GatewayAppInspection {
 	environment: AppEnvironment;
 	identity: AppUseIdentity;
 }
+export interface GatewayDocumentAuthorization { identity: AppUseIdentity; scope: DataScope }
+interface GatewayDocumentAuthorizationRow extends AppUseIdentity { appId: string; environment: AppEnvironment }
 interface GatewayBinding { id: string; appId: string; origin: string; environment: AppEnvironment }
 
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -179,19 +182,21 @@ export class GatewayAuthStore {
 		if (!SECRET_PATTERN.test(token)) return null;
 		// One current database snapshot for session, binding, identity, and policy.
 		const result = await this.pool.query<AppUseIdentity>(`
-			select u.id, u.email from public.app_gateway_sessions s
-			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and public.app_gateway_binding_available(b.id)
-			and b.environment in ('published', 'preview')
-			join public.apps a on a.id = s.app_id join public.app_workspaces w on w.id = a.workspace_id
-			join public."user" u on u.id = s.user_id and u."emailVerified" = true
-			join public.session p on p.id = s.platform_session_id and p."userId" = u.id and p."expiresAt" > clock_timestamp()
-			left join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
-			where s.token_hash = $1 and s.binding_id = $2 and s.expires_at > clock_timestamp()
-			and (w.owner_id = u.id or m.role = 'admin' or (b.environment = 'published' and m.role = 'member' and exists (
-			  select 1 from public.app_use_grants g where g.app_id = a.id and g.user_id = u.id
-			)))
+			select u.id, u.email ${AUTHORIZED_SESSION_QUERY}
 		`, [secretHash(token), bindingId]);
 		return result.rows[0] ?? null;
+	}
+
+	/** Current managed runtime, session, membership and environment in one snapshot. */
+	async authorizeDocuments(bindingId: string, token: string): Promise<GatewayDocumentAuthorization | null> {
+		requireId(bindingId);
+		if (!SECRET_PATTERN.test(token)) return null;
+		const result = await this.pool.query<GatewayDocumentAuthorizationRow>(`
+			select u.id, u.email, b.app_id as "appId", b.environment
+			${AUTHORIZED_SESSION_QUERY} and b.runtime_managed
+		`, [secretHash(token), bindingId]);
+		const row = result.rows[0];
+		return row ? { identity: { id: row.id, email: row.email }, scope: DataScope.parse({ appId: row.appId, environment: row.environment }) } : null;
 	}
 
 	async revoke(bindingId: string, token: string): Promise<void> {
@@ -205,3 +210,16 @@ export class GatewayAuthStore {
 		await this.pool.query("delete from public.app_gateway_sessions where expires_at <= clock_timestamp()");
 	}
 }
+
+const AUTHORIZED_SESSION_QUERY = `from public.app_gateway_sessions s
+			join public.app_gateway_bindings b on b.id = s.binding_id and b.app_id = s.app_id and public.app_gateway_binding_available(b.id)
+			and b.environment in ('published', 'preview')
+			join public.apps a on a.id = s.app_id join public.app_workspaces w on w.id = a.workspace_id
+			join public."user" u on u.id = s.user_id and u."emailVerified" = true
+			join public.session p on p.id = s.platform_session_id and p."userId" = u.id and p."expiresAt" > clock_timestamp()
+			left join public.app_workspace_members m on m.workspace_id = w.id and m.user_id = u.id
+			where s.token_hash = $1 and s.binding_id = $2 and s.expires_at > clock_timestamp()
+			and (w.owner_id = u.id or m.role = 'admin' or (b.environment = 'published' and m.role = 'member' and exists (
+			  select 1 from public.app_use_grants g where g.app_id = a.id and g.user_id = u.id
+			)))
+`;

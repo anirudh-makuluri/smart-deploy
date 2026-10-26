@@ -8,6 +8,9 @@ const config = {
 	// Enable only after all current app/workspace migrations are applied.
 	WORKSPACE_APPS_ENABLED: process.env.WORKSPACE_APPS_ENABLED === "true",
 	PRIVATE_APP_GATEWAY_ENABLED: process.env.PRIVATE_APP_GATEWAY_ENABLED === "true",
+	PRIVATE_APP_DOCUMENTS_ENABLED: process.env.PRIVATE_APP_DOCUMENTS_ENABLED === "true",
+	APP_DOCUMENTS_APP_ID: process.env.APP_DOCUMENTS_APP_ID || "",
+	APP_DOCUMENTS_TABLE_ARN: process.env.APP_DOCUMENTS_TABLE_ARN || "",
 	GATEWAY_CODE_TTL_SECONDS: process.env.GATEWAY_CODE_TTL_SECONDS || "",
 	GATEWAY_SESSION_TTL_SECONDS: process.env.GATEWAY_SESSION_TTL_SECONDS || "",
 

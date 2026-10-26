@@ -4,6 +4,7 @@ export const APP_DATA_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export class AppDataError extends Error {
 	constructor(public readonly status: number) { super("App data operation unavailable."); }
 }
+export const AppDocumentTable = z.string().max(400).regex(/^(?:[A-Za-z0-9_.-]{3,255}|arn:aws:dynamodb:[a-z0-9-]+:[0-9]{12}:table\/[A-Za-z0-9_.-]{3,255})$/);
 export const DataScope = z.strictObject({ appId: z.uuid(), environment: z.enum(["preview", "published"]) });
 export type DataScope = z.infer<typeof DataScope>;
 export const DocumentAddress = DataScope.extend({ collection: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/) });

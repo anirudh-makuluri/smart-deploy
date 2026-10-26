@@ -47,6 +47,49 @@ async function registration(target = binding) {
 	return { input, key, deploymentId, artifact };
 }
 describe("authoritative runtime registration metadata", () => {
+	async function sessionFor(target: RuntimeBinding, userId: string) {
+		const verifier = randomBytes(32).toString("base64url");
+		const handoff = await auth.issue(target.id, { userId, sessionId: userId + "-session" }, createHash("sha256").update(verifier).digest("base64url"));
+		return auth.redeem(target.id, handoff.callbackUrl, handoff.code, verifier);
+	}
+	it("derives document app/environment scope from a current managed runtime session", async () => {
+		const { input } = await registration(); await store.register(input); await store.activate(input.id, "alice", null);
+		const session = await sessionFor(binding, "alice");
+		expect(await auth.authorizeDocuments(binding.id, session.token)).toEqual({ identity: { id: "alice", email: "alice@example.test" }, scope: { appId, environment: "preview" } });
+		const other = await store.createBinding(appId, "published", "alice");
+		expect(await auth.authorizeDocuments(other.id, session.token)).toBeNull();
+		await store.deactivate(appId, "preview", "alice", input.id);
+		expect(await auth.authorizeDocuments(binding.id, session.token)).toBeNull();
+	});
+	it("reauthorizes published member documents after grant, verification and platform-session changes", async () => {
+		const published = await store.createBinding(appId, "published", "alice");
+		const { input } = await registration(published); await store.register(input); await store.activate(input.id, "alice", null);
+		await apps.grantUse(appId, "alice", "carol");
+		let session = await sessionFor(published, "carol");
+		const expected = { identity: { id: "carol", email: "carol@example.test" }, scope: { appId, environment: "published" } };
+		expect(await auth.authorizeDocuments(published.id, session.token)).toEqual(expected);
+		await apps.revokeUse(appId, "alice", "carol");
+		expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+		await apps.grantUse(appId, "alice", "carol");
+		expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+		session = await sessionFor(published, "carol");
+		expect(await auth.authorizeDocuments(published.id, session.token)).toEqual(expected);
+		await client.query('update public."user" set "emailVerified"=false where id=\'carol\'');
+		expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+		await client.query('update public."user" set "emailVerified"=true where id=\'carol\'');
+		expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+		session = await sessionFor(published, "carol");
+		expect(await auth.authorizeDocuments(published.id, session.token)).toEqual(expected);
+		await client.query("delete from public.session where id='carol-session'");
+		expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+	});
+	it("keeps legacy session authorization compatible while denying its document projection", async () => {
+		const legacy = { ...binding, id: randomUUID(), origin: "https://legacy.apps.example.test" };
+		await client.query("insert into public.app_gateway_bindings(id,app_id,origin,environment) values($1,$2,$3,'preview')", [legacy.id, appId, legacy.origin]);
+		const session = await sessionFor(legacy, "alice");
+		expect(await auth.authorize(legacy.id, session.token)).toEqual({ id: "alice", email: "alice@example.test" });
+		expect(await auth.authorizeDocuments(legacy.id, session.token)).toBeNull();
+	});
 	it("prepares only pinned release metadata without configuration or secret values", async () => {
 		const { input, deploymentId } = await registration();
 		const prepared = await store.prepare(binding.id, input.releaseId, "bob");

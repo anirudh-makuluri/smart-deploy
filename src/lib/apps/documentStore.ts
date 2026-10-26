@@ -1,17 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { type DynamoDBDocumentClient, GetCommand, TransactGetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
-import { APP_DATA_RETENTION_MS, AppDataError, DataControl, DataLimits, DataScope, DataUsage, DocumentAddress,
+import { APP_DATA_RETENTION_MS, AppDataError, AppDocumentTable, DataControl, DataLimits, DataScope, DataUsage, DocumentAddress,
 	appDataKey, chargedDocumentBytes, documentJson, documentKey, storedDocument, usageKey, type AppDocument } from "./documentSchema";
 
 /** Trusted broker storage only. A scope is not authentication. No public route or app deletion adapter. */
 export class AppDocumentStore {
 	readonly #table: string;
-	constructor(private readonly client: DynamoDBDocumentClient, tableName: string, private readonly clock: () => number = Date.now) {
-		this.#table = z.string().regex(/^[A-Za-z0-9_.-]{3,255}$/).parse(tableName);
+	constructor(private readonly client: DynamoDBDocumentClient, tableName: string, private readonly clock: () => number = Date.now, private readonly signal: AbortSignal | undefined = undefined) {
+		this.#table = AppDocumentTable.parse(tableName);
 	}
 	async #operation<T>(work: () => Promise<T>): Promise<T> {
-		try { return await work(); }
+		try { this.signal?.throwIfAborted(); const result = await work(); this.signal?.throwIfAborted(); return result; }
 		catch (error) {
 			if (error instanceof AppDataError) throw error;
 			if (error instanceof z.ZodError) throw new AppDataError(400);
@@ -36,21 +36,21 @@ export class AppDocumentStore {
 			}))];
 			await this.client.send(new TransactWriteCommand({ ClientRequestToken: randomUUID(), TransactItems: items.map(Item => ({ Put: {
 				TableName: this.#table, Item, ConditionExpression: "attribute_not_exists(pk)",
-			} })) }));
+			} })) }), { abortSignal: this.signal });
 		});
 	}
 	/** Operator projection: retained usage remains visible while ordinary document reads are denied. */
 	async inspect(scope: DataScope): Promise<{ control: DataControl; usage: DataUsage }> {
 		return this.#operation(async () => {
 			const parsed = DataScope.parse(scope);
-			const result = await this.client.send(new TransactGetCommand({ TransactItems: [this.#controlKey(parsed.appId), usageKey(parsed)].map(Key => ({ Get: { TableName: this.#table, Key } })) }));
+			const result = await this.client.send(new TransactGetCommand({ TransactItems: [this.#controlKey(parsed.appId), usageKey(parsed)].map(Key => ({ Get: { TableName: this.#table, Key } })) }), { abortSignal: this.signal });
 			const control = this.#control(result.Responses?.[0].Item);
 			const usage = DataUsage.safeParse(result.Responses?.[1].Item); if (!usage.success) throw new AppDataError(503);
 			return { control, usage: usage.data };
 		});
 	}
 	async #snapshot(address: DocumentAddress) {
-		const result = await this.client.send(new TransactGetCommand({ TransactItems: [this.#controlKey(address.appId), usageKey(address), documentKey(address)].map(Key => ({ Get: { TableName: this.#table, Key } })) }));
+		const result = await this.client.send(new TransactGetCommand({ TransactItems: [this.#controlKey(address.appId), usageKey(address), documentKey(address)].map(Key => ({ Get: { TableName: this.#table, Key } })) }), { abortSignal: this.signal });
 		const control = this.#control(result.Responses?.[0].Item); this.#active(control);
 		const usage = DataUsage.safeParse(result.Responses?.[1].Item); if (!usage.success) throw new AppDataError(503);
 		return { control, usage: usage.data, document: storedDocument(result.Responses?.[2].Item, address) };
@@ -86,7 +86,7 @@ export class AppDocumentStore {
 					ConditionExpression: expectedVersion === null ? "attribute_not_exists(pk)" : "#version = :version",
 					...(expectedVersion === null ? {} : { ExpressionAttributeNames: { "#version": "version" }, ExpressionAttributeValues: { ":version": expectedVersion } }) } },
 				this.#usageUpdate(parsed, usage, bytes, count),
-			] }));
+			] }), { abortSignal: this.signal });
 			return { collection: parsed.collection, id: parsed.id, version, json };
 		});
 	}
@@ -98,7 +98,7 @@ export class AppDocumentStore {
 			await this.client.send(new TransactWriteCommand({ ClientRequestToken: randomUUID(), TransactItems: [this.#activeCondition(parsed.appId, control.version),
 				{ Delete: { TableName: this.#table, Key: documentKey(parsed), ConditionExpression: "#version = :version", ExpressionAttributeNames: { "#version": "version" }, ExpressionAttributeValues: { ":version": expectedVersion } } },
 				this.#usageUpdate(parsed, usage, -document.chargedBytes, -1),
-			] }));
+			] }), { abortSignal: this.signal });
 		});
 	}
 	/** Data lifecycle only: the app-delete coordinator must first revoke access/runtime credentials. */
@@ -112,7 +112,7 @@ export class AppDocumentStore {
 		return this.#operation(async () => {
 			z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER - 1).parse(expectedVersion);
 			const key = this.#controlKey(appId);
-			const stored = await this.client.send(new GetCommand({ TableName: this.#table, Key: key, ConsistentRead: true })); const current = this.#control(stored.Item);
+			const stored = await this.client.send(new GetCommand({ TableName: this.#table, Key: key, ConsistentRead: true }), { abortSignal: this.signal }); const current = this.#control(stored.Item);
 			const now = this.#now();
 			if (current.version !== expectedVersion) throw new AppDataError(409);
 			if (state === "deleted") { if (current.state !== "active") throw new AppDataError(409); }
@@ -122,7 +122,7 @@ export class AppDocumentStore {
 			await this.client.send(new UpdateCommand({ TableName: this.#table, Key: key, UpdateExpression: "SET #state=:next, #version=:nextVersion, deletedAt=:deleted, purgeAfter=:purge",
 				ConditionExpression: "#state=:previous and #version=:version" + (state === "deleted" ? "" : state === "active" ? " and purgeAfter > :now" : " and purgeAfter <= :now"),
 				ExpressionAttributeNames: { "#state": "state", "#version": "version" }, ExpressionAttributeValues: { ":next": next.state, ":nextVersion": next.version,
-					":deleted": next.deletedAt, ":purge": next.purgeAfter, ":previous": current.state, ":version": expectedVersion, ...(state === "deleted" ? {} : { ":now": now }) } }));
+					":deleted": next.deletedAt, ":purge": next.purgeAfter, ":previous": current.state, ":version": expectedVersion, ...(state === "deleted" ? {} : { ":now": now }) } }), { abortSignal: this.signal });
 			return next;
 		});
 	}
