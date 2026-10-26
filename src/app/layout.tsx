@@ -5,7 +5,7 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 import { AccentSync } from "@/components/AccentSync";
 import { Toaster } from "@/components/ui/sonner"
-import { Analytics } from '@vercel/analytics/next';
+import { PlatformAnalytics } from "@/components/analytics/PlatformAnalytics";
 
 const fontDisplay = Bricolage_Grotesque({
 	subsets: ["latin"],
@@ -89,7 +89,7 @@ export default function RootLayout({
 					{children}
 					<Toaster />
 				</Providers>
-				<Analytics />
+				<PlatformAnalytics />
 
 			</body>
 		</html>

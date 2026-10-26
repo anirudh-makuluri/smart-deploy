@@ -268,4 +268,39 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		expect(Number((await client.query("select count(*) from public.app_gateway_sessions")).rows[0].count)).toBe(0);
 		for (const origin of [PUBLISHED, PREVIEW]) { const response = await page.goto(origin + "/items?sort=new"); expect(response?.status()).toBe(403); }
 	});
+	test("reviews and explicitly accepts a colleague invitation before general platform approval", async ({ page, context }, info) => {
+		const workspace = await workspaces.createWorkspace(owner.id, "Invitation browser QA");
+		const invitation = await workspaces.createInvitation(workspace.id, owner.id, outsider.email, "member");
+		await context.addCookies(outsider.cookies); await page.setViewportSize({ width: 390, height: 844 });
+		const requests: string[] = []; page.on("request", request => requests.push(request.url()));
+		const response = await page.goto(PLATFORM + "/apps/invitations#token=" + invitation.token);
+		expect(response?.headers()["referrer-policy"]).toBe("no-referrer"); expect(response?.headers()["x-frame-options"]).toBe("DENY");
+		await expect(page.getByRole("heading", { name: workspace.name })).toBeVisible(); await expect(page).toHaveURL(PLATFORM + "/apps/invitations");
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull();
+		expect((await client.query("select user_id from public.app_workspace_members where workspace_id = $1 and user_id = $2", [workspace.id, outsider.id])).rowCount).toBe(0);
+		expect(await page.locator("body").textContent()).not.toContain(invitation.token); expect(managementRequests).toBe(0);
+		await page.screenshot({ path: info.outputPath("invitation-mobile.png"), fullPage: true });
+		await page.getByRole("button", { name: "Join workspace" }).click(); await expect(page.getByRole("heading", { name: `You’ve joined ${workspace.name}.` })).toBeVisible();
+		expect((await client.query("select role from public.app_workspace_members where workspace_id = $1 and user_id = $2", [workspace.id, outsider.id])).rows).toEqual([{ role: "member" }]);
+		expect((await page.request.get(PLATFORM + "/api/workspaces")).status()).toBe(403);
+		expect(requests.every(url => !url.includes(invitation.token))).toBe(true); expect(managementRequests).toBe(0);
+	});
+	test("does not reveal an invitation's workspace to another verified account", async ({ page, context }) => {
+		const workspace = await workspaces.createWorkspace(owner.id, "Private invitation target");
+		const invitation = await workspaces.createInvitation(workspace.id, owner.id, outsider.email, "member");
+		await context.addCookies(member.cookies); await page.goto(PLATFORM + "/apps/invitations#token=" + invitation.token);
+		await expect(page.getByRole("region", { name: "Workspace invitation" }).getByRole("alert")).toContainText("verified email address");
+		await expect(page.getByText(workspace.name, { exact: true })).toHaveCount(0); await expect(page.getByRole("button", { name: "Join workspace" })).toHaveCount(0);
+		expect((await client.query("select accepted_at from public.app_workspace_invitations where id = $1", [invitation.id])).rows[0].accepted_at).toBeNull(); expect(managementRequests).toBe(0);
+	});
+	test("rechecks revocation after review and does not show a false acceptance", async ({ page, context }) => {
+		const workspace = await workspaces.createWorkspace(owner.id, "Revoked invitation QA");
+		const invitation = await workspaces.createInvitation(workspace.id, owner.id, outsider.email, "member");
+		await context.addCookies(outsider.cookies); await page.goto(PLATFORM + "/apps/invitations#token=" + invitation.token);
+		await expect(page.getByRole("button", { name: "Join workspace" })).toBeVisible(); await workspaces.revokeInvitation(workspace.id, owner.id, invitation.id);
+		const result = page.waitForResponse(response => response.url().endsWith("/api/workspace-invitations/accept"));
+		await page.getByRole("button", { name: "Join workspace" }).click(); expect((await result).status()).toBe(410);
+		await expect(page.getByRole("region", { name: "Workspace invitation" }).getByRole("alert")).toContainText("couldn't confirm acceptance"); await expect(page.getByRole("button", { name: "Join workspace" })).toBeDisabled();
+		expect((await client.query("select user_id from public.app_workspace_members where workspace_id = $1 and user_id = $2", [workspace.id, outsider.id])).rowCount).toBe(0); expect(managementRequests).toBe(0);
+	});
 });
