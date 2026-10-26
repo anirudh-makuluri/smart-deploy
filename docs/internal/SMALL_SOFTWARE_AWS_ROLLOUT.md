@@ -1156,3 +1156,43 @@ seven days. Access/runtime credentials are revoked immediately, retained bytes
 continue counting against storage quotas until actual removal, and preview/
 published data stay separate. Recovery does not revive old credentials/sessions.
 The previous retention-policy question is answered; document-store work resumes.
+
+Manual continuation October25, document storage foundation: published draft
+https://github.com/anirudh-makuluri/smart-deploy/pull/123 at
+7699bdc92e034ec762475a5d4a476ca65e67922a, branch feat/app-document-data, base
+feat/private-runtime-preflight (#122/0cd7b6d); merge#122first. Stable app/env
+document keys, transactional snapshots/conditional quota arithmetic, fresh UUID
+document tokens against delete/recreate ABA, bounded JSON/keys and redacted errors.
+Seven-day data tombstone denies document reads/writes in both environments while
+keeping data/quota; restore only before deadline, irreversible purge claim only
+afterward, no premature quota release. Generation guard blocks writes delayed
+across delete/restore. Scope is not authentication; no public broker or full
+app-delete coordinator is exposed. Data restore must not revive old credentials.
+
+Local153unit files/1,091tests (four new schema cases),33real DynamoDB Local3.3.2
+cases, two compiled workload process cases, typecheck/full lint/worker/workload/
+production build/diff pass. Removing lifecycle generation guard permits stale
+write and produces expected regression; exact source restored. Initial stored
+usage projection rejected key fields and was corrected. Verification runner's
+initial HTTP build auth URL affected one secure-cookie unit expectation; build
+env is now scoped and full suite repeated successfully. A partial unit run was
+stopped during ABA review, then final source fully verified. Build tracing warnings
+retained. Six-file Doctor100; full unfiltered656-file84, zero errors and same37
+warning IDs/26files, no suppression. Emulator fixture config binds Jetty loopback
+before startup, disables telemetry, uses explicit dummy SDK credentials. Official
+archive SHA256667cde09f96f4785cede4d107d8066011e5eeceb5dd4566ea8c74c0d378fe919.
+Processes/fixtures cleaned; disposable PostgreSQL stopped. New required Java17
+emulator CI step pending. Unchanged SQL/browser/container checks pass exact parent
+#122 CI. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-app-documents-1792977079864.
+Exact publisher identity anirudh-makuluri verified, only intended11files committed,
+staged diff/commit hook pass, PR attached and issue99 updated. Parent#122 remains
+open/unmerged0cd7b6d; billing#85 remains separate/open14c67e4. No AWS account table,
+IAM/S3/provider state/SQL migration/startup/production/rollout merge/deploy.
+
+This is document storage only, not completed app data delivery. Retained usage is
+a conservative logical reservation, not exact AWS metering or a complete $10 cap.
+Current-authorized broker, immediate whole-app access/runtime/data credential
+revocation, S3 files/listing/physical purge/quota release/backups, launch/wake,
+complete request/egress/cost admission, UI/tools/WebSockets, full Doctor>=95 and
+hosted acceptance remain unmet.
