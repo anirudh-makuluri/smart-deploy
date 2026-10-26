@@ -137,6 +137,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 			await new Promise<void>((resolve, reject) => { workloadListener.server.once("error", reject); workloadListener.server.listen(0, "127.0.0.1", resolve); });
 			const tlsAddress = workloadListener.server.address(); if (!tlsAddress || typeof tlsAddress === "string") throw new Error("Workload TLS fixture unavailable.");
 			gateways.set(new URL(origin).host, new GatewayAuthenticatedHttp({
+				documentsEnabled: false,
 				browser: { appOrigin: origin, platformOrigin: PLATFORM, bindingId: binding, serviceCredential: key.token, timeoutMs: 5000, transactions: { ttlSeconds: 300, maxEntries: 100 } },
 				context: { appOrigin: origin, bindingId: binding, environment: workload.environment },
 				upstream: { ...workload, privateIp: "10.0.1.23", port: tlsAddress.port, certificatePem: material.cert, timeoutMs: 1000, maxConnections: 8 },

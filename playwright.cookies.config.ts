@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
 	testDir: "./tests/e2e",
-	testMatch: ["platform-cookies.spec.ts", "gateway-browser-transactions.spec.ts", "gateway-browser-auth.spec.ts", "gateway-http-isolation.spec.ts"],
+	testMatch: ["platform-cookies.spec.ts", "gateway-browser-transactions.spec.ts", "gateway-browser-auth.spec.ts", "gateway-http-isolation.spec.ts", "gateway-documents.spec.ts"],
 	workers: 1,
 	timeout: 45_000,
 	use: {

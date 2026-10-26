@@ -5,8 +5,9 @@ import { GatewayHttpError, GatewayHttpIsolation } from "./httpIsolation";
 import { GatewayHttpLimits, GatewayProxyError } from "./httpLease";
 import { GatewayHttpProxy, type GatewayHttpProxyOptions } from "./httpProxy";
 import type { GatewayTlsDial } from "./upstreamTls";
+import { GatewayBrowserDocuments } from "./browserDocuments";
 
-export interface GatewayAuthenticatedHttpOptions extends GatewayHttpProxyOptions { browser: GatewayBrowserOptions }
+export interface GatewayAuthenticatedHttpOptions extends GatewayHttpProxyOptions { browser: GatewayBrowserOptions; documentsEnabled: boolean }
 
 function failure(status: number): Response {
 	return Response.json({ error: "App access unavailable." }, { status, headers: {
@@ -28,12 +29,15 @@ export class GatewayAuthenticatedHttp {
 	readonly #proxy: GatewayHttpProxy;
 	readonly #origin: string;
 	readonly #maximum: number;
+	readonly #documents: GatewayBrowserDocuments | null;
 	#pending = 0;
 	#closed = false;
 	constructor(options: GatewayAuthenticatedHttpOptions, transport: GatewayFetch = (url, init) => fetch(url, init), dial: GatewayTlsDial = (configuration) => connect(configuration)) {
 		try {
 			if (options.browser.appOrigin !== options.context.appOrigin || options.browser.bindingId.toLowerCase() !== options.context.bindingId.toLowerCase()) throw new Error();
 			this.#auth = new GatewayBrowserAuth(options.browser, transport);
+			if (typeof options.documentsEnabled !== "boolean") throw new Error();
+			this.#documents = options.documentsEnabled ? new GatewayBrowserDocuments(options.context, options.browser, transport) : null;
 			this.#policy = new GatewayHttpIsolation(options.context); this.#proxy = new GatewayHttpProxy(options, dial);
 			this.#origin = options.context.appOrigin; this.#maximum = GatewayHttpLimits.parse(options.limits).maxConnections;
 		} catch { throw new GatewayProxyError(503); }
@@ -44,6 +48,9 @@ export class GatewayAuthenticatedHttp {
 		if (this.#closed || request.signal.aborted || this.#pending >= this.#maximum) { void request.body?.cancel().catch(() => {}); return failure(503); }
 		this.#pending++;
 		try {
+			const documents = await this.#documents?.handle(request);
+			if (this.#closed || request.signal.aborted) return failure(503);
+			if (documents) return documents;
 			const reserved = await this.#auth.handle(request);
 			if (this.#closed || request.signal.aborted) return failure(503);
 			if (reserved) return reserved;
@@ -65,5 +72,5 @@ export class GatewayAuthenticatedHttp {
 		return await this.#auth.handle(new Request(login, { headers: request.headers, signal: request.signal })) ?? failure(503);
 	}
 
-	close(): void { this.#closed = true; this.#proxy.close(); }
+	close(): void { this.#closed = true; this.#documents?.close(); this.#proxy.close(); }
 }

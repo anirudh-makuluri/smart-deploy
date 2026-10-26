@@ -1,0 +1,48 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "gateway-document-access",
+  "baselineRevision": "b6b81f3201d668ef2d878a6f9051745a3831a263",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "purpose": "Connect same-origin browser sessions to the bounded document broker without customer credential exposure or caller-controlled scope",
+  "productionReady": false,
+  "productionMutations": false,
+  "after": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "score": 100,
+    "completeFullFiles": 677
+  },
+  "verification": {
+    "unitFiles": 162,
+    "unitTests": 1209,
+    "postgresFiles": 10,
+    "postgresTests": 151,
+    "dynamoCases": 33,
+    "nativeTlsProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "cookieAndNativeBrowserCases": 21,
+    "newNativeBrowserDocumentCases": 3,
+    "typecheck": true,
+    "lint": true,
+    "productionBuild": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "doctorComplete": true,
+    "hostedEndToEnd": false,
+    "initialRepairedFailures": [
+      "Heterogeneous test header cases needed an explicit Record<string, string>[] annotation.",
+      "Disabled reserved GET routes correctly return 404; corrected a test expecting 405.",
+      "Review found JSON normalization could exceed the input byte cap; stored bytes are now bounded and final units/storage checks rerun."
+    ]
+  },
+  "limitations": [
+    "Browser fixture uses explicit in-memory control/storage; no real SQL, AWS, redeployment or hosted acceptance is implied.",
+    "Concurrency/deadlines are process limits, not a global spending cap.",
+    "A failed write may have committed; reconcile instead of blindly retrying.",
+    "Trusted runtime loading, durable bounded demo setup/cleanup and hosted acceptance remain release gates."
+  ]
+}

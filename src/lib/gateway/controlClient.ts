@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { GatewayDocumentOperation } from "../apps/documentApiSchema";
+import { DocumentAddress, documentJson, type AppDocument } from "../apps/documentSchema";
 
 const Secret = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const Identity = z.strictObject({
@@ -10,6 +12,17 @@ const Authorization = z.strictObject({ identity: Identity });
 const Revocation = z.strictObject({ revoked: z.literal(true) });
 const SERVICE_CREDENTIAL = /^sd_gateway_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9_-]{43}$/i;
 const MAX_RESPONSE_BYTES = 4096;
+const Document = z.strictObject({ collection: DocumentAddress.shape.collection, id: DocumentAddress.shape.id,
+	version: z.uuid(), json: z.string().max(8192) });
+const DocumentReply = z.strictObject({ document: Document.nullable() });
+const DeletedReply = z.strictObject({ deleted: z.literal(true) });
+export type GatewayDocumentResult = { document: AppDocument | null } | { deleted: true };
+interface RequestPolicy { maxBytes: number; signal: AbortSignal | undefined; documents: boolean }
+const AUTH_POLICY: RequestPolicy = { maxBytes: MAX_RESPONSE_BYTES, signal: undefined, documents: false };
+
+export class GatewayDocumentError extends Error {
+	constructor(public readonly status: number) { super("App data operation unavailable."); }
+}
 
 export interface GatewayIdentity { id: string; email: string }
 export interface GatewayRedemption { token: string; expiresAt: Date; identity: GatewayIdentity }
@@ -28,13 +41,13 @@ export function secureOrigin(value: string): URL {
 	return url;
 }
 
-async function boundedJson(response: Response, signal: AbortSignal): Promise<unknown> {
+async function boundedJson(response: Response, signal: AbortSignal, maxBytes: number): Promise<unknown> {
 	if (response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json" || !response.body) {
 		void response.body?.cancel().catch(() => {});
 		throw new GatewayControlError(503);
 	}
 	const length = response.headers.get("content-length");
-	if (length !== null && (!/^\d+$/.test(length) || Number(length) > MAX_RESPONSE_BYTES)) {
+	if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
 		void response.body.cancel().catch(() => {});
 		throw new GatewayControlError(503);
 	}
@@ -49,7 +62,7 @@ async function boundedJson(response: Response, signal: AbortSignal): Promise<unk
 			const part = await reader.read();
 			if (part.done) break;
 			size += part.value.byteLength;
-			if (size > MAX_RESPONSE_BYTES) throw new GatewayControlError(503);
+			if (size > maxBytes) throw new GatewayControlError(503);
 			chunks.push(part.value);
 		}
 		const bytes = new Uint8Array(size);
@@ -100,13 +113,39 @@ export class GatewayControlClient {
 		await this.#request("/api/gateway/logout", { token }, Revocation);
 	}
 
-	async #request<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T> {
+	async document(token: string, operation: GatewayDocumentOperation, signal: AbortSignal): Promise<GatewayDocumentResult> {
+		if (!Secret.safeParse(token).success) throw new GatewayDocumentError(401);
+		const parsed = GatewayDocumentOperation.safeParse(operation);
+		if (!parsed.success) throw new GatewayDocumentError(400);
+		if (parsed.data.action === "put") {
+			try { documentJson(parsed.data.json); } catch { throw new GatewayDocumentError(400); }
+		}
+		const policy: RequestPolicy = { maxBytes: 32768, signal, documents: true };
+		if (parsed.data.action === "remove") return this.#request("/api/gateway/documents", { ...parsed.data, token }, DeletedReply, policy);
+		const result = await this.#request("/api/gateway/documents", { ...parsed.data, token }, DocumentReply, policy);
+		const document = result.document;
+		if (!document) { if (parsed.data.action === "put") throw new GatewayDocumentError(503); return result; }
+		try {
+			if (document.collection !== parsed.data.collection || document.id !== parsed.data.id || document.json !== documentJson(document.json)) throw new Error();
+			if (parsed.data.action === "put" && (document.json !== documentJson(parsed.data.json) || document.version === parsed.data.expectedVersion)) throw new Error();
+		} catch { throw new GatewayDocumentError(503); }
+		return result;
+	}
+
+	async #request<T>(path: string, body: unknown, schema: z.ZodType<T>, policy: RequestPolicy = AUTH_POLICY): Promise<T> {
 		const controller = new AbortController();
+		const failure = (status: number) => policy.documents ? new GatewayDocumentError([400, 401, 403, 404, 409, 410, 413, 415, 429].includes(status) ? status : 503)
+			: new GatewayControlError(status === 401 || status === 403 ? status : 503);
 		let timer: ReturnType<typeof setTimeout> | undefined;
+		let abort: () => void = () => {};
 		const deadline = new Promise<never>((_, reject) => {
-			timer = setTimeout(() => { controller.abort(); reject(new GatewayControlError(503)); }, this.#timeoutMs);
+			abort = () => { controller.abort(); reject(failure(503)); };
+			timer = setTimeout(abort, this.#timeoutMs);
+			policy.signal?.addEventListener("abort", abort, { once: true });
+			if (policy.signal?.aborted) abort();
 		});
 		const work = async (): Promise<T> => {
+			if (controller.signal.aborted) throw failure(503);
 			const response = await this.#fetch(new URL(path, this.#origin), {
 				method: "POST", headers: { authorization: `Bearer ${this.#credential}`, "content-type": "application/json", "x-smartdeploy-binding-id": this.#bindingId },
 				body: JSON.stringify(body), redirect: "error", credentials: "omit", cache: "no-store", signal: controller.signal,
@@ -118,14 +157,14 @@ export class GatewayControlClient {
 			}
 			if (response.status !== 200) {
 				void response.body?.cancel().catch(() => {});
-				throw new GatewayControlError(response.status === 401 || response.status === 403 ? response.status : 503);
+				throw failure(response.status);
 			}
-			const result = schema.safeParse(await boundedJson(response, controller.signal));
+			const result = schema.safeParse(await boundedJson(response, controller.signal, policy.maxBytes));
 			if (!result.success) throw new GatewayControlError(503);
 			return result.data;
 		};
 		try { return await Promise.race([work(), deadline]); }
-		catch (error) { throw error instanceof GatewayControlError ? error : new GatewayControlError(503); }
-		finally { clearTimeout(timer); controller.abort(); }
+		catch (error) { throw error instanceof GatewayDocumentError || (!policy.documents && error instanceof GatewayControlError) ? error : failure(503); }
+		finally { clearTimeout(timer); policy.signal?.removeEventListener("abort", abort); controller.abort(); }
 	}
 }

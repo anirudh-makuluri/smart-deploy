@@ -16,6 +16,21 @@ describe("bounded app document encoding", () => {
 	it("does not expose malformed stored JSON as a user input error", () => {
 		expect(() => storedDocument({ ...documentKey(address), collection: address.collection, id: address.id, version: "22222222-2222-4222-8222-222222222222", json: "{broken", chargedBytes: 100 }, address)).toThrowError(expect.objectContaining({ status: 503 }));
 	});
+	it("rejects short exponential input whose normalized numbers exceed eight KiB", () => {
+		const input = '{"values":[' + Array(1000).fill("1e-6").join(",") + ']}';
+		expect(Buffer.byteLength(input)).toBe(5012); expect(Buffer.byteLength(JSON.stringify(JSON.parse(input)))).toBe(9012);
+		expect(() => documentJson(input)).toThrowError(expect.objectContaining({ status: 400 }));
+	});
+	it("bounds normalization of lone UTF-16 surrogates as well as input bytes", () => {
+		const input = '{"text":"' + "\ud800".repeat(2000) + '"}';
+		expect(Buffer.byteLength(input)).toBeLessThan(8192); expect(Buffer.byteLength(JSON.stringify(JSON.parse(input)))).toBeGreaterThan(8192);
+		expect(() => documentJson(input)).toThrowError(expect.objectContaining({ status: 400 }));
+	});
+	it("accepts normalization expansion when the stored result remains within its limit", () => {
+		const input = '{"values":[' + Array(500).fill("1e-6").join(",") + ']}';
+		const normalized = JSON.stringify(JSON.parse(input)); expect(Buffer.byteLength(normalized)).toBeLessThan(8192);
+		expect(documentJson(input)).toBe(normalized); expect(documentJson(normalized)).toBe(normalized);
+	});
 	it("rejects a stored record returned under another tenant key", () => {
 		expect(() => storedDocument({ ...documentKey(address), pk: "APP#another", collection: address.collection, id: address.id, version: "22222222-2222-4222-8222-222222222222", json: "{}", chargedBytes: 525 }, address)).toThrowError(expect.objectContaining({ status: 503 }));
 	});

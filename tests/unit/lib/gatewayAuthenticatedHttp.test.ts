@@ -10,7 +10,7 @@ const TOKEN = "t".repeat(43);
 const WORKLOAD = { bindingId: BINDING, environment: "published" as const, releaseId: "997a2326-5b9b-4c08-aaef-45c618db01d3" };
 let certificate: Awaited<ReturnType<typeof gatewayCertificate>>;
 function options(): GatewayAuthenticatedHttpOptions {
-	return { context: { bindingId: BINDING, environment: "published", appOrigin: "https://app.test" },
+	return { documentsEnabled: false, context: { bindingId: BINDING, environment: "published", appOrigin: "https://app.test" },
 		browser: { bindingId: BINDING, appOrigin: "https://app.test", platformOrigin: "https://control.test", serviceCredential: "sd_gateway_91843492-f2ea-437c-a540-b144c3bc8ed2." + "s".repeat(43), timeoutMs: 1000, transactions: { ttlSeconds: 60, maxEntries: 10 } },
 		upstream: { ...WORKLOAD, privateIp: "10.0.1.23", port: 443, certificatePem: certificate.cert, timeoutMs: 100, maxConnections: 1 },
 		limits: { maxConnections: 1, maxRequestBytes: 64, maxResponseBytes: 1024, idleMs: 100, timeoutMs: 500 } };
@@ -36,6 +36,24 @@ describe("authenticated HTTP gateway composition", () => {
 	it("returns private 401 for anonymous fetches without issuing a login or dialing", async () => {
 		const { gateway, transport, dial } = fixture(); const response = await gateway.handle(request());
 		expect(response.status).toBe(401); expect(response.headers.get("cache-control")).toBe("private, no-store"); expect(response.headers.has("set-cookie")).toBe(false); expect(transport).not.toHaveBeenCalled(); expect(dial).not.toHaveBeenCalled(); gateway.close();
+	});
+	it("composes the enabled reserved document broker before customer routing", async () => {
+		const { gateway, transport, dial } = fixture({ ...options(), documentsEnabled: true });
+		transport.mockResolvedValue(Response.json({ document: null }));
+		const response = await gateway.handle(new Request("https://app.test/__smartdeploy/documents", { method: "POST",
+			headers: { origin: "https://app.test", "sec-fetch-site": "same-origin", "content-type": "application/json", cookie: `${GATEWAY_SESSION_COOKIE}=${TOKEN}` },
+			body: JSON.stringify({ action: "get", collection: "notes", id: "shared" }) }));
+		expect(response.status).toBe(200); expect(await response.json()).toEqual({ document: null });
+		expect(transport.mock.calls[0][0].pathname).toBe("/api/gateway/documents"); expect(transport).toHaveBeenCalledTimes(1); expect(dial).not.toHaveBeenCalled(); gateway.close();
+	});
+	it("keeps document paths reserved when disabled and rejects enabled encoded variants", async () => {
+		for (const enabled of [false, true]) {
+			const { gateway, transport, dial } = fixture({ ...options(), documentsEnabled: enabled });
+			for (const path of enabled ? ["/%5f_smartdeploy/documents", "/__SMARTDEPLOY/documents", "/__smartdeploy/documents/"] : ["/__smartdeploy/documents"]) {
+				const response = await gateway.handle(request(path, { accept: "text/html" })); expect(response.status).toBe(404);
+			}
+			expect(transport).not.toHaveBeenCalled(); expect(dial).not.toHaveBeenCalled(); gateway.close();
+		}
 	});
 	it.each([401, 403, 500])("stops authorization failure %i before upstream", async (status) => {
 		const { gateway, transport, dial } = fixture(); transport.mockResolvedValueOnce(new Response("private control-plane detail", { status }));

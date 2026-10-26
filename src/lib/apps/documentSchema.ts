@@ -44,7 +44,10 @@ export function documentJson(input: string): string {
 			if (typeof value === "number" && Number.isInteger(value) && !Number.isSafeInteger(value)) throw new Error("Unsafe integer");
 			if (value && typeof value === "object") for (const item of Object.values(value)) visit(item, depth + 1);
 		};
-		visit(parsed, 0); return JSON.stringify(parsed);
+		visit(parsed, 0);
+		const normalized = JSON.stringify(parsed);
+		if (Buffer.byteLength(normalized, "utf8") > 8192) throw new Error("Normalized document too large");
+		return normalized;
 	} catch { throw new AppDataError(400); }
 }
 export function chargedDocumentBytes(address: DocumentAddress, json: string): number {

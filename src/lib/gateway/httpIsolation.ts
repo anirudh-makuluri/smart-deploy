@@ -101,11 +101,22 @@ export class GatewayHttpIsolation {
 	}
 
 	assertBrowserRequest(request: Request): void {
+		if (gatewayPathKind(new URL(request.url)) !== "public") throw new GatewayHttpError(400);
+		this.#assertBrowserContext(request);
+	}
+
+	assertDocumentRequest(request: Request): void {
+		const url = new URL(request.url);
+		if (url.pathname !== "/__smartdeploy/documents" || url.search || request.method !== "POST") throw new GatewayHttpError(400);
+		this.#assertBrowserContext(request);
+	}
+
+	#assertBrowserContext(request: Request): void {
 		bound(request.headers, 16384, 400);
 		const url = new URL(request.url); const host = request.headers.get("host");
 		if (url.origin !== this.#app.origin || (host !== null && host.toLowerCase() !== this.#app.host)) throw new GatewayHttpError(403);
 		if (!METHODS.has(request.method) || request.headers.has("upgrade")) throw new GatewayHttpError(403);
-		if (Buffer.byteLength(request.url, "utf8") > 4096 || url.hash || gatewayPathKind(url) !== "public") throw new GatewayHttpError(400);
+		if (Buffer.byteLength(request.url, "utf8") > 4096 || url.hash) throw new GatewayHttpError(400);
 		const origin = request.headers.get("origin"); const site = request.headers.get("sec-fetch-site");
 		if (origin !== null && origin !== this.#app.origin) throw new GatewayHttpError(403);
 		const safe = request.method === "GET" || request.method === "HEAD";
