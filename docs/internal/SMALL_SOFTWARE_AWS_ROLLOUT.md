@@ -1207,3 +1207,59 @@ separate proof, not production authentication evidence. Linux emulator proof is
 distinct from actual AWS IAM/durability/backups/hosted acceptance. PR description
 and issue99 exact-head row updated. Draft/unmerged, full Doctor84/100 and remaining
 pilot gates unmet. No AWS provisioning/startup or production.
+
+## MVP scope and cost decision (October 25, latest user instructions)
+
+The user narrowed the release to demonstrating the architecture through the
+user flow and finishing the current PRs for production. Defer app-scoped agent
+CLI/MCP tools, the ALB-to-Nginx/Certbot migration, and broader file/admin features.
+Keep ALB with ACM for the demonstration. Existing Better Auth/Supabase platform
+dependencies remain unchanged. The representative acceptance flow is one private
+app: verified sign-in, colleague app-use grant, document save, redeploy preserving
+that document, and access revocation. Preview/published isolation and existing
+private-origin protections still apply.
+
+The user explicitly selected a time-boxed demo within the existing $10 additional
+monthly AWS budget, including automatic runtime/ALB teardown afterward. This
+supersedes the requirement to finish all deferred agent/file/admin work before
+this MVP release; it does not waive repository-wide React Doctor >=95, relevant
+integration/build/browser checks, reviewed infrastructure/migration/rollback
+plans, secure private access, or actual hosted acceptance. A controlled demo must
+be identified as such and must not be represented as general arbitrary-app
+rollout completion. No always-on ALB/worker budget was approved. Durable cleanup,
+owned-resource boundaries, safe shared-worker shutdown, current cost estimates,
+and a bounded demo end time are prerequisites to starting billable resources.
+
+Release-health work is active on fix/mvp-release-health, based on the exact #123
+head 7699bdc92e034ec762475a5d4a476ca65e67922a. A fresh inventory confirms all 31
+rollout PR heads are ancestors of that candidate; all remain open, 30 drafts.
+Latest required checks pass, but that alone is not production acceptance. The
+full initial scan reproduced 84/100; the first behavior-preserving fixes reach
+89/100 with zero errors. Cleanup verification continues. Billing #85 remains
+separate. AWS read-only inventory found the existing t3.small worker stopped;
+no resources have been started/provisioned and no rollout PR merged/deployed.
+
+MVP release-health session update: all31 rollout PR review-thread lists are empty.
+The candidate cleanup now passes a complete unfiltered React Doctor0.9.18 scan:
+100/100, zero errors/warnings,666files at that scan. No suppressions or rule changes.
+New GitHub dispatch tests exposed an existing detached WebCrypto randomUUID call;
+the default now invokes it on its receiver. Independent row reservations dispatch
+at concurrency2, stop further admission on failure, and drain already-started
+work before returning an error. Five queue unit cases and two actual PostgreSQL
+transaction/concurrent-delivery cases pass. Synthetic four-job/40ms queue-delay
+measurements are retained as local evidence only, not AWS performance proof.
+The full pre-queue-change rerun passes158files/1114tests. One initial first-import
+5000ms approval-test timeout was repaired by moving server-module loading into
+beforeAll fixture setup; request tests retain their existing timeout. Final full
+candidate verification (including the queue changes) is active, serial/capped.
+
+Read-only live prerequisites: us-west-2 has no ALB; the smart-deploy.xyz wildcard
+ACM certificate is expired. Worker secret lacks the two new private-app flags.
+A certificate-verified, read-only production PostgreSQL metadata transaction
+confirms no app/workspace tables or deployment association columns are applied.
+The platform remains Supabase/Better Auth. The vendor CA was obtained from the
+project dashboard's certificate link; certificate verification was not disabled.
+Temporary dashboard login was signed out. No settings, migrations, flags,
+provider connections, cloud resources, rollout merges or production deployments
+were changed. Broader runtime loader/data broker/MVP wiring, valid app certificate,
+reviewed migration/rollback and durable bounded demo cleanup remain required.

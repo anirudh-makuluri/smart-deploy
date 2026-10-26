@@ -121,3 +121,16 @@ Restoring data must not revive old runtime credentials or sessions. DynamoDB TTL
 alone is not the access cutoff or proof that storage has been removed. No
 production deletion, migration or resource provisioning is authorized by merely
 recording this choice; the existing full-feature production condition remains.
+
+## Latest MVP override (October 25)
+
+The user approved a time-boxed architecture demo under the existing $10 additional
+monthly limit, retaining ALB + ACM with automatic runtime/ALB teardown afterward.
+Agent tools, Nginx migration and broader file/admin features are deferred. The MVP
+acceptance target is one private app with verified sign-in, colleague access,
+persistent document save across redeploy, and immediate access revocation. This
+narrows the older full-feature release gate above; common security, quality,
+validation and cost controls remain required. No always-on ALB budget is approved.
+Provisioning must install durable cleanup before live demo startup and preserve
+unrelated shared-worker jobs and retained app data. This note is policy, not proof
+of provisioning, production readiness or hosted acceptance.
