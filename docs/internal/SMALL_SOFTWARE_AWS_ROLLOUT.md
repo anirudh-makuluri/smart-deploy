@@ -1310,3 +1310,31 @@ gate100/100. Database121396282665 executes148SQL, all inherited browser suites,
 >=95 claim. Required Linux container evidence now exists at the exact leaf head;
 local Docker remains unavailable. PR descriptions/issue99 updated. Draft/unmerged;
 no provisioning, migrations, startup, provider changes or production deployment.
+
+Document API slice: feat/private-app-document-api is based on exact #125 head
+d026bc3e2a31eb524effeb3988aa8ed7757577df. The disabled machine endpoint derives
+verified identity and app/environment from current managed runtime/session SQL,
+rechecks app admission, rejects caller scope and browser credentials, and limits
+get/put/remove to one explicitly allowlisted app/table ARN. Storage abort reaches
+all seven SDK commands; body/HTTP/SDK deadlines and process concurrency are bounded.
+This does not establish a global budget cap or atomic SQL/DynamoDB authorization.
+Unavailable writes require reconciliation. No flags/resources/migrations changed.
+
+Final serial local proof: 161 unit files/1157 tests, 10 PostgreSQL files/151 tests,
+33 real DynamoDB Local cases, two compiled native TLS process cases, 15 compiled
+private-app browser and five compiled public/analytics cases, typecheck, lint and
+production/worker/workload builds all pass. Complete unfiltered Doctor 0.9.18:
+674 files, 100/100, zero errors/warnings/skips. Removing the managed-runtime guard
+fails its regression test. The initial strict-union inference and revoked-session
+fixture errors were repaired; permissions restoration cannot revive an old session.
+Owned disposable database/emulator/fixtures stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-document-api-1792990297824.
+Native browser-to-document integration and the trusted runtime loader/controller
+remain next, followed by bounded AWS demo cleanup/provisioning, reviewed live
+migration/certificate and hosted acceptance. No rollout merge or production deploy.
+
+Published #126 https://github.com/anirudh-makuluri/smart-deploy/pull/126 at
+b6b81f3201d668ef2d878a6f9051745a3831a263, stacked on #125/fix/github-push-dispatch;
+draft, attached, intended 16 files. Publisher identity reverified. Exact-head CI
+is pending. Issue99 ownership-guarded table updated. Next slice uses separate
+feat/gateway-document-access branch. No production changes.
