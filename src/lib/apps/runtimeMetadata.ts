@@ -27,6 +27,7 @@ export interface AppRuntime {
 	registeredAt: Date; retiredAt: Date | null;
 }
 export interface AppRuntimeRoute { runtimeId: string; generation: number }
+export type CurrentAppRuntime = AppRuntime & AppRuntimeRoute & { origin: string; credentialParameter: string };
 export interface RuntimeReleasePreflight {
 	binding: RuntimeBinding; releaseId: string; deploymentId: string; imageReference: string; imageDigest: string; sourceFingerprint: string;
 }

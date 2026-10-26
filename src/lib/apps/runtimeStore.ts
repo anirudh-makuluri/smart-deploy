@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { AppEnvironment } from "./types";
 import { loadWorkspaceAccess, requireId, requireWorkspaceManager, withWorkspaceTransaction, WorkspaceError } from "./workspaceStore";
 import { privateRuntimeOrigin, runtimeCredentialParameter, runtimeEndpoint, runtimeReleaseSource, RuntimeRegistrationInput, RuntimeScope,
-	type AppRuntime, type AppRuntimeRoute, type RuntimeBinding, type RuntimeSource, type RuntimeReleasePreflight } from "./runtimeMetadata";
+	type AppRuntime, type AppRuntimeRoute, type RuntimeBinding, type RuntimeSource, type RuntimeReleasePreflight, type CurrentAppRuntime } from "./runtimeMetadata";
 
 const FIELDS = `r.id, r.app_id as "appId", r.workspace_id as "workspaceId", r.binding_id as "bindingId", r.environment,
   r.release_id as "releaseId", r.deployment_id as "deploymentId", r.credential_id as "credentialId", r.task_arn as "taskArn",
@@ -159,7 +159,7 @@ export class AppRuntimeStore {
 	}
 
 	/** Operator-only projection. No config or secret values are copied from history. */
-	async current(appId: string, environment: AppEnvironment): Promise<(AppRuntime & AppRuntimeRoute & { origin: string; credentialParameter: string }) | null> {
+	async current(appId: string, environment: AppEnvironment): Promise<CurrentAppRuntime | null> {
 		requireId(appId);
 		const result = await this.pool.query<AppRuntime & AppRuntimeRoute & { origin: string }>(`select ${FIELDS}, route.runtime_id as "runtimeId", route.generation, b.origin
       from public.app_runtime_routes route join public.app_runtime_registrations r on r.id = route.runtime_id

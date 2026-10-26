@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createServer as createTlsServer, connect as tlsConnect } from "node:tls";
+import type { Duplex } from "node:stream";
 import { Client, Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppStore } from "../../src/lib/apps/appStore";
 import { AppRuntimeStore } from "../../src/lib/apps/runtimeStore";
 import type { RuntimeBinding, RuntimeRegistrationInput } from "../../src/lib/apps/runtimeMetadata";
@@ -9,7 +11,18 @@ import { authenticateGateway, createGatewayServiceCredential } from "../../src/l
 import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
 import { gatewayCertificate } from "../helpers/gatewayCertificate";
+import { ManagedGatewayLoader } from "../../src/lib/gateway/managedRoute";
+import { runtimeCredentialParameter } from "../../src/lib/apps/runtimeMetadata";
+import { GATEWAY_SESSION_COOKIE } from "../../src/lib/gateway/cookies";
 import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
+
+const ssm = vi.hoisted(() => ({ send: vi.fn(), destroy: vi.fn() }));
+vi.mock("@aws-sdk/client-ssm", async importOriginal => {
+	const original = await importOriginal<typeof import("@aws-sdk/client-ssm")>();
+	return { ...original, SSMClient: class { send = ssm.send; destroy = ssm.destroy; } };
+});
+const tlsServers = new Set<ReturnType<typeof createTlsServer>>(); const tlsSockets = new Set<Duplex>();
+afterEach(async () => { for (const socket of tlsSockets) socket.destroy(); for (const server of tlsServers) await new Promise<void>(resolve => server.close(() => resolve())); tlsServers.clear(); ssm.send.mockReset(); });
 
 const client = new Client({ connectionString: databaseTestConnectionString() });
 const pool = new Pool({ connectionString: databaseTestConnectionString(), max: 4, application_name: "runtime-registration-tests" });
@@ -44,9 +57,52 @@ async function registration(target = binding) {
 	const material = await gatewayCertificate({ bindingId: target.id, environment: target.environment, releaseId }); certificates.push(material);
 	const preflight = await store.prepare(target.id, releaseId, "alice");
 	const input: RuntimeRegistrationInput = { id: randomUUID(), bindingId: target.id, releaseId, credentialId: key.id, taskArn: `arn:aws:ecs:${scope.region}:${scope.accountId}:task/pilot/${randomUUID().replaceAll("-", "")}`, privateIp: "10.0.1.23", port: 443, certificatePem: material.cert, observedImageDigest: digest, expectedSourceFingerprint: preflight.sourceFingerprint };
-	return { input, key, deploymentId, artifact };
+	return { input, key, deploymentId, artifact, material };
+}
+
+async function liveRegisteredRuntime(target: RuntimeBinding) {
+	const value = await registration(target);
+	const server = createTlsServer({ key: value.material.key, cert: value.material.cert, minVersion: "TLSv1.3", maxVersion: "TLSv1.3", ALPNProtocols: ["http/1.1"] });
+	tlsServers.add(server); server.on("connection", socket => { tlsSockets.add(socket); socket.on("error", () => {}); socket.once("close", () => tlsSockets.delete(socket)); });
+	server.on("tlsClientError", () => {});
+	await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+	const address = server.address(); if (!address || typeof address === "string") throw new Error("Loopback fixture unavailable.");
+	value.input.port = address.port; await store.register(value.input); await store.activate(value.input.id, "alice", null);
+	const parameter = runtimeCredentialParameter(target.id, value.input.id);
+	const response = { Parameter: { Name: parameter, ARN: `arn:aws:ssm:${scope.region}:${scope.accountId}:parameter${parameter}`, Type: "SecureString", Version: 1, Value: value.key.token } };
+	ssm.send.mockResolvedValue(response);
+	const loader = new ManagedGatewayLoader(pool, { scope, appId: target.appId, environment: target.environment, platformOrigin: "https://control.test", documentsEnabled: true,
+		timeoutMs: 3000, controlTimeoutMs: 1000, limits: { maxConnections: 2, maxRequestBytes: 32768, maxResponseBytes: 32768, timeoutMs: 5000, idleMs: 1000 } });
+	return { ...value, loader, response };
 }
 describe("authoritative runtime registration metadata", () => {
+	it("loads an actual selected SQL runtime/key and keeps a colleague's document access revocable", async () => {
+		const target = await store.createBinding(appId, "published", "alice"); await apps.grantUse(appId, "alice", "carol");
+		const live = await liveRegisteredRuntime(target);
+		try {
+			const session = await sessionFor(target, "carol"); const scopes: string[] = [];
+			const route = await live.loader.load(new AbortController().signal, async (url, init) => {
+				const principal = await authenticateGateway(pool, new Headers(init.headers).get("authorization"));
+				if (url.pathname !== "/api/gateway/documents") throw new Error("Unexpected fixture endpoint.");
+				const body: { token: string } = JSON.parse(String(init.body)); const authorized = await auth.authorizeDocuments(principal.bindingId, body.token);
+				if (!authorized) return Response.json({}, { status: 403 }); scopes.push(authorized.scope.environment);
+				return Response.json({ document: null }); // Storage itself is covered by the separate real DynamoDB Local suite.
+			}, configuration => tlsConnect({ ...configuration, host: "127.0.0.1" }));
+			const request = () => new Request(target.origin + "/__smartdeploy/documents", { method: "POST", headers: {
+				origin: target.origin, "sec-fetch-site": "same-origin", "content-type": "application/json", cookie: `${GATEWAY_SESSION_COOKIE}=${session.token}` },
+				body: JSON.stringify({ action: "get", collection: "notes", id: "shared" }) });
+			expect((await route.handle(request())).status).toBe(200); expect(scopes).toEqual(["published"]);
+			await apps.revokeUse(appId, "alice", "carol"); expect((await route.handle(request())).status).toBe(403); expect(scopes).toEqual(["published"]);
+		} finally { live.loader.close(); }
+	});
+	it("cannot load a route unpublished while its SSM credential response is pending", async () => {
+		const live = await liveRegisteredRuntime(binding);
+		try {
+			ssm.send.mockImplementationOnce(async () => { await store.deactivate(appId, "preview", "alice", live.input.id); return live.response; });
+			await expect(live.loader.load(new AbortController().signal, undefined, configuration => tlsConnect({ ...configuration, host: "127.0.0.1" }))).rejects.toThrow("Private app gateway configuration unavailable.");
+			expect(await store.current(appId, "preview")).toBeNull();
+		} finally { live.loader.close(); }
+	});
 	async function sessionFor(target: RuntimeBinding, userId: string) {
 		const verifier = randomBytes(32).toString("base64url");
 		const handoff = await auth.issue(target.id, { userId, sessionId: userId + "-session" }, createHash("sha256").update(verifier).digest("base64url"));

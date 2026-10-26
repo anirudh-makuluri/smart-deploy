@@ -26,6 +26,7 @@
     "workload:build": "tsc -p tsconfig.workload-tls.json",
     "test:workload": "npm run workload:build && vitest run --config vitest.workload.config.ts",
     "test:workload:container": "vitest run --config vitest.workload-container.config.ts",
+    "test:gateway:process": "vitest run --config vitest.gateway-process.config.ts",
     "cli:build": "npm --prefix packages/cli run build",
     "cli:pack:dry-run": "npm --prefix packages/cli run pack:dry-run",
     "start-all": "concurrently \"npm run dev\" \"npm run ws\"",
