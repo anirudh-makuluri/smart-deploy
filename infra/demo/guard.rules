@@ -1,0 +1,47 @@
+# Application resources must live in the separately owned, deletable workload stack.
+rule control_plane_only {
+    Resources.*.Type IN ["AWS::Scheduler::ScheduleGroup", "AWS::Scheduler::Schedule", "AWS::IAM::Role", "AWS::Lambda::Function", "AWS::Lambda::EventInvokeConfig", "AWS::SQS::Queue", "AWS::Logs::LogGroup"]
+}
+
+rule bounded_cleanup {
+    Resources.CleanupFunction.Properties.ReservedConcurrentExecutions == 1
+    Resources.CleanupFunction.Properties.Timeout <= 60
+    Resources.CleanupFunction.Properties.MemorySize <= 512
+    Resources.CleanupSchedule.Properties.State == "ENABLED"
+    Resources.CleanupSchedule.Properties.ScheduleExpression == "rate(1 minute)"
+    Resources.CleanupSchedule.Properties.StartDate == {"Ref":"CleanupStartUtc"}
+    Resources.CleanupSchedule.Properties.EndDate == {"Ref":"CleanupEndUtc"}
+    Resources.CleanupSchedule.Properties.FlexibleTimeWindow.Mode == "OFF"
+    Resources.CleanupSchedule.Properties.Target.RetryPolicy.MaximumEventAgeInSeconds <= 300
+    Resources.CleanupSchedule.Properties.Target.RetryPolicy.MaximumRetryAttempts <= 3
+    Resources.CleanupAsyncDelivery.Properties.MaximumEventAgeInSeconds <= 300
+    Resources.CleanupAsyncDelivery.Properties.MaximumRetryAttempts <= 1
+}
+
+rule protected_audit {
+    Resources.CleanupDlq.Properties.SqsManagedSseEnabled == true
+    Resources.CleanupDlq.Properties.MessageRetentionPeriod <= 604800
+    Resources.CleanupDlq.DeletionPolicy == "Retain"
+    Resources.CleanupDlq.UpdateReplacePolicy == "Retain"
+    Resources.CleanupLogs.Properties.RetentionInDays <= 7
+    Resources.CleanupLogs.DeletionPolicy == "Retain"
+}
+
+rule worker_lease {
+    let stop = Resources.CleanupRole.Properties.Policies[*].PolicyDocument.Statement[Action == "ec2:StopInstances"]
+    %stop not empty
+    %stop.Resource == {"Fn::Sub":"arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstanceId}"}
+    %stop.Condition == {"StringEquals":{"ec2:ResourceTag/smartdeploy:demo-id":{"Ref":"DemoId"}}}
+}
+
+rule interface_lease {
+    let detach = Resources.CleanupRole.Properties.Policies[*].PolicyDocument.Statement[Action == "ec2:ModifyNetworkInterfaceAttribute"]
+    %detach not empty
+    %detach.Resource == {"Fn::Sub":"arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}"}
+    %detach.Condition == {"StringEquals":{"ec2:ResourceTag/smartdeploy:demo-id":{"Ref":"DemoId"}}}
+}
+
+rule scheduler_identity {
+    Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[*].Principal.Service == "scheduler.amazonaws.com"
+    Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[*].Condition == {"StringEquals":{"aws:SourceAccount":{"Ref":"AWS::AccountId"},"aws:SourceArn":{"Fn::GetAtt":["CleanupGroup","Arn"]}}}
+}
