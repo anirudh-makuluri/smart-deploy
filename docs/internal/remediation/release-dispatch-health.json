@@ -1,0 +1,102 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "baselineRevision": "7699bdc92e034ec762475a5d4a476ca65e67922a",
+  "candidateBaseRevision": "7b078785b75d319c133e3f14e6ff950fc37497b2",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 1,
+    "affectedFileCount": 1,
+    "totalDiagnosticCount": 1,
+    "score": 92,
+    "scoreLabel": "Great"
+  },
+  "productionReady": false,
+  "productionMutations": false,
+  "bucket": "release-dispatch-health",
+  "purpose": "Bound independent webhook dispatch, stop/drain failures, preserve atomic reservations and enforce full release verification",
+  "after": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "verification": {
+    "candidate": "Combined working candidate with separate GitHub dispatch follow-up",
+    "typecheck": true,
+    "unitFiles": 158,
+    "unitTests": 1117,
+    "postgresFiles": 10,
+    "postgresTests": 148,
+    "dynamoCases": 33,
+    "nativeTlsProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "build": true,
+    "lint": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "diffCheck": true,
+    "fullGateRequiresDispatchFollowUp": false,
+    "hostedEndToEnd": false,
+    "completeFullFiles": 668,
+    "doctorComplete": true,
+    "skippedChecks": [],
+    "queueUnitCases": 5,
+    "queuePostgresCases": 2,
+    "syntheticGateCases": 8,
+    "initialRepairedFailures": [
+      "Initial approval unit case exceeded its five-second timeout during server-module import; fixture startup now uses beforeAll, individual request timeout preserved.",
+      "Default UUID path exposed existing detached WebCrypto receiver failure; fallback now calls crypto.randomUUID on its receiver."
+    ],
+    "measurement": {
+      "scenario": "Four independent deployment rows, injected 40ms queue IO, no AWS requests",
+      "before": [
+        {
+          "elapsedMs": 197,
+          "maximum": 1,
+          "queuedRuns": 4
+        },
+        {
+          "elapsedMs": 188,
+          "maximum": 1,
+          "queuedRuns": 4
+        },
+        {
+          "elapsedMs": 187,
+          "maximum": 1,
+          "queuedRuns": 4
+        }
+      ],
+      "after": [
+        {
+          "elapsedMs": 94,
+          "maximum": 2,
+          "queuedRuns": 4
+        },
+        {
+          "elapsedMs": 94,
+          "maximum": 2,
+          "queuedRuns": 4
+        },
+        {
+          "elapsedMs": 92,
+          "maximum": 2,
+          "queuedRuns": 4
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "At most one sibling dispatch can already be in flight when an error stops further admission.",
+    "Two pipelines per webhook is not a global queue/compute/spending limit.",
+    "Synthetic latency samples are not AWS performance evidence.",
+    "Remaining private MVP integration and hosted release gates are not completed by this cleanup."
+  ]
+}

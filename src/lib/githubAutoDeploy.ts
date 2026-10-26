@@ -84,7 +84,7 @@ export async function queueGithubPushDeployments(
 ): Promise<GithubAutoDeployResult> {
 	const db = dependencies.db ?? (dbHelper as unknown as GithubAutoDeployDb);
 	const enqueue = dependencies.enqueue ?? enqueueDeploymentRun;
-	const createRunId = dependencies.createRunId ?? crypto.randomUUID;
+	const createRunId = dependencies.createRunId ?? (() => crypto.randomUUID());
 	const matching = await db.getLiveDeploymentsForGithubPush({
 		repositoryUrl: push.repositoryUrl,
 		branch: push.branch,
@@ -93,7 +93,11 @@ export async function queueGithubPushDeployments(
 
 	let queuedRuns = 0;
 	let skippedDeployments = 0;
-	for (const entry of matching.deployments ?? []) {
+	const entries = matching.deployments ?? [];
+	let nextIndex = 0;
+	let admissionStopped = false;
+
+	async function queueOne(entry: GithubPushDeployment): Promise<void> {
 		const runId = createRunId();
 		const artifact = releaseArtifact({ deployment: entry.deployment, push, runId });
 		const reserved = await db.createAndReserveGithubPushDeployment({
@@ -109,7 +113,7 @@ export async function queueGithubPushDeployments(
 		if (reserved.error) throw new Error(reserved.error);
 		if (!reserved.reserved) {
 			skippedDeployments += 1;
-			continue;
+			return;
 		}
 
 		try {
@@ -121,6 +125,7 @@ export async function queueGithubPushDeployments(
 			});
 			queuedRuns += 1;
 		} catch (error) {
+			admissionStopped = true;
 			await db.finalizeDeploymentRun({
 				runId,
 				userId: entry.userId,
@@ -138,6 +143,19 @@ export async function queueGithubPushDeployments(
 			throw error;
 		}
 	}
+
+	// Deployment reservations are independent; bound control-plane dispatch to two.
+	// Stop admitting work on failure and drain both workers before returning it.
+	async function dispatchNext(): Promise<void> {
+		if (admissionStopped || nextIndex >= entries.length) return;
+		const entry = entries[nextIndex++];
+		try { await queueOne(entry); }
+		catch (error) { admissionStopped = true; throw error; }
+		return dispatchNext();
+	}
+	const results = await Promise.allSettled([dispatchNext(), dispatchNext()]);
+	const failure = results.find(result => result.status === "rejected");
+	if (failure?.status === "rejected") throw failure.reason;
 
 	return { queuedRuns, skippedDeployments };
 }

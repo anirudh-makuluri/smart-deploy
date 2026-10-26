@@ -11,6 +11,7 @@
     "test:e2e:invitee": "playwright test tests/e2e/invited-platform-boundary.spec.mts --workers=1",
     "test:e2e:cookies": "playwright test --config playwright.cookies.config.ts",
     "test:e2e:app-login": "playwright test --config playwright.login.config.ts",
+    "test:e2e:public": "playwright test --config playwright.public.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:database": "vitest run --config vitest.database.config.ts",
