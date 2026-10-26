@@ -1196,3 +1196,14 @@ Current-authorized broker, immediate whole-app access/runtime/data credential
 revocation, S3 files/listing/physical purge/quota release/backups, launch/wake,
 complete request/egress/cost admission, UI/tools/WebSockets, full Doctor>=95 and
 hosted acceptance remain unmet.
+
+#123 exact-head completion: all CI/preview checks pass at
+7699bdc92e034ec762475a5d4a476ca65e67922a. Run40256129260/build job121358245571
+executes1,091unit tests, the new33real DynamoDB Local3.3.2 cases under Java17,
+two native process cases and one required Linux container case (non-root/read-only,
+SIGTERM), all pass. Database/browser job121358245720 also passes. Generic CI build
+logs default-secret configuration warnings; configured browser auth fixtures are
+separate proof, not production authentication evidence. Linux emulator proof is
+distinct from actual AWS IAM/durability/backups/hosted acceptance. PR description
+and issue99 exact-head row updated. Draft/unmerged, full Doctor84/100 and remaining
+pilot gates unmet. No AWS provisioning/startup or production.
