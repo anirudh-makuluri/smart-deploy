@@ -1299,3 +1299,14 @@ Next required MVP work is composing the current-authorized document broker and
 trusted runtime loader/controller, then durable bounded demo provisioning/cleanup,
 reviewed platform migration/certificate plan and actual hosted acceptance. Agent
 CLI/MCP, Nginx migration and broader file/admin scope stay deferred.
+
+#124/#125 exact-head CI completion: all CI and Vercel preview checks pass at
+7b078785b75d319c133e3f14e6ff950fc37497b2 / d026bc3e2a31eb524effeb3988aa8ed7757577df.
+#125 run40268591579/build121396282454 executes1117unit,33realDynamoDBLocal,
+2nativeTLSprocess,1Linuxcontainertest, and the new complete668-file Doctor release
+gate100/100. Database121396282665 executes148SQL, all inherited browser suites,
+15compiledprivate-app and5compiledpublic/analytics cases, all pass. #124 run
+40268560768 also passes; its separate scopedDoctor100 is not a standalone full
+>=95 claim. Required Linux container evidence now exists at the exact leaf head;
+local Docker remains unavailable. PR descriptions/issue99 updated. Draft/unmerged;
+no provisioning, migrations, startup, provider changes or production deployment.
