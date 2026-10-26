@@ -140,6 +140,15 @@ jobs:
       - name: Run tests
         run: npm run test
 
+      - name: Setup Java for pinned loopback DynamoDB tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify app document transactions and seven-day retention
+        run: npm run test:documents
+
       - name: Build application
         run: npm run build
 
