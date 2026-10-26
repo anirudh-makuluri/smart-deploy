@@ -9,7 +9,7 @@ const navLinkClass = `text-sm text-muted-foreground ${linkClass}`;
 const primaryLinkClass = `rounded-sm font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50`;
 
 const githubPillClass =
-	"inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-foreground transition-all hover:border-primary/40 hover:shadow-sm";
+	"inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-foreground transition-[color,background-color,border-color,box-shadow] hover:border-primary/40 hover:shadow-sm";
 
 const GITHUB_REPOS = [
 	{

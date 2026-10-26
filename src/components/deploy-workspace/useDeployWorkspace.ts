@@ -5,6 +5,7 @@ import { type MenuSection } from "@/components/deploy-workspace/DeployWorkspaceM
 import {
 	deployWorkspaceUiReducer,
 	initialDeployWorkspaceUiState,
+	pauseResumeDialog,
 	type DeployWorkspaceUiAction,
 } from "@/components/deploy-workspace/deployWorkspaceState";
 import { formatRecentDeployLogs } from "@/components/deploy-workspace/deployLogsUtils";
@@ -237,18 +238,8 @@ export function useDeployWorkspace() {
 			: effectiveDeploymentStatus === "paused"
 				? transitionDeploymentStatus(effectiveDeploymentStatus, "resume_requested")
 				: transitionDeploymentStatus(effectiveDeploymentStatus, "pause_requested");
-	const pauseResumeDialogTitle = effectiveDeploymentStatus === "paused" ? "Resume Deployment?" : "Pause Deployment?";
-	const pauseResumeDialogDescription =
-		effectiveDeploymentStatus === "paused"
-			? "This will bring the deployment back online using its current configuration."
-			: "This will temporarily stop the live deployment while keeping its configuration intact.";
-	const pauseResumeConfirmText = ui.isChangingDeploymentState
-		? effectiveDeploymentStatus === "paused"
-			? "Resuming..."
-			: "Pausing..."
-		: effectiveDeploymentStatus === "paused"
-			? "Resume Deployment"
-			: "Pause Deployment";
+	const { pauseResumeDialogTitle, pauseResumeDialogDescription, pauseResumeConfirmText } =
+		pauseResumeDialog(effectiveDeploymentStatus, ui.isChangingDeploymentState);
 
 	React.useEffect(() => {
 		const deploymentKey = `${deployment.repoName}:${deployment.serviceName}:${deployment.id}`;

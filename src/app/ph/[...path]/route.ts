@@ -55,7 +55,9 @@ async function proxy(req: NextRequest, params: { path?: string[] }) {
 	resHeaders.set("Cache-Control", "no-store");
 
 	const isNoBodyStatus = upstreamRes.status === 204 || upstreamRes.status === 205 || upstreamRes.status === 304;
-	const responseBody = isNoBodyStatus ? null : await upstreamRes.arrayBuffer();
+	// Preserve error status/body just like successful responses. Stream the body
+	// so analytics assets do not have to finish downloading into server memory.
+	const responseBody = isNoBodyStatus ? null : upstreamRes.body;
 	const res = new NextResponse(responseBody, {
 		status: upstreamRes.status,
 		headers: resHeaders,

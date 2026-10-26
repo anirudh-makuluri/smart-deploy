@@ -1,4 +1,4 @@
-import { AdminDataTable, type AdminScalar, type AdminTableColumn } from "@/components/admin/AdminDataTable";
+import { AdminDataTable, type AdminTableRow, type AdminTableColumn } from "@/components/admin/AdminDataTable";
 import {
 	Card,
 	CardContent,
@@ -24,7 +24,7 @@ const reportColumns: AdminTableColumn[] = [
 	{ key: "service_name", label: "Service" },
 ];
 
-async function loadReports(): Promise<Record<string, AdminScalar>[]> {
+async function loadReports(): Promise<AdminTableRow[]> {
 	const { data, error } = await getSupabaseServer()
 		.from("user_reports")
 		.select(
@@ -46,7 +46,7 @@ async function loadReports(): Promise<Record<string, AdminScalar>[]> {
 		.order("created_at", { ascending: false })
 		.limit(1000);
 	if (error) throw new Error(error.message);
-	return (data ?? []) as unknown as Record<string, AdminScalar>[];
+	return (data ?? []) as unknown as AdminTableRow[];
 }
 
 export default async function AdminReportsPage() {

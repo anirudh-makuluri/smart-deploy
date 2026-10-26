@@ -1,7 +1,22 @@
 import type { MenuSection } from "@/components/deploy-workspace/DeployWorkspaceMenu";
 import type { FeedbackProgressPayload } from "@/components/FeedbackProgress";
-import type { DeploymentHistoryEntry, ScanResultsPayload } from "@/app/types";
+import type { DeployConfig, DeploymentHistoryEntry, ScanResultsPayload } from "@/app/types";
 import { isSdArtifactsAnalyzeScan } from "@/lib/scanResultNormalization";
+
+export function pauseResumeDialog(status: DeployConfig["status"], changing: boolean) {
+	if (status === "paused") {
+		return {
+			pauseResumeDialogTitle: "Resume Deployment?",
+			pauseResumeDialogDescription: "This will bring the deployment back online using its current configuration.",
+			pauseResumeConfirmText: changing ? "Resuming..." : "Resume Deployment",
+		};
+	}
+	return {
+		pauseResumeDialogTitle: "Pause Deployment?",
+		pauseResumeDialogDescription: "This will temporarily stop the live deployment while keeping its configuration intact.",
+		pauseResumeConfirmText: changing ? "Pausing..." : "Pause Deployment",
+	};
+}
 
 export type DeployWorkspaceUiState = {
 	isDeploying: boolean;

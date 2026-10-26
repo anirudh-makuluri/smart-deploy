@@ -1,4 +1,4 @@
-import { AdminDataTable, type AdminScalar, type AdminTableColumn } from "@/components/admin/AdminDataTable";
+import { AdminDataTable, type AdminTableRow, type AdminTableColumn } from "@/components/admin/AdminDataTable";
 import {
 	Card,
 	CardContent,
@@ -27,7 +27,7 @@ const deploymentColumns: AdminTableColumn[] = [
 	{ key: "response_id", label: "Response ID", tone: "mono" },
 ];
 
-async function loadDeployments(): Promise<Record<string, AdminScalar>[]> {
+async function loadDeployments(): Promise<AdminTableRow[]> {
 	const { data, error } = await getSupabaseServer()
 		.from("deployments")
 		.select(
@@ -55,7 +55,7 @@ async function loadDeployments(): Promise<Record<string, AdminScalar>[]> {
 		.order("last_deployment", { ascending: false, nullsFirst: false })
 		.limit(1000);
 	if (error) throw new Error(error.message);
-	const rows = (data ?? []) as unknown as Record<string, AdminScalar>[];
+	const rows = (data ?? []) as unknown as AdminTableRow[];
 	return rows.map((row) => ({
 		...row,
 		revision: typeof row.revision === "number" ? row.revision : null,

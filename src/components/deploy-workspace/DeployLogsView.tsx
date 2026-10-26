@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { DeployStep } from "@/app/types";
 import { formatRecentDeployLogs } from "@/components/deploy-workspace/deployLogsUtils";
+import { requestFailureAnalysis } from "@/lib/failureAnalysis";
 
 export type DeployStatus = "not-started" | "queued" | "running" | "success" | "error";
 
@@ -79,20 +80,7 @@ export default function DeployLogsView({
 		setAnalyzing(true);
 		setAnalysisResult(null);
 		try {
-			const res = await fetch("/api/llm/analyze-failure", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ runId: deploymentRunId }),
-			});
-			const data = (await res.json().catch(() => ({}))) as {
-				response?: string;
-				error?: string;
-				details?: string;
-			};
-			if (!res.ok) {
-				throw new Error(data.error || data.details || "Analysis failed.");
-			}
-			setAnalysisResult(data.response || data.error || data.details || "Analysis failed.");
+			setAnalysisResult(await requestFailureAnalysis(deploymentRunId));
 		} catch (err) {
 			setAnalysisResult(err instanceof Error ? err.message : "Request failed.");
 		} finally {
@@ -127,7 +115,40 @@ export default function DeployLogsView({
 		: serviceLogs;
 	const showDeploymentHeader = showDeployLogs;
 
-	const deploymentSteps = showDeploymentHeader ? steps ?? [] : [];
+
+	return (
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 sm:gap-6">
+			<DeploymentLogHeader showDeploymentHeader={showDeploymentHeader} deployStatus={deployStatus} isDeploymentLive={isDeploymentLive} steps={steps} deployingCommitInfo={deployingCommitInfo} />
+
+			<DeploymentFailurePanel showDeployLogs={showDeployLogs} deployError={deployError} steps={steps} analyzing={analyzing} analysisResult={analysisResult} repoUrl={repoUrl} onStartImproveScan={onStartImproveScan} handleWhyDidItFail={handleWhyDidItFail} handleImproveScanResults={handleImproveScanResults} />
+
+			<div
+				ref={logsContainerRef}
+				className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
+			>
+				<ServiceLogs
+					logs={logsToRender}
+					repoName={repoNameForLogs}
+					serviceName={serviceNameForLogs}
+					deployStatus={deployStatus}
+					displayLimit={14}
+					scrollable={true}
+				/>
+			</div>
+		</div>
+	);
+}
+
+function DeploymentLogHeader({
+	showDeploymentHeader,
+	deployStatus,
+	isDeploymentLive,
+	steps,
+	deployingCommitInfo,
+}: Pick<DeployLogsViewProps, "deployStatus" | "isDeploymentLive" | "steps" | "deployingCommitInfo"> & {
+	showDeploymentHeader: boolean;
+}) {
+	const deploymentSteps = showDeploymentHeader ? (steps ?? []) : [];
 	const hasDeploymentSteps = deploymentSteps.length > 0;
 	const completedSteps = hasDeploymentSteps
 		? deploymentSteps.filter((step) => step.status === "success").length
@@ -135,150 +156,145 @@ export default function DeployLogsView({
 	const totalSteps = deploymentSteps.length;
 	const progress = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
 
+	const metadata = DEPLOYMENT_LOG_STATUS[deployStatus];
 	const headerTitle = showDeploymentHeader
-		? deployStatus === "queued"
-			? "Deployment queued"
-			: deployStatus === "running"
-			? "Deployment in Progress"
-			: deployStatus === "success"
-				? "Deployment Successful"
-				: deployStatus === "error"
-					? "Deployment Failed"
-					: "Awaiting Deployment"
+		? metadata.title
 		: isDeploymentLive
 			? "Live Service Logs"
 			: "Start a new deployment";
-
+	const runningSubtitle = hasDeploymentSteps
+		? `Step ${Math.min(completedSteps + 1, totalSteps)} of ${totalSteps}`
+		: "Deployment is running";
+	const deploymentSubtitle = deployStatus === "running" ? runningSubtitle : metadata.subtitle;
 	const headerSubtitle = showDeploymentHeader
-		? deployStatus === "queued"
-			? "Waiting for the deployment worker to begin processing"
-			: deployStatus === "running"
-			? hasDeploymentSteps
-				? `Step ${Math.min(completedSteps + 1, totalSteps)} of ${totalSteps}`
-				: "Deployment is running"
-			: deployStatus === "success"
-				? "All steps completed successfully"
-				: deployStatus === "error"
-					? "An error occurred during deployment"
-					: "Ready to deploy"
+		? deploymentSubtitle
 		: isDeploymentLive
 			? "Live service output"
 			: "Logs will appear here once the deployment starts producing output";
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-col gap-4 sm:gap-6">
-			<div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/2 p-4 shadow-xl backdrop-blur-sm sm:p-6">
-				{showDeploymentHeader && (
-					<div className="absolute left-0 top-0 h-[2px] w-full bg-white/5">
-						<div
-							className={`h-full transition-all duration-1000 ease-out ${deployStatus === "error" ? "bg-destructive" : "bg-primary"}`}
-							style={{ width: `${progress}%` }}
+		<div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/2 p-4 shadow-xl backdrop-blur-sm sm:p-6">
+			{showDeploymentHeader && (
+				<div className="absolute left-0 top-0 h-[2px] w-full bg-white/5">
+					<div
+						className={`h-full transition-[width,background-color] duration-1000 ease-out ${deployStatus === "error" ? "bg-destructive" : "bg-primary"}`}
+						style={{ width: `${progress}%` }}
+					/>
+				</div>
+			)}
+
+			<div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
+				<div className="flex-1 space-y-4">
+					<div className="flex items-center gap-3">
+						<DeploymentLogStatusIcon
+							showDeploymentHeader={showDeploymentHeader}
+							deployStatus={deployStatus}
 						/>
-					</div>
-				)}
-
-				<div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
-					<div className="flex-1 space-y-4">
-						<div className="flex items-center gap-3">
-							<div
-								className={`rounded-xl p-2 ${
-									!showDeploymentHeader
-										? "bg-muted text-muted-foreground"
-										: deployStatus === "queued" || deployStatus === "running"
-											? "animate-pulse bg-primary/10 text-primary"
-											: deployStatus === "success"
-												? "bg-emerald-500/10 text-emerald-500"
-												: deployStatus === "error"
-													? "bg-destructive/10 text-destructive"
-													: "bg-muted text-muted-foreground"
-								}`}
-							>
-								{showDeploymentHeader ? (
-									<>
-										{deployStatus === "queued" && <Clock className="size-6" />}
-										{deployStatus === "running" && <Loader2 className="size-6 animate-spin" />}
-										{deployStatus === "success" && <CheckCircle2 className="size-6" />}
-										{deployStatus === "error" && <XCircle className="size-6" />}
-										{deployStatus === "not-started" && <Clock className="size-6" />}
-									</>
-								) : (
-									<Clock className="size-6" />
-								)}
-							</div>
-							<div>
-								<h3 className="flex items-center gap-2 text-lg font-bold text-foreground">
-									{headerTitle}
-								</h3>
-								<p className="flex items-center gap-2 text-sm text-muted-foreground/60">
-									{headerSubtitle}
-								</p>
-							</div>
+						<div>
+							<h3 className="flex items-center gap-2 text-lg font-bold text-foreground">{headerTitle}</h3>
+							<p className="flex items-center gap-2 text-sm text-muted-foreground/60">{headerSubtitle}</p>
 						</div>
-
-						{deployingCommitInfo && (
-							<div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-3">
-								<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
-									<GitCommit className="size-3.5 text-primary" />
-									<span className="font-mono">
-										{deployingCommitInfo.sha.substring(0, 7)}
-									</span>
-								</div>
-								<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
-									<User className="size-3.5 text-primary" />
-									<span className="truncate">{deployingCommitInfo.author}</span>
-								</div>
-								<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
-									<Calendar className="size-3.5 text-primary" />
-									<span>
-										{new Date(deployingCommitInfo.date).toLocaleTimeString("en-US", {
-											hour: "2-digit",
-											minute: "2-digit",
-											timeZone: "UTC",
-										})}
-									</span>
-								</div>
-							</div>
-						)}
 					</div>
 
-					<div className="flex shrink-0 flex-col items-start gap-3 md:items-end">
-						{showDeploymentHeader && steps && (
-							<div className="flex items-center gap-2">
-								{steps.map((step) => (
-									<div
-										key={step.id}
-										className={`size-2 rounded-full transition-all duration-300 ${
-											step.status === "success"
-												? "bg-emerald-500"
-												: step.status === "in_progress"
-													? "scale-125 animate-pulse bg-primary"
-													: step.status === "error"
-														? "bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]"
-														: "bg-white/10"
-										}`}
-										title={step.label}
-									/>
-								))}
-							</div>
-						)}
-						{deployStatus === "running" && (
-							<span className="animate-pulse text-[10px] font-bold uppercase tracking-widest text-primary">
-								Live
-							</span>
-						)}
-					</div>
+					<DeployingCommitDetails deployingCommitInfo={deployingCommitInfo} />
+				</div>
+
+				<div className="flex shrink-0 flex-col items-start gap-3 md:items-end">
+					<DeploymentStepIndicators showDeploymentHeader={showDeploymentHeader} steps={steps} />
+					{deployStatus === "running" && (
+						<span className="animate-pulse text-[10px] font-bold uppercase tracking-widest text-primary">
+							Live
+						</span>
+					)}
 				</div>
 			</div>
+		</div>
+	);
+}
 
+const DEPLOYMENT_LOG_STATUS = {
+	"not-started": { title: "Awaiting Deployment", subtitle: "Ready to deploy", icon: Clock, iconClass: "bg-muted text-muted-foreground" },
+	queued: { title: "Deployment queued", subtitle: "Waiting for the deployment worker to begin processing", icon: Clock, iconClass: "animate-pulse bg-primary/10 text-primary" },
+	running: { title: "Deployment in Progress", subtitle: "Deployment is running", icon: Loader2, iconClass: "animate-pulse bg-primary/10 text-primary" },
+	success: { title: "Deployment Successful", subtitle: "All steps completed successfully", icon: CheckCircle2, iconClass: "bg-emerald-500/10 text-emerald-500" },
+	error: { title: "Deployment Failed", subtitle: "An error occurred during deployment", icon: XCircle, iconClass: "bg-destructive/10 text-destructive" },
+} satisfies Record<DeployStatus, { title: string; subtitle: string; icon: typeof Clock; iconClass: string }>;
+
+function DeploymentLogStatusIcon({
+	showDeploymentHeader,
+	deployStatus,
+}: {
+	showDeploymentHeader: boolean;
+	deployStatus: DeployStatus;
+}) {
+	const metadata = showDeploymentHeader
+		? DEPLOYMENT_LOG_STATUS[deployStatus]
+		: DEPLOYMENT_LOG_STATUS["not-started"];
+	const Icon = metadata.icon;
+	return (
+		<div className={`rounded-xl p-2 ${metadata.iconClass}`}>
+			<Icon
+				className={deployStatus === "running" && showDeploymentHeader ? "size-6 animate-spin" : "size-6"}
+			/>
+		</div>
+	);
+}
+
+function DeploymentStepIndicators({
+	showDeploymentHeader,
+	steps,
+}: Pick<DeployLogsViewProps, "steps"> & { showDeploymentHeader: boolean }) {
+	return (
+		<>
+			{showDeploymentHeader && steps && (
+				<div className="flex items-center gap-2">
+					{steps.map((step) => (
+						<div
+							key={step.id}
+							className={`size-2 rounded-full transition-[background-color,box-shadow,scale] duration-300 ${
+								step.status === "success"
+									? "bg-emerald-500"
+									: step.status === "in_progress"
+										? "scale-125 animate-pulse bg-primary"
+										: step.status === "error"
+											? "bg-destructive shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+											: "bg-white/10"
+							}`}
+							title={step.label}
+						/>
+					))}
+				</div>
+			)}
+		</>
+	);
+}
+
+function DeploymentFailurePanel({
+	showDeployLogs,
+	deployError,
+	steps,
+	analyzing,
+	analysisResult,
+	repoUrl,
+	onStartImproveScan,
+	handleWhyDidItFail,
+	handleImproveScanResults,
+}: Pick<
+	DeployLogsViewProps,
+	"showDeployLogs" | "deployError" | "steps" | "repoUrl" | "onStartImproveScan"
+> & {
+	analyzing: boolean;
+	analysisResult: string | null;
+	handleWhyDidItFail: () => Promise<void>;
+	handleImproveScanResults: () => void;
+}) {
+	return (
+		<>
 			{showDeployLogs && deployError && (
 				<Alert className="flex flex-col gap-3 border-destructive/50 bg-destructive/10 text-foreground">
 					<div>
-						<AlertTitle className="font-bold text-destructive/80">
-							Deployment failed
-						</AlertTitle>
-						<AlertDescription className="overflow-x-auto text-sm">
-							{deployError}
-						</AlertDescription>
+						<AlertTitle className="font-bold text-destructive/80">Deployment failed</AlertTitle>
+						<AlertDescription className="overflow-x-auto text-sm">{deployError}</AlertDescription>
 					</div>
 					{steps && (
 						<div className="mt-2 space-y-3">
@@ -307,9 +323,7 @@ export default function DeployLogsView({
 								<div className="border-border/60 bg-background/70 w-full text-foreground">
 									<div className="flex flex-col gap-3 px-4 py-2">
 										<div>
-											<div className="mt-2 whitespace-pre-wrap text-sm">
-												{analysisResult}
-											</div>
+											<div className="mt-2 whitespace-pre-wrap text-sm">{analysisResult}</div>
 										</div>
 										{repoUrl && onStartImproveScan && (
 											<div className="flex justify-end">
@@ -331,22 +345,35 @@ export default function DeployLogsView({
 					)}
 				</Alert>
 			)}
+		</>
+	);
+}
 
-			<div
-				ref={logsContainerRef}
-				className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl"
-			>
-				<ServiceLogs
-					{...(({
-						logs: logsToRender,
-						repoName: repoNameForLogs,
-						serviceName: serviceNameForLogs,
-						deployStatus,
-						displayLimit: 14,
-						scrollable: true,
-					} as unknown) as any)}
-				/>
-			</div>
-		</div>
+function DeployingCommitDetails({ deployingCommitInfo }: Pick<DeployLogsViewProps, "deployingCommitInfo">) {
+	return (
+		<>
+			{deployingCommitInfo && (
+				<div className="grid grid-cols-1 gap-4 pt-2 sm:grid-cols-3">
+					<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
+						<GitCommit className="size-3.5 text-primary" />
+						<span className="font-mono">{deployingCommitInfo.sha.substring(0, 7)}</span>
+					</div>
+					<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
+						<User className="size-3.5 text-primary" />
+						<span className="truncate">{deployingCommitInfo.author}</span>
+					</div>
+					<div className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground/80">
+						<Calendar className="size-3.5 text-primary" />
+						<span>
+							{new Date(deployingCommitInfo.date).toLocaleTimeString("en-US", {
+								hour: "2-digit",
+								minute: "2-digit",
+								timeZone: "UTC",
+							})}
+						</span>
+					</div>
+				</div>
+			)}
+		</>
 	);
 }
