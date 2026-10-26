@@ -109,3 +109,15 @@ resolve its own configuration; preview secret values must not be inherited
 through a copied DeployConfig. Keep DeployConfig the build/runtime source of
 truth and existing Better Auth/Supabase platform dependencies unchanged. This
 records product policy only; no new resources, IAM, credentials or data copy.
+
+## Deleted app data policy (October 25)
+
+The user selected seven days of recovery for a deleted app's documents and files.
+Revoke app access and runtime credentials immediately; keep preview/published
+namespaces separate during retention and recovery. Retained bytes continue
+counting against quotas until actual cleanup confirms their removal. Recovery
+ends at the seven-day deadline even if asynchronous physical cleanup runs later.
+Restoring data must not revive old runtime credentials or sessions. DynamoDB TTL
+alone is not the access cutoff or proof that storage has been removed. No
+production deletion, migration or resource provisioning is authorized by merely
+recording this choice; the existing full-feature production condition remains.

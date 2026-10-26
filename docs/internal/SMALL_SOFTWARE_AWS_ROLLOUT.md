@@ -1150,3 +1150,9 @@ explicit-secret browser fixture passes. All current #119-#121 heads also refresh
 passing. Local Docker remains unavailable; Linux CI is distinct from actual AWS/
 Fargate/IAM/direct-origin/hosted acceptance. Draft/unmerged, full Doctor84/100 and
 remaining pilot gates remain unmet. No production or AWS startup.
+
+User decision October 25: deleted app documents and files remain recoverable for
+seven days. Access/runtime credentials are revoked immediately, retained bytes
+continue counting against storage quotas until actual removal, and preview/
+published data stay separate. Recovery does not revive old credentials/sessions.
+The previous retention-policy question is answered; document-store work resumes.
