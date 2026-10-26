@@ -1485,3 +1485,64 @@ account for hosted QA; a strictly CA-verified read-only database lookup confirme
 it exists and is verified. No invitation, account edit or email was performed.
 Creator/colleague distinction still needs verification during hosted acceptance.
 No rollout merge, production migration/configuration, AWS provisioning or start.
+
+#129 exact-head completion: all CI and Vercel preview checks pass atc2319bb.
+Run40363832939/build121716040059 actually executes169unitfiles/1292finaltests,
+33DynamoDBLocal,2nativeworkloadprocess,1Linuxcontainer,2compiledgatewayprocess
+and full696-file Doctor100/100. Infrastructure job121716040847 passes pinned
+cfn-lint plus all six Guard rules/eight negative mutations. Database/browser
+job121716039728 passes inherited SQL/auth suites,21cookie/native,15compiled
+private-app and5public/analytics cases. PR/issue evidence updated; still draft,
+unmerged and not an enabled MVP. Billing#85 remains separate.
+
+Current worktree now uses independent branch feat/private-app-sharing-ui based
+on#128/8ea3e37, separate from cleanup#129. This slice adds the missing recipient
+invitation review/accept screen using existing authenticated APIs and Better Auth
+OAuth return flow. Fragment-only tokens are captured/scrubbed on mount and held
+only in the mounted store; no token cookie, local/session storage or query token
+is introduced. The existing auth library retains the fixed local callback with
+its fragment through OAuth state. Explicit review never accepts automatically;
+wrong identities and revoked invitations fail, uncertain acceptance cannot retry
+without a fresh flow. It does not grant app-use or platform privileges.
+
+Analytics now excludes private-app/auth navigation in Vercel beforeSend, strips
+URL hashes, enables the installed PostHog SDK's disable_capture_url_hashes option
+and excludes auth/invitation network bodies through maskCapturedNetworkRequestFn.
+Initial SDK callback field mismatch was caught by TypeScript and corrected using
+the actual CapturedNetworkRequest.name contract. Initial Doctor90/threewarnings
+was repaired without suppression using a cohesive review state, explicit UTC
+formatting and a separate analytics callback module; full698-file scan100/100.
+Focused55tests pass before two additional analytics wiring assertions. Compiled
+Next/BetterAuth/PostgreSQL/HTTPS browser run passed16cases including real
+unapproved colleague acceptance; wrong-account denial was correct but the new
+test's unscoped alert locator also matched Next's hidden route announcer. Locator
+is now scoped to the invitation region; all18cases are rerunning. This remains
+uncommitted and is not a production/OAuth-provider/AWS proof. No live mutation.
+
+Published draft#130 https://github.com/anirudh-makuluri/smart-deploy/pull/130 at
+5fc79cd95f744551b19ca3213e35e6a8cca079ca; renamed branch
+feat/workspace-invitation-ui, base#128/feat/private-runtime-gateway-loader. It is
+an independent sibling of cleanup#129: merge#128 first, then either sibling
+order. Attached and issue99 tracked; exact-head CI pending. Final full serial
+local proof:170unitfiles/1296tests(43new),18compiledprivatebrowser(3new),5public/
+analytics,2gatewayprocess,2workloadprocess; typecheck/full lint/production builds
+with private flags both enabled and disabled/worker/workload builds pass.
+Complete699-file Doctor100/100,zeroerrors/warnings/skips, no suppression. All18
+browser cases pass after the scoped-locator repair. Native Chromium mobile image
+visually inspected. The extra PostHog/Vercel wiring tests pass. SQL/storage source
+is unchanged and passes parent#128 CI; standalone SQL/storage suites not repeated
+locally for this UI slice. Fixtures and owned PostgreSQL stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-invitation-ui-1793035211304.
+Analytics remote recording and real OAuth-provider/hosted AWS proof are not
+claimed. Creator management/sharing UI and publish/launch/admission composition
+remain required. No production account, invitation, email, provider connection,
+flags, migration, cloud resources/startup, rollout merge or deployment changed.
+
+Additional read-only launch preparation: smart-deploy.xyz authoritative NS are
+the AWS Route53 nameservers; the existing zone isZ032380238QMO0VIQ50TX. Worker
+i-0c66e86b605f71ef9 remains stopped, primary ENIeni-0f965de34af02d25e, IMDSv2
+required/hoplimit2. Existing ws.smart-deploy.xyz A52.89.254.91 remains unchanged;
+legacy worker infrastructure documents Nginx proxying and optional existing
+certificate renewal. The private-app ALB/ACM layer is still planned, not already
+provisioned. CLI describe-events input support verified locally; no change set
+was created or executed.
