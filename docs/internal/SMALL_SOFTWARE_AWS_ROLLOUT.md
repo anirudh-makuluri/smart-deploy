@@ -1263,3 +1263,39 @@ Temporary dashboard login was signed out. No settings, migrations, flags,
 provider connections, cloud resources, rollout merges or production deployments
 were changed. Broader runtime loader/data broker/MVP wiring, valid app certificate,
 reviewed migration/rollback and durable bounded demo cleanup remain required.
+
+Published focused release-health PRs:
+- #124 https://github.com/anirudh-makuluri/smart-deploy/pull/124
+  fix/mvp-release-health at7b078785b75d319c133e3f14e6ff950fc37497b2,
+  base#123/feat/app-document-data.42intendedfiles, view/response cleanup;
+  standalone full scan92/100, requires#125 before the >=95 merge gate.
+- #125 https://github.com/anirudh-makuluri/smart-deploy/pull/125
+  fix/github-push-dispatch atd026bc3e2a31eb524effeb3988aa8ed7757577df,
+  base#124/fix/mvp-release-health.8intendedfiles, bounded dispatch/default UUID,
+  real SQL concurrency tests, full quality gate and compiled public/browser CI.
+Both attached; issue99 guarded owner/table updates include latest scope and heads.
+Publisher identity anirudh-makuluri reverified; main remains an ancestor. Billing#85
+is still open/separate14c67e4; #123 remains unmerged7699bdc. All31 inherited PR
+review-thread lists are empty. No rollout merge or production change.
+
+Final combined local candidate:158unit files/1117tests;10PostgreSQLfiles/148tests;
+33DynamoDBLocalcases;2compilednativeTLSprocesscases;15compiledprivatebrowsercases
+plus5compiledpublic/analyticscases. Typecheck, lint, worker/workload/production
+build and diff checks pass. Unfiltered Doctor0.9.18 complete668files100/100,
+zeroerrors/warnings/skips; changed-file and explicit staged scans100 as well.
+No suppression/threshold change. First view commit's common hook fallback printed
+its generic regression message (it discards detailed output); explicit pinned
+full/diff/staged scans pass, and final dispatch commit's same pinned hook passes.
+All local fixtures/emulator/database stopped; no Docker locally. Linux container
+and exact-head CI remain separate required proof. Evidence root:
+C:\Users\aniru\.codex\verification\smartdeploy-mvp-release-1792983590170.
+
+At publication, #124 run40268560768 build121396188981/database121396188737
+and #125 run40268591579 build121396282454/database121396282665 are running.
+Separate Doctor actions report scoped100; this is distinct from #125's new full
+repository step. Vercel preview pending, browser-proxy checks running. Keep draft
+status until current exact-head results are known; no open PR counts as completion.
+Next required MVP work is composing the current-authorized document broker and
+trusted runtime loader/controller, then durable bounded demo provisioning/cleanup,
+reviewed platform migration/certificate plan and actual hosted acceptance. Agent
+CLI/MCP, Nginx migration and broader file/admin scope stay deferred.
