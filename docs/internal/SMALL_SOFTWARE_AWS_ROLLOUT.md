@@ -1895,3 +1895,45 @@ no browser cookie/token extraction was attempted. Temporary dashboard tab closed
 Manual real-account testing stays deferred; hosted machine smoke needs legitimate
 deployment access or the authorized guarded production rollout. Do not weaken
 preview authentication or invent sessions. Main stilla8af9f3;worker stopped.
+
+### October 27 aggregate release preparation and worker CI completion
+
+PR #138 at d3f95bc07362860939299da15b6b176bbd8d5b37 passed every exact-head CI
+and protected preview check. Run 40599141308: 1520 unit, 158 SQL, 33 DynamoDB,
+12 native worker, two gateway/two workload process cases; three actual Linux
+containers including runtime-only UID10001/read-only/exact built-in version and
+SIGTERM; two logout/two invitee/21 cookie/23 private/five public/one notes browser
+cases. Full unfiltered 766-file Doctor100/100; no review threads. PR body and
+issue99 refreshed. Local Docker remains unavailable; this is actual Linux CI
+proof, not AWS or hosted-human proof.
+
+Published and attached aggregate draft PR #139 from release/private-app-mvp-demo
+to main, preserving all 46 current feature PR heads #91-#138 through d3f95bc.
+Billing#85, docs#90 and the fixed release/private-app-mvp baseline stay separate.
+Use a merge commit to preserve the focused stack's ancestry. Aggregate CI is
+running. No new source change was added merely to create the release branch.
+
+Fresh read-only hosting inspection: no WORKSPACE_APPS or PRIVATE_APP project
+variables and no linked shared variables. The four feature flags default off.
+GitHub WORKER_AUTODEPLOY_ENABLED is absent. Fresh AWS reads: expected operator,
+worker stopped, no ALB, cluster has zero services/tasks and no tagged demo
+resources. Existing platform/provider secret contents and connections unchanged.
+
+A CA-verified read-only production preflight verifies the selected creator and
+the eight exact migration hashes. New schema is absent; 16 deployments/161 runs
+exist. Prepared an explicit inspect/apply operator with a session advisory lock,
+per-migration transaction/lock/statement deadlines, private partial-completion
+receipt, legacy association and new-table RLS postchecks. Inspect passes; apply
+has not run. Exclude optional personal-app backfill. Rollback leaves additive
+schema in place and flags off; never drop user data to undo a web release.
+
+Fresh AWS Price List dimensions and Decimal calculations admit an estimated
+$4.94081875 envelope for one <=2h demo plus 30m cleanup contingency, including
+retained image/data/log, traffic and CPU-credit allowances. No free tier assumed;
+this estimate is not a hard billing cap. No build/resource/startup has occurred.
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-mvp-launch-1793142600000
+(pr-coverage.json, schema-preflight.json, pricing-readonly.json, cost-envelope.json).
+Actual guard/lease/certificate/caller/build/catalog/bootstrap/readiness/network/
+version/persistence/observed teardown remain. Manual two-account hosted testing
+stays explicitly deferred by the user; never manufacture an account/session or
+claim that proof. Production remains a8af9f3/#101 at this record.
