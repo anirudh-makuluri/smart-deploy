@@ -1,0 +1,37 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "curated-notes-demo",
+  "baselineRevision": "4a8192f4a7000863e989afc02f9cb19ef9a31b04",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Labelled stateless notebook for the private-app architecture demo using the existing document broker",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 746 },
+  "verification": {
+    "focusedUnitFiles": 2,
+    "focusedUnitTests": 17,
+    "actualHttpServer": true,
+    "actualNodeProcessBrowser": 1,
+    "browserDataBrokerControlled": true,
+    "typecheck": true,
+    "focusedLint": true,
+    "doctorComplete": true,
+    "mobileVisuallyInspected": true,
+    "localDockerAvailable": false,
+    "linuxContainerCiPending": true,
+    "actualAwsEvidence": false,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Curated app only; does not deploy arbitrary repositories or supply its own authentication.",
+    "Requires the authenticated gateway, isolated document backend and origin-bypass protection before exposure.",
+    "Browser persistence/restart proof uses a controlled data broker; actual AWS persistence remains unverified.",
+    "Local Docker is unavailable; the real Linux container check is required in exact-head CI.",
+    "Uncertain saves can have committed; reload must reconcile before another write.",
+    "No platform source/runtime code changed; parent #134 has separate full release verification.",
+    "AWS resources/build/bootstrap, production migrations/flags and hosted acceptance remain required."
+  ]
+}

@@ -140,6 +140,16 @@ jobs:
           name: public-browser-evidence
           path: test-results/
 
+      - name: Verify curated notes browser assets and versioned saves
+        run: npx playwright test --config playwright.notes.config.ts
+
+      - name: Save curated notes browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curated-notes-browser-evidence
+          path: test-results/
+
   build-and-test:
     runs-on: ubuntu-latest
 
@@ -182,6 +192,12 @@ jobs:
 
       - name: Verify isolated workload TLS container
         run: npm run test:workload:container
+
+      - name: Build curated notes demo image
+        run: docker build --platform linux/amd64 --build-arg NOTES_RELEASE=v1 -f demo/notes/Dockerfile -t smartdeploy-notes:ci demo/notes
+
+      - name: Verify isolated curated notes container
+        run: npx vitest run --config vitest.notes-container.config.ts
 
       - name: Typecheck application and test fixtures
         run: npm run typecheck
