@@ -1,0 +1,40 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "app-document-role",
+  "baselineRevision": "b6b81f3201d668ef2d878a6f9051745a3831a263",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Require bounded short-lived app/table-scoped document credentials without platform credential fallback",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 676 },
+  "verification": {
+    "unitFiles": 162,
+    "unitTests": 1180,
+    "newUnitCases": 23,
+    "focusedCredentialAndBackendCases": 33,
+    "dynamoCases": 33,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "typecheck": true,
+    "lint": true,
+    "privateAndPublicProductionBuilds": true,
+    "workerBuild": true,
+    "doctorComplete": true,
+    "accessAnalyzerFindings": 0,
+    "iamSimulationCases": 17,
+    "actualAssumedRoleAccess": false,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Role/table/trust/initial limits still require verified provisioning before enabling the API.",
+    "IAM isolates the app partition; verified broker scope separates preview and published sort keys.",
+    "Two process-local slots and timeouts are not a global traffic or cost cap.",
+    "IAM simulations do not prove live trust, resource/organization policies or actual DynamoDB calls.",
+    "Initial condition-check denial was diagnosed and corrected; interrupted preliminary verification is not final proof.",
+    "Unchanged standalone SQL/workload suites pass exact parent CI and were not repeated locally.",
+    "No IAM/connection/production flags/migration/cloud resources/startup/merge/deployment changes."
+  ]
+}
