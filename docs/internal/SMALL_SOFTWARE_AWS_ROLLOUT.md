@@ -1665,3 +1665,29 @@ provider accounts; creator platform approval already exists. No account changes,
 session minting or invitation/email actions. Keep private QA email addresses out
 of PRs/public docs. Hosted tests still require real separate authenticated
 sessions, and the existing worker remains stopped until launch gates are met.
+
+Controller slice published as draft PR#133 at
+080ccf935ea27b2ed250a99e3e7fc4ee710145c5, base#128. Final serial local checks:
+168unitfiles/1287tests,155SQL,33DynamoDB,2gateway/2workloadprocess,15private/
+5publicbrowser,fulltypes/lint/private+publicbuilds/worker+workloadcompilation,
+complete698-fileDoctor100/100. Exact-head CI and Vercel preview green. Inspected
+build122016903354/database122016903059: same counts plus21nativecookie cases
+and one Linux container. No review threads. PR body/issue99 updated.
+
+Assembled and pushed release/private-app-mvp integration baseline2d03ef4:
+creator sharing#131 plus cleanup#129, dedicated document role#132 and trusted
+controller#133. Main remainsa8af9f3; no production merges/deployments. No aggregate
+release PR yet. Active unpublished feat/app-preview-publish-ui is based on that
+baseline. Preview/publish UI uses only authenticated socket acknowledgements,
+explicit selection/current-runtime preconditions, separate environment links,
+expiry retirement and reconciliation after an uncertain write. Same-user new
+login sessions retire the old socket/token cache. Focused50UI/privacy tests and
+15socket-session tests pass; compiled authenticated-transport coverage and full
+integrated validation remain in progress. Do not duplicate this active slice.
+
+Read-only AWS discovery found the existing NO_SOURCE smartdeploy-builder project
+with Docker enabled and no VPC/source connection. Its default role is broad;
+any curated build must use a separately scoped ephemeral role override and a
+bounded timeout under the demo guard/cost admission. No build or resource was
+started, and no provider connection was modified. Actual hosted runtime,
+persistence/redeployment/revocation and automatic teardown proof remain gates.
