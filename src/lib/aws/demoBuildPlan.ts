@@ -14,7 +14,7 @@ export function demoBuildPlan(value: unknown, now: number = Date.now()): StartBu
   const remaining = (milliseconds: number) => `node -e 'if(Date.now() >= ${c.expiresAt} - ${milliseconds}) process.exit(1)'`;
   const commands = [
     remaining(600000),
-    `docker build --platform linux/amd64 --build-arg WORKER_VERSION=${input.commitSha} -f Dockerfile.websocket -t ${repository("worker")}:${tag("worker")} .`,
+    `docker build --platform linux/amd64 --target private-demo --build-arg WORKER_VERSION=${input.commitSha} -f Dockerfile.websocket -t ${repository("worker")}:${tag("worker")} .`,
     remaining(600000), "npm ci --ignore-scripts --no-audit --no-fund", "npm run workload:build",
     `docker build --platform linux/amd64 -f infra/workload-tls.Dockerfile -t ${repository("tls")}:${tag("tls")} dist/workload-tls`,
   ];

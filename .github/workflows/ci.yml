@@ -205,6 +205,17 @@ jobs:
       - name: Build WebSocket worker
         run: npm run ws:build
 
+      - name: Verify runtime-only demo worker transport, process and expiry
+        run: npx vitest run --config vitest.private-demo-worker.config.ts
+
+      - name: Build runtime-only demo worker image
+        run: docker build --platform linux/amd64 --target private-demo --build-arg WORKER_VERSION=${{ github.event.pull_request.head.sha }} -f Dockerfile.websocket -t smartdeploy-private-demo-worker:ci .
+
+      - name: Verify runtime-only non-root read-only worker container
+        run: npx vitest run --config vitest.private-demo-worker-container.config.ts
+        env:
+          EXPECTED_DEMO_WORKER_VERSION: ${{ github.event.pull_request.head.sha }}
+
       - name: Verify compiled private gateway entrypoint and expiry
         run: npm run test:gateway:process
 

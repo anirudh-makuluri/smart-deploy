@@ -31,6 +31,7 @@ describe("worker-only publisher configuration", () => {
 	});
 	it("reads only bounded operator files and forces verified CA/hostname TLS despite URL overrides", async () => {
 		const port = await configuredRuntimeControl(); if (!port) throw Error("Control port missing."); ports.push(port);
+		expect(port.expiresAt).toBe(fixture.settings.expiresAt); expect(port.databaseCaFile).toBe("/operator/ca.pem");
 		expect(mocks.file).toHaveBeenNthCalledWith(1, "/operator/control.json", 32768); expect(mocks.file).toHaveBeenNthCalledWith(2, "/operator/ca.pem", 65536);
 		expect(mocks.pool).toHaveBeenCalledWith(expect.objectContaining({ connectionString: "postgres://postgres@pooler.example.test/db", ssl: { ca: fixture.materials[0].cert, rejectUnauthorized: true, minVersion: "TLSv1.2" }, max: 2, query_timeout: 2200, statement_timeout: 2000 }));
 		await mocks.authorize({ userId: "alice", sessionId: "alice-session" }); expect(mocks.query.mock.calls[0][1]).toEqual(["alice-session", "alice"]); expect(mocks.approval).toHaveBeenCalledWith({ id: "alice", email: "alice@example.test", emailVerified: true });

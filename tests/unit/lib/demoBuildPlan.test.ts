@@ -14,6 +14,7 @@ describe("bounded build CLI payload", () => {
     expect(all).toContain("codeload.github.com/anirudh-makuluri/smart-deploy/tar.gz/" + "a".repeat(40)); expect(all).toContain("b".repeat(64) + "  source.tar.gz"); expect(all).toContain("sha256sum --check");
     expect(spec.phases.build.commands.filter((command: string) => command.startsWith("docker build"))).toHaveLength(5); expect(spec.phases.post_build.commands.filter((command: string) => command.startsWith("docker push"))).toHaveLength(5);
     expect(all).toContain("npm ci --ignore-scripts"); expect(all).toContain("--password-stdin"); expect(all).not.toMatch(/secretsmanager|ssm get|sts assume|create-repository|git clone|terraform|cdk deploy/);
+    expect(all).toContain("--target private-demo --build-arg WORKER_VERSION=");
     expect(demoBuildPlan(input()).idempotencyToken).toBe(result.idempotencyToken);
   });
   it.each([0, 1799000, 7201000])("rejects a missing/late/oversized build window with %ims remaining", remaining => {
