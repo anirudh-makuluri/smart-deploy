@@ -1717,3 +1717,111 @@ app, bounded AWS workload/build/bootstrap and the existing cleanup/data/runtime
 guards. Actual IAM/certificate/network/version/persistence/revocation/teardown
 proof remains required before the complete MVP can be called shipped. No AWS
 build/resource/worker start, production migration/flag, merge or release occurred.
+
+### October 27 continuation: composition and deferred manual test
+
+The user explicitly deferred the real two-account hosted sharing/revocation
+test. Do not request those sign-ins again, manufacture sessions, or count the
+test as passed. Automated checks and actual AWS machine-level smoke verification
+continue. Creator/colleague private QA identities stay out of public artifacts.
+
+PR#134 exact-head CI is green at4a8192f4a7000863e989afc02f9cb19ef9a31b04.
+Inspected build122277058059/database122277058446:1446unit,155SQL,33DynamoDB,
+21nativecookie/23private/fivepublicbrowser,two gateway/two workload process,
+one Linux container and full737-file Doctor100/100. No review threads.
+
+Published and attached draftPR#135,feat/curated-notes-demo at
+52fbbc3a73b5e3b69bde68ede75b721167328ee1,base#134. Local17client/actualHTTP
+tests,actual Node-process browser,mobile390px,typecheck/focused lint and complete
+746-file Doctor100/100 pass. Its browser broker uses controlled data. Exact-head
+CI now green; inspected build122287038118/database122287037731:1463unit,
+33DynamoDB,21nativecookie/23private/fivepublicbrowser,one additional actual-notes
+browser,two gateway/two workload process,both required Linux container cases and
+full746-file Doctor100/100. The actual curated notes container is non-root,
+read-only,has exactly the shipped files and shuts down gracefully. No threads.
+PR/issue99 bodies record CI and the manual test deferral. This is not hosted
+AWS persistence proof. Main remainsa8af9f3 and billing#85 is separate/open.
+
+Active uncommitted slice:feat/aws-private-demo-compose now based on#135 in the
+same managed worktree. Pure build/runtime CloudFormation renderers,exact owned
+images/repositories,restricted CodeBuild role/request,ALB+ACM/three Fargate
+services,retained scoped DynamoDB and cleanup handler IAM dependencies are
+implemented. Earlier schema lint had zero findings; workload Guard15scenarios
+(13negative) and cleanup Guard9(8negative) passed. Final source reruns remain
+required. Initial Doctor81/three findings were repaired with indexed lookups
+and structured archive URLs without suppression; final complete scan pending.
+
+The additional default-off selected-machine readiness endpoint reads control/
+quota only and returns a boolean,not documents or AWS metadata. It uses real
+selected service authentication and server-derived managed scope; it cannot
+mint sessions or prove end-user access. First focused combined90tests pass.
+Real SQL,storage,compilation,full scan and infrastructure final checks remain
+active; do not duplicate the work. No PR yet for these uncommitted slices.
+
+Fresh AWS reads verify account328342419078 and the existing worker still
+stopped. Two public subnets in distinct AZs use the active main IGW route; no
+NAT is needed. Existing smartdeploy-builder remains NO_SOURCE/small Linux/
+privileged Docker,with no source connection,env secrets,fleet,Docker server,
+VPC or registry credentials. Its broad default role must not be used. Verified
+CodeBuild small Linux on-demand price is$0.005/min; no build has started.
+Actual guard/lease/cost/principal/certificate admission,quota initialization,
+genuine build/catalog/bootstrap,hosted data/network/version and observed
+automatic teardown remain. No resources,production configuration,provider
+connections,accounts,emails,merges or deployments changed.
+
+Published/attached draftPR#136 at
+a9b347be8e3c6ea6f04912eb2928454bf1e8a63c,base#135,branch
+feat/aws-private-demo-compose.16files666additions/five deletions. Pure build
+foundation8/runtime28-resource composition and finite CodeBuild request only.
+Final32focused tests,ten actual CLI renderer cases,full lint/types/worker and
+fixture compilation pass. Three templates have zero cfn-lint findings;17workload
+Guard cases(15negative) and9cleanup cases(8negative) pass. Read-only AWS basic
+validation accepts build/runtime;IAM Access Analyzer has zero findings across
+all six role permission/trust policies. Full757-file Doctor100/100,zero findings/
+skips,no suppression. Earlier81/three diagnostics repaired with indexed lookups
+and structured URLs. No resource/build is started by these renderers.
+
+The runtime template now supplies a retained no-ingress quarantine group. Under
+the exclusive worker lease,record original groups and keep boot quarantined
+until the legacy worker is replaced and runtime-only mode/version is observed.
+Then restore original groups plus the gateway group,preserving unrelated changes.
+Bootstrap failure leaves quarantine closed while the independent guard stops
+the worker and removes compute/ALB. Retained quarantine is free but must be
+reconciled/restored/removed after observed teardown before releasing that lease.
+Seven-day data lifecycle primitives remain separate: this template does not
+wire app deletion/purge or later-window retained-table import.
+
+Published/attached draftPR#137 at
+eda186e06985885cb17d572447e6c2c8bef2e901,base#136,branch
+feat/private-app-data-readiness.8files259additions/seven deletions. Selected-
+machine control/quota readiness only; no user document/session/credential output
+or mutation. Final59route/backend tests and49real runtime SQL cases pass,
+including management-lock contention after replacing its unnecessary workspace
+write transaction with a read-only current-managed projection. Retains shared
+two-slot admission,one-app temporary-role policy,four-second deadline and late
+cancellation. The initial combined full pass has188unitfiles/1514tests,157SQL,
+33DynamoDB,2gateway/2workload process,23compiledprivatebrowser with production
+build,full lint/types/worker/workload compilation and full757-file Doctor100.
+After the final quarantine test and lock regression,the focused91unit/49SQL,
+all infrastructure/type/lint/compilation checks and full757-file Doctor100 pass.
+Do not describe that as a repeated full1515unit/158SQL local run; exact-head CI
+will verify the final complete counts. Initial header-fixture union type error
+was repaired; final typecheck passes. Owned PostgreSQL stopped.
+
+Evidence:C:\Users\aniru\.codex\verification\smartdeploy-demo-compose-1793116200000
+(final/initial combined pass,corrections/final targeted repairs,read-only AWS
+schema/IAM outputs). Both new PRs await exact-head CI;issue99 updated. Every PR
+is attached. Exact gh identity anirudh-makuluri verified before publication.
+
+Active next slice:feat/private-demo-worker based on#137 in the same managed
+worktree. No code yet. A dedicated runtime-only entrypoint/image target must
+omit general deployment/agent jobs and background deployment reconciliation,
+reuse live platform-session/socket authorization,expose exact mode/version/expiry
+health,and close at fixed expiry. General worker default behavior must remain
+unchanged. Quarantine is required before worker boot,not only after startup.
+Continue actual cost/principal/certificate/guard/lease/build/catalog/bootstrap/
+data/network/version/teardown admission after that. Manual two-account hosted
+test remains deferred by explicit user instruction. Main remainsa8af9f3;worker
+auto-deployment variable is absent (live list query succeeds),so main pushes do
+not automatically start the worker. No AWS resource/build/startup,production
+migration/flag/provider connection/account/session/email/merge/deploy changed.
