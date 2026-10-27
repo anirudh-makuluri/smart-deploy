@@ -18,6 +18,7 @@ import { createGatewayServiceCredential } from "../../src/lib/apps/gatewayServic
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
 import { AppStore } from "../../src/lib/apps/appStore";
 import type { GatewayFetch } from "../../src/lib/gateway/controlClient";
+import { runtimePublishingFixture } from "./runtime-publishing-fixture";
 
 const PLATFORM = "https://localhost:34433";
 const PUBLISHED = "https://app.localhost";
@@ -52,6 +53,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 	const approved = new Set<string>();
 	let workspaces: WorkspaceStore;
 	let apps: AppStore;
+	let publishing: Awaited<ReturnType<typeof runtimePublishingFixture>> | null = null;
 
 	async function account(browser: Browser, email: string): Promise<Account> {
 		const context = await browser.newContext({ baseURL: PLATFORM, ignoreHTTPSErrors: true });
@@ -108,6 +110,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		workspaceId = (await workspaces.createWorkspace(owner.id, "Operations")).id;
 		const invitation = await workspaces.createInvitation(workspaceId, owner.id, member.email, "member"); await workspaces.acceptInvitation(member.id, invitation.token);
 		appId = (await apps.createApp(workspaceId, owner.id, "Inventory")).id; await apps.grantUse(appId, owner.id, member.id);
+		if (process.env.PRIVATE_APP_PUBLISH_ENABLED === "true") publishing = await runtimePublishingFixture(await readFile(keyPath), certificate, apps, appId);
 		for (const [origin, environment] of [[PUBLISHED, "published"], [PREVIEW, "preview"]]) {
 			const binding = (await client.query<{ id: string }>("insert into public.app_gateway_bindings (app_id, origin, environment) values ($1, $2, $3) returning id", [appId, origin, environment])).rows[0].id;
 			if (environment === "published") bindingId = binding;
@@ -159,6 +162,7 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		page.on("request", (request) => { const pathname = new URL(request.url()).pathname; if (pathname === "/api/ws-token" || pathname === "/ws") managementRequests++; });
 		await client.query("delete from public.app_gateway_codes; delete from public.app_gateway_sessions"); });
 	test.afterAll(async () => {
+		await publishing?.close();
 		for (const gateway of gateways.values()) gateway.close();
 		if (server) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 		for (const workloadListener of workloadListeners) await workloadListener.stop(0);
@@ -297,6 +301,28 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		await context.addCookies(outsider.cookies); await page.goto(PLATFORM + "/home/apps");
 		await expect(page.getByRole("heading", { name: "You're on the waiting list" })).toBeVisible(); await expect(page.getByLabel("Manage workspace")).toHaveCount(0); await expect(page.getByText("Sharing UI Test", { exact: true })).toHaveCount(0);
 		expect((await page.request.get(PLATFORM + "/api/workspaces")).status()).toBe(403);
+	});
+	test("publishes and selects a separate preview through the authenticated worker transport", async ({ page, context }, info) => {
+		test.skip(!publishing, "Explicit publishing transport fixture opt-in required."); if (!publishing) throw new Error("Missing publishing fixture.");
+		await context.addCookies(owner.cookies); await page.goto(PLATFORM + "/home/apps"); await page.getByLabel("Manage workspace").selectOption(workspaceId); await page.getByLabel("Select app").selectOption(appId);
+		const panel = page.getByRole("region", { name: "Preview & publish", exact: true });
+		await expect(panel.getByLabel("Published release")).toHaveValue(publishing.two); expect(publishing.writes).toHaveLength(0);
+		await expect(panel.getByRole("link", { name: "Open published app" })).toHaveAttribute("href", PUBLISHED); await expect(panel.getByRole("link", { name: "Open preview", exact: true })).toHaveCount(0);
+		await panel.getByRole("button", { name: "Publish release", exact: true }).click(); await expect.poll(() => publishing?.writes.length).toBe(1); await expect(panel.getByText("Checking and selecting the release…", { exact: true })).toHaveCount(0); await expect(panel.getByRole("button", { name: "Publish release", exact: true })).toBeDisabled();
+		await expect(panel.getByLabel("Published release")).toHaveValue(publishing.two); expect(publishing.writes).toHaveLength(1); expect(publishing.view.selected.find(row => row.environment === "published")?.releaseId).toBe(publishing.two);
+		await panel.getByRole("button", { name: "Select preview", exact: true }).click(); await expect(panel.getByRole("link", { name: "Open preview", exact: true })).toHaveAttribute("href", PREVIEW);
+		expect(publishing.writes).toHaveLength(2); expect(publishing.view.selected).toHaveLength(2); await expect(panel.getByRole("button", { name: "Copy published link" })).toBeVisible();
+		await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await page.screenshot({ path: info.outputPath("publishing-mobile.png"), fullPage: true });
+	});
+	test("blocks repeated publication after an unrelated acknowledgement until explicit reconciliation", async ({ page, context }) => {
+		test.skip(!publishing, "Explicit publishing transport fixture opt-in required."); if (!publishing) throw new Error("Missing publishing fixture.");
+		// Re-enable only fixture metadata so this independent UI failure case can select v1.
+		publishing.view.choices[0].available = true; publishing.malformedWrite(); const before = publishing.writes.length;
+		await context.addCookies(owner.cookies); await page.goto(PLATFORM + "/home/apps"); await page.getByLabel("Manage workspace").selectOption(workspaceId); await page.getByLabel("Select app").selectOption(appId);
+		const panel = page.getByRole("region", { name: "Preview & publish", exact: true }); await expect(panel.getByLabel("Published release")).toHaveValue(publishing.one);
+		await panel.getByRole("button", { name: "Publish release", exact: true }).click(); await expect(panel.getByRole("alert")).toContainText("may have completed");
+		await expect(panel.getByRole("button", { name: "Publish release", exact: true })).toBeDisabled(); expect(publishing.writes).toHaveLength(before + 1);
+		await panel.getByRole("button", { name: "Refresh status", exact: true }).click(); await expect(panel.getByRole("button", { name: "Publish release", exact: true })).toBeEnabled(); expect(publishing.writes).toHaveLength(before + 1);
 	});
 	test("revokes both published and preview app sessions on platform sign-out", async ({ page, context }) => {
 		for (const origin of [PUBLISHED, PREVIEW]) { await visit(page, context, owner, origin); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(origin + "/items?sort=new"); }

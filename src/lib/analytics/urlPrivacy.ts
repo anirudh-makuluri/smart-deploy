@@ -1,7 +1,7 @@
 import type { BeforeSendEvent } from "@vercel/analytics/next";
 
 export function privateInvitationNetwork(url: string): boolean {
-	try { const path = decodeURIComponent(new URL(url, "https://smart-deploy.xyz").pathname); return path.startsWith("/apps/") || /^\/api\/(auth(?:\/|$)|workspace-invitations(?:\/|$)|workspaces\/[^/]+\/invitations(?:\/|$))/.test(path); }
+	try { const path = decodeURIComponent(new URL(url, "https://smart-deploy.xyz").pathname); return path.startsWith("/apps/") || path === "/api/ws-token" || path === "/ws" || path.startsWith("/ws/") || /^\/api\/(auth(?:\/|$)|workspace-invitations(?:\/|$)|workspaces\/[^/]+\/invitations(?:\/|$))/.test(path); }
 	catch { return true; }
 }
 export function analyticsUrl(url: string): string | null {

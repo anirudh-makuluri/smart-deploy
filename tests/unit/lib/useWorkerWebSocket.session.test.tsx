@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeRepo } from "../helpers/repoFixture";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import { useAppData } from "@/store/useAppData";
+import { RUNTIME_APP, RUNTIME_REQUEST, runtimeView } from "../helpers/runtimeView";
 
-const identity = vi.hoisted(() => ({ userId: "user-1" as string | null }));
+const identity = vi.hoisted(() => ({ userId: "user-1" as string | null, sessionId: "session-1" }));
 
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
-		useSession: () => ({ data: identity.userId ? { user: { id: identity.userId } } : null }),
+		useSession: () => ({ data: identity.userId ? { user: { id: identity.userId }, session: { id: identity.sessionId } } : null }),
 	},
 }));
 
@@ -34,6 +35,14 @@ class MockSocket {
 	managerHandlers = new Map<string, Set<(...args: unknown[]) => void>>();
 	reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	manualDisconnect = false;
+	volatileWrites = 0;
+	ackTimeout = 0;
+	get volatile() { this.volatileWrites++; return this; }
+	timeout(milliseconds: number) { this.ackTimeout = milliseconds; return this; }
+	async emitWithAck(event: string, payload: { requestId: string; appId: string }) {
+		this.emittedEvents.push({ event, payload });
+		return { ok: true, requestId: payload.requestId, appId: payload.appId, view: runtimeView() };
+	}
 	io = {
 		on: (event: string, handler: (...args: unknown[]) => void) => {
 			const set = this.managerHandlers.get(event) ?? new Set<(...args: unknown[]) => void>();
@@ -175,6 +184,16 @@ function Harness() {
 	return <div data-testid="socket-status">{socketStatus}</div>;
 }
 
+function HarnessWithPublishing({ actorId = "user-1" }: { actorId?: string }) {
+	const { requestAppRuntime, socketStatus } = useWorkerWebSocketSession();
+	const [outcome, setOutcome] = React.useState("");
+	async function inspect() {
+		try { await requestAppRuntime(actorId, { action: "inspect", appId: RUNTIME_APP, requestId: RUNTIME_REQUEST }, new AbortController().signal); setOutcome("confirmed"); }
+		catch { setOutcome("unconfirmed"); }
+	}
+	return <><div data-testid="socket-status">{socketStatus}</div><div data-testid="publish-outcome">{outcome}</div><button onClick={() => void inspect()}>Inspect releases</button></>;
+}
+
 function HarnessWithLogs() {
 	const { clearDeploymentLogs, deployLogEntries, deployStatus, socketStatus } = useWorkerWebSocketSession();
 
@@ -213,6 +232,7 @@ function HarnessWithAgent() {
 describe("useWorkerWebSocketSession", () => {
 	beforeEach(() => {
 		identity.userId = "user-1";
+		identity.sessionId = "session-1";
 		vi.useFakeTimers();
 		MockSocket.instances = [];
 		useAppData.setState({
@@ -320,6 +340,30 @@ describe("useWorkerWebSocketSession", () => {
 		expect(screen.getByTestId("log-count").textContent).toBe("0");
 	});
 
+	it("retires the socket and cached token when the same user receives a new login session", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<Harness />); await act(async () => { await Promise.resolve(); });
+		const previous = MockSocket.instances[0]!; identity.sessionId = "session-2"; view.rerender(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		expect(previous.manualDisconnect).toBe(true); expect(MockSocket.instances).toHaveLength(2); expect(fetchMock).toHaveBeenCalledTimes(2); expect(screen.getByTestId("socket-status")).toHaveTextContent("open");
+	});
+	it("uses a bounded volatile acknowledgement with only the runtime command", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		render(<HarnessWithPublishing />); await act(async () => { await Promise.resolve(); });
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		const socket = MockSocket.instances[0]!; expect(socket.volatileWrites).toBe(1); expect(socket.ackTimeout).toBe(22000);
+		expect(socket.emittedEvents.filter(row => row.event === "apps:runtime")).toEqual([{ event: "apps:runtime", payload: { action: "inspect", appId: RUNTIME_APP, requestId: RUNTIME_REQUEST } }]);
+		expect(screen.getByTestId("publish-outcome")).toHaveTextContent("confirmed");
+	});
+	it("does not send a runtime command for a different actor or an offline socket", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<HarnessWithPublishing actorId="different-user" />); await act(async () => { await Promise.resolve(); });
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		expect(screen.getByTestId("publish-outcome")).toHaveTextContent("unconfirmed");
+		view.rerender(<HarnessWithPublishing />); act(() => MockSocket.instances[0]!.close());
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		expect(MockSocket.instances[0]!.volatileWrites).toBe(0);
+	});
 	it("does not reconnect or retain displayed logs after sign-out", async () => {
 		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
 			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),

@@ -6,8 +6,9 @@ import { useWorkspaceAction } from "./useWorkspaceAction";
 import { SharingBusy, SharingError, SharingFormInput, SharingPanel, SharingSubmit } from "./SharingUi";
 import { AppMemberAccess } from "./AppMemberAccess";
 import { WorkspaceInvitationCreator } from "./WorkspaceInvitationCreator";
+import { RuntimePublishing } from "./RuntimePublishing";
 
-export function WorkspaceApps({ actorId, workspace }: { actorId: string; workspace: UiWorkspaceAccess }) {
+export function WorkspaceApps({ actorId, workspace, publishEnabled }: { actorId: string; workspace: UiWorkspaceAccess; publishEnabled: boolean }) {
 	const cache = useQueryClient(); const action = useWorkspaceAction(); const [name, setName] = useState(""); const [selected, setSelected] = useState("");
 	const base = `/api/workspaces/${workspace.id}/apps`;
 	const list = useQuery({ queryKey: [...teamKey(actorId), workspace.id, "apps"], queryFn: async ({ signal }) => { const result = await workspaceRequest(base, "GET", null, AppList, signal); if (result.apps.some(app => app.workspaceId !== workspace.id)) throw new WorkspaceBrowserError(503); return result; }, retry: false });
@@ -21,6 +22,6 @@ export function WorkspaceApps({ actorId, workspace }: { actorId: string; workspa
 			{action.state.status === "failed" ? <SharingError message={action.state.message} retry={() => void refresh()} /> : null}
 			<p className="text-xs leading-5 text-muted-foreground">Creating an app reserves its workspace identity. Publishing is a separate step.</p>
 		</div></SharingPanel><WorkspaceInvitationCreator actorId={actorId} workspace={workspace} /></div>
-		<div>{app ? <AppMemberAccess key={app.id} actorId={actorId} app={app} /> : <SharingPanel title="App access"><p className="text-sm text-muted-foreground">Create an app, then invite colleagues and choose who can use it.</p></SharingPanel>}</div>
+		<div className="space-y-6">{app ? <>{publishEnabled ? <RuntimePublishing key={"runtime-" + app.id} actorId={actorId} app={app} /> : null}<AppMemberAccess key={app.id} actorId={actorId} app={app} /></> : <SharingPanel title="App access"><p className="text-sm text-muted-foreground">Create an app, then invite colleagues and choose who can use it.</p></SharingPanel>}</div>
 	</div>;
 }

@@ -14,7 +14,7 @@ async function content() {
 	try {
 		const principal = await auth.api.getSession({ headers: await headers(), query: { disableCookieCache: true, disableRefresh: true } });
 		if (!principal) return <p role="alert">Sign in to manage your apps.</p>;
-		await requirePlatformAccess(principal.user); return <WorkspaceManagement principal={{ id: principal.user.id, email: principal.user.email }} />;
+		await requirePlatformAccess(principal.user); return <WorkspaceManagement principal={{ id: principal.user.id, email: principal.user.email }} publishEnabled={config.PRIVATE_APP_PUBLISH_ENABLED === true} />;
 	} catch { return <p role="alert" className="text-sm text-muted-foreground">App management is unavailable. Use a verified, approved account and try again.</p>; }
 }
 export default async function WorkspaceManagementPage() {

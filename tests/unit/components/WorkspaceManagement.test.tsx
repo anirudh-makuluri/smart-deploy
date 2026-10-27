@@ -20,7 +20,7 @@ let invitations: typeof INVITE[];
 let clients: QueryClient[];
 function mount() {
 	const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } }); clients.push(client);
-	return render(<QueryClientProvider client={client}><WorkspaceManagement principal={{ id: "owner", email: "owner@example.test" }} /></QueryClientProvider>);
+	return render(<QueryClientProvider client={client}><WorkspaceManagement principal={{ id: "owner", email: "owner@example.test" }} publishEnabled={false} /></QueryClientProvider>);
 }
 function route(url: string, init: RequestInit = {}): Response {
 	if (init.method === "GET") {
@@ -93,7 +93,7 @@ describe("creator workspace and app sharing", () => {
 	it("aborts pending writes and discards late receipts when the current identity changes", async () => {
 		let finish = (_response: Response) => {}; fetcher.mockImplementation(async (url, init) => init?.method === "POST" ? new Promise(resolve => { finish = resolve; }) : route(String(url), init)); const view = mount();
 		fireEvent.click(await screen.findByRole("button", { name: "Grant app access for " + COLLEAGUE.email })); const write = fetcher.mock.calls.find(([, init]) => init?.method === "POST");
-		session.read.mockReturnValue({ data: null, isPending: false }); view.rerender(<QueryClientProvider client={clients[0]}><WorkspaceManagement principal={{ id: "owner", email: "owner@example.test" }} /></QueryClientProvider>);
+		session.read.mockReturnValue({ data: null, isPending: false }); view.rerender(<QueryClientProvider client={clients[0]}><WorkspaceManagement principal={{ id: "owner", email: "owner@example.test" }} publishEnabled={false} /></QueryClientProvider>);
 		expect(write?.[1]?.signal?.aborted).toBe(true); await act(async () => { finish(Response.json({ ok: true })); }); expect(screen.queryByRole("region", { name: "App access" })).toBeNull(); expect(within(screen.getByRole("alert")).queryByText("Team notes")).toBeNull();
 	});
 });

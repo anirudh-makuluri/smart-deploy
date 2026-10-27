@@ -104,6 +104,8 @@ jobs:
           BETTER_AUTH_SECRET: local-confirmation-ci-only-secret-never-for-production
           WORKSPACE_APPS_ENABLED: 'true'
           PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          PRIVATE_APP_PUBLISH_ENABLED: 'true'
+          NEXT_PUBLIC_WS_URL: wss://localhost:34435/ws
           GATEWAY_CODE_TTL_SECONDS: '60'
           GATEWAY_SESSION_TTL_SECONDS: '900'
           WAITING_LIST_ENABLED: 'true'

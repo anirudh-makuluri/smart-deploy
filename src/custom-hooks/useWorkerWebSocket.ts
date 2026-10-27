@@ -19,6 +19,9 @@ import { useAppData } from "@/store/useAppData";
 import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { toast } from "sonner";
+import { requestRuntimeControl } from "@/lib/apps/runtimeControlBrowser";
+import type { RuntimeControlRequest } from "@/lib/apps/runtimeControlProtocol";
+import { WorkspaceBrowserError } from "@/lib/apps/workspaceBrowser";
 
 export type { DeployCompleteWsPayload } from "@/lib/workerSocketEvents";
 
@@ -272,6 +275,7 @@ function parseWebSocketAuthTokenExpiry(token: string): number | null {
 export function useWorkerWebSocketSession() {
 	const { data: session } = authClient.useSession();
 	const userId = session?.user?.id ?? null;
+	const sessionId = session?.session?.id ?? null;
 	const connectionEnabled = Boolean(userId);
 	const repoName = useAppData((s) => s.activeRepo)?.name ?? null;
 	const serviceName = useAppData((s) => s.activeServiceName) ?? null;
@@ -287,6 +291,7 @@ export function useWorkerWebSocketSession() {
 
 	const isDeployingRef = useRef(false);
 	const socketRef = useRef<Socket | null>(null);
+	const socketOwnerRef = useRef<{ userId: string; sessionId: string | null } | null>(null);
 	const subscribedWorkspaceRef = useRef<WorkspaceSubscription | null>(null);
 	const workerStateWorkspaceRef = useRef<WorkspaceSubscription | null>(null);
 	const workerStateUserRef = useRef(userId);
@@ -390,6 +395,7 @@ export function useWorkerWebSocketSession() {
 		});
 
 		socketRef.current = socket;
+		socketOwnerRef.current = { userId, sessionId };
 
 		const onConnect = () => {
 			setSocketStatus("open");
@@ -584,11 +590,12 @@ export function useWorkerWebSocketSession() {
 			socket.disconnect();
 			if (socketRef.current === socket) {
 				socketRef.current = null;
+				socketOwnerRef.current = null;
 			}
 			subscribedWorkspaceRef.current = null;
 			setSocketStatus("closed");
 		};
-	}, [userId]);
+	}, [userId, sessionId]);
 
 	useEffect(() => {
 		subscribeWorkspace(socketRef.current);
@@ -665,6 +672,12 @@ export function useWorkerWebSocketSession() {
 			});
 		}
 	};
+	const requestAppRuntime = useCallback(async (actorId: string, payload: RuntimeControlRequest, signal: AbortSignal) => {
+		const socket = socketRef.current; const owner = socketOwnerRef.current;
+		if (!socket || !owner || actorId !== userId || owner.userId !== actorId || owner.sessionId !== sessionId) throw new WorkspaceBrowserError(503);
+		const current = () => socketRef.current === socket && socketOwnerRef.current === owner && socket.connected;
+		return requestRuntimeControl(payload, signal, current, () => socket.volatile.timeout(22000).emitWithAck(WORKER_SOCKET_CLIENT_EVENTS.runtimeControl, payload));
+	}, [userId, sessionId]);
 
 	const socketStatus: SocketStatus = !connectionEnabled
 		? "closed"
@@ -683,5 +696,6 @@ export function useWorkerWebSocketSession() {
 		clearDeploymentLogs,
 		serviceLogs: workerState.serviceLogs,
 		latestAgentEvent: workerState.latestAgentEvent,
+		requestAppRuntime,
 	};
 }

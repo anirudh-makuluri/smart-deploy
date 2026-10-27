@@ -20,7 +20,7 @@ describe("server-side app management entry", () => {
 		access.session.mockResolvedValue(null); expect(renderToStaticMarkup(await Page())).toContain("Sign in to manage"); expect(access.platform).not.toHaveBeenCalled(); expect(access.props).not.toHaveBeenCalled();
 	});
 	it("checks fresh authentication and platform permission before projecting minimal client identity", async () => {
-		expect(renderToStaticMarkup(await Page())).toContain("Management controls"); expect(access.session).toHaveBeenCalledWith({ headers: expect.any(Headers), query: { disableCookieCache: true, disableRefresh: true } }); expect(access.platform).toHaveBeenCalledOnce(); expect(access.props).toHaveBeenCalledWith({ principal: { id: "creator", email: "creator@example.test" } });
+		expect(renderToStaticMarkup(await Page())).toContain("Management controls"); expect(access.session).toHaveBeenCalledWith({ headers: expect.any(Headers), query: { disableCookieCache: true, disableRefresh: true } }); expect(access.platform).toHaveBeenCalledOnce(); expect(access.props).toHaveBeenCalledWith({ principal: { id: "creator", email: "creator@example.test" }, publishEnabled: false });
 	});
 	it("redacts platform rejection and does not render client controls", async () => {
 		access.platform.mockRejectedValue(Error("sensitive provider details")); const html = renderToStaticMarkup(await Page()); expect(html).toContain("verified, approved account"); expect(html).not.toContain("sensitive provider details"); expect(access.props).not.toHaveBeenCalled();
