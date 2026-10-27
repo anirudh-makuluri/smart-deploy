@@ -1,0 +1,41 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "app-sharing-controls",
+  "baselineRevision": "5fc79cd95f744551b19ca3213e35e6a8cca079ca",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Create workspace/app identities, share explicit member invitations and grant or revoke app use through the existing authenticated APIs",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 710 },
+  "verification": {
+    "unitFiles": 173,
+    "unitTests": 1326,
+    "newUnitCases": 30,
+    "compiledPrivateBrowser": 21,
+    "newCompiledSharingBrowser": 3,
+    "compiledPublicBrowser": 5,
+    "compiledGatewayProcesses": 2,
+    "nativeWorkloadProcesses": 2,
+    "typecheck": true,
+    "lint": true,
+    "privateAndPublicProductionBuilds": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "doctorComplete": true,
+    "mobileVisuallyInspected": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Creating an app reserves an identity; publish/runtime launch remains separate work.",
+    "Membership alone grants neither app use, previews nor management.",
+    "Controlled client forms require hydration; no no-JavaScript submission claim.",
+    "Unconfirmed writes may have committed and require explicit state refresh before retry.",
+    "Local controlled identities/approval are not hosted OAuth or AWS proof.",
+    "Unchanged standalone SQL/storage suites pass exact parent CI and were not repeated locally.",
+    "Restricted document credentials, AWS demo admission/provisioning and hosted proof remain required.",
+    "No production account, email, provider connection, flag, migration, AWS resource, startup, merge or deployment."
+  ]
+}

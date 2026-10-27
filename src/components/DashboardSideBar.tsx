@@ -1,6 +1,7 @@
 "use client";
 
-import { FolderGit2, LayoutGrid, History, User, type LucideIcon } from "lucide-react";
+import { FolderGit2, LayoutGrid, History, User, AppWindow, type LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 import { useAppData } from "@/store/useAppData";
 import { isLiveDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
@@ -86,6 +87,7 @@ export default function DashboardSideBar({
 					{DASHBOARD_NAV_ITEMS.map(({ view, label, icon }) => (
 						<DashboardNavButton key={view} label={label} icon={icon} collapsed={collapsed} selected={activeView === view} onClick={() => onViewChange(view)} />
 					))}
+					<Link href="/home/apps" prefetch={false} title="Apps & team" className={cn(navButtonBase, "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground", collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2")}><AppWindow className="size-4 shrink-0" aria-hidden />{collapsed ? <span className="sr-only">Apps &amp; team</span> : <span>Apps &amp; team</span>}</Link>
 				</div>
 				{!collapsed && (
 					<div className="mt-auto rounded-lg border border-border bg-background/70 p-3">

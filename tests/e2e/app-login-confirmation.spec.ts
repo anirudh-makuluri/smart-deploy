@@ -261,6 +261,43 @@ test.describe("real app sign-in confirmation and gateway over local HTTPS", () =
 		expect((await context.cookies()).find((value) => value.name === GATEWAY_SESSION_COOKIE)?.value).toBe(cookie);
 		expect(await page.evaluate(async () => (await fetch("/request-evidence")).status)).toBe(200);
 	});
+	test("creates a workspace and app, shares a member invitation, then grants and revokes use from the creator UI", async ({ page, context, browser }, info) => {
+		await context.addCookies(owner.cookies); const response = await page.goto(PLATFORM + "/home/apps");
+		expect(response?.headers()["referrer-policy"]).toBe("no-referrer"); expect(response?.headers()["x-frame-options"]).toBe("DENY");
+		await page.getByLabel("New team workspace").fill("Sharing UI Test"); await page.getByRole("button", { name: "Create workspace", exact: true }).click();
+		await expect(page.getByLabel("Manage workspace")).toContainText("Sharing UI Test");
+		await expect(page.getByLabel("New team workspace")).toHaveValue("");
+		await page.getByLabel("New app name").fill("Team notes"); await page.getByRole("button", { name: "Create app", exact: true }).click();
+		await expect(page.getByLabel("Select app")).toContainText("Team notes"); await expect(page.getByLabel("New app name")).toHaveValue("");
+		const selectedApp = await page.getByLabel("Select app").inputValue(); expect(await apps.getUseIdentity(selectedApp, outsider.id)).toBeNull();
+		await page.getByLabel("Colleague email").fill(outsider.email); await page.getByRole("button", { name: "Create invitation", exact: true }).click();
+		const field = page.getByLabel("Invitation link"); await expect(field).toBeVisible(); await expect(field).toHaveAttribute("type", "password"); const invitationURL = await field.inputValue();
+		const invitee = await browser.newContext({ baseURL: PLATFORM, ignoreHTTPSErrors: true });
+		try {
+			await invitee.addCookies(outsider.cookies); const colleaguePage = await invitee.newPage(); await colleaguePage.goto(invitationURL);
+			await colleaguePage.getByRole("button", { name: "Join workspace" }).click(); await expect(colleaguePage.getByText(/You’ve joined Sharing UI Test/)).toBeVisible();
+			expect((await invitee.request.get("/api/workspaces")).status()).toBe(403); expect(await apps.getUseIdentity(selectedApp, outsider.id)).toBeNull();
+		} finally { await invitee.close(); }
+		await page.getByRole("button", { name: "Refresh workspace", exact: true }).click();
+		await expect(field).toHaveCount(0); await page.getByRole("button", { name: "Grant app access for " + outsider.email, exact: true }).click();
+		await expect(page.getByRole("button", { name: "Revoke app access for " + outsider.email, exact: true })).toBeEnabled(); expect(await apps.getUseIdentity(selectedApp, outsider.id)).toMatchObject({ id: outsider.id });
+		await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+		await page.screenshot({ path: info.outputPath("sharing-mobile.png"), fullPage: true });
+		await page.getByRole("button", { name: "Revoke app access for " + outsider.email, exact: true }).click();
+		await expect(page.getByRole("button", { name: "Grant app access for " + outsider.email, exact: true })).toBeEnabled(); expect(await apps.getUseIdentity(selectedApp, outsider.id)).toBeNull();
+	});
+	test("preserves an app draft and requires refresh after an unconfirmed write response", async ({ page, context }) => {
+		await context.addCookies(owner.cookies); await page.goto(PLATFORM + "/home/apps"); await page.getByLabel("New app name").fill("Unconfirmed draft");
+		let writes = 0; await page.route("**/api/workspaces/*/apps", async route => { if (route.request().method() === "POST") { writes++; await route.fulfill({ status: 200, json: { app: { id: "invalid" } } }); } else await route.continue(); });
+		await page.getByRole("button", { name: "Create app", exact: true }).click(); await expect(page.getByRole("region", { name: "Apps", exact: true }).getByRole("alert")).toContainText("may have completed");
+		await expect(page.getByLabel("New app name")).toHaveValue("Unconfirmed draft"); await expect(page.getByRole("button", { name: "Create app", exact: true })).toBeDisabled(); expect(writes).toBe(1);
+		await page.getByRole("button", { name: "Refresh status", exact: true }).click(); await expect(page.getByRole("button", { name: "Create app", exact: true })).toBeEnabled();
+	});
+	test("does not render management controls or workspace metadata for an unapproved colleague", async ({ page, context }) => {
+		await context.addCookies(outsider.cookies); await page.goto(PLATFORM + "/home/apps");
+		await expect(page.getByRole("heading", { name: "You're on the waiting list" })).toBeVisible(); await expect(page.getByLabel("Manage workspace")).toHaveCount(0); await expect(page.getByText("Sharing UI Test", { exact: true })).toHaveCount(0);
+		expect((await page.request.get(PLATFORM + "/api/workspaces")).status()).toBe(403);
+	});
 	test("revokes both published and preview app sessions on platform sign-out", async ({ page, context }) => {
 		for (const origin of [PUBLISHED, PREVIEW]) { await visit(page, context, owner, origin); await page.getByRole("button", { name: "Continue to app" }).click(); await expect(page).toHaveURL(origin + "/items?sort=new"); }
 		expect(Number((await client.query("select count(*) from public.app_gateway_sessions")).rows[0].count)).toBe(2);
