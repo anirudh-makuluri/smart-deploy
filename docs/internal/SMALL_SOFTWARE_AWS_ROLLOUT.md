@@ -1624,3 +1624,44 @@ broker authorization and sort keys isolate environments. Trusted publish/launch,
 bounded workload provisioning/admission and hosted persistence/revocation proof
 remain. No production IAM/configuration/connection/migration/data/cloud resources,
 worker startup, rollout merge or deployment changed. Billing#85 untouched.
+
+#132 exact-head CI and Vercel preview pass at
+1375dba08b5f5e5687c4f34f7520d4699e998af9. Inspected build121998056303 and
+database121998056533:1180unit,151SQL,33DynamoDB,18nativecookie/15private/5public
+browser,two native workload processes,one Linux container,full676-file
+Doctor100/100. No review threads. PR body/issue99 updated. No live role/IAM/data
+or production flag was changed.
+
+Active unpublished slice:feat/private-app-publish-controller, base#128 at
+8ea3e37d8665a6025be5b46cea08478616e578a1, in the existing managed report-response-
+validation worktree. The trusted publisher must run on the AWS worker, where
+private workload TLS endpoints are reachable. Adds a default-off operator-file
+catalog, fresh verified/approved session authorization on a verified-CA SQL pool,
+source preflight, bounded AWS/SSM prepared-key/hash checks, actual pinned TLS,
+fresh session/manager/source rechecks, registration and compare-and-swap routing.
+Prepared credentials cannot use authenticateGateway before selection; the new
+operator-only verifier compares the exact prepared SSM path/version/key ID/hash/
+binding/expiry without weakening that SQL authentication function. Browser
+requests contain only app/release/environment/current-selection identifiers.
+Authenticated worker packet guards remain in force; acknowledgements are
+socket-local, duplicate/pending/disconnect/timeout paths fail closed.
+
+Focused34unit cases pass. New real PostgreSQL/TLS tests publish two prepared
+releases, preserve the colleague app session and retain grant revocation; all46
+runtime registration tests passed before the final bounded-concurrency repair.
+Initial full Doctor89/4findings repaired without suppression: exact3-entry
+catalog reads use bounded pool work, unavailable lookups use Set, source-derived
+AWS expectations retain the preflight dependency, and independent external reads
+use allSettled so admission remains held until both actually settle. Final
+focused34tests/full698-file Doctor100/100 pass, including early failure plus a
+noncooperative peer read. A full serial unit/SQL/storage/build/process/browser/
+Doctor verification is now active. Do not start duplicate work. No PR yet for
+this slice; it remains uncommitted and is not the complete/deployed MVP.
+Evidence:C:\Users\aniru\.codex\verification\smartdeploy-runtime-control-1793074796251.
+
+The user selected a distinct creator account. Verified-CA, read-only production
+lookups confirm both chosen accounts are existing verified identities with
+provider accounts; creator platform approval already exists. No account changes,
+session minting or invitation/email actions. Keep private QA email addresses out
+of PRs/public docs. Hosted tests still require real separate authenticated
+sessions, and the existing worker remains stopped until launch gates are met.
