@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
 		PRIVATE_APP_DOCUMENTS_ENABLED: true,
 		APP_DOCUMENTS_APP_ID: "11111111-1111-4111-8111-111111111111",
 		APP_DOCUMENTS_TABLE_ARN: "arn:aws:dynamodb:us-west-2:111122223333:table/pilot-documents",
+		APP_DOCUMENTS_ROLE_ARN: "arn:aws:iam::111122223333:role/pilot-documents",
 		AWS_REGION: "us-west-2",
 	},
 	configurations: [] as Record<string, unknown>[],
@@ -12,9 +13,11 @@ const mocks = vi.hoisted(() => ({
 	put: vi.fn(),
 	remove: vi.fn(),
 	construct: vi.fn(),
+	assume: vi.fn(),
 }));
 vi.mock("@/config", () => ({ default: mocks.config }));
 vi.mock("@/lib/aws/sdkClients", () => ({ getAwsClientConfig: (region: string) => ({ region }) }));
+vi.mock("@/lib/aws/documentRole", async importOriginal => ({ ...await importOriginal<typeof import("@/lib/aws/documentRole")>(), assumeDocumentRole: mocks.assume }));
 vi.mock("@aws-sdk/client-dynamodb", () => ({
 	DynamoDBClient: class {
 		constructor(configuration: Record<string, unknown>) {
@@ -49,11 +52,13 @@ beforeEach(() => {
 		PRIVATE_APP_DOCUMENTS_ENABLED: true,
 		APP_DOCUMENTS_APP_ID: scope.appId,
 		APP_DOCUMENTS_TABLE_ARN: "arn:aws:dynamodb:us-west-2:111122223333:table/pilot-documents",
+		APP_DOCUMENTS_ROLE_ARN: "arn:aws:iam::111122223333:role/pilot-documents",
 		AWS_REGION: "us-west-2",
 	});
 	mocks.get.mockResolvedValue(null);
 	mocks.put.mockResolvedValue({ collection: "notes", id: "shared", version, json: "{}" });
 	mocks.remove.mockResolvedValue(undefined);
+	mocks.assume.mockResolvedValue({ accessKeyId: "ASIA" + "A".repeat(16), secretAccessKey: "s".repeat(40), sessionToken: "t".repeat(64), expiration: new Date(Date.now() + 900000) });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -64,6 +69,7 @@ describe("bounded single-app document backend", () => {
 		expect(mocks.configurations).toEqual([
 			expect.objectContaining({
 				region: "us-west-2",
+				credentials: expect.objectContaining({ sessionToken: "t".repeat(64) }),
 				endpoint: "https://dynamodb.us-west-2.amazonaws.com",
 				maxAttempts: 1,
 				requestHandler: expect.objectContaining({
@@ -82,6 +88,26 @@ describe("bounded single-app document backend", () => {
 		);
 		expect(mocks.get).toHaveBeenCalledWith(address);
 		expect(mocks.destroy).toHaveBeenCalledTimes(1);
+	});
+	it("rejects missing role configuration without falling back to platform DynamoDB credentials", async () => {
+		mocks.config.APP_DOCUMENTS_ROLE_ARN = "";
+		await expect(executePilotDocument(scope, get, new AbortController().signal)).rejects.toMatchObject({ status: 503 });
+		expect(mocks.assume).not.toHaveBeenCalled(); expect(mocks.configurations).toHaveLength(0);
+	});
+	it("never constructs DynamoDB on credential failure and releases admission", async () => {
+		mocks.assume.mockRejectedValueOnce(new AppDataError(503));
+		await expect(executePilotDocument(scope, get, new AbortController().signal)).rejects.toMatchObject({ status: 503 });
+		expect(mocks.configurations).toHaveLength(0);
+		await expect(executePilotDocument(scope, get, new AbortController().signal)).resolves.toEqual({ document: null });
+	});
+	it("counts pending credential requests against both admission slots and discards late cancelled credentials", async () => {
+		const releases: Array<() => void> = [];
+		mocks.assume.mockImplementation(() => new Promise(resolve => releases.push(() => resolve({ accessKeyId: "test", secretAccessKey: "test", sessionToken: "test" }))));
+		const controller = new AbortController(); const first = executePilotDocument(scope, get, controller.signal); const second = executePilotDocument(scope, get, controller.signal);
+		const rejected = Promise.allSettled([first, second]); controller.abort();
+		await expect(executePilotDocument(scope, get, new AbortController().signal)).rejects.toMatchObject({ status: 503 });
+		expect(mocks.assume).toHaveBeenCalledTimes(2); expect(mocks.configurations).toHaveLength(0);
+		for (const release of releases) release(); expect((await rejected).every(result => result.status === "rejected")).toBe(true); expect(mocks.configurations).toHaveLength(0);
 	});
 	it("preserves preview isolation and explicit optimistic versions for mutation", async () => {
 		const signal = new AbortController().signal;
