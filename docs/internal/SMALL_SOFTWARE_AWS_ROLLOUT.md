@@ -1546,3 +1546,41 @@ legacy worker infrastructure documents Nginx proxying and optional existing
 certificate renewal. The private-app ALB/ACM layer is still planned, not already
 provisioned. CLI describe-events input support verified locally; no change set
 was created or executed.
+
+October 26 evening (America/Phoenix): recipient PR #130 exact-head CI and Vercel
+preview pass at 5fc79cd95f744551b19ca3213e35e6a8cca079ca. Inspected run40371368944:
+1296 unit/153 SQL/33 DynamoDB,21 native cookie,18 compiled private/5 public browser,
+2 gateway/2 workload process and1 Linux container cases pass; full699-file
+Doctor100/100. PR body and issue99 updated; no review threads on #129/#130.
+
+Published and attached draft #131:
+https://github.com/anirudh-makuluri/smart-deploy/pull/131
+head987cd14b81151075244ba5ade718d412a260c251, branchfeat/app-sharing-controls,
+base#130/feat/workspace-invitation-ui. Merge#128 then#130 before#131; cleanup#129
+remains independent. Adds /home/apps creator workspace/app creation, member-only
+invitation link creation/revocation and app-use grants/revocation through existing
+authenticated APIs. Fresh server/hydrated identity checks; actor-scoped caches,
+cancelled stale requests, receipt identity/scope checks, controlled client forms,
+pending status, redacted uncertain-write errors/no write retry until state refresh.
+Membership/app-use/preview/management distinctions remain explicit. No email sent.
+
+Final serial local proof:173unitfiles/1326tests(30new),all21compiledprivatebrowser
+(3new),5public/analytics,2gatewayprocess,2workloadprocess; typecheck/full lint,
+private/public production builds,worker/workload compilation and diff checks pass.
+Complete unfiltered Doctor0.9.18:100/100 on710files,zeroerrors/warnings/skips,no
+suppression. Chromium mobile390px output visually inspected. Browser actually
+creates a team/app, shares an invitation to a distinct verified unapproved fixture,
+explicitly joins, verifies no app use until grant, grants/revokes via creator UI
+and checks SQL authorization. Clipboard testing uses a unit mock. Initial test
+selectors/expected waiting-list screen were corrected; final21cases have no skips.
+Unchanged standalone SQL/storage suites pass exact parent#130 CI and were not
+repeated locally. Exact#131 CI pending. Owned DB/fixtures stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-sharing-ui-1793070588097.
+
+Fresh read-only AWS inventory:worker i-0c66e86b605f71ef9 stopped; no ALB exists.
+Billing#85 stays open at14c67e452be54c6639ac2a7f3a69737b269c1999 and untouched.
+Trusted publish/launch composition, restricted document credentials, bounded AWS
+demo provisioning/admission and hosted creator/colleague/persistence/revocation
+proof remain required. This is local controlled-auth proof, not real OAuth/AWS
+acceptance. No production account, invitation, email, provider connection, flags,
+migration, billable cloud resources/startup, rollout merge or deployment changed.
