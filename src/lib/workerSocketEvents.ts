@@ -79,6 +79,7 @@ export const WORKER_SOCKET_SERVER_EVENTS = {
 } as const;
 
 export const WORKER_SOCKET_CLIENT_EVENTS = {
+	runtimeControl: "apps:runtime",
 	agentRun: "agent:run",
 	deploy: "deploy:run",
 	workspaceSubscribe: "workspace:subscribe",
