@@ -99,6 +99,22 @@ export class AppRuntimeStore {
 			return this.#release(client, binding, releaseId);
 		});
 	}
+	/** Manager-only catalog projection; expected entries come from operator configuration. */
+	async review(appId: string, actorId: string, entries: Array<{ runtimeId: string; credentialId: string; bindingId: string }>, expiresAt: number) {
+		if (!entries.length || entries.length > 3 || !Number.isSafeInteger(expiresAt) || expiresAt <= 0) throw new WorkspaceError(400, "Invalid runtime catalog.");
+		for (const entry of entries) { requireId(entry.runtimeId); requireId(entry.credentialId); requireId(entry.bindingId); }
+		return this.#transaction(async client => {
+			await this.#manager(client, appId, actorId);
+			const selected = await client.query<{ environment: AppEnvironment; runtimeId: string; generation: number }>('select environment, runtime_id as "runtimeId", generation from public.app_runtime_routes where app_id=$1', [appId]);
+			const registered = await client.query<{ id: string; appId: string; retired: boolean }>('select id, app_id as "appId", retired_at is not null as retired from public.app_runtime_registrations where id=any($1::uuid[])', [entries.map(entry => entry.runtimeId)]);
+			if (registered.rows.some(row => row.appId !== appId)) throw new WorkspaceError(409, "Runtime catalog changed.");
+			const credentials = await client.query<{ id: string; bindingId: string; live: boolean }>(`select id, binding_id as "bindingId", revoked_at is null and expires_at > clock_timestamp()
+        and expires_at=to_timestamp($2::double precision / 1000) as live from public.app_gateway_service_credentials where id=any($1::uuid[])`, [entries.map(entry => entry.credentialId), expiresAt]);
+			const unavailable = entries.filter(entry => registered.rows.some(row => row.id === entry.runtimeId && row.retired)
+				|| !credentials.rows.some(row => row.id === entry.credentialId && row.bindingId === entry.bindingId && row.live)).map(entry => entry.runtimeId);
+			return { selected: selected.rows, unavailable };
+		});
+	}
 
 	async register(input: RuntimeRegistrationInput): Promise<AppRuntime> {
 		const parsed = RuntimeRegistrationInput.safeParse(input);

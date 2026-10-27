@@ -12,6 +12,9 @@ import { GatewayAuthStore } from "../../src/lib/apps/gatewayAuthStore";
 import { WorkspaceStore } from "../../src/lib/apps/workspaceStore";
 import { gatewayCertificate } from "../helpers/gatewayCertificate";
 import { ManagedGatewayLoader } from "../../src/lib/gateway/managedRoute";
+import { AppRuntimeController } from "../../src/lib/apps/runtimeController";
+import type { RuntimeControlSettings } from "../../src/lib/apps/runtimeControlSettings";
+import { PilotRuntimeVerifier } from "../../src/lib/aws/pilotRuntimeVerifier";
 import { runtimeCredentialParameter } from "../../src/lib/apps/runtimeMetadata";
 import { GATEWAY_SESSION_COOKIE } from "../../src/lib/gateway/cookies";
 import { databaseTestConnectionString, prepareDatabaseTestRoles, resetFoundationDatabase } from "./helpers.mjs";
@@ -76,6 +79,50 @@ async function liveRegisteredRuntime(target: RuntimeBinding) {
 	return { ...value, loader, response };
 }
 describe("authoritative runtime registration metadata", () => {
+	it("publishes two verified prepared releases while preserving the app session and retaining revocation", async () => {
+		const published = await store.createBinding(appId, "published", "alice");
+		const values = [await registration(published), await registration(published), await registration(binding)];
+		const expiresAt = Math.floor(Date.now() / 1000) * 1000 + 600000;
+		await client.query("update public.app_gateway_service_credentials set expires_at=to_timestamp($2::double precision/1000) where id=any($1::uuid[])", [values.map(value => value.key.id), expiresAt]);
+		const targets: RuntimeControlSettings["targets"] = [];
+		for (const [index, value] of values.entries()) {
+			const server = createTlsServer({ key: value.material.key, cert: value.material.cert, minVersion: "TLSv1.3", maxVersion: "TLSv1.3", ALPNProtocols: ["http/1.1"] }); tlsServers.add(server);
+			server.on("connection", socket => { tlsSockets.add(socket); socket.on("error", () => {}); socket.once("close", () => tlsSockets.delete(socket)); }); server.on("tlsClientError", () => {});
+			await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); }); const address = server.address(); if (!address || typeof address === "string") throw Error("TLS fixture unavailable.");
+			targets.push({ credentialId: value.key.id, certificatePem: value.material.cert, label: "Test notes " + index,
+				expected: { appId, bindingId: index === 2 ? binding.id : published.id, environment: index === 2 ? "preview" : "published", releaseId: value.input.releaseId, runtimeId: value.input.id,
+					taskArn: value.input.taskArn, taskDefinitionArn: `arn:aws:ecs:${scope.region}:${scope.accountId}:task-definition/pilot-notes-${index}:1`, executionRoleArn: `arn:aws:iam::${scope.accountId}:role/pilot-execution`,
+					appGroupId: index === 2 ? "sg-33333333" : "sg-22222222", appImage: `${value.artifact.ecrRegistry}/${value.artifact.ecrRepoName}@${digest}`, appPort: 3000, originPort: address.port } });
+		}
+		const settings: RuntimeControlSettings = { appId, expiresAt, targets, scope: { ...scope, vpcId: "vpc-11111111", subnetIds: ["subnet-11111111"], gatewayGroupId: "sg-11111111", gatewayEniId: "eni-11111111", gatewayInstanceId: "i-11111111",
+			tlsImage: `${values[0].artifact.ecrRegistry}/pilot/tls@${digest}`, timeoutMs: 2000, maxPending: 1 } };
+		const observed = vi.spyOn(PilotRuntimeVerifier.prototype, "inspect").mockImplementation(async expected => ({ taskArn: expected.taskArn, taskDefinitionArn: expected.taskDefinitionArn, networkInterfaceId: "eni-22222222", privateIp: "10.0.1.23", subnetId: "subnet-11111111", port: expected.originPort, appImageDigest: digest, tlsImageDigest: digest, observedAt: new Date() }));
+		ssm.send.mockImplementation(async command => { const index = targets.findIndex(target => runtimeCredentialParameter(target.expected.bindingId, target.expected.runtimeId) === command.input.Name); return { Parameter: { Name: command.input.Name, ARN: `arn:aws:ssm:${scope.region}:${scope.accountId}:parameter${command.input.Name}`, Type: "SecureString", Version: 1, Value: values[index].key.token } }; });
+		const controller = new AppRuntimeController(pool, settings, async principal => {
+			const valid = await pool.query('select s.id from public.session s join public."user" u on u.id=s."userId" where s.id=$1 and u.id=$2 and u."emailVerified"=true and s."expiresAt">clock_timestamp()', [principal.sessionId, principal.userId]); if (valid.rowCount !== 1) throw Error("Local fixture session unavailable.");
+		}, options => tlsConnect({ ...options, host: "127.0.0.1" }));
+		try {
+			await expect(authenticateGateway(pool, "Bearer " + values[0].key.token)).rejects.toMatchObject({ status: 401 });
+			const command = { action: "activate", requestId: randomUUID(), appId, environment: "published", releaseId: values[0].input.releaseId, expectedCurrentId: null };
+			expect(await controller.request({ userId: "alice", sessionId: "alice-session" }, command, new AbortController().signal)).toMatchObject({ ok: true });
+			expect((await store.current(appId, "published"))?.id).toBe(values[0].input.id); await apps.grantUse(appId, "alice", "carol"); const session = await sessionFor(published, "carol");
+			expect(await controller.request({ userId: "alice", sessionId: "alice-session" }, { ...command, requestId: randomUUID(), releaseId: values[1].input.releaseId, expectedCurrentId: values[0].input.id }, new AbortController().signal)).toMatchObject({ ok: true });
+			expect((await store.current(appId, "published"))?.id).toBe(values[1].input.id); await expect(authenticateGateway(pool, "Bearer " + values[0].key.token)).rejects.toMatchObject({ status: 401 });
+			expect(await auth.authorizeDocuments(published.id, session.token)).toMatchObject({ scope: { appId, environment: "published" } });
+			await apps.revokeUse(appId, "alice", "carol"); expect(await auth.authorizeDocuments(published.id, session.token)).toBeNull();
+		} finally { controller.close(); observed.mockRestore(); ssm.send.mockReset(); }
+	});
+	it("projects manager-only current selections and unavailable prepared credentials without runtime secrets", async () => {
+		const value = await registration(); const expiresAt = Math.floor(Date.now() / 1000) * 1000 + 600000;
+		const refs = [{ runtimeId: value.input.id, bindingId: binding.id, credentialId: value.key.id }];
+		await client.query("update public.app_gateway_service_credentials set expires_at=to_timestamp($2::double precision/1000) where id=$1", [value.key.id, expiresAt]);
+		expect(await store.review(appId, "alice", refs, expiresAt)).toEqual({ selected: [], unavailable: [] });
+		await store.register(value.input); await store.activate(value.input.id, "alice", null);
+		expect(await store.review(appId, "bob", refs, expiresAt)).toEqual({ selected: [{ environment: "preview", runtimeId: value.input.id, generation: 1 }], unavailable: [] });
+		await expect(store.review(appId, "carol", refs, expiresAt)).rejects.toMatchObject({ status: 403 });
+		expect((await store.review(appId, "alice", refs, expiresAt + 1000)).unavailable).toEqual([value.input.id]);
+		await store.deactivate(appId, "preview", "alice", value.input.id); expect(await store.review(appId, "alice", refs, expiresAt)).toEqual({ selected: [], unavailable: [value.input.id] });
+	});
 	it("loads an actual selected SQL runtime/key and keeps a colleague's document access revocable", async () => {
 		const target = await store.createBinding(appId, "published", "alice"); await apps.grantUse(appId, "alice", "carol");
 		const live = await liveRegisteredRuntime(target);
