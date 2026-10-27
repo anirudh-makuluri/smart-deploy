@@ -184,39 +184,7 @@ export function ScanResultsMock({
 				compact ? "demo-mock-root" : "p-3.5"
 			}`}
 		>
-			<AnimatePresence>
-				{complete ? (
-					<m.div
-						key="summary"
-						initial={{ opacity: 0, scale: 0.96 }}
-						animate={{ opacity: 1, scale: 1 }}
-						transition={{ duration: 0.32, ease: "easeOut" }}
-						className={`flex shrink-0 items-start gap-2.5 ${compact ? "mb-[var(--demo-gap-sm)]" : "mb-3"}`}
-					>
-						<div className={`rounded-md bg-primary/12 ${compact ? "p-1" : "p-1.5"}`}>
-							<Terminal className={compact ? "demo-node-icon text-primary" : "size-4 text-primary"} />
-						</div>
-						<div className="min-w-0">
-							<p className={`font-semibold text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
-								Smart Analysis complete
-							</p>
-							<p className={`text-muted-foreground ${compact ? "demo-text-body" : "text-[12px]"}`}>
-								{classifySummary(context.framework, context.services.length)}
-							</p>
-						</div>
-					</m.div>
-				) : (
-					<div
-						key="running"
-						className={`flex shrink-0 items-center gap-2.5 ${compact ? "mb-[var(--demo-gap-sm)]" : "mb-3"}`}
-					>
-						<Loader2 className={compact ? "demo-node-icon animate-spin text-primary" : "size-4 animate-spin text-primary"} />
-						<p className={`font-medium text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
-							Running Smart Analysis…
-						</p>
-					</div>
-				)}
-			</AnimatePresence>
+			<ScanMockHeading context={context} compact={compact} complete={complete} />
 
 			<div className={`grid min-h-0 flex-1 ${compact ? "demo-scan-grid grid-cols-2" : "gap-3 md:grid-cols-2"}`}>
 				<div className={`min-h-0 overflow-hidden ${compact ? "space-y-[var(--demo-gap-sm)]" : "space-y-1.5"}`}>
@@ -230,7 +198,7 @@ export function ScanResultsMock({
 						return (
 							<div
 								key={node.id}
-								className={`rounded-md border transition-all duration-300 ${compact ? "demo-node-row" : "px-2.5 py-1.5"} ${nodeStatusStyle(status)}`}
+								className={`rounded-md border transition-[color,background-color,border-color,box-shadow,opacity] duration-300 ${compact ? "demo-node-row" : "px-2.5 py-1.5"} ${nodeStatusStyle(status)}`}
 							>
 								<div className="flex items-center gap-2">
 									<NodeIcon status={status} compact={compact} />
@@ -280,7 +248,7 @@ export function ScanResultsMock({
 						<div className={`border-t border-[#1e1e1e] bg-[#0a0a0a] ${compact ? "px-[var(--demo-pad-inner)] py-[var(--demo-gap-sm)]" : "px-2.5 py-2"}`}>
 							<div className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
 								<div
-									className="h-full rounded-full bg-primary transition-all duration-200"
+									className="h-full rounded-full bg-primary transition-[width] duration-200"
 									style={{ width: `${(visibleLineCount / SCAN_LOG_COUNT) * 100}%` }}
 								/>
 							</div>
@@ -359,7 +327,7 @@ export function BlueprintMock({ resolvedCount, compact = false }: { resolvedCoun
 						return (
 							<React.Fragment key={stage.id}>
 								<div
-									className={`rounded-lg border transition-all duration-300 ${
+									className={`rounded-lg border transition-[color,background-color,border-color,box-shadow,opacity] duration-300 ${
 										compact
 											? `demo-blueprint-stage ${stageStyle(status)}`
 											: `w-[104px] shrink-0 px-2.5 py-2 sm:w-[124px] ${stageStyle(status)}`
@@ -390,7 +358,7 @@ export function BlueprintMock({ resolvedCount, compact = false }: { resolvedCoun
 									>
 										<div className="h-px w-full bg-border/50" />
 										<div
-											className="absolute inset-y-1/2 left-0 h-px bg-primary transition-all duration-300"
+											className="absolute inset-y-1/2 left-0 h-px bg-primary transition-[width] duration-300"
 											style={{ width: index < resolvedCount ? "100%" : "0%" }}
 										/>
 									</div>
@@ -418,38 +386,7 @@ export function DeployProgressMock({
 
 	return (
 		<div className={`flex h-full flex-col overflow-hidden ${compact ? "gap-[var(--demo-gap)]" : "gap-3"}`}>
-			<div
-				className={`shrink-0 overflow-hidden rounded-xl border border-border/65 bg-background/70 ${
-					compact ? "demo-mock-card" : "p-3.5"
-				}`}
-			>
-				<div className="flex items-start justify-between gap-3">
-					<div className="flex items-start gap-2.5">
-						<div className={`rounded-lg bg-primary/12 text-primary ${compact ? "p-1" : "p-1.5"}`}>
-							{isComplete ? (
-								<CheckCircle2 className={compact ? "demo-node-icon" : "size-4"} />
-							) : (
-								<Rocket className={compact ? "demo-node-icon" : "size-4"} />
-							)}
-						</div>
-						<div>
-							<p className={`font-semibold text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
-								{isComplete ? "Deployment live" : "Deploy in progress"}
-							</p>
-							<p className={`text-muted-foreground ${compact ? "demo-text-body" : "text-[12px]"}`}>
-								{isComplete ? "Health checks passed" : "Building and pushing to AWS"}
-							</p>
-						</div>
-					</div>
-					<span
-						className={`shrink-0 rounded-full border border-primary/35 bg-primary/10 font-semibold uppercase tracking-[0.12em] text-primary ${
-							compact ? "demo-text-micro px-1.5 py-0.5" : "px-2 py-0.5 text-[10px]"
-						}`}
-					>
-						{isComplete ? "Done" : "Live"}
-					</span>
-				</div>
-			</div>
+			<DeployMockHeading compact={compact} isComplete={isComplete} />
 
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#1e1e1e] bg-[#0d0d0d]">
 				<div className={`border-b border-[#1e1e1e] bg-[#0a0a0a] ${compact ? "px-[var(--demo-pad-inner)] py-1" : "px-2.5 py-1.5"}`}>
@@ -475,7 +412,7 @@ export function DeployProgressMock({
 				<div className={`border-t border-[#1e1e1e] bg-[#0a0a0a] ${compact ? "px-[var(--demo-pad-inner)] py-[var(--demo-gap-sm)]" : "px-2.5 py-2"}`}>
 					<div className="h-1 w-full overflow-hidden rounded-full bg-slate-800">
 						<div
-							className="h-full rounded-full bg-primary transition-all duration-300"
+							className="h-full rounded-full bg-primary transition-[width] duration-300"
 							style={{ width: `${progress}%` }}
 						/>
 					</div>
@@ -489,25 +426,7 @@ export function CompleteMock({ context, compact = false }: { context: DemoStoryC
 	return (
 		<div className={`flex h-full flex-col overflow-hidden ${compact ? "gap-[var(--demo-gap)]" : "gap-3"}`}>
 			<div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-[#0b0b0b] shadow-[0_24px_60px_-40px_rgba(0,0,0,0.9)]">
-				<div
-					className={`flex items-center gap-2 border-b border-white/8 bg-[#141414] ${
-						compact ? "px-[var(--demo-pad-inner)] py-1.5" : "px-3 py-2"
-					}`}
-				>
-					<span className={`rounded-full bg-[#ff5f57] ${compact ? "size-2" : "size-2.5"}`} />
-					<span className={`rounded-full bg-[#febc2e] ${compact ? "size-2" : "size-2.5"}`} />
-					<span className={`rounded-full bg-[#28c840] ${compact ? "size-2" : "size-2.5"}`} />
-					<div
-						className={`ml-2 flex flex-1 items-center gap-1.5 rounded-md border border-white/10 bg-black/40 ${
-							compact ? "px-2 py-0.5" : "px-2.5 py-1"
-						}`}
-					>
-						<Globe className={compact ? "demo-node-icon text-emerald-400" : "size-3 text-emerald-400"} />
-						<span className={`truncate font-mono text-slate-300 ${compact ? "demo-text-mono" : "text-[11px]"}`}>
-							https://{context.customDomain}
-						</span>
-					</div>
-				</div>
+				<DemoBrowserChrome context={context} compact={compact} />
 				<PaintingInApp context={context} compact={compact} />
 			</div>
 
@@ -564,69 +483,208 @@ function PaintingInApp({ context, compact }: { context: DemoStoryContext; compac
 		>
 			<AnimatePresence mode="wait">
 				{painted ? (
-					<m.div
-						key="content"
-						initial={{ opacity: 0, y: 8 }}
-						animate={{ opacity: 1, y: 0 }}
-						transition={{ duration: 0.4, ease: "easeOut" }}
-						className={compact ? "space-y-[var(--demo-gap-sm)]" : "space-y-2.5"}
-					>
-						<div className="flex items-center gap-2">
-							<div className={`rounded-md bg-primary/30 ring-1 ring-primary/50 ${compact ? "size-5" : "size-6"}`} />
-							<div className={`rounded-full bg-white/40 ${compact ? "h-2 w-12" : "h-2.5 w-16"}`} />
-							<div className={`rounded-full bg-white/20 ${compact ? "h-2 w-8" : "h-2.5 w-10"}`} />
-							<div
-								className={`ml-auto flex items-center gap-1 rounded-full bg-emerald-400/15 ring-1 ring-emerald-400/40 ${
-									compact ? "px-1 py-0.5" : "px-1.5 py-0.5"
-								}`}
-							>
-								<span className={`animate-pulse rounded-full bg-emerald-400 ${compact ? "size-1" : "size-1.5"}`} />
-								<span
-									className={`font-semibold uppercase tracking-wide text-emerald-300 ${
-										compact ? "demo-text-micro" : "text-[8px]"
-									}`}
-								>
-									Live
-								</span>
-							</div>
-						</div>
-						<div
-							className={`relative overflow-hidden rounded-lg border border-primary/25 bg-linear-to-br from-primary/35 via-primary/10 to-transparent ${
-								compact ? "h-12" : "h-16"
-							}`}
-						>
-							<div className={`absolute left-3 top-3 rounded-full bg-white/70 ${compact ? "h-1.5 w-14" : "h-2 w-20"}`} />
-							<div className={`absolute left-3 top-7 rounded-full bg-white/30 ${compact ? "h-1 w-20" : "h-1.5 w-28"}`} />
-							<div
-								className={`absolute bottom-3 left-3 rounded-md bg-primary shadow-[0_6px_16px_-6px_rgba(245,165,36,0.7)] ${
-									compact ? "h-3 w-12" : "h-4 w-16"
-								}`}
-							/>
-						</div>
-						<div className={`grid grid-cols-3 ${compact ? "gap-[var(--demo-gap-sm)]" : "gap-2"}`}>
-							<div className={`rounded-md border border-white/10 bg-white/12 ${compact ? "h-6" : "h-8"}`} />
-							<div className={`rounded-md border border-primary/25 bg-primary/12 ${compact ? "h-6" : "h-8"}`} />
-							<div className={`rounded-md border border-white/10 bg-white/12 ${compact ? "h-6" : "h-8"}`} />
-						</div>
-						<p className={`pt-0.5 text-center text-slate-400 ${compact ? "demo-text-micro" : "text-[10px]"}`}>
-							{context.serviceLabel} · live on your AWS
-						</p>
-					</m.div>
+					<PaintedDemoContent key="content" context={context} compact={compact} />
 				) : (
-					<div key="skeleton" className={compact ? "space-y-[var(--demo-gap-sm)]" : "space-y-2.5"}>
-						<div className="flex items-center gap-2">
-							<div className={`animate-pulse rounded-md bg-white/10 ${compact ? "size-5" : "size-6"}`} />
-							<div className={`animate-pulse rounded-full bg-white/10 ${compact ? "h-2 w-16" : "h-2.5 w-24"}`} />
-						</div>
-						<div className={`animate-pulse rounded-lg bg-white/8 ${compact ? "h-12" : "h-16"}`} />
-						<div className={`grid grid-cols-3 ${compact ? "gap-[var(--demo-gap-sm)]" : "gap-2"}`}>
-							<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
-							<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
-							<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
-						</div>
-					</div>
+					<DemoContentSkeleton key="skeleton" compact={compact} />
 				)}
 			</AnimatePresence>
 		</div>
+	);
+}
+
+function ScanMockHeading({
+	context,
+	compact,
+	complete,
+}: {
+	context: DemoStoryContext;
+	compact: boolean;
+	complete: boolean;
+}) {
+	return (
+		<AnimatePresence>
+			{complete ? (
+				<ScanCompleteHeading key="summary" context={context} compact={compact} />
+			) : (
+				<div
+					key="running"
+					className={`flex shrink-0 items-center gap-2.5 ${compact ? "mb-[var(--demo-gap-sm)]" : "mb-3"}`}
+				>
+					<Loader2
+						className={
+							compact ? "demo-node-icon animate-spin text-primary" : "size-4 animate-spin text-primary"
+						}
+					/>
+					<p className={`font-medium text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
+						Running Smart Analysis…
+					</p>
+				</div>
+			)}
+		</AnimatePresence>
+	);
+}
+
+function DeployMockHeading({ compact, isComplete }: { compact: boolean; isComplete: boolean }) {
+	return (
+		<div
+			className={`shrink-0 overflow-hidden rounded-xl border border-border/65 bg-background/70 ${
+				compact ? "demo-mock-card" : "p-3.5"
+			}`}
+		>
+			<div className="flex items-start justify-between gap-3">
+				<div className="flex items-start gap-2.5">
+					<div className={`rounded-lg bg-primary/12 text-primary ${compact ? "p-1" : "p-1.5"}`}>
+						{isComplete ? (
+							<CheckCircle2 className={compact ? "demo-node-icon" : "size-4"} />
+						) : (
+							<Rocket className={compact ? "demo-node-icon" : "size-4"} />
+						)}
+					</div>
+					<div>
+						<p className={`font-semibold text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
+							{isComplete ? "Deployment live" : "Deploy in progress"}
+						</p>
+						<p className={`text-muted-foreground ${compact ? "demo-text-body" : "text-[12px]"}`}>
+							{isComplete ? "Health checks passed" : "Building and pushing to AWS"}
+						</p>
+					</div>
+				</div>
+				<span
+					className={`shrink-0 rounded-full border border-primary/35 bg-primary/10 font-semibold uppercase tracking-[0.12em] text-primary ${
+						compact ? "demo-text-micro px-1.5 py-0.5" : "px-2 py-0.5 text-[10px]"
+					}`}
+				>
+					{isComplete ? "Done" : "Live"}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+function DemoBrowserChrome({ context, compact }: { context: DemoStoryContext; compact: boolean }) {
+	return (
+		<div
+			className={`flex items-center gap-2 border-b border-white/8 bg-[#141414] ${
+				compact ? "px-[var(--demo-pad-inner)] py-1.5" : "px-3 py-2"
+			}`}
+		>
+			<span className={`rounded-full bg-[#ff5f57] ${compact ? "size-2" : "size-2.5"}`} />
+			<span className={`rounded-full bg-[#febc2e] ${compact ? "size-2" : "size-2.5"}`} />
+			<span className={`rounded-full bg-[#28c840] ${compact ? "size-2" : "size-2.5"}`} />
+			<div
+				className={`ml-2 flex flex-1 items-center gap-1.5 rounded-md border border-white/10 bg-black/40 ${
+					compact ? "px-2 py-0.5" : "px-2.5 py-1"
+				}`}
+			>
+				<Globe className={compact ? "demo-node-icon text-emerald-400" : "size-3 text-emerald-400"} />
+				<span className={`truncate font-mono text-slate-300 ${compact ? "demo-text-mono" : "text-[11px]"}`}>
+					https://{context.customDomain}
+				</span>
+			</div>
+		</div>
+	);
+}
+
+function PaintedDemoContent({ context, compact }: { context: DemoStoryContext; compact: boolean }) {
+	return (
+		<m.div
+			key="content"
+			initial={{ opacity: 0, y: 8 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.4, ease: "easeOut" }}
+			className={compact ? "space-y-[var(--demo-gap-sm)]" : "space-y-2.5"}
+		>
+			<PaintedDemoNavigation compact={compact} />
+			<div
+				className={`relative overflow-hidden rounded-lg border border-primary/25 bg-linear-to-br from-primary/35 via-primary/10 to-transparent ${
+					compact ? "h-12" : "h-16"
+				}`}
+			>
+				<div
+					className={`absolute left-3 top-3 rounded-full bg-white/70 ${compact ? "h-1.5 w-14" : "h-2 w-20"}`}
+				/>
+				<div
+					className={`absolute left-3 top-7 rounded-full bg-white/30 ${compact ? "h-1 w-20" : "h-1.5 w-28"}`}
+				/>
+				<div
+					className={`absolute bottom-3 left-3 rounded-md bg-primary shadow-[0_6px_16px_-6px_rgba(245,165,36,0.7)] ${
+						compact ? "h-3 w-12" : "h-4 w-16"
+					}`}
+				/>
+			</div>
+			<div className={`grid grid-cols-3 ${compact ? "gap-[var(--demo-gap-sm)]" : "gap-2"}`}>
+				<div className={`rounded-md border border-white/10 bg-white/12 ${compact ? "h-6" : "h-8"}`} />
+				<div className={`rounded-md border border-primary/25 bg-primary/12 ${compact ? "h-6" : "h-8"}`} />
+				<div className={`rounded-md border border-white/10 bg-white/12 ${compact ? "h-6" : "h-8"}`} />
+			</div>
+			<p className={`pt-0.5 text-center text-slate-400 ${compact ? "demo-text-micro" : "text-[10px]"}`}>
+				{context.serviceLabel} · live on your AWS
+			</p>
+		</m.div>
+	);
+}
+
+function DemoContentSkeleton({ compact }: { compact: boolean }) {
+	return (
+		<div key="skeleton" className={compact ? "space-y-[var(--demo-gap-sm)]" : "space-y-2.5"}>
+			<div className="flex items-center gap-2">
+				<div className={`animate-pulse rounded-md bg-white/10 ${compact ? "size-5" : "size-6"}`} />
+				<div className={`animate-pulse rounded-full bg-white/10 ${compact ? "h-2 w-16" : "h-2.5 w-24"}`} />
+			</div>
+			<div className={`animate-pulse rounded-lg bg-white/8 ${compact ? "h-12" : "h-16"}`} />
+			<div className={`grid grid-cols-3 ${compact ? "gap-[var(--demo-gap-sm)]" : "gap-2"}`}>
+				<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
+				<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
+				<div className={`animate-pulse rounded-md bg-white/8 ${compact ? "h-6" : "h-8"}`} />
+			</div>
+		</div>
+	);
+}
+
+function PaintedDemoNavigation({ compact }: { compact: boolean }) {
+	return (
+		<div className="flex items-center gap-2">
+			<div className={`rounded-md bg-primary/30 ring-1 ring-primary/50 ${compact ? "size-5" : "size-6"}`} />
+			<div className={`rounded-full bg-white/40 ${compact ? "h-2 w-12" : "h-2.5 w-16"}`} />
+			<div className={`rounded-full bg-white/20 ${compact ? "h-2 w-8" : "h-2.5 w-10"}`} />
+			<div
+				className={`ml-auto flex items-center gap-1 rounded-full bg-emerald-400/15 ring-1 ring-emerald-400/40 ${
+					compact ? "px-1 py-0.5" : "px-1.5 py-0.5"
+				}`}
+			>
+				<span className={`animate-pulse rounded-full bg-emerald-400 ${compact ? "size-1" : "size-1.5"}`} />
+				<span
+					className={`font-semibold uppercase tracking-wide text-emerald-300 ${
+						compact ? "demo-text-micro" : "text-[8px]"
+					}`}
+				>
+					Live
+				</span>
+			</div>
+		</div>
+	);
+}
+
+function ScanCompleteHeading({ context, compact }: { context: DemoStoryContext; compact: boolean }) {
+	return (
+		<m.div
+			key="summary"
+			initial={{ opacity: 0, scale: 0.96 }}
+			animate={{ opacity: 1, scale: 1 }}
+			transition={{ duration: 0.32, ease: "easeOut" }}
+			className={`flex shrink-0 items-start gap-2.5 ${compact ? "mb-[var(--demo-gap-sm)]" : "mb-3"}`}
+		>
+			<div className={`rounded-md bg-primary/12 ${compact ? "p-1" : "p-1.5"}`}>
+				<Terminal className={compact ? "demo-node-icon text-primary" : "size-4 text-primary"} />
+			</div>
+			<div className="min-w-0">
+				<p className={`font-semibold text-foreground ${compact ? "demo-text-title" : "text-[13px]"}`}>
+					Smart Analysis complete
+				</p>
+				<p className={`text-muted-foreground ${compact ? "demo-text-body" : "text-[12px]"}`}>
+					{classifySummary(context.framework, context.services.length)}
+				</p>
+			</div>
+		</m.div>
 	);
 }

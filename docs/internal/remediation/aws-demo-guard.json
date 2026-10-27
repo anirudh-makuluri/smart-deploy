@@ -1,0 +1,49 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "aws-demo-guard",
+  "baselineRevision": "8ea3e37d8665a6025be5b46cea08478616e578a1",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Render and validate independent ownership-bound, expiring AWS demo cleanup before runtime provisioning",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 696 },
+  "verification": {
+    "fullUnitFilesBeforeFinalInputTightening": 169,
+    "fullUnitTestsBeforeFinalInputTightening": 1281,
+    "finalFocusedUnitCases": 39,
+    "postgresTests": 153,
+    "dynamoCases": 33,
+    "nativeWorkloadProcesses": 2,
+    "compiledGatewayProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "cookieAndNativeBrowserCases": 21,
+    "cloudformationBasicValidation": true,
+    "cfnLintVersion": "1.58.0",
+    "cfnLintFindings": 0,
+    "cfnGuardVersion": "3.2.1",
+    "complianceRules": 6,
+    "detectedUnsafeMutations": 8,
+    "accessAnalyzerFindings": 0,
+    "iamSimulationCases": 9,
+    "deployedChangeSetValidation": false,
+    "hostedEndToEnd": false,
+    "initialRepairedFailures": [
+      "Typed runtime-environment literals, group IDs, test path resolution and replacement callback annotation.",
+      "Four repeated-array lookup diagnostics and two async-loop diagnostics were repaired using sets and fixed-size batches with bounded SDK sockets, without suppression.",
+      "Final input review added eight cases rejecting trailing line terminators in manifest identities and a hosted-zone regression.",
+      "Three final service cases distinguish a zero-task INACTIVE record with removed tags from active or nonzero-task unowned records."
+    ]
+  },
+  "limitations": [
+    "No stack, role, schedule, secret parameter, certificate, runtime, flags or production migrations were created or enabled.",
+    "Actual prepared-manifest change-set validation, deployed guard inspection/armed invocation and real teardown proof remain required.",
+    "The future workload template must fit the cleanup IAM boundary, use implicit caller credentials, and prohibit standalone tasks/autoscaling.",
+    "EC2 group replacement has no compare-and-swap; the worker/ENI ownership lease must exclude concurrent network writers.",
+    "IAM simulation and local inline Lambda execution do not establish deployed IAM, CloudFormation deletion or AWS network behavior.",
+    "Teardown is not a hard AWS billing cap; full workload, traffic/storage, cost-admission and hosted acceptance gates remain."
+  ]
+}

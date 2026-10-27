@@ -23,6 +23,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 		initiateServiceLogs,
 		clearDeploymentLogs,
 		serviceLogs,
+		requestAppRuntime,
 	} = sessionValue;
 
 	const value = React.useMemo(
@@ -39,6 +40,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 			initiateServiceLogs,
 			clearDeploymentLogs,
 			serviceLogs,
+			requestAppRuntime,
 		}),
 		[
 			deployLogEntries,
@@ -53,6 +55,7 @@ export function WorkerWebSocketProvider({ children }: { children: React.ReactNod
 			initiateServiceLogs,
 			clearDeploymentLogs,
 			serviceLogs,
+			requestAppRuntime,
 		]
 	);
 

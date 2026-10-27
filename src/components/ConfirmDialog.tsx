@@ -63,7 +63,7 @@ export function ConfirmDialog({
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter className="mt-6 gap-3 flex flex-row items-center justify-end">
-					<AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-white hover:text-white transition-all h-10 px-4 rounded-lg font-medium border-0 m-0">
+					<AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 text-white hover:text-white transition-[color,background-color,box-shadow] h-10 px-4 rounded-lg font-medium border-0 m-0">
 						{cancelText}
 					</AlertDialogCancel>
 					<AlertDialogAction
@@ -72,7 +72,7 @@ export function ConfirmDialog({
 							onConfirm();
 						}}
 						className={cn(
-							"h-10 px-6 rounded-lg font-bold shadow-lg transition-all m-0",
+							"h-10 px-6 rounded-lg font-bold shadow-lg transition-[color,background-color,box-shadow] m-0",
 							variant === "destructive"
 								? "bg-destructive hover:bg-destructive/90 text-destructive-foreground shadow-destructive/10"
 								: "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/10"

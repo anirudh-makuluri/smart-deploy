@@ -133,42 +133,7 @@ export function PreviewModeViewEditorPanels({
 			) : null}
 
 			{editor?.kind === "dockerfile" ? (
-				<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
-					<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Railpack plan</div>
-					<div className="mb-2 text-xs text-muted-foreground">
-						Unit: <span className="font-mono">{selectedUnit?.name ?? "—"}</span>
-						{selectedUnit?.root ? (
-							<>
-								{" · "}
-								<span className="font-mono">{selectedUnit.root}</span>
-							</>
-						) : null}
-					</div>
-					<Textarea
-						readOnly
-						value={railpackPlanJson}
-						placeholder="No Railpack plan for this unit."
-						className="min-h-64 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
-					/>
-					{deployUnits.length > 1 ? (
-						<div className="mt-3">
-							<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Switch unit</div>
-							<div className="grid gap-2">
-								{deployUnits.map((unit) => (
-									<Button
-										key={unit.name}
-										type="button"
-										variant="outline"
-										className="h-9 justify-start border-white/10 bg-white/2 px-3 font-mono text-xs"
-										onClick={() => onSetEditor({ kind: "dockerfile", unitName: unit.name })}
-									>
-										{unit.name}
-									</Button>
-								))}
-							</div>
-						</div>
-					) : null}
-				</div>
+				<RailpackPlanEditor selectedUnit={selectedUnit} railpackPlanJson={railpackPlanJson} deployUnits={deployUnits} onSetEditor={onSetEditor} />
 			) : null}
 
 			{editor?.kind === "nginx" ? (
@@ -229,6 +194,59 @@ export function PreviewModeViewEditorPanels({
 					onSaveHostedSubdomain={onSaveHostedSubdomain}
 					onCancelHostedSubdomain={onCancelHostedSubdomain}
 				/>
+			) : null}
+		</div>
+	);
+}
+
+function RailpackPlanEditor({
+	selectedUnit,
+	railpackPlanJson,
+	deployUnits,
+	onSetEditor,
+}: Pick<
+	PreviewModeViewEditorPanelsProps,
+	"selectedUnit" | "railpackPlanJson" | "deployUnits" | "onSetEditor"
+>) {
+	return (
+		<div className="rounded-2xl border border-white/8 bg-white/3 p-4">
+			<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				Railpack plan
+			</div>
+			<div className="mb-2 text-xs text-muted-foreground">
+				Unit: <span className="font-mono">{selectedUnit?.name ?? "—"}</span>
+				{selectedUnit?.root ? (
+					<>
+						{" · "}
+						<span className="font-mono">{selectedUnit.root}</span>
+					</>
+				) : null}
+			</div>
+			<Textarea
+				readOnly
+				value={railpackPlanJson}
+				placeholder="No Railpack plan for this unit."
+				className="min-h-64 rounded-xl border-white/10 bg-white/2 text-sm text-foreground font-mono"
+			/>
+			{deployUnits.length > 1 ? (
+				<div className="mt-3">
+					<div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Switch unit
+					</div>
+					<div className="grid gap-2">
+						{deployUnits.map((unit) => (
+							<Button
+								key={unit.name}
+								type="button"
+								variant="outline"
+								className="h-9 justify-start border-white/10 bg-white/2 px-3 font-mono text-xs"
+								onClick={() => onSetEditor({ kind: "dockerfile", unitName: unit.name })}
+							>
+								{unit.name}
+							</Button>
+						))}
+					</div>
+				</div>
 			) : null}
 		</div>
 	);

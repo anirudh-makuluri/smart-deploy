@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { PostHogProvider } from "posthog-js/react";
 import { PosthogIdentify } from "@/components/analytics/PosthogIdentify";
 import { PosthogWebVitals } from "@/components/analytics/PosthogWebVitals";
+import { privateInvitationNetwork } from "@/lib/analytics/urlPrivacy";
 
 const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "";
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST || "/ph";
@@ -29,6 +30,8 @@ export function PosthogGate({ children }: PosthogGateProps) {
 				person_profiles: "identified_only",
 				capture_pageview: "history_change",
 				capture_pageleave: true,
+					disable_capture_url_hashes: true,
+					session_recording: { maskCapturedNetworkRequestFn: request => privateInvitationNetwork(request.name) ? null : request },
 				debug: posthogDebug,
 				loaded: (posthog) => {
 					if (posthogDebug) {

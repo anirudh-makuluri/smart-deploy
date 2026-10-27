@@ -821,104 +821,7 @@ function AgentEvalRunCard({
 							</div>
 						</form>
 
-						<form action={saveEvalReview} className="space-y-4 rounded-lg border border-white/10 bg-black/20 p-4">
-							<input type="hidden" name="run_id" value={run.runId} />
-							<input type="hidden" name="assistant_message_id" value={run.assistantMessageId} />
-							<input type="hidden" name="user_id" value={run.userId} />
-							<input type="hidden" name="conversation_id" value={run.conversationId} />
-
-							<div className="space-y-1">
-								<label htmlFor="eval-intent" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-									Intent
-								</label>
-								<select
-									id="eval-intent"
-									name="intent"
-									aria-label="Intent"
-									defaultValue={review?.intent ?? review?.judgeIntent ?? run.autoIntent}
-									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
-								>
-									{DEPLOYMENT_AGENT_EVAL_INTENTS.map((intent) => (
-										<option key={intent} value={intent}>
-											{intent}
-										</option>
-									))}
-								</select>
-							</div>
-
-							<div className="space-y-1">
-								<label htmlFor="eval-helpfulness" className="text-[11px] uppercase tracking-wide text-muted-foreground">
-									Helpfulness
-								</label>
-								<select
-									id="eval-helpfulness"
-									name="helpfulness"
-									aria-label="Helpfulness"
-									defaultValue={review?.helpfulness ?? review?.judgeHelpfulness ?? ""}
-									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
-								>
-									<option value="">Unreviewed</option>
-									{DEPLOYMENT_AGENT_EVAL_HELPFULNESS.map((value) => (
-										<option key={value} value={value}>
-											{value}
-										</option>
-									))}
-								</select>
-							</div>
-
-							<div className="space-y-1">
-								<label
-									htmlFor="eval-primary-failure-mode"
-									className="text-[11px] uppercase tracking-wide text-muted-foreground"
-								>
-									Primary failure mode
-								</label>
-								<select
-									id="eval-primary-failure-mode"
-									name="primary_failure_mode"
-									aria-label="Primary failure mode"
-									defaultValue={review?.primaryFailureMode ?? review?.judgePrimaryFailureMode ?? run.suggestedFailureMode ?? ""}
-									className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
-								>
-									<option value="">None</option>
-									{DEPLOYMENT_AGENT_EVAL_FAILURE_MODES.map((value) => (
-										<option key={value} value={value}>
-											{value}
-										</option>
-									))}
-								</select>
-							</div>
-
-							<div className="space-y-1">
-								<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Expected tool path</div>
-								<Input
-									name="expected_tool_path"
-									defaultValue={displayExpectedToolPath(review, run)}
-									className="bg-background/70"
-								/>
-							</div>
-
-							<div className="space-y-1">
-								<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Notes</div>
-								<Textarea
-									name="notes"
-									defaultValue={review?.notes ?? review?.judgeNotes ?? ""}
-									className="min-h-28 bg-background/70"
-									placeholder="Optional manual override notes"
-								/>
-							</div>
-
-							<div className="flex items-center justify-between gap-3">
-								<div className="text-xs text-muted-foreground">
-									{review?.reviewedAt
-										? `Manual review ${formatDateTime(review.reviewedAt)}${review.reviewedByEmail ? ` by ${review.reviewedByEmail}` : ""}`
-										: "No manual override yet"}
-								</div>
-								<Button type="submit" size="sm">
-									Save manual override
-								</Button>
-							</div>
-						</form>
+						<AgentEvalReviewForm run={run} review={review} />
 					</div>
 				</div>
 			</CardContent>
@@ -987,5 +890,119 @@ export default async function AdminAgentEvalsPage({ searchParams }: AgentEvalsPa
 				reviewsByRunId={reviewsByRunId}
 			/>
 		</section>
+	);
+}
+
+function AgentEvalReviewForm({
+	run,
+	review,
+}: {
+	run: DeploymentAgentEvalRun;
+	review: DeploymentAgentEvalReview | null;
+}) {
+	return (
+		<form action={saveEvalReview} className="space-y-4 rounded-lg border border-white/10 bg-black/20 p-4">
+			<input type="hidden" name="run_id" value={run.runId} />
+			<input type="hidden" name="assistant_message_id" value={run.assistantMessageId} />
+			<input type="hidden" name="user_id" value={run.userId} />
+			<input type="hidden" name="conversation_id" value={run.conversationId} />
+
+			<div className="space-y-1">
+				<label htmlFor="eval-intent" className="text-[11px] uppercase tracking-wide text-muted-foreground">
+					Intent
+				</label>
+				<select
+					id="eval-intent"
+					name="intent"
+					aria-label="Intent"
+					defaultValue={review?.intent ?? review?.judgeIntent ?? run.autoIntent}
+					className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
+				>
+					{DEPLOYMENT_AGENT_EVAL_INTENTS.map((intent) => (
+						<option key={intent} value={intent}>
+							{intent}
+						</option>
+					))}
+				</select>
+			</div>
+
+			<div className="space-y-1">
+				<label
+					htmlFor="eval-helpfulness"
+					className="text-[11px] uppercase tracking-wide text-muted-foreground"
+				>
+					Helpfulness
+				</label>
+				<select
+					id="eval-helpfulness"
+					name="helpfulness"
+					aria-label="Helpfulness"
+					defaultValue={review?.helpfulness ?? review?.judgeHelpfulness ?? ""}
+					className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
+				>
+					<option value="">Unreviewed</option>
+					{DEPLOYMENT_AGENT_EVAL_HELPFULNESS.map((value) => (
+						<option key={value} value={value}>
+							{value}
+						</option>
+					))}
+				</select>
+			</div>
+
+			<div className="space-y-1">
+				<label
+					htmlFor="eval-primary-failure-mode"
+					className="text-[11px] uppercase tracking-wide text-muted-foreground"
+				>
+					Primary failure mode
+				</label>
+				<select
+					id="eval-primary-failure-mode"
+					name="primary_failure_mode"
+					aria-label="Primary failure mode"
+					defaultValue={
+						review?.primaryFailureMode ?? review?.judgePrimaryFailureMode ?? run.suggestedFailureMode ?? ""
+					}
+					className="border-input bg-background/70 flex h-10 w-full rounded-md border px-3 text-sm text-foreground"
+				>
+					<option value="">None</option>
+					{DEPLOYMENT_AGENT_EVAL_FAILURE_MODES.map((value) => (
+						<option key={value} value={value}>
+							{value}
+						</option>
+					))}
+				</select>
+			</div>
+
+			<div className="space-y-1">
+				<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Expected tool path</div>
+				<Input
+					name="expected_tool_path"
+					defaultValue={displayExpectedToolPath(review, run)}
+					className="bg-background/70"
+				/>
+			</div>
+
+			<div className="space-y-1">
+				<div className="text-[11px] uppercase tracking-wide text-muted-foreground">Notes</div>
+				<Textarea
+					name="notes"
+					defaultValue={review?.notes ?? review?.judgeNotes ?? ""}
+					className="min-h-28 bg-background/70"
+					placeholder="Optional manual override notes"
+				/>
+			</div>
+
+			<div className="flex items-center justify-between gap-3">
+				<div className="text-xs text-muted-foreground">
+					{review?.reviewedAt
+						? `Manual review ${formatDateTime(review.reviewedAt)}${review.reviewedByEmail ? ` by ${review.reviewedByEmail}` : ""}`
+						: "No manual override yet"}
+				</div>
+				<Button type="submit" size="sm">
+					Save manual override
+				</Button>
+			</div>
+		</form>
 	);
 }

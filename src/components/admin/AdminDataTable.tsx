@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type AdminScalar = string | number | boolean | null;
+export type AdminTableRow = Record<string, AdminScalar> & { id: string | number };
 
 export type AdminTableColumn = {
 	key: string;
@@ -32,7 +33,7 @@ export type AdminTableColumn = {
 
 type AdminDataTableProps = {
 	columns: AdminTableColumn[];
-	rows: Record<string, AdminScalar>[];
+	rows: AdminTableRow[];
 	emptyMessage: string;
 	initialSort?: string;
 };
@@ -167,8 +168,8 @@ export function AdminDataTable({ columns, rows, emptyMessage, initialSort }: Adm
 								</TableCell>
 							</TableRow>
 						) : (
-							visibleRows.map((row, index) => (
-								<TableRow key={String(row.id ?? index)} className="border-white/10">
+							visibleRows.map((row) => (
+								<TableRow key={String(row.id)} className="border-white/10">
 									{columns.map((column) => (
 										<TableCell key={column.key} className="px-3">
 											<CellValue column={column} value={row[column.key]} />

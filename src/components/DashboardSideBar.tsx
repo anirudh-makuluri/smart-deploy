@@ -1,6 +1,7 @@
 "use client";
 
-import { FolderGit2, LayoutGrid, History, User } from "lucide-react";
+import { FolderGit2, LayoutGrid, History, User, AppWindow, type LucideIcon } from "lucide-react";
+import Link from "next/link";
 import { SidebarCollapseToggle } from "@/components/SidebarCollapseToggle";
 import { useAppData } from "@/store/useAppData";
 import { isLiveDeploymentStatus, isProblemDeploymentStatus } from "@/lib/deploymentStatus";
@@ -83,51 +84,10 @@ export default function DashboardSideBar({
 			</div>
 			<div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", collapsed ? "p-2" : "p-4")}>
 				<div className={cn("shrink-0 space-y-2", collapsed && "space-y-2")}>
-					<button
-						type="button"
-						onClick={() => onViewChange("overview")}
-						title="Deployments"
-						className={cn(
-							navButtonBase,
-							collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
-							activeView === "overview"
-								? "border-primary/40 bg-primary/10 text-primary"
-								: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
-						)}
-					>
-						<LayoutGrid className="size-4 shrink-0" aria-hidden />
-						{collapsed ? <span className="sr-only">Deployments</span> : <span>Deployments</span>}
-					</button>
-					<button
-						type="button"
-						onClick={() => onViewChange("history")}
-						title="History"
-						className={cn(
-							navButtonBase,
-							collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
-							activeView === "history"
-								? "border-primary/40 bg-primary/10 text-primary"
-								: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
-						)}
-					>
-						<History className="size-4 shrink-0" aria-hidden />
-						{collapsed ? <span className="sr-only">History</span> : <span>History</span>}
-					</button>
-					<button
-						type="button"
-						onClick={() => onViewChange("repositories")}
-						title="Repositories"
-						className={cn(
-							navButtonBase,
-							collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
-							activeView === "repositories"
-								? "border-primary/40 bg-primary/10 text-primary"
-								: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
-						)}
-					>
-						<FolderGit2 className="size-4 shrink-0" aria-hidden />
-						{collapsed ? <span className="sr-only">Repositories</span> : <span>Repositories</span>}
-					</button>
+					{DASHBOARD_NAV_ITEMS.map(({ view, label, icon }) => (
+						<DashboardNavButton key={view} label={label} icon={icon} collapsed={collapsed} selected={activeView === view} onClick={() => onViewChange(view)} />
+					))}
+					<Link href="/home/apps" prefetch={false} title="Apps & team" className={cn(navButtonBase, "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground", collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2")}><AppWindow className="size-4 shrink-0" aria-hidden />{collapsed ? <span className="sr-only">Apps &amp; team</span> : <span>Apps &amp; team</span>}</Link>
 				</div>
 				{!collapsed && (
 					<div className="mt-auto rounded-lg border border-border bg-background/70 p-3">
@@ -150,5 +110,43 @@ export default function DashboardSideBar({
 				)}
 			</div>
 		</aside>
+	);
+}
+
+const DASHBOARD_NAV_ITEMS = [
+	{ view: "overview", label: "Deployments", icon: LayoutGrid },
+	{ view: "history", label: "History", icon: History },
+	{ view: "repositories", label: "Repositories", icon: FolderGit2 },
+] as const;
+
+function DashboardNavButton({
+	label,
+	icon: Icon,
+	collapsed,
+	selected,
+	onClick,
+}: {
+	label: string;
+	icon: LucideIcon;
+	collapsed: boolean;
+	selected: boolean;
+	onClick: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			title={label}
+			className={cn(
+				navButtonBase,
+				collapsed ? "justify-center px-0 py-2.5" : "gap-2 px-3 py-2",
+				selected
+					? "border-primary/40 bg-primary/10 text-primary"
+					: "border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground",
+			)}
+		>
+			<Icon className="size-4 shrink-0" aria-hidden />
+			{collapsed ? <span className="sr-only">{label}</span> : <span>{label}</span>}
+		</button>
 	);
 }

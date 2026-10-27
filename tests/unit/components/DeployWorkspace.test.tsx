@@ -8,6 +8,7 @@ import { hostedUrlFromSubdomain } from "@/lib/hostedUrl";
 import { makeDeployment } from "../helpers/deployConfigFixture";
 
 const mockUseSession = vi.fn();
+const workspaceProps = { mobileNavOpen: false, onMobileNavOpenChange: vi.fn() };
 const mockUseWorkerWebSocket = vi.fn();
 const mockToastSuccess = vi.fn();
 const mockToastInfo = vi.fn();
@@ -307,7 +308,7 @@ describe("DeployWorkspace", () => {
 	});
 
 	it("shows service-not-found state when no active repo", () => {
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 		expect(screen.getByText("Service not found")).toBeInTheDocument();
 	});
 
@@ -318,7 +319,7 @@ describe("DeployWorkspace", () => {
 			activeServiceName: "web",
 			deployments: [baseDeployment],
 		};
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 		expect(screen.getByText("ConfigTabs").closest("[hidden]")).toBeNull();
 		expect(screen.getByText("DeployOverview").closest("[hidden]")).not.toBeNull();
 	});
@@ -331,7 +332,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, hostedSubdomain: "web" }],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(screen.getByText("DeployOverview")).toBeInTheDocument();
@@ -357,7 +358,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, hostedSubdomain: "web" }],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() =>
 			expect(fetchMock).toHaveBeenCalledWith(
@@ -397,7 +398,7 @@ describe("DeployWorkspace", () => {
 			deployments: [baseDeployment],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(updateDeploymentById).toHaveBeenCalledWith(
@@ -441,7 +442,7 @@ describe("DeployWorkspace", () => {
 			deployments: [baseDeployment],
 		};
 
-		const firstView = renderWithQueryClient(<DeployWorkspace />);
+		const firstView = renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(mockToastSuccess).toHaveBeenCalledWith(
@@ -453,7 +454,7 @@ describe("DeployWorkspace", () => {
 		});
 
 		firstView.unmount();
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
@@ -489,7 +490,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, repoName: "lexiguess-next" }],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		const view = renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(mockToastSuccess).toHaveBeenCalledTimes(1);
@@ -503,7 +504,7 @@ describe("DeployWorkspace", () => {
 		};
 		view.rerender(
 			<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-				<DeployWorkspace />
+				<DeployWorkspace {...workspaceProps} />
 			</QueryClientProvider>
 		);
 
@@ -521,7 +522,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, status: "didnt_deploy", responseId: null, scanResults: {} }],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		const view = renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		fireEvent.click(within(view.container).getByText("OpenScan"));
 		const startAnalysisButton = screen
@@ -582,7 +583,7 @@ describe("DeployWorkspace", () => {
 			deployments: [baseDeployment],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(updateDeploymentById).toHaveBeenCalledWith(
@@ -626,7 +627,7 @@ describe("DeployWorkspace", () => {
 			deployments: [{ ...baseDeployment, hostedSubdomain: "previous" }],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		await waitFor(() => {
 			expect(updateDeploymentById).toHaveBeenCalledWith(
@@ -655,7 +656,7 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
 		expect(screen.queryByText("Redeploy")).not.toBeInTheDocument();
@@ -675,7 +676,7 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		renderWithQueryClient(<DeployWorkspace />);
+		renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		expect(screen.getByText("ConfigTabs")).toBeInTheDocument();
 		expect(screen.queryByText("PauseResume")).not.toBeInTheDocument();
@@ -695,7 +696,7 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		const view = renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 		fireEvent.click(within(view.container).getByText("OpenHistory"));
 		fireEvent.click(screen.getByText("RollbackEntry"));
 		fireEvent.click(screen.getByRole("button", { name: "Rollback Release" }));
@@ -734,7 +735,7 @@ describe("DeployWorkspace", () => {
 			}],
 		};
 
-		const view = renderWithQueryClient(<DeployWorkspace />);
+		const view = renderWithQueryClient(<DeployWorkspace {...workspaceProps} />);
 
 		fireEvent.click(within(view.container).getByText("DeleteDeployment"));
 		fireEvent.click(screen.getByRole("button", { name: "Delete Deployment" }));

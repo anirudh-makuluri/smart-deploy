@@ -91,11 +91,7 @@ export function BuildVerificationPanel({
 		[activeSource, buildVerification?.log_excerpt],
 	);
 
-	const durationLabel = formatBuildVerificationDuration(buildVerification?.duration_seconds);
-	const attempts = buildVerification?.attempts;
-	const backend = buildVerification?.backend?.trim();
 	const message = buildVerification?.message?.trim();
-	const railpackTag = normalizeRailpackFrontendTag(railpackVersion);
 	const showPanel = Boolean(message || logSources.length > 0 || buildVerification);
 
 	if (!showPanel) return null;
@@ -108,7 +104,7 @@ export function BuildVerificationPanel({
 			<div className="rounded-2xl border border-white/5 bg-white/2 p-6 shadow-xl backdrop-blur-sm overflow-hidden relative">
 				<div className="absolute top-0 left-0 w-full h-[2px] bg-white/5">
 					<div
-						className={`h-full transition-all duration-700 ease-out ${meta.barClass}`}
+						className={`h-full transition-[width,background-color] duration-700 ease-out ${meta.barClass}`}
 						style={{ width: uiStatus === "passed" ? "100%" : uiStatus === "failed" ? "100%" : "35%" }}
 					/>
 				</div>
@@ -125,72 +121,119 @@ export function BuildVerificationPanel({
 						</div>
 					</div>
 
-					<div className="flex flex-wrap items-center gap-2 shrink-0">
-						{backend ? (
-							<span className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
-								<Hammer className="size-3.5 text-primary" />
-								{backend}
-							</span>
-						) : null}
-						{attempts != null && attempts > 0 ? (
-							<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
-								{attempts} attempt{attempts === 1 ? "" : "s"}
-							</span>
-						) : null}
-						{durationLabel ? (
-							<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
-								{durationLabel}
-							</span>
-						) : null}
-						{railpackVersion ? (
-							<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-mono text-muted-foreground">
-								{railpackTag ?? railpackVersion}
-							</span>
-						) : null}
-					</div>
+					<BuildVerificationMetadata buildVerification={buildVerification} railpackVersion={railpackVersion} />
 				</div>
 
-				{logSources.length > 1 ? (
-					<div className="mt-4 flex flex-wrap gap-2">
-						{logSources.map((source) => (
-							<Button
-								key={source.id}
-								type="button"
-								size="sm"
-								variant={activeSource?.id === source.id ? "default" : "outline"}
-								className="h-8 font-mono text-xs"
-								onClick={() => setSelectedLogSourceId(source.id)}
-							>
-								{source.label}
-								{source.result ? ` · ${source.result}` : ""}
-							</Button>
-						))}
-					</div>
-				) : null}
+				<BuildLogSourceSelector sources={logSources} activeId={activeSource?.id ?? null} onSelect={setSelectedLogSourceId} />
 			</div>
 
-			<div className="flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl">
-				{logEntries.length > 0 ? (
-					<ServiceLogs
-						key={`${repoName ?? ""}:${serviceName ?? ""}:${activeSource?.id ?? "verification"}`}
-						logs={logEntries}
-						repoName={repoName}
-						serviceName={serviceName}
-						deployStatus={serviceLogsStatus}
-						displayLimit={5}
-						scrollable={true}
-					/>
-				) : (
-					<div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
-						<p className="text-sm font-medium text-muted-foreground/80">No build log output captured</p>
-						<p className="mt-1 max-w-md text-xs text-muted-foreground/60">
-							{uiStatus === "skipped"
-								? "Verification was skipped on sd-artifacts for this analyze run."
-								: "Run Improve or re-analyze to produce a fresh build log."}
-						</p>
-					</div>
-				)}
-			</div>
+			<BuildVerificationLogs logEntries={logEntries} repoName={repoName} serviceName={serviceName} sourceId={activeSource?.id} serviceLogsStatus={serviceLogsStatus} uiStatus={uiStatus} />
+		</div>
+	);
+}
+
+function BuildVerificationMetadata({
+	buildVerification,
+	railpackVersion,
+}: Pick<BuildVerificationPanelProps, "buildVerification" | "railpackVersion">) {
+	const durationLabel = formatBuildVerificationDuration(buildVerification?.duration_seconds);
+	const attempts = buildVerification?.attempts;
+	const backend = buildVerification?.backend?.trim();
+	const railpackTag = normalizeRailpackFrontendTag(railpackVersion);
+	return (
+		<div className="flex flex-wrap items-center gap-2 shrink-0">
+			{backend ? (
+				<span className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
+					<Hammer className="size-3.5 text-primary" />
+					{backend}
+				</span>
+			) : null}
+			{attempts != null && attempts > 0 ? (
+				<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
+					{attempts} attempt{attempts === 1 ? "" : "s"}
+				</span>
+			) : null}
+			{durationLabel ? (
+				<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-medium text-muted-foreground">
+					{durationLabel}
+				</span>
+			) : null}
+			{railpackVersion ? (
+				<span className="rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs font-mono text-muted-foreground">
+					{railpackTag ?? railpackVersion}
+				</span>
+			) : null}
+		</div>
+	);
+}
+
+function BuildLogSourceSelector({
+	sources,
+	activeId,
+	onSelect,
+}: {
+	sources: ReturnType<typeof collectBuildLogSources>;
+	activeId: string | null;
+	onSelect: (id: string) => void;
+}) {
+	return (
+		<>
+			{sources.length > 1 ? (
+				<div className="mt-4 flex flex-wrap gap-2">
+					{sources.map((source) => (
+						<Button
+							key={source.id}
+							type="button"
+							size="sm"
+							variant={activeId === source.id ? "default" : "outline"}
+							className="h-8 font-mono text-xs"
+							onClick={() => onSelect(source.id)}
+						>
+							{source.label}
+							{source.result ? ` · ${source.result}` : ""}
+						</Button>
+					))}
+				</div>
+			) : null}
+		</>
+	);
+}
+
+function BuildVerificationLogs({
+	logEntries,
+	repoName,
+	serviceName,
+	sourceId,
+	serviceLogsStatus,
+	uiStatus,
+}: Pick<BuildVerificationPanelProps, "repoName" | "serviceName"> & {
+	logEntries: ReturnType<typeof parseBuildLogExcerpt>;
+	sourceId: string | undefined;
+	serviceLogsStatus: string;
+	uiStatus: ReturnType<typeof resolveBuildVerificationUiStatus>;
+}) {
+	return (
+		<div className="flex min-h-[280px] flex-col overflow-hidden rounded-2xl border border-white/5 bg-[#0A0A0F] shadow-2xl">
+			{logEntries.length > 0 ? (
+				<ServiceLogs
+					key={`${repoName ?? ""}:${serviceName ?? ""}:${sourceId ?? "verification"}`}
+					logs={logEntries}
+					repoName={repoName}
+					serviceName={serviceName}
+					deployStatus={serviceLogsStatus}
+					displayLimit={5}
+					scrollable={true}
+				/>
+			) : (
+				<div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+					<p className="text-sm font-medium text-muted-foreground/80">No build log output captured</p>
+					<p className="mt-1 max-w-md text-xs text-muted-foreground/60">
+						{uiStatus === "skipped"
+							? "Verification was skipped on sd-artifacts for this analyze run."
+							: "Run Improve or re-analyze to produce a fresh build log."}
+					</p>
+				</div>
+			)}
 		</div>
 	);
 }

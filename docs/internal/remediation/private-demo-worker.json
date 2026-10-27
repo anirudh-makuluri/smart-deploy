@@ -1,0 +1,38 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "private-demo-worker",
+  "baselineRevision": "eda186e06985885cb17d572447e6c2c8bef2e901",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Runtime-only authenticated WebSocket worker with a fixed demo lifetime and separate non-root image target",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 766 },
+  "verification": {
+    "fullUnitFiles": 189,
+    "fullUnitTests": 1520,
+    "nativeTransportTests": 9,
+    "compiledProcessTests": 3,
+    "compiledGatewayTests": 2,
+    "typecheck": true,
+    "fullLint": true,
+    "workerCompilation": true,
+    "doctorComplete": true,
+    "localDockerAvailable": false,
+    "actualLinuxImageCiRequired": true,
+    "exactHeadCiPending": true,
+    "actualAwsRuntime": false,
+    "manualTwoAccountHostedTestDeferredByUser": true
+  },
+  "limitations": [
+    "Native transport uses real signed tokens with controlled session authority/controller; it is not hosted user authentication proof.",
+    "Compiled CLI fixtures use an unreachable database, fake catalog and no AWS credentials.",
+    "The image test must verify the built-in exact source version, dedicated command, non-root/read-only execution and SIGTERM in Linux CI.",
+    "Initial full Doctor92/one URL-parse warning was repaired with URL.canParse and rescanned without suppression.",
+    "Server expiry cannot stop billable AWS resources; the independent guard, lease, cost admission and quarantined boot remain required.",
+    "Hosted AWS build/catalog/bootstrap/data/network/version and observed teardown remain unverified.",
+    "No AWS resources/startup, production migrations/flags/provider connections, account/session/email or deployment changed."
+  ]
+}

@@ -1,13 +1,16 @@
 import React from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { repoType } from "@/app/types";
+import { makeRepo } from "../helpers/repoFixture";
 import { useWorkerWebSocketSession } from "@/custom-hooks/useWorkerWebSocket";
 import { useAppData } from "@/store/useAppData";
+import { RUNTIME_APP, RUNTIME_REQUEST, runtimeView } from "../helpers/runtimeView";
+
+const identity = vi.hoisted(() => ({ userId: "user-1" as string | null, sessionId: "session-1" }));
 
 vi.mock("@/lib/auth-client", () => ({
 	authClient: {
-		useSession: () => ({ data: { user: { id: "user-1" } } }),
+		useSession: () => ({ data: identity.userId ? { user: { id: identity.userId }, session: { id: identity.sessionId } } : null }),
 	},
 }));
 
@@ -32,6 +35,14 @@ class MockSocket {
 	managerHandlers = new Map<string, Set<(...args: unknown[]) => void>>();
 	reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	manualDisconnect = false;
+	volatileWrites = 0;
+	ackTimeout = 0;
+	get volatile() { this.volatileWrites++; return this; }
+	timeout(milliseconds: number) { this.ackTimeout = milliseconds; return this; }
+	async emitWithAck(event: string, payload: { requestId: string; appId: string }) {
+		this.emittedEvents.push({ event, payload });
+		return { ok: true, requestId: payload.requestId, appId: payload.appId, view: runtimeView() };
+	}
 	io = {
 		on: (event: string, handler: (...args: unknown[]) => void) => {
 			const set = this.managerHandlers.get(event) ?? new Set<(...args: unknown[]) => void>();
@@ -40,6 +51,9 @@ class MockSocket {
 		},
 		removeAllListeners: () => {
 			this.managerHandlers.clear();
+		},
+		off: (event: string, handler: (...args: unknown[]) => void) => {
+			this.managerHandlers.get(event)?.delete(handler);
 		},
 	};
 
@@ -53,6 +67,11 @@ class MockSocket {
 		const set = this.handlers.get(event) ?? new Set<(...args: unknown[]) => void>();
 		set.add(handler);
 		this.handlers.set(event, set);
+		return this;
+	}
+
+	off(event: string, handler: (...args: unknown[]) => void) {
+		this.handlers.get(event)?.delete(handler);
 		return this;
 	}
 
@@ -165,6 +184,16 @@ function Harness() {
 	return <div data-testid="socket-status">{socketStatus}</div>;
 }
 
+function HarnessWithPublishing({ actorId = "user-1" }: { actorId?: string }) {
+	const { requestAppRuntime, socketStatus } = useWorkerWebSocketSession();
+	const [outcome, setOutcome] = React.useState("");
+	async function inspect() {
+		try { await requestAppRuntime(actorId, { action: "inspect", appId: RUNTIME_APP, requestId: RUNTIME_REQUEST }, new AbortController().signal); setOutcome("confirmed"); }
+		catch { setOutcome("unconfirmed"); }
+	}
+	return <><div data-testid="socket-status">{socketStatus}</div><div data-testid="publish-outcome">{outcome}</div><button onClick={() => void inspect()}>Inspect releases</button></>;
+}
+
 function HarnessWithLogs() {
 	const { clearDeploymentLogs, deployLogEntries, deployStatus, socketStatus } = useWorkerWebSocketSession();
 
@@ -202,16 +231,18 @@ function HarnessWithAgent() {
 
 describe("useWorkerWebSocketSession", () => {
 	beforeEach(() => {
+		identity.userId = "user-1";
+		identity.sessionId = "session-1";
 		vi.useFakeTimers();
 		MockSocket.instances = [];
 		useAppData.setState({
-			activeRepo: {
-				id: 1,
+			activeRepo: makeRepo({
+				id: "1",
 				name: "smart-deploy",
 				full_name: "acme/smart-deploy",
 				html_url: "https://github.com/acme/smart-deploy",
 				owner: { login: "acme" },
-			} as repoType,
+			}),
 			activeServiceName: "web",
 		});
 	});
@@ -266,6 +297,123 @@ describe("useWorkerWebSocketSession", () => {
 		expect(screen.getByTestId("socket-status").textContent).toBe("open");
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 		expect(MockSocket.instances.length).toBe(1);
+	});
+
+	it("removes its exact listeners and cancels pending reconnects on unmount", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		const socket = MockSocket.instances[0]!;
+		const external = vi.fn();
+		socket.on("deploy:log", external);
+		socket.io.on("reconnect_attempt", external);
+		act(() => socket.close());
+		expect(socket.reconnectTimer).not.toBeNull();
+		view.unmount();
+		expect(socket.manualDisconnect).toBe(true);
+		expect(socket.reconnectTimer).toBeNull();
+		expect([...socket.handlers.values()].flatMap((set) => [...set])).toEqual([external]);
+		expect([...socket.managerHandlers.values()].flatMap((set) => [...set])).toEqual([external]);
+		await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("replaces the connection and clears logs and cached credentials when the signed-in user changes", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		const oldSocket = MockSocket.instances[0]!;
+		act(() => oldSocket.emitServer("deploy:log", { msg: "First user's log" }));
+		expect(screen.getByTestId("log-count").textContent).toBe("1");
+		identity.userId = "user-2";
+		view.rerender(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		expect(oldSocket.manualDisconnect).toBe(true);
+		expect(MockSocket.instances).toHaveLength(2);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		act(() => oldSocket.emitServer("deploy:log", { msg: "Stale user's log" }));
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+	});
+
+	it("retires the socket and cached token when the same user receives a new login session", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<Harness />); await act(async () => { await Promise.resolve(); });
+		const previous = MockSocket.instances[0]!; identity.sessionId = "session-2"; view.rerender(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		expect(previous.manualDisconnect).toBe(true); expect(MockSocket.instances).toHaveLength(2); expect(fetchMock).toHaveBeenCalledTimes(2); expect(screen.getByTestId("socket-status")).toHaveTextContent("open");
+	});
+	it("uses a bounded volatile acknowledgement with only the runtime command", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		render(<HarnessWithPublishing />); await act(async () => { await Promise.resolve(); });
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		const socket = MockSocket.instances[0]!; expect(socket.volatileWrites).toBe(1); expect(socket.ackTimeout).toBe(22000);
+		expect(socket.emittedEvents.filter(row => row.event === "apps:runtime")).toEqual([{ event: "apps:runtime", payload: { action: "inspect", appId: RUNTIME_APP, requestId: RUNTIME_REQUEST } }]);
+		expect(screen.getByTestId("publish-outcome")).toHaveTextContent("confirmed");
+	});
+	it("does not send a runtime command for a different actor or an offline socket", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<HarnessWithPublishing actorId="different-user" />); await act(async () => { await Promise.resolve(); });
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		expect(screen.getByTestId("publish-outcome")).toHaveTextContent("unconfirmed");
+		view.rerender(<HarnessWithPublishing />); act(() => MockSocket.instances[0]!.close());
+		await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Inspect releases" })); });
+		expect(MockSocket.instances[0]!.volatileWrites).toBe(0);
+	});
+	it("does not reconnect or retain displayed logs after sign-out", async () => {
+		vi.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true,
+			json: async () => ({ token: createMockWsToken(Date.now() + 300000) }),
+		} as Response);
+		const view = render(<HarnessWithLogs />);
+		await act(async () => { await Promise.resolve(); });
+		const socket = MockSocket.instances[0]!;
+		act(() => socket.emitServer("deploy:log", { msg: "Private log" }));
+		identity.userId = null;
+		view.rerender(<HarnessWithLogs />);
+		await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+		expect(screen.getByTestId("socket-status").textContent).toBe("closed");
+		expect(screen.getByTestId("log-count").textContent).toBe("0");
+		expect(socket.manualDisconnect).toBe(true);
+		expect(MockSocket.instances).toHaveLength(1);
+	});
+
+	it("does not open a disposed socket when an in-flight token request completes", async () => {
+		let resolveResponse: (response: Response) => void = () => { throw new Error("Request not started"); };
+		vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+		const view = render(<Harness />);
+		const socket = MockSocket.instances[0]!;
+		view.unmount();
+		await act(async () => {
+			resolveResponse({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+			await Promise.resolve();
+		});
+		expect(socket.connected).toBe(false);
+		expect([...socket.handlers.values()].every((set) => set.size === 0)).toBe(true);
+	});
+
+	it("keeps a late previous-user token isolated from the new connection's reconnect cache", async () => {
+		let resolveOldToken: (response: Response) => void = () => { throw new Error("No old request"); };
+		const fetchMock = vi.spyOn(globalThis, "fetch")
+			.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveOldToken = resolve; }))
+			.mockResolvedValue({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 300000) }) } as Response);
+		const view = render(<Harness />);
+		identity.userId = "user-2";
+		view.rerender(<Harness />);
+		await act(async () => { await Promise.resolve(); });
+		expect(screen.getByTestId("socket-status").textContent).toBe("open");
+		await act(async () => {
+			resolveOldToken({ ok: true, json: async () => ({ token: createMockWsToken(Date.now() + 600000) }) } as Response);
+			await Promise.resolve();
+		});
+		act(() => MockSocket.instances[1]!.close());
+		await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(MockSocket.instances[0]!.connected).toBe(false);
+		expect(screen.getByTestId("socket-status").textContent).toBe("open");
 	});
 
 	it("streams deploy logs in real time for the active workspace", async () => {
@@ -362,13 +510,13 @@ describe("useWorkerWebSocketSession", () => {
 
 		await act(async () => {
 			useAppData.setState({
-				activeRepo: {
-					id: 2,
+				activeRepo: makeRepo({
+					id: "2",
 					name: "Pluto",
 					full_name: "acme/Pluto",
 					html_url: "https://github.com/acme/Pluto",
 					owner: { login: "acme" },
-				} as repoType,
+				}),
 				activeServiceName: "server-node",
 			});
 		});

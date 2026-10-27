@@ -3,9 +3,11 @@ import { Server, Socket } from "socket.io";
 import { verifyWebSocketAuthToken } from "@/lib/wsAuth";
 import { getWorkerDeploymentRoom, getWorkerUserRoom, resolveWorkerSocketIoPath } from "@/lib/workerSocketEvents";
 import { isOriginAllowed } from "@/lib/wsOrigin";
+import { installWorkerSessionGuard, requireWorkerSession } from "@/lib/workerSocketAuthorization";
 
 export type WorkerSocketData = {
 	userID: string;
+	sessionID: string;
 	userLabel: string;
 };
 
@@ -19,6 +21,10 @@ export function createWorkerSocketServer(server: http.Server, allowedOrigins: st
 	}
 
 	ioServer = new Server(server, {
+		allowRequest(request, callback) {
+			const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
+			callback(null, allowedOrigins.length > 0 && isOriginAllowed(origin, allowedOrigins));
+		},
 		path: resolveWorkerSocketIoPath(process.env.NEXT_PUBLIC_WS_URL?.trim() || ""),
 		cors: {
 			origin(origin, callback) {
@@ -34,17 +40,20 @@ export function createWorkerSocketServer(server: http.Server, allowedOrigins: st
 		},
 	});
 
-	ioServer.use((socket, next) => {
-		const authToken = typeof socket.handshake.auth.token === "string" ? socket.handshake.auth.token : "";
-		const authPayload = verifyWebSocketAuthToken(authToken);
-		if (!authPayload?.userID) {
-			next(new Error("Unauthorized"));
-			return;
-		}
+	ioServer.use(async (socket, next) => {
+		try {
+			const authToken = typeof socket.handshake.auth.token === "string" ? socket.handshake.auth.token : "";
+			const authPayload = verifyWebSocketAuthToken(authToken);
+			if (!authPayload) throw new Error("Unauthorized");
+			await requireWorkerSession(authPayload.userID, authPayload.sessionID);
+			if (socket.conn.readyState !== "open") throw new Error("Unauthorized");
 
-		socket.data.userID = authPayload.userID;
-		socket.data.userLabel = authPayload.userID.slice(0, 4) || "user";
-		next();
+			socket.data.userID = authPayload.userID;
+			socket.data.sessionID = authPayload.sessionID;
+			socket.data.userLabel = authPayload.userID.slice(0, 4) || "user";
+			installWorkerSessionGuard(socket, authPayload.userID, authPayload.sessionID);
+			next();
+		} catch { next(new Error("Unauthorized")); }
 	});
 
 	return ioServer;

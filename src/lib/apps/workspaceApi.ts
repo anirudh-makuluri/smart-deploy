@@ -1,0 +1,52 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import config from "@/config";
+import { auth } from "@/lib/auth";
+import { getDbPool } from "@/lib/dbPool";
+import { WorkspaceError, WorkspaceStore } from "./workspaceStore";
+import { AppStore } from "./appStore";
+import { PlatformAccessError, requirePlatformAccess } from "@/lib/platformAccess";
+
+export const WorkspaceNameInput = z.strictObject({ name: z.string().trim().min(1).max(120) });
+export const InvitationInput = z.strictObject({ email: z.string().trim().pipe(z.email().max(254)), role: z.enum(["member", "admin"]) });
+export const MemberInput = z.strictObject({ userId: z.string().min(1).max(200) });
+export const MemberRoleInput = MemberInput.extend({ role: z.enum(["member", "admin"]) });
+export const InvitationAcceptanceInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+
+export function workspaceJson(value: unknown, status = 200): NextResponse {
+	return NextResponse.json(value, { status, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+}
+
+export async function parseWorkspaceBody<T>(request: Request, schema: z.ZodType<T>): Promise<T> {
+	let body: unknown;
+	try { body = await request.json(); }
+	catch { throw new WorkspaceError(400, "Invalid JSON."); }
+	const result = schema.safeParse(body);
+	if (!result.success) throw new WorkspaceError(400, "Invalid request fields.");
+	return result.data;
+}
+
+interface WorkspaceApiContext { userId: string; store: WorkspaceStore; apps: AppStore }
+
+export async function withWorkspaceApi(
+	request: Request,
+	action: (context: WorkspaceApiContext) => Promise<NextResponse>
+): Promise<NextResponse> {
+	try {
+		if (!config.WORKSPACE_APPS_ENABLED) throw new WorkspaceError(503, "Workspace applications are not enabled.");
+		if (request.method !== "GET" && request.headers.get("origin") !== new URL(request.url).origin) {
+			throw new WorkspaceError(403, "A same-origin browser request is required.");
+		}
+		const session = await auth.api.getSession({ headers: request.headers, query: { disableCookieCache: true, disableRefresh: true } });
+		if (!session?.user?.id) throw new WorkspaceError(401, "Unauthorized.");
+		await requirePlatformAccess(session.user);
+		const pool = getDbPool();
+		return await action({ userId: session.user.id, store: new WorkspaceStore(pool), apps: new AppStore(pool) });
+	} catch (error) {
+		if (error instanceof PlatformAccessError) return workspaceJson({ error: error.message }, error.status);
+		if (error instanceof WorkspaceError) return workspaceJson({ error: error.message }, error.status);
+		// Do not log invitation tokens, request bodies, or database row details.
+		console.error("Workspace request failed.");
+		return workspaceJson({ error: "Workspace request failed." }, 500);
+	}
+}

@@ -1,0 +1,93 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "session-socket-recovery",
+  "baselineRevision": "6383349b46cc58d3b45995e16a42d3007e670def",
+  "candidateBaseRevision": "1f6a299c2c8d764cdaf47aed321584c72c09ff24",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "workflowBaseline": {
+    "errorCount": 3,
+    "warningCount": 46,
+    "affectedFileCount": 34,
+    "totalDiagnosticCount": 49,
+    "score": 49,
+    "scoreLabel": "Critical"
+  },
+  "before": {
+    "errorCount": 1,
+    "warningCount": 46,
+    "affectedFileCount": 33,
+    "totalDiagnosticCount": 47,
+    "score": 72,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 46,
+    "affectedFileCount": 32,
+    "totalDiagnosticCount": 46,
+    "score": 81,
+    "scoreLabel": "Needs work"
+  },
+  "diagnostics": [
+    {
+      "fingerprint": "8f0aa6d3cc7f998684904d3a9c4dc032f6acc89a270ded50824b78bc5bfae2b0",
+      "path": "src/custom-hooks/useWorkerWebSocket.ts",
+      "id": "src/custom-hooks/useWorkerWebSocket.ts::389:2::react-doctor/effect-needs-cleanup::ba8dc9c9f68974f35e5b84c8da4285dbed2bd04701efd52241a946f9c80b532c",
+      "evidence": "Existing effect already returned removeAllListeners/disconnect teardown. Account-bound lifecycle and explicit on/off ownership were implemented for separately confirmed behavior defects, without suppressing this rule.",
+      "assessment": "Rejected",
+      "rule": "effect-needs-cleanup"
+    }
+  ],
+  "confirmedIssues": [
+    "Client sign-out accepted SDK error results and navigated without verified revocation.",
+    "Worker connection and cached credentials survived a direct signed-in user ID change."
+  ],
+  "collateral": [
+    ".github/workflows/ci.yml",
+    "package.json",
+    "playwright.config.ts",
+    "tsconfig.json",
+    "src/components/Header.tsx",
+    "src/components/auth/SessionFailureLogoutGuard.tsx",
+    "src/lib/platformSignOut.ts",
+    "src/custom-hooks/useWorkerWebSocket.ts",
+    "tests/unit/components/Header.signOut.test.tsx",
+    "tests/unit/components/SessionFailureLogoutGuard.test.tsx",
+    "tests/unit/lib/useWorkerWebSocket.session.test.tsx",
+    "tests/e2e/session-logout.spec.mts",
+    "tests/database/helpers.ts",
+    "tests/database/helpers.mts",
+    "tests/database/appUseGrants.test.ts",
+    "tests/database/appWorkspaces.test.ts",
+    "tests/database/browserHandoff.test.ts",
+    "tests/database/gatewayAuth.test.ts",
+    "tests/database/gatewayServiceAuth.test.ts",
+    "tests/database/platformLogout.test.ts",
+    "tests/database/workspaceInvitations.test.ts",
+    "docs/internal/CLIENT_SESSION_RECOVERY.md"
+  ],
+  "productionReady": false,
+  "initialCandidateBaseRevision": "eae46593a65b2295c91868d8f11ff374bf20ac14",
+  "rebasedFrom": "fba977935dd5486b9d9deb40e7956193e7077e85",
+  "productionBaseRevision": "a8af9f3d42e9248c1568be9e9a537837975537b9",
+  "validationSourceRevision": "be8a5ce9b0fbc6a410fd5c684f689e752d565d3d",
+  "afterRebase": {
+    "errorCount": 0,
+    "warningCount": 46,
+    "affectedFileCount": 32,
+    "totalDiagnosticCount": 46,
+    "score": 81,
+    "scoreLabel": "Needs work"
+  },
+  "rebasedParentSummary": {
+    "errorCount": 1,
+    "warningCount": 46,
+    "affectedFileCount": 33,
+    "totalDiagnosticCount": 47,
+    "score": 73,
+    "scoreLabel": "Needs work"
+  }
+}

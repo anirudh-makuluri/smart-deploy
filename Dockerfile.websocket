@@ -36,3 +36,10 @@ ENV NODE_ENV=production \
 EXPOSE 4001
 
 CMD ["node", "dist/websocket-server.js"]
+
+FROM runner AS private-demo
+USER 10001:10001
+CMD ["node", "dist/private-demo-worker.js"]
+
+# Keep the normal worker's default entrypoint and user unchanged.
+FROM runner AS production

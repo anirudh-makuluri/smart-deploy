@@ -28,7 +28,7 @@ export function ConfigTabsEnvVarsSection({ envEntryCount, onEdit }: ConfigTabsEn
 					<Button
 						type="button"
 						variant="outline"
-						className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg font-bold flex items-center gap-2 transition-all active:scale-95 text-[10px]"
+						className="bg-primary/10 border-primary/20 hover:bg-primary/20 text-primary h-9 px-4 rounded-lg font-bold flex items-center gap-2 transition-[color,background-color,scale] active:scale-95 text-[10px]"
 						onClick={onEdit}
 					>
 						<Settings2 className="size-3.5" />

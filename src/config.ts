@@ -5,6 +5,17 @@ const config = {
 
 	// Better Auth DB (Supabase Postgres connection string)
 	DATABASE_URL: process.env.DATABASE_URL || "",
+	// Enable only after all current app/workspace migrations are applied.
+	WORKSPACE_APPS_ENABLED: process.env.WORKSPACE_APPS_ENABLED === "true",
+	PRIVATE_APP_GATEWAY_ENABLED: process.env.PRIVATE_APP_GATEWAY_ENABLED === "true",
+	PRIVATE_APP_PUBLISH_ENABLED: process.env.PRIVATE_APP_PUBLISH_ENABLED === "true",
+	PRIVATE_APP_PUBLISH_CONFIG: process.env.PRIVATE_APP_PUBLISH_CONFIG || "",
+	PRIVATE_APP_DOCUMENTS_ENABLED: process.env.PRIVATE_APP_DOCUMENTS_ENABLED === "true",
+	APP_DOCUMENTS_APP_ID: process.env.APP_DOCUMENTS_APP_ID || "",
+	APP_DOCUMENTS_TABLE_ARN: process.env.APP_DOCUMENTS_TABLE_ARN || "",
+	APP_DOCUMENTS_ROLE_ARN: process.env.APP_DOCUMENTS_ROLE_ARN || "",
+	GATEWAY_CODE_TTL_SECONDS: process.env.GATEWAY_CODE_TTL_SECONDS || "",
+	GATEWAY_SESSION_TTL_SECONDS: process.env.GATEWAY_SESSION_TTL_SECONDS || "",
 
 	// GitHub App (OAuth credentials are used by Better Auth; the private key is server-only).
 	GITHUB_APP_ID: process.env.GITHUB_APP_ID || "",

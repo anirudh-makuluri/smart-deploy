@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { getDbPool } from "@/lib/dbPool";
+import { platformAuthCookiePolicy } from "@/lib/authCookiePolicy";
 
 function env(name: string): string {
 	return (process.env[name] || "").trim();
@@ -30,6 +31,7 @@ export const auth = betterAuth({
 	database: env("DATABASE_URL") ? getDbPool() : undefined,
 	secret: env("BETTER_AUTH_SECRET"),
 	baseURL: env("BETTER_AUTH_URL"),
+	advanced: platformAuthCookiePolicy(env("BETTER_AUTH_URL")),
 	emailAndPassword: {
 		enabled: true,
 	},

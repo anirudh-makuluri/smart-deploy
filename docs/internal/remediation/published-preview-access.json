@@ -1,0 +1,83 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "published-preview-access",
+  "purpose": "Published-only app-use grants and owner/admin preview authorization",
+  "baselineRevision": "a94f60266c4f57c2cf2d93710af0decd9311b3d8",
+  "candidateBaseRevision": "a94f60266c4f57c2cf2d93710af0decd9311b3d8",
+  "baselineEvidence": "Final verified #109 source snapshot, scanned before commit while HEAD was da99bf2; contents now committed as a94f602",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/apps/appStore.ts",
+    "src/lib/apps/gatewayAuthStore.ts",
+    "src/lib/apps/types.ts",
+    "tests/database/browserHandoff.test.ts",
+    "tests/database/gatewayAuth.test.ts",
+    "tests/database/gatewayServiceAuth.test.ts",
+    "tests/database/platformLogout.test.ts",
+    "tests/e2e/prepare-auth-schema.mjs",
+    "tests/unit/api/browserHandoff.route.test.ts",
+    "tests/unit/api/gateway.route.test.ts",
+    "supabase/migrations/20261024_gateway_environments.sql",
+    "docs/internal/APP_GATEWAY_AUTH.md",
+    "docs/internal/PUBLISHED_PREVIEW_ACCESS.md"
+  ],
+  "verification": {
+    "regressionsFailedAgainstParentModules": 7,
+    "regressionParentTests": 29,
+    "unitFiles": 137,
+    "unitTests": 623,
+    "databaseFiles": 8,
+    "databaseTests": 100,
+    "newDatabaseCases": 12,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 10,
+    "fullDoctorFiles": 591,
+    "doctorScansComplete": true,
+    "signedCookieAndMachineRouteTests": true,
+    "approvalService": "mocked",
+    "verifiedIdentity": "local SQL fixture",
+    "migrationUpgradeAndRerun": true,
+    "classificationRaces": true,
+    "databaseServerStopped": true,
+    "renderedBrowserAudit": false,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Control-plane checks do not establish trusted runtime routing, origin-bypass protection or isolated persistent resources.",
+    "Migration requires quiesced older issuers, fresh app login once and explicit operator publication classification. No production migration performed.",
+    "Full repository >=95 and complete-feature production gates remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

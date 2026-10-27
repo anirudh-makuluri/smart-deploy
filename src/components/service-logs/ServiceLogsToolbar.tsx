@@ -127,85 +127,119 @@ export function ServiceLogsToolbar({
 			</div>
 
 			{showFilterInput && (
-				<div className="space-y-2 px-3 pb-2">
-					<div className="flex flex-wrap items-center gap-2">
-						<button
-							type="button"
-							className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-								ruleMode === "exclude"
-									? "bg-destructive/15 text-destructive border border-destructive/30"
-									: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+				<KeywordFilterEditor
+					keywordRules={keywordRules}
+					ruleMode={ruleMode}
+					onRuleModeChange={onRuleModeChange}
+					ruleInput={ruleInput}
+					onRuleInputChange={onRuleInputChange}
+					onAddKeywordRule={onAddKeywordRule}
+					onRemoveKeywordRule={onRemoveKeywordRule}
+					onClearKeywordRules={onClearKeywordRules}
+				/>
+			)}
+		</div>
+	);
+}
+
+function KeywordFilterEditor({
+	keywordRules,
+	ruleMode,
+	onRuleModeChange,
+	ruleInput,
+	onRuleInputChange,
+	onAddKeywordRule,
+	onRemoveKeywordRule,
+	onClearKeywordRules,
+}: Pick<
+	ServiceLogsToolbarProps,
+	| "keywordRules"
+	| "ruleMode"
+	| "onRuleModeChange"
+	| "ruleInput"
+	| "onRuleInputChange"
+	| "onAddKeywordRule"
+	| "onRemoveKeywordRule"
+	| "onClearKeywordRules"
+>) {
+	return (
+		<div className="space-y-2 px-3 pb-2">
+			<div className="flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+						ruleMode === "exclude"
+							? "bg-destructive/15 text-destructive border border-destructive/30"
+							: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+					}`}
+					onClick={() => onRuleModeChange("exclude")}
+				>
+					<Minus className="size-3" />
+					Exclude
+				</button>
+				<button
+					type="button"
+					className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+						ruleMode === "include"
+							? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
+							: "text-muted-foreground hover:bg-muted/40 border border-transparent"
+					}`}
+					onClick={() => onRuleModeChange("include")}
+				>
+					<Plus className="size-3" />
+					Include
+				</button>
+				<input
+					type="text"
+					className="min-w-0 flex-1 basis-40 bg-background/60 border border-border/50 rounded-md px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
+					placeholder={ruleMode === "exclude" ? "Keyword to hide..." : "Keyword to show..."}
+					value={ruleInput}
+					onChange={(e) => onRuleInputChange(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") onAddKeywordRule();
+					}}
+					aria-label={ruleMode === "exclude" ? "Keyword to hide from logs" : "Keyword to include in logs"}
+				/>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="h-7 px-2.5 text-xs"
+					onClick={onAddKeywordRule}
+					disabled={!ruleInput.trim()}
+				>
+					Add
+				</Button>
+			</div>
+			{keywordRules.length > 0 && (
+				<div className="flex flex-wrap gap-1.5">
+					{keywordRules.map((rule, i) => (
+						<span
+							key={`${rule.mode}-${rule.keyword}`}
+							className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+								rule.mode === "exclude"
+									? "bg-destructive/10 text-destructive border border-destructive/20"
+									: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
 							}`}
-							onClick={() => onRuleModeChange("exclude")}
 						>
-							<Minus className="size-3" />
-							Exclude
-						</button>
-						<button
-							type="button"
-							className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-								ruleMode === "include"
-									? "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30"
-									: "text-muted-foreground hover:bg-muted/40 border border-transparent"
-							}`}
-							onClick={() => onRuleModeChange("include")}
-						>
-							<Plus className="size-3" />
-							Include
-						</button>
-						<input
-							type="text"
-							className="min-w-0 flex-1 basis-40 bg-background/60 border border-border/50 rounded-md px-2.5 py-1 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
-							placeholder={ruleMode === "exclude" ? "Keyword to hide..." : "Keyword to show..."}
-							value={ruleInput}
-							onChange={(e) => onRuleInputChange(e.target.value)}
-							onKeyDown={(e) => {
-								if (e.key === "Enter") onAddKeywordRule();
-							}}
-							aria-label={ruleMode === "exclude" ? "Keyword to hide from logs" : "Keyword to include in logs"}
-						/>
-						<Button
-							type="button"
-							variant="outline"
-							size="sm"
-							className="h-7 px-2.5 text-xs"
-							onClick={onAddKeywordRule}
-							disabled={!ruleInput.trim()}
-						>
-							Add
-						</Button>
-					</div>
-					{keywordRules.length > 0 && (
-						<div className="flex flex-wrap gap-1.5">
-							{keywordRules.map((rule, i) => (
-								<span
-									key={`${rule.mode}-${rule.keyword}`}
-									className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
-										rule.mode === "exclude"
-											? "bg-destructive/10 text-destructive border border-destructive/20"
-											: "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-									}`}
-								>
-									{rule.mode === "exclude" ? "−" : "+"} {rule.keyword}
-									<button
-										type="button"
-										aria-label={`Remove keyword filter ${rule.keyword}`}
-										className="hover:opacity-70"
-										onClick={() => onRemoveKeywordRule(i)}
-									>
-										<X className="size-3" />
-									</button>
-								</span>
-							))}
+							{rule.mode === "exclude" ? "−" : "+"} {rule.keyword}
 							<button
 								type="button"
-								className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1"
-								onClick={onClearKeywordRules}
+								aria-label={`Remove keyword filter ${rule.keyword}`}
+								className="hover:opacity-70"
+								onClick={() => onRemoveKeywordRule(i)}
 							>
-								Clear all
+								<X className="size-3" />
 							</button>
-						</div>
-					)}
+						</span>
+					))}
+					<button
+						type="button"
+						className="text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1"
+						onClick={onClearKeywordRules}
+					>
+						Clear all
+					</button>
 				</div>
 			)}
 		</div>

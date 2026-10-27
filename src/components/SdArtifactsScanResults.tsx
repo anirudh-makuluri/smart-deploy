@@ -61,42 +61,7 @@ export default function SdArtifactsScanResults({
 
 	return (
 		<div className="w-full flex-1 flex flex-col min-h-[600px] animate-in fade-in slide-in-from-bottom-4 duration-700">
-			<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 pb-6 border-b border-border">
-				<div>
-					<div className="flex items-center gap-3 mb-2">
-						<span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
-							<CheckCircle2 className="size-3" />
-							Analysis complete
-						</span>
-						{scanTime != null && scanTime > 0 ? (
-							<span className="text-[10px] text-muted-foreground font-mono">
-								{Math.round(scanTime / 1000)}s
-							</span>
-						) : null}
-					</div>
-					<h2 className="text-3xl font-bold tracking-tight text-foreground">Build Analysis</h2>
-					<p className="text-sm text-muted-foreground mt-1">
-						{deployment.repoName}
-						{deployment.serviceName !== "." ? ` / ${deployment.serviceName}` : ""}
-						{packagePath && packagePath !== "." ? ` · ${packagePath}` : ""}
-					</p>
-				</div>
-				<div className="flex flex-wrap items-center gap-2">
-					<Button variant="ghost" onClick={onCancel} className="text-muted-foreground">
-						Reject
-					</Button>
-					{onStartImproveScan ? (
-						<Button variant="outline" onClick={() => setImproveDialogOpen(true)} className="gap-2">
-							<RefreshCw className="size-4" />
-							Improve
-						</Button>
-					) : null}
-					<Button onClick={onStartDeployment} disabled={!buildOk} className="gap-2 font-semibold">
-						<Rocket className="size-4" />
-						Deploy
-					</Button>
-				</div>
-			</div>
+			<AnalysisHeading deployment={deployment} scanTime={scanTime} packagePath={packagePath} buildOk={buildOk} canImprove={Boolean(onStartImproveScan)} onCancel={onCancel} onStartDeployment={onStartDeployment} onImprove={() => setImproveDialogOpen(true)} />
 
 			<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
 				<div className="rounded-xl border border-border bg-card p-4">
@@ -189,6 +154,59 @@ export default function SdArtifactsScanResults({
 				packagePath={packagePath}
 				onStartImproveScan={onStartImproveScan}
 			/>
+		</div>
+	);
+}
+
+function AnalysisHeading({
+	deployment,
+	scanTime,
+	packagePath,
+	buildOk,
+	canImprove,
+	onCancel,
+	onStartDeployment,
+	onImprove,
+}: Pick<
+	SdArtifactsScanResultsProps,
+	"deployment" | "scanTime" | "packagePath" | "onCancel" | "onStartDeployment"
+> & { buildOk: boolean; canImprove: boolean; onImprove: () => void }) {
+	return (
+		<div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 pb-6 border-b border-border">
+			<div>
+				<div className="flex items-center gap-3 mb-2">
+					<span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">
+						<CheckCircle2 className="size-3" />
+						Analysis complete
+					</span>
+					{scanTime != null && scanTime > 0 ? (
+						<span className="text-[10px] text-muted-foreground font-mono">
+							{Math.round(scanTime / 1000)}s
+						</span>
+					) : null}
+				</div>
+				<h2 className="text-3xl font-bold tracking-tight text-foreground">Build Analysis</h2>
+				<p className="text-sm text-muted-foreground mt-1">
+					{deployment.repoName}
+					{deployment.serviceName !== "." ? ` / ${deployment.serviceName}` : ""}
+					{packagePath && packagePath !== "." ? ` · ${packagePath}` : ""}
+				</p>
+			</div>
+			<div className="flex flex-wrap items-center gap-2">
+				<Button variant="ghost" onClick={onCancel} className="text-muted-foreground">
+					Reject
+				</Button>
+				{canImprove ? (
+					<Button variant="outline" onClick={onImprove} className="gap-2">
+						<RefreshCw className="size-4" />
+						Improve
+					</Button>
+				) : null}
+				<Button onClick={onStartDeployment} disabled={!buildOk} className="gap-2 font-semibold">
+					<Rocket className="size-4" />
+					Deploy
+				</Button>
+			</div>
 		</div>
 	);
 }

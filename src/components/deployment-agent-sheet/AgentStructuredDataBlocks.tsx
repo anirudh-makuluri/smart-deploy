@@ -277,6 +277,27 @@ function RuntimeHealthBlock({
 	);
 }
 
+function HistoryFailureDetails({ entry }: { entry: AgentHistoryEntry }) {
+	if (entry.success || !(entry.failedStep || entry.failureSummary)) return null;
+	return (
+		<div className="mt-2.5 rounded-md border border-destructive/20 bg-background/60 p-2.5">
+			<div className="flex items-start gap-2">
+				<AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+				<div className="min-w-0 space-y-1">
+					{entry.failedStep ? (
+						<div className="text-xs font-medium text-destructive">Failed at: {entry.failedStep}</div>
+					) : null}
+					{entry.failureSummary ? (
+						<div className="break-words text-xs leading-relaxed text-muted-foreground">
+							{entry.failureSummary}
+						</div>
+					) : null}
+				</div>
+			</div>
+		</div>
+	);
+}
+
 function HistoryEntryRow({ entry }: { entry: AgentHistoryEntry }) {
 	const [logsExpanded, setLogsExpanded] = React.useState(false);
 
@@ -317,23 +338,7 @@ function HistoryEntryRow({ entry }: { entry: AgentHistoryEntry }) {
 				</div>
 			</div>
 
-			{!entry.success && (entry.failedStep || entry.failureSummary) ? (
-				<div className="mt-2.5 rounded-md border border-destructive/20 bg-background/60 p-2.5">
-					<div className="flex items-start gap-2">
-						<AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-						<div className="min-w-0 space-y-1">
-							{entry.failedStep ? (
-								<div className="text-xs font-medium text-destructive">Failed at: {entry.failedStep}</div>
-							) : null}
-							{entry.failureSummary ? (
-								<div className="break-words text-xs leading-relaxed text-muted-foreground">
-									{entry.failureSummary}
-								</div>
-							) : null}
-						</div>
-					</div>
-				</div>
-			) : null}
+			<HistoryFailureDetails entry={entry} />
 
 			{entry.recentLogs.length > 0 ? (
 				<div className="mt-2">

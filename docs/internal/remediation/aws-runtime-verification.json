@@ -1,0 +1,81 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "aws-runtime-verification",
+  "purpose": "Read actual task/image/ENI/subnet/security-group evidence for trusted private-runtime expectations without provisioning or activation",
+  "baselineRevision": "7b455cf8599470c817820a13d1250a31b1956ae6",
+  "candidateBaseRevision": "7b455cf8599470c817820a13d1250a31b1956ae6",
+  "baselineEvidence": "Exact #119 parent 7b455cf and complete prior unfiltered report; all parent CI and preview checks pass",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/aws/pilotRuntimeSchema.ts",
+    "src/lib/aws/pilotTaskEvidence.ts",
+    "src/lib/aws/pilotNetworkEvidence.ts",
+    "src/lib/aws/pilotRuntimeVerifier.ts",
+    "tests/helpers/pilotRuntimeFixture.ts",
+    "tests/unit/lib/pilotRuntimeVerifier.test.ts",
+    "docs/internal/AWS_RUNTIME_VERIFICATION.md",
+    "docs/internal/APP_RUNTIME_REGISTRATION.md"
+  ],
+  "verification": {
+    "unitFiles": 151,
+    "unitTests": 1044,
+    "newVerifierCases": 88,
+    "publicIngressPredicateMutationFailed": 1,
+    "fixture": "Real verifier and SDK command objects with mocked SDK clients and synthetic AWS response metadata; no AWS calls or SigV4/IAM/live Fargate proof",
+    "policy": "Two pinned app/TLS containers; task/definition/context consistency, no task IAM role/Exec/shared volumes, scoped secret refs, exact private ENI/subnet/groups and gateway-only ingress",
+    "lifecycle": "Fresh second task read, caller cancellation, timeout, close, partial/paginated replies, admission held until actual SDK settlement and late results discarded",
+    "initialFixtureRepair": "Removed a node-environment override incompatible with shared window setup; tests use the repository standard environment",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "unchangedDiagnosticIds": true,
+    "completeChangedFiles": 6,
+    "completeFullFiles": 640,
+    "databaseAndBrowser": "No SQL/browser changes; unchanged 134 database and compiled browser suites pass in exact #119 CI, not repeated locally for this read-only component",
+    "buildDatabase": "Explicit disposable local database and disabled feature flags for configured build; server stopped afterward",
+    "buildWarning": "Existing serviceDetectionClassification.ts filesystem tracing warning retained",
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false,
+    "liveAwsVerification": false
+  },
+  "limitations": [
+    "No production caller, launch/registration adapter, immutable-release fingerprint recheck or actual workload TLS/readiness proof.",
+    "Trusted launcher must curate execution role and TLS image/configuration; actual IAM policies, SSM encryption/delivery and app secret values are not inspected.",
+    "Non-atomic point-in-time AWS metadata; ongoing drift protection and live direct-origin tests still required.",
+    "Fixed Linux X86_64 Fargate 1.4.0 quarter-CPU/512-MiB profile, single-platform image digests and scoped SSM references only.",
+    "Does not enforce egress or $10 spending; arbitrary outbound app traffic needs complete network/cost controls before provisioning.",
+    "Full Doctor >=95, WebSockets, AWS ingress/wake/idle, isolated persistent data/secrets/quotas, UI/tools and integrated hosted acceptance remain."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

@@ -1,0 +1,45 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "workspace-invitation-ui",
+  "baselineRevision": "8ea3e37d8665a6025be5b46cea08478616e578a1",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Review and explicitly accept a verified recipient's workspace invitation through the existing authentication and membership APIs",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 699 },
+  "verification": {
+    "unitFiles": 170,
+    "unitTests": 1296,
+    "newUnitCases": 43,
+    "compiledPrivateBrowser": 18,
+    "newCompiledInvitationBrowser": 3,
+    "compiledPublicBrowser": 5,
+    "compiledGatewayProcesses": 2,
+    "nativeWorkloadProcesses": 2,
+    "typecheck": true,
+    "lint": true,
+    "privateAndPublicProductionBuilds": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "doctorComplete": true,
+    "mobileVisuallyInspected": true,
+    "hostedEndToEnd": false,
+    "remoteAnalyticsRecording": false,
+    "initialRepairedFailures": [
+      "Typecheck caught the actual PostHog CapturedNetworkRequest.name field.",
+      "Three Doctor diagnostics repaired with a separate callback module, coherent request state and explicit UTC formatting, without suppression.",
+      "Wrong-account browser denial worked, but an unscoped alert locator also matched Next's hidden announcer; scope it to the invitation region."
+    ]
+  },
+  "limitations": [
+    "Creator workspace/app/invitation/grant UI and publish/launch integration remain separate work.",
+    "Acceptance does not grant application use, management or preview access.",
+    "Ambiguous acceptance may have committed and cannot retry in the same flow.",
+    "Browser account verification/approval/OAuth identity are local controlled fixtures, not hosted provider proof.",
+    "The unchanged SQL/storage suites pass exact parent CI; they were not repeated locally for this UI-only slice.",
+    "No production account, invitation, email, provider connection, flags, migrations, AWS resources or worker start."
+  ]
+}

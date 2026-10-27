@@ -6,6 +6,7 @@ import type { DeploymentHistoryEntry } from "@/app/types";
 import { fetchDeploymentHistoryPage } from "@/lib/graphqlClient";
 import { doesEntryMatchActiveDeployment } from "@/components/deployment-history/deploymentHistoryUtils";
 import { DEPLOYMENT_HISTORY_PAGE_LIMIT } from "@/components/deployment-history/deploymentHistoryConstants";
+import { requestFailureAnalysis } from "@/lib/failureAnalysis";
 import type { DeploymentHistoryPageData, DeploymentHistoryProps } from "@/components/deployment-history/types";
 
 export function useDeploymentHistory({
@@ -68,22 +69,10 @@ export function useDeploymentHistory({
 	const handleWhyDidItFail = React.useCallback(async (entry: DeploymentHistoryEntry) => {
 		setAnalyzingId(entry.id);
 		try {
-			const res = await fetch("/api/llm/analyze-failure", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ runId: entry.id }),
-			});
-			const data = (await res.json().catch(() => ({}))) as {
-				response?: string;
-				error?: string;
-				details?: string;
-			};
-			if (!res.ok) {
-				throw new Error(data.error || data.details || "Analysis failed.");
-			}
+			const analysis = await requestFailureAnalysis(entry.id);
 			setAnalysisByEntryId((prev) => ({
 				...prev,
-				[entry.id]: data.response || data.error || data.details || "Analysis failed.",
+				[entry.id]: analysis,
 			}));
 		} catch (err) {
 			setAnalysisByEntryId((prev) => ({

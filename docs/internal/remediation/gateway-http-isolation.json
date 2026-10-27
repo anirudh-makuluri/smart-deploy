@@ -1,0 +1,91 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "gateway-http-isolation",
+  "purpose": "Browser origin, cookie and header isolation policy plus shared fail-closed reserved-path classification",
+  "baselineRevision": "84c63f24d394ff8f7a0f6913a471be24f154d7c4",
+  "candidateBaseRevision": "84c63f24d394ff8f7a0f6913a471be24f154d7c4",
+  "baselineEvidence": "Final verified #113 source snapshot scanned before commit while HEAD was 6636bb7; source now committed as 84c63f2",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "docs/internal/GATEWAY_HTTP_ISOLATION.md",
+    "src/lib/gateway/httpIsolation.ts",
+    "src/lib/gateway/paths.ts",
+    "tests/e2e/gateway-http-isolation.spec.ts",
+    "tests/unit/lib/gatewayHttpIsolation.test.ts",
+    "playwright.cookies.config.ts",
+    "src/lib/gateway/browserAuth.ts",
+    "src/lib/gateway/browserTransactions.ts",
+    "tests/unit/lib/gatewayBrowserAuth.test.ts",
+    "tests/unit/lib/gatewayBrowserTransactions.test.ts"
+  ],
+  "userDecisions": {
+    "customerAuthorization": "Strip Authorization initially; user confirmed in this chat"
+  },
+  "verification": {
+    "unitFiles": 146,
+    "unitTests": 820,
+    "newUnitTests": 59,
+    "focusedFinalTests": 116,
+    "parentRegressionsFailed": 7,
+    "nativePolicyCases": 7,
+    "nativeAdapterAndTransactionCases": 10,
+    "compiledNextDatabaseBrowserCases": 10,
+    "totalBrowserCases": 27,
+    "policyFixtureIdentity": "Fixed identity and seeded cookies only; no authentication or customer upstream",
+    "compiledFixtureIdentity": "Actual Better Auth signed cookies and PostgreSQL routes/stores; simulated approval, SQL verification and fixed private app content",
+    "serviceWorkerFixtureTrust": "Separate Chromium process trusts only generated certificate SPKI; no page-wide bypass, positive isolated and dedicated worker checks",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "finalBuild": "Repeated with local dummy platform auth and disabled feature flags after allocation-only lookup optimization",
+    "afterLookupOptimization": "116 focused unit tests, seven policy browser cases, full typecheck/lint/worker/build and Doctor passed again",
+    "scopedDoctorFiles": 9,
+    "fullDoctorFiles": 618,
+    "doctorScansComplete": true,
+    "unchangedFullDiagnosticIds": true,
+    "databaseSuite": "Unchanged 107-test suite passed in exact #113 CI; not separately repeated locally here. Actual compiled database/browser integration was repeated.",
+    "databaseStopped": true,
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Policy only: consumer must authenticate/authorize freshly and verify exclusive upstream TLS before forwarding; no listener or customer transport is added.",
+    "Authorization and reserved auth cookie namespaces are unsupported for customer app auth in this first pilot.",
+    "Root service workers are blocked on fresh origins; existing workers are not removed. Fresh never-reused private origins are required; in-place conversion unsupported until migration proof.",
+    "Header bounds are not body/concurrency/admission/distributed rate or cost enforcement.",
+    "WebSocket upgrades are rejected by this HTTP policy; separate origin/revalidation/limits remain.",
+    "Full repository >=95, AWS private ingress/direct-origin denial, data/secrets/usage, publish/share/invitation UI/tools and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

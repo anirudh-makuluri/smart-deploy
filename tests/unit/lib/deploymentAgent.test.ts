@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeHealthSample } from "@/app/types";
+import type { AgentSocketMessage } from "@/lib/deploymentAgent/types";
 
 const appendConversationTurnMock = vi.fn();
 const getUserDeploymentsMock = vi.fn();
@@ -135,7 +136,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			);
 
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
-		const events: Array<{ event: string; payload: { runId: string; message: string } }> = [];
+		const events: Array<{ event: string; payload: AgentSocketMessage }> = [];
 
 		await runDeploymentAgent({
 			conversationId: "conversation-1",
@@ -529,7 +530,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			});
 
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
-		const events: Array<{ event: string; payload: { message: string } }> = [];
+		const events: Array<{ event: string; payload: AgentSocketMessage }> = [];
 
 		await runDeploymentAgent({
 			conversationId: "conversation-1",
@@ -560,7 +561,7 @@ describe("deploymentAgent.runDeploymentAgent", () => {
 			.mockRejectedValueOnce(new Error("Model unavailable"));
 
 		const { runDeploymentAgent } = await import("@/lib/deploymentAgent");
-		const events: Array<{ event: string; payload: { runId: string; message: string } }> = [];
+		const events: Array<{ event: string; payload: AgentSocketMessage }> = [];
 
 		await runDeploymentAgent({
 			conversationId: "conversation-1",

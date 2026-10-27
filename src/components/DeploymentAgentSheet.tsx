@@ -95,6 +95,35 @@ const markdownComponents = {
 	),
 };
 
+function AssistantCompletedContent({ message }: { message: DeploymentAgentMessage }) {
+	const prepared = prepareAgentAssistantMessage(message.content, message.docCitations);
+	const showContent = message.content.trim().length > 0;
+	const showStructuredData = message.structuredData.blocks.length > 0;
+	return (
+		<>
+			{showContent ? (
+				<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+					{prepared?.displayContent ?? message.content}
+				</ReactMarkdown>
+			) : null}
+
+			{showStructuredData ? (
+				<div className={cn(showContent && "mt-3")}>
+					<AgentStructuredDataBlocks data={message.structuredData} />
+				</div>
+			) : null}
+
+			{message.activity.length > 0 ? (
+				<div className={cn(showContent && "mt-3")}>
+					<AgentActivityTimeline steps={message.activity} pending={false} />
+				</div>
+			) : null}
+
+			{prepared ? <DeploymentAgentDocBadges citations={prepared.docCitations} /> : null}
+		</>
+	);
+}
+
 function AssistantMessage({
 	message,
 	copiedMessageId,
@@ -104,12 +133,6 @@ function AssistantMessage({
 	copiedMessageId: string | null;
 	onCopy: (id: string, content: string) => void;
 }) {
-	const prepared = !message.pending
-		? prepareAgentAssistantMessage(message.content, message.docCitations)
-		: null;
-	const showContent = !message.pending && message.content.trim().length > 0;
-	const showStructuredData =
-		!message.pending && message.structuredData.blocks.length > 0;
 
 	return (
 		<div className="flex min-w-0 max-w-4/5 items-start gap-2.5">
@@ -121,27 +144,7 @@ function AssistantMessage({
 					{message.pending ? (
 						<AgentActivityTimeline steps={message.activity} pending />
 					) : (
-						<>
-							{showContent ? (
-								<ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-									{prepared?.displayContent ?? message.content}
-								</ReactMarkdown>
-							) : null}
-
-							{showStructuredData ? (
-								<div className={cn(showContent && "mt-3")}>
-									<AgentStructuredDataBlocks data={message.structuredData} />
-								</div>
-							) : null}
-
-							{message.activity.length > 0 ? (
-								<div className={cn(showContent && "mt-3")}>
-									<AgentActivityTimeline steps={message.activity} pending={false} />
-								</div>
-							) : null}
-
-							{prepared ? <DeploymentAgentDocBadges citations={prepared.docCitations} /> : null}
-						</>
+						<AssistantCompletedContent message={message} />
 					)}
 				</div>
 

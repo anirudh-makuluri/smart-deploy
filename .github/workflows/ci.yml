@@ -2,10 +2,154 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
 
 jobs:
+  database-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: foundation-test-only
+          POSTGRES_DB: smartdeploy_foundation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:database
+        env:
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+
+      - name: Install browser for database-backed client checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify logout in the actual browser and server
+        run: npm run test:e2e:database
+        env:
+          RUN_DATABASE_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-browser-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          WAITING_LIST_ENABLED: 'false'
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logout-browser-evidence
+          path: test-results/
+
+      - name: Verify invitee login cannot unlock platform APIs
+        run: npm run test:e2e:invitee
+        env:
+          RUN_INVITEE_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-browser-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          WAITING_LIST_ENABLED: 'true'
+          SUPABASE_URL: http://127.0.0.1:45558
+          SUPABASE_SERVICE_ROLE_KEY: local-approval-fixture-only
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save invitee browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: invitee-browser-evidence
+          path: test-results/
+
+      - name: Verify HTTPS platform cookies against sibling injection
+        run: npm run test:e2e:cookies
+        env:
+          RUN_COOKIE_BROWSER_TESTS: '1'
+          RUN_GATEWAY_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_SECRET: local-cookie-ci-only-secret-never-for-production
+
+      - name: Save cookie browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cookie-browser-evidence
+          path: test-results/
+
+      - name: Verify real app confirmation and gateway over HTTPS
+        run: npm run test:e2e:app-login
+        env:
+          RUN_APP_LOGIN_BROWSER_TESTS: '1'
+          TEST_DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          DATABASE_URL: postgres://postgres:foundation-test-only@127.0.0.1:5432/smartdeploy_foundation_test
+          BETTER_AUTH_URL: https://localhost:34433
+          BETTER_AUTH_SECRET: local-confirmation-ci-only-secret-never-for-production
+          WORKSPACE_APPS_ENABLED: 'true'
+          PRIVATE_APP_GATEWAY_ENABLED: 'true'
+          PRIVATE_APP_PUBLISH_ENABLED: 'true'
+          NEXT_PUBLIC_WS_URL: wss://localhost:34435/ws
+          GATEWAY_CODE_TTL_SECONDS: '60'
+          GATEWAY_SESSION_TTL_SECONDS: '900'
+          WAITING_LIST_ENABLED: 'true'
+          SUPABASE_URL: http://127.0.0.1:45559
+          SUPABASE_SERVICE_ROLE_KEY: local-confirmation-approval-only
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save app confirmation browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-confirmation-browser-evidence
+          path: test-results/
+
+      - name: Verify compiled public views and analytics credential boundary
+        run: npm run test:e2e:public
+        env:
+          RUN_PUBLIC_BROWSER_TESTS: '1'
+          RUN_PROXY_BROWSER_TESTS: '1'
+          POSTHOG_UPSTREAM_HOST: http://127.0.0.1:45557
+          DATABASE_URL: ''
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          BETTER_AUTH_URL: http://localhost:3000
+          BETTER_AUTH_SECRET: local-public-browser-ci-only-secret-never-for-production
+          NEXT_PUBLIC_POSTHOG_KEY: ''
+
+      - name: Save public browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-browser-evidence
+          path: test-results/
+
+      - name: Verify curated notes browser assets and versioned saves
+        run: npx playwright test --config playwright.notes.config.ts
+
+      - name: Save curated notes browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curated-notes-browser-evidence
+          path: test-results/
+
   build-and-test:
     runs-on: ubuntu-latest
 
@@ -26,7 +170,56 @@ jobs:
         run: npm run lint
 
       - name: Run tests
-        run: npm run test
+        run: npm run test -- --maxWorkers=2
+
+      - name: Setup Java for pinned loopback DynamoDB tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Verify app document transactions and seven-day retention
+        run: npm run test:documents
 
       - name: Build application
         run: npm run build
+
+      - name: Verify compiled workload TLS process
+        run: npm run test:workload
+
+      - name: Build isolated workload TLS image
+        run: docker build --platform linux/amd64 -f infra/workload-tls.Dockerfile -t smartdeploy-workload-tls:ci dist/workload-tls
+
+      - name: Verify isolated workload TLS container
+        run: npm run test:workload:container
+
+      - name: Build curated notes demo image
+        run: docker build --platform linux/amd64 --build-arg NOTES_RELEASE=v1 -f demo/notes/Dockerfile -t smartdeploy-notes:ci demo/notes
+
+      - name: Verify isolated curated notes container
+        run: npx vitest run --config vitest.notes-container.config.ts
+
+      - name: Typecheck application and test fixtures
+        run: npm run typecheck
+
+      - name: Build WebSocket worker
+        run: npm run ws:build
+
+      - name: Verify runtime-only demo worker transport, process and expiry
+        run: npx vitest run --config vitest.private-demo-worker.config.ts
+
+      - name: Build runtime-only demo worker image
+        run: docker build --platform linux/amd64 --target private-demo --build-arg WORKER_VERSION=${{ github.event.pull_request.head.sha }} -f Dockerfile.websocket -t smartdeploy-private-demo-worker:ci .
+
+      - name: Verify runtime-only non-root read-only worker container
+        run: npx vitest run --config vitest.private-demo-worker-container.config.ts
+        env:
+          EXPECTED_DEMO_WORKER_VERSION: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify compiled private gateway entrypoint and expiry
+        run: npm run test:gateway:process
+
+      - name: Check complete repository React health
+        run: |
+          npx --yes react-doctor@0.9.18 . --json --json-out "${{ runner.temp }}/react-doctor-release.json" --yes --no-parallel
+          node scripts/verify-react-doctor-release.mjs "${{ runner.temp }}/react-doctor-release.json"

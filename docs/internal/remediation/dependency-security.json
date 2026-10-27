@@ -1,0 +1,83 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "dependency-security",
+  "baselineRevision": "6383349b46cc58d3b45995e16a42d3007e670def",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 3,
+    "warningCount": 46,
+    "affectedFileCount": 34,
+    "totalDiagnosticCount": 49,
+    "score": 49,
+    "scoreLabel": "Critical"
+  },
+  "after": {
+    "errorCount": 1,
+    "warningCount": 46,
+    "affectedFileCount": 33,
+    "totalDiagnosticCount": 47,
+    "score": 72,
+    "scoreLabel": "Needs work"
+  },
+  "diagnostics": [
+    {
+      "id": "package.json::66:5::socket/low-supply-chain-score::237b5f4570c50fe451c152e9d6e24a9774548f757b4a80aae3a422165666de83",
+      "fingerprint": "f3973fc4d92ddda605af503cde45335288c12674388a7afc6e702d1215820372",
+      "path": "package.json",
+      "rule": "socket/low-supply-chain-score",
+      "assessment": "confirmed dependency security risk",
+      "resolution": "upgraded and validated in candidate; not merged"
+    },
+    {
+      "id": "package.json::97:5::socket/low-supply-chain-score::482ca5b175edb2c28e147b80d4e862cced57ff13452bb89529b1b41d0f8d5c56",
+      "fingerprint": "c1277387bc2d5321a7336b427560f7fa212d144755d3659f70f35462e6e13fbe",
+      "path": "package.json",
+      "rule": "socket/low-supply-chain-score",
+      "assessment": "confirmed dependency security risk",
+      "resolution": "upgraded and validated in candidate; not merged"
+    }
+  ],
+  "audits": {
+    "productionVulnerabilities": 0,
+    "fullVulnerabilities": 0
+  },
+  "collateral": [
+    "AGENTS.md",
+    ".github/workflows/ci.yml",
+    "package-lock.json",
+    "src/app/types.ts",
+    "src/lib/apps/workspaceApi.ts",
+    "src/lib/apps/gatewayApi.ts",
+    "src/app/api/apps/handoff/route.ts",
+    "src/lib/apps/platformLogout.ts",
+    "tests/unit/helpers/repoFixture.ts",
+    "tests/unit/api/workspaces.route.test.ts",
+    "tests/unit/app/RepoPageClient.test.tsx",
+    "tests/unit/components/DeployWorkspace.test.tsx",
+    "tests/unit/components/HeaderActions.test.tsx",
+    "tests/unit/lib/deploymentAgent.test.ts",
+    "tests/unit/lib/deploymentReleaseArtifacts.test.ts",
+    "tests/unit/lib/sessionHelpers.test.ts",
+    "tests/unit/lib/useWorkerWebSocket.session.test.tsx",
+    "tests/unit/lib/utils.dashboard-count.test.ts",
+    "docs/internal/APP_GATEWAY_LOGOUT.md",
+    "docs/internal/RUNTIME_DEPENDENCY_SECURITY.md"
+  ],
+  "productionReady": false,
+  "initialCandidateBaseRevision": "6383349b46cc58d3b45995e16a42d3007e670def",
+  "candidateBaseRevision": "b9ec51e242ce745737ffac784aefb1bae85c6742",
+  "rebasedFrom": "eae46593a65b2295c91868d8f11ff374bf20ac14",
+  "productionBaseRevision": "a8af9f3d42e9248c1568be9e9a537837975537b9",
+  "validationSourceRevision": "54d8aebeb4880e87d98a9adab787af97cfe2b7ac",
+  "afterRebase": {
+    "errorCount": 1,
+    "warningCount": 46,
+    "affectedFileCount": 33,
+    "totalDiagnosticCount": 47,
+    "score": 73,
+    "scoreLabel": "Needs work"
+  }
+}

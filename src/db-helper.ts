@@ -1609,7 +1609,7 @@ export const dbHelper = {
 		}
 	},
 
-	isApprovedUser: async function (email: string): Promise<{ approved: boolean; error?: string }> {
+	isApprovedUser: async function (email: string, signal: AbortSignal = AbortSignal.timeout(5000)): Promise<{ approved: boolean; error?: string }> {
 		try {
 			const trimmed = (email || "").trim().toLowerCase();
 			if (!trimmed) return { approved: false, error: "Email is required" };
@@ -1619,6 +1619,7 @@ export const dbHelper = {
 				.from("approved_users")
 				.select("email")
 				.eq("email", trimmed)
+				.abortSignal(signal)
 				.maybeSingle();
 
 			if (error) return { approved: false, error: error.message };

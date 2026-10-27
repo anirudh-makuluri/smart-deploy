@@ -1,0 +1,60 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "baselineRevision": "7699bdc92e034ec762475a5d4a476ca65e67922a",
+  "candidateBaseRevision": "7699bdc92e034ec762475a5d4a476ca65e67922a",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "productionReady": false,
+  "productionMutations": false,
+  "bucket": "release-view-health",
+  "purpose": "Simplify crowded deployment/landing views and validate response/listener boundaries",
+  "after": {
+    "errorCount": 0,
+    "warningCount": 1,
+    "affectedFileCount": 1,
+    "totalDiagnosticCount": 1,
+    "score": 92,
+    "scoreLabel": "Great"
+  },
+  "remaining": [
+    {
+      "file": "src/lib/githubAutoDeploy.ts",
+      "rule": "async-await-in-loop",
+      "message": "This for…of loop waits before starting the next iteration. If iterations perform independent asynchronous work, consider bounded concurrency; await syntax alone does not establish a speedup."
+    }
+  ],
+  "verification": {
+    "candidate": "Combined working candidate with separate GitHub dispatch follow-up",
+    "typecheck": true,
+    "unitFiles": 158,
+    "unitTests": 1117,
+    "postgresFiles": 10,
+    "postgresTests": 148,
+    "dynamoCases": 33,
+    "nativeTlsProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "build": true,
+    "lint": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "diffCheck": true,
+    "fullGateRequiresDispatchFollowUp": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "This parent remains 92/100 on its own; merge candidate must include the dispatch follow-up and pass the full >=95 gate.",
+    "No new private runtime/data broker, live migrations, provisioning or hosted acceptance.",
+    "Docker unavailable locally; required exact-head Linux container CI remains to run."
+  ]
+}

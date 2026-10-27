@@ -3,15 +3,10 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import appConfig from "@/config";
 import { dbHelper } from "@/db-helper";
+import { platformApiApproval } from "@/lib/apps/platformApiApproval";
+import { platformSessionCookies } from "@/lib/authCookiePolicy";
 
-const SESSION_COOKIE_NAMES = [
-	"better-auth.session_token",
-	"__Secure-better-auth.session_token",
-	"better-auth.session_data",
-	"__Secure-better-auth.session_data",
-	"better-auth.dont_remember",
-	"__Secure-better-auth.dont_remember",
-];
+const SESSION_COOKIES = platformSessionCookies((process.env.BETTER_AUTH_URL || "").trim());
 
 async function isApprovedEmail(email: string | null | undefined) {
 	const trimmedEmail = (email || "").trim().toLowerCase();
@@ -48,16 +43,21 @@ async function isApprovedEmail(email: string | null | undefined) {
 }
 
 function clearSessionCookies(response: NextResponse) {
-	for (const cookieName of SESSION_COOKIE_NAMES) {
-		response.cookies.set(cookieName, "", {
+	for (const cookie of SESSION_COOKIES) {
+		response.cookies.set(cookie.name, "", {
+			secure: cookie.attributes.secure,
+			httpOnly: cookie.attributes.httpOnly,
+			path: cookie.attributes.path,
+			sameSite: "lax",
 			expires: new Date(0),
-			path: "/",
+			maxAge: 0,
 		});
 	}
 }
 
 export async function proxy(req : NextRequest) {
 	const pathname = req.nextUrl.pathname;
+	if (pathname.startsWith("/api/")) return await platformApiApproval(req) ?? NextResponse.next();
 	const accept = req.headers?.get?.("accept") ?? "";
 	const wantsMarkdown = accept.includes("text/markdown");
 
@@ -132,8 +132,8 @@ export async function proxy(req : NextRequest) {
 		isMcp ||
 		isSkillMd ||
 		isWellKnown;
-	const hasSessionCookie = SESSION_COOKIE_NAMES.some(
-		(cookieName) => req.cookies?.has?.(cookieName) ?? false
+	const hasSessionCookie = SESSION_COOKIES.some(
+		(cookie) => req.cookies?.has?.(cookie.name) ?? false
 	);
 	const shouldCheckSession =
 		isAuthPage || isPrivateHome || (isLanding && hasSessionCookie);
@@ -162,7 +162,9 @@ export async function proxy(req : NextRequest) {
 					await dbHelper.addToWaitingList(email, session.user?.name ?? null);
 				}
 				const response = NextResponse.redirect(new URL("/waiting-list", req.url));
-				clearSessionCookies(response);
+				// App-only invitees still need their platform session for handoff and
+				// global logout. This redirect grants no platform management access.
+				if (!appConfig.WORKSPACE_APPS_ENABLED || !appConfig.PRIVATE_APP_GATEWAY_ENABLED) clearSessionCookies(response);
 				return response;
 			}
 		}
@@ -186,6 +188,7 @@ export async function proxy(req : NextRequest) {
 
 export const config = {
   matcher: [
+		"/api/:path*",
 		"/((?!_next|api|ph|static|favicon\\.ico|.*\\.(?:png|svg|jpg|jpeg|webp|gif|ico|txt|xml|json)).*)",
-  ], // Exclude static assets, API routes, etc.
+  ],
 }

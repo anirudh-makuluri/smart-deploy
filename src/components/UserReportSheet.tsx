@@ -19,6 +19,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { isJsonObject, responseErrorMessage } from "@/lib/httpResponse";
 
 type UserReportSheetProps = {
 	open: boolean;
@@ -37,6 +38,12 @@ const CATEGORIES: Array<{ value: ReportCategory; label: string }> = [
 	{ value: "general", label: "General feedback" },
 	{ value: "other", label: "Other" },
 ];
+
+const REPORT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isReportAcknowledgement(value: unknown): boolean {
+	return isJsonObject(value) && value.ok === true && typeof value.id === "string" && REPORT_ID_PATTERN.test(value.id);
+}
 
 export default function UserReportSheet({
 	open,
@@ -72,9 +79,12 @@ export default function UserReportSheet({
 				}),
 			});
 
-			const result = await response.json().catch(() => ({}));
 			if (!response.ok) {
-				throw new Error(result?.error || "Failed to submit report");
+				throw new Error(await responseErrorMessage(response, "Failed to submit report"));
+			}
+			const result: unknown = await response.json().catch(() => null);
+			if (!isReportAcknowledgement(result)) {
+				throw new Error("Report submission could not be confirmed. Please try again.");
 			}
 
 			toast.success("Thanks! Your report was submitted.");

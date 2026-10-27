@@ -1,0 +1,47 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "private-app-document-api",
+  "baselineRevision": "d026bc3e2a31eb524effeb3988aa8ed7757577df",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "purpose": "Disabled-by-default machine document adapter with current managed-runtime/session scope and bounded cancellable AWS IO",
+  "productionReady": false,
+  "productionMutations": false,
+  "after": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "score": 100,
+    "completeFullFiles": 674
+  },
+  "verification": {
+    "unitFiles": 161,
+    "unitTests": 1157,
+    "postgresFiles": 10,
+    "postgresTests": 151,
+    "dynamoCases": 33,
+    "nativeTlsProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "typecheck": true,
+    "lint": true,
+    "productionBuild": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "doctorComplete": true,
+    "managedRuntimeGuardMutationDetected": true,
+    "hostedEndToEnd": false,
+    "initialRepairedFailures": [
+      "Zod discriminated-union construction needed explicit alternatives to retain strict inference.",
+      "Revocation fixture incorrectly expected a deleted session to revive after permission restoration; now requires a fresh login."
+    ]
+  },
+  "limitations": [
+    "Native browser-to-data adapter and trusted runtime loader remain separate integration.",
+    "Process concurrency and timeouts are not a global spending limit.",
+    "SQL authorization and DynamoDB commit are separate; already-admitted work may complete during permission change.",
+    "Unavailable writes may have committed; reconcile before retrying.",
+    "No provisioning, migration, production flag, invitation email or rollout release."
+  ]
+}

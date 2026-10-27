@@ -1,0 +1,66 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "invited-app-access",
+  "purpose": "User-approved admission boundary; not a scanner-derived diagnosis",
+  "baselineRevision": "3979eac6ad7d19e9f675463289ecc91ba9072616",
+  "candidateBaseRevision": "3979eac6ad7d19e9f675463289ecc91ba9072616",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "confirmedIssues": [
+    "Platform approval blocked verified app invitees despite explicit app-use permission.",
+    "Retaining an app-only login required an API approval gate for legacy authentication-only handlers.",
+    "Browser auth-schema initialization could race fixture schema recreation."
+  ],
+  "collateral": [
+    ".github/workflows/ci.yml",
+    "package.json",
+    "playwright.config.ts",
+    "src/app/api/apps/handoff/route.ts",
+    "src/app/api/workspace-invitations/accept/route.ts",
+    "src/lib/apps/gatewayApi.ts",
+    "src/lib/apps/gatewayAuthStore.ts",
+    "src/lib/apps/workspaceStore.ts",
+    "src/lib/apps/invitationAcceptanceApi.ts",
+    "src/lib/apps/platformApiApproval.ts",
+    "src/proxy.ts",
+    "tests/database/browserHandoff.test.ts",
+    "tests/e2e/session-logout.spec.mts",
+    "tests/e2e/invited-platform-boundary.spec.mts",
+    "tests/e2e/prepare-auth-schema.mjs",
+    "tests/unit/api/browserHandoff.route.test.ts",
+    "tests/unit/api/gateway.route.test.ts",
+    "tests/unit/api/workspaces.route.test.ts",
+    "tests/unit/api/platformApiApproval.test.ts",
+    "tests/unit/proxy.test.ts",
+    "docs/internal/INVITED_APP_ACCESS.md"
+  ],
+  "productionReady": false,
+  "pendingUserDecision": "Whether platform deployment/management must additionally require verified email; existing platform approval policy is preserved here."
+}

@@ -10,7 +10,7 @@ type HeaderMobileDockProps = {
 };
 
 const dockButtonClassName =
-	"group flex min-w-[6.5rem] items-center justify-center gap-2 rounded-[1rem] px-3.5 py-3 text-sm font-medium text-foreground/88 transition-all hover:bg-white/[0.06] active:scale-[0.985]";
+	"group flex min-w-[6.5rem] items-center justify-center gap-2 rounded-[1rem] px-3.5 py-3 text-sm font-medium text-foreground/88 transition-[background-color,scale] hover:bg-white/[0.06] active:scale-[0.985]";
 
 export default function HeaderMobileDock({
 	onOpenDeploymentAgent,

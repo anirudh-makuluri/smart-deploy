@@ -4,5 +4,7 @@ export function isPublicOrAuthRoute(pathname: string): boolean {
 	if (pathname === "/docs" || pathname.startsWith("/docs/")) return true;
 	if (pathname === "/changelog") return true;
 	if (pathname === "/waiting-list") return true;
+	if (pathname === "/apps/authorize") return true;
+	if (pathname === "/apps/invitations") return true;
 	return false;
 }

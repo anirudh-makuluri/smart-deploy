@@ -1,0 +1,34 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "app-document-readiness",
+  "baselineRevision": "a9b347be8e3c6ea6f04912eb2928454bf1e8a63c",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Selected-machine operational readiness without user-session creation or document access",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 757 },
+  "verification": {
+    "focusedRouteAndBackendTests": 59,
+    "finalRuntimeSqlTests": 49,
+    "dynamoDbLocalTests": 33,
+    "compiledPrivateBrowserTestsBeforeFinalReadOnlySqlRepair": 23,
+    "combinedFullUnitTestsBeforeFinalInfrastructureTest": 1514,
+    "combinedFullSqlTestsBeforeLockRegression": 157,
+    "typecheck": true,
+    "fullLint": true,
+    "workerCompilation": true,
+    "doctorComplete": true,
+    "exactHeadCiPending": true,
+    "actualHostedBrokerProof": false,
+    "manualTwoAccountHostedTestDeferredByUser": true
+  },
+  "limitations": [
+    "Readiness reads control and environment quota rows only; it cannot prove user authorization, document persistence or revocation.",
+    "The real SQL readiness projection is read-only and does not acquire a workspace write lock.",
+    "Machine auth, current managed scope, one-app role bounds, shared admission and late cancellation still apply.",
+    "No AWS resources, credentials, user accounts/sessions, emails, production migrations, feature flags or deployment changed."
+  ]
+}

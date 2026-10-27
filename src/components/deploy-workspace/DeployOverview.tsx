@@ -131,41 +131,7 @@ function RuntimeHealthCard({
 				<p className="mt-4 text-sm text-muted-foreground">Loading monitoring samples...</p>
 			) : latest ? (
 				<div className="mt-4 space-y-4">
-					<div className="grid gap-3 md:grid-cols-3">
-						<div className="rounded-lg border border-border/70 p-3">
-							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">App</p>
-							<p className="mt-2 text-sm font-medium text-foreground">
-								HTTP {latest.app.httpStatus ?? "-"} · {latest.app.latencyMs ?? "-"}ms
-							</p>
-							<p className="mt-1 text-xs text-muted-foreground">
-								{latest.app.probeResults.filter(Boolean).length}/{latest.app.probeResults.length} probes passed
-							</p>
-						</div>
-						<div className="rounded-lg border border-border/70 p-3">
-							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ECS</p>
-							<p className="mt-2 text-sm font-medium text-foreground">
-								{latest.ecs
-									? `${latest.ecs.runningCount ?? "-"} / ${latest.ecs.desiredCount ?? "-"} running`
-									: "Not available"}
-							</p>
-							<p className="mt-1 text-xs text-muted-foreground">
-								{latest.ecs?.rolloutState || latest.ecs?.status || "No ECS signal"}
-							</p>
-						</div>
-						<div className="rounded-lg border border-border/70 p-3">
-							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ALB</p>
-							<p className="mt-2 text-sm font-medium text-foreground">
-								{latest.alb
-									? `${latest.alb.healthyTargetCount} healthy / ${latest.alb.unhealthyTargetCount} unhealthy`
-									: "Not available"}
-							</p>
-							<p className="mt-1 text-xs text-muted-foreground">
-								{latest.alb
-									? `${latest.alb.initialTargetCount} initial · ${latest.alb.drainingTargetCount} draining`
-									: "No target group signal"}
-							</p>
-						</div>
-					</div>
+					<RuntimeHealthMetrics latest={latest} />
 					<div>
 						<div className="flex items-center justify-between gap-3">
 							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recent Checks</p>
@@ -242,35 +208,10 @@ export default function DeployOverview({
 		});
 	const displayUrl = isLiveDeploymentStatus(effectiveStatus) ? getDeploymentDisplayUrl(deployment) : undefined;
 	const screenshotUrl = deployment.screenshotUrl;
-	const hostedUrl = getDeploymentHostedUrl(deployment) ?? "";
-	const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
-	const staticResources = isStaticS3CloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
-	const hasAnyEndpoint = Boolean(
-		hostedUrl ||
-			ecsResources?.baseUrl ||
-			staticResources?.publicBaseUrl ||
-			ecsResources?.service
-	);
-	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
-	const showEc2InstanceType = false;
-	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || Boolean(staticResources);
-	const secondaryAccessLabel = isStaticS3Target
-		? "S3 location"
-		: ecsResources
-			? "ECS service"
-			: "Infrastructure";
-	const secondaryAccessValue = isStaticS3Target
-		? staticResources
-			? `s3://${staticResources.bucket}/${staticResources.keyPrefix}`
-			: undefined
-		: ecsResources
-			? `${ecsResources.cluster}/${ecsResources.service}`
-			: undefined;
 
-	const regionDisplay = (deployment.region || ecsResources?.region || staticResources?.region || region).trim() || region;
+	const deployDisabled = deployDisabledProp ?? isDeploymentDisabled(deployment);
+	const regionDisplay = overviewRegion(deployment, region);
 	const canManageDeployment = canManageRuntimeDeploymentStatus(effectiveStatus);
-	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
-	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
 
 	return (
 		<div className="space-y-6">
@@ -321,125 +262,11 @@ export default function DeployOverview({
 
 					<RuntimeHealthCard entries={runtimeHealthEntries} isLoading={isLoadingRuntimeHealth} />
 
-					{/** Safely remove the entire screenshot code */}
-					<div className="rounded-xl hidden border border-border bg-card">
-						<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
-							<span>Front page preview</span>
-							<div className="flex items-center gap-2">
-								<span className="text-muted-foreground/70">Live topology</span>
-								{onRefreshPreview && displayUrl && (
-									<Button
-										variant="outline"
-										size="sm"
-										onClick={onRefreshPreview}
-										disabled={isRefreshingPreview}
-										className="h-7 gap-1.5 px-2 text-[10px] font-semibold tracking-normal normal-case"
-									>
-										<RefreshCw className={`size-3 ${isRefreshingPreview ? "animate-spin" : ""}`} />
-										{isRefreshingPreview ? "Creating..." : "New Preview"}
-									</Button>
-								)}
-							</div>
-						</div>
-						{screenshotUrl ? (
-							<div className="relative h-80 md:h-96">
-								<Image
-									src={screenshotUrl}
-									alt={`Screenshot of ${deployment.serviceName}`}
-									fill
-									sizes="(max-width: 768px) 100vw, 768px"
-									unoptimized
-									className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
-								/>
-							</div>
-						) : displayUrl ? (
-							<div className="relative h-80 md:h-96">
-								<iframe
-									src={displayUrl}
-									title={`Snapshot of ${deployment.serviceName}`}
-									sandbox=""
-									className="absolute inset-0 h-full w-full pointer-events-none overflow-hidden rounded-b-lg"
-									loading="lazy"
-								/>
-							</div>
-						) : (
-							<div className="p-6 text-sm text-muted-foreground">
-								No live URL yet. Deploy to generate a preview snapshot.
-							</div>
-						)}
-					</div>
+					<OverviewSnapshot deployment={deployment} displayUrl={displayUrl} screenshotUrl={screenshotUrl} onRefreshPreview={onRefreshPreview} isRefreshingPreview={isRefreshingPreview} />
 
-					<div className="rounded-xl border border-border bg-card">
-						<div className="grid grid-cols-1 divide-y divide-border text-sm text-muted-foreground">
-							<div className="space-y-3 px-4 py-3">
-								<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-									<Link2 className="size-3.5 opacity-70" aria-hidden />
-									<span>Live URLs & access</span>
-								</div>
-								{hasAnyEndpoint ? (
-									<div className="space-y-3 border-t border-border/60 pt-3">
-										<EndpointRow label="Hosted URL" value={hostedUrl} />
-										<EndpointRow label={secondaryAccessLabel} value={secondaryAccessValue} />
-									</div>
-								) : (
-									<p className="border-t border-border/60 pt-3 text-sm text-muted-foreground/70">Not available</p>
-								)}
-							</div>
-						</div>
-					</div>
+					<OverviewEndpoints deployment={deployment} />
 
-					{canManageDeployment && (onPauseResumeDeployment || onDeleteDeployment) ? (
-						<div className="rounded-xl border border-destructive/20 bg-card p-5">
-							<div className="space-y-1">
-								<p className="text-xs uppercase tracking-wider text-muted-foreground">Deployment Controls</p>
-								<p className="text-sm text-muted-foreground">
-									Manage runtime state for this deployment. These actions affect the live service.
-								</p>
-							</div>
-							<div className="mt-4 space-y-3">
-								{onPauseResumeDeployment ? (
-									<div className="flex flex-col gap-3 rounded-lg border border-border/70 p-4 md:flex-row md:items-center md:justify-between">
-										<div className="space-y-1">
-											<p className="font-medium text-foreground">{pauseResumeLabel}</p>
-											<p className="text-sm text-muted-foreground">
-												{effectiveStatus === "paused"
-													? "Bring the deployment back online without changing configuration."
-													: "Temporarily stop the deployment while keeping its configuration intact."}
-											</p>
-										</div>
-										<Button
-											variant="outline"
-											onClick={onPauseResumeDeployment}
-											disabled={isChangingDeploymentState}
-											className="gap-2"
-										>
-											<PauseResumeIcon className="size-4" />
-											{pauseResumeLabel}
-										</Button>
-									</div>
-								) : null}
-								{onDeleteDeployment ? (
-									<div className="flex flex-col gap-3 rounded-lg border border-destructive/20 p-4 md:flex-row md:items-center md:justify-between">
-										<div className="space-y-1">
-											<p className="font-medium text-foreground">Delete Deployment</p>
-											<p className="text-sm text-muted-foreground">
-												Permanently remove this deployment record and its runtime association.
-											</p>
-										</div>
-										<Button
-											variant="destructive"
-											onClick={onDeleteDeployment}
-											disabled={isChangingDeploymentState}
-											className="gap-2"
-										>
-											<Trash2 className="size-4" />
-											Delete Deployment
-										</Button>
-									</div>
-								) : null}
-							</div>
-						</div>
-					) : null}
+					<OverviewRuntimeControls effectiveStatus={effectiveStatus} canManageDeployment={canManageDeployment} onPauseResumeDeployment={onPauseResumeDeployment} onDeleteDeployment={onDeleteDeployment} isChangingDeploymentState={isChangingDeploymentState} />
 				</div>
 
 				<div className="space-y-4">
@@ -465,4 +292,228 @@ export default function DeployOverview({
 			</div>
 		</div>
 	);
+}
+
+function RuntimeHealthMetrics({ latest }: { latest: RuntimeHealthSample }) {
+	return (
+		<div className="grid gap-3 md:grid-cols-3">
+			<div className="rounded-lg border border-border/70 p-3">
+				<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">App</p>
+				<p className="mt-2 text-sm font-medium text-foreground">
+					HTTP {latest.app.httpStatus ?? "-"} · {latest.app.latencyMs ?? "-"}ms
+				</p>
+				<p className="mt-1 text-xs text-muted-foreground">
+					{latest.app.probeResults.filter(Boolean).length}/{latest.app.probeResults.length} probes passed
+				</p>
+			</div>
+			<div className="rounded-lg border border-border/70 p-3">
+				<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ECS</p>
+				<p className="mt-2 text-sm font-medium text-foreground">
+					{latest.ecs
+						? `${latest.ecs.runningCount ?? "-"} / ${latest.ecs.desiredCount ?? "-"} running`
+						: "Not available"}
+				</p>
+				<p className="mt-1 text-xs text-muted-foreground">
+					{latest.ecs?.rolloutState || latest.ecs?.status || "No ECS signal"}
+				</p>
+			</div>
+			<div className="rounded-lg border border-border/70 p-3">
+				<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">ALB</p>
+				<p className="mt-2 text-sm font-medium text-foreground">
+					{latest.alb
+						? `${latest.alb.healthyTargetCount} healthy / ${latest.alb.unhealthyTargetCount} unhealthy`
+						: "Not available"}
+				</p>
+				<p className="mt-1 text-xs text-muted-foreground">
+					{latest.alb
+						? `${latest.alb.initialTargetCount} initial · ${latest.alb.drainingTargetCount} draining`
+						: "No target group signal"}
+				</p>
+			</div>
+		</div>
+	);
+}
+
+function OverviewEndpoints({ deployment }: Pick<DeployOverviewProps, "deployment">) {
+	const hostedUrl = getDeploymentHostedUrl(deployment) ?? "";
+	const ecsResources = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const staticResources = isStaticS3CloudResources(deployment.cloudResources)
+		? deployment.cloudResources
+		: null;
+	const hasAnyEndpoint = Boolean(
+		hostedUrl || ecsResources?.baseUrl || staticResources?.publicBaseUrl || ecsResources?.service,
+	);
+	const isStaticS3Target = deployment.deploymentTarget === "static_s3" || Boolean(staticResources);
+	const secondaryAccessLabel = isStaticS3Target
+		? "S3 location"
+		: ecsResources
+			? "ECS service"
+			: "Infrastructure";
+	const secondaryAccessValue = isStaticS3Target
+		? staticResources
+			? `s3://${staticResources.bucket}/${staticResources.keyPrefix}`
+			: undefined
+		: ecsResources
+			? `${ecsResources.cluster}/${ecsResources.service}`
+			: undefined;
+
+	return (
+		<div className="rounded-xl border border-border bg-card">
+			<div className="grid grid-cols-1 divide-y divide-border text-sm text-muted-foreground">
+				<div className="space-y-3 px-4 py-3">
+					<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+						<Link2 className="size-3.5 opacity-70" aria-hidden />
+						<span>Live URLs & access</span>
+					</div>
+					{hasAnyEndpoint ? (
+						<div className="space-y-3 border-t border-border/60 pt-3">
+							<EndpointRow label="Hosted URL" value={hostedUrl} />
+							<EndpointRow label={secondaryAccessLabel} value={secondaryAccessValue} />
+						</div>
+					) : (
+						<p className="border-t border-border/60 pt-3 text-sm text-muted-foreground/70">Not available</p>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function OverviewRuntimeControls({
+	effectiveStatus,
+	canManageDeployment,
+	onPauseResumeDeployment,
+	onDeleteDeployment,
+	isChangingDeploymentState,
+}: Pick<DeployOverviewProps, "onPauseResumeDeployment" | "onDeleteDeployment"> & {
+	effectiveStatus: DeployConfig["status"];
+	canManageDeployment: boolean;
+	isChangingDeploymentState: boolean;
+}) {
+	const pauseResumeLabel = effectiveStatus === "paused" ? "Resume Deployment" : "Pause Deployment";
+	const PauseResumeIcon = effectiveStatus === "paused" ? Play : Pause;
+
+	return (
+		<>
+			{canManageDeployment && (onPauseResumeDeployment || onDeleteDeployment) ? (
+				<div className="rounded-xl border border-destructive/20 bg-card p-5">
+					<div className="space-y-1">
+						<p className="text-xs uppercase tracking-wider text-muted-foreground">Deployment Controls</p>
+						<p className="text-sm text-muted-foreground">
+							Manage runtime state for this deployment. These actions affect the live service.
+						</p>
+					</div>
+					<div className="mt-4 space-y-3">
+						{onPauseResumeDeployment ? (
+							<div className="flex flex-col gap-3 rounded-lg border border-border/70 p-4 md:flex-row md:items-center md:justify-between">
+								<div className="space-y-1">
+									<p className="font-medium text-foreground">{pauseResumeLabel}</p>
+									<p className="text-sm text-muted-foreground">
+										{effectiveStatus === "paused"
+											? "Bring the deployment back online without changing configuration."
+											: "Temporarily stop the deployment while keeping its configuration intact."}
+									</p>
+								</div>
+								<Button
+									variant="outline"
+									onClick={onPauseResumeDeployment}
+									disabled={isChangingDeploymentState}
+									className="gap-2"
+								>
+									<PauseResumeIcon className="size-4" />
+									{pauseResumeLabel}
+								</Button>
+							</div>
+						) : null}
+						{onDeleteDeployment ? (
+							<div className="flex flex-col gap-3 rounded-lg border border-destructive/20 p-4 md:flex-row md:items-center md:justify-between">
+								<div className="space-y-1">
+									<p className="font-medium text-foreground">Delete Deployment</p>
+									<p className="text-sm text-muted-foreground">
+										Permanently remove this deployment record and its runtime association.
+									</p>
+								</div>
+								<Button
+									variant="destructive"
+									onClick={onDeleteDeployment}
+									disabled={isChangingDeploymentState}
+									className="gap-2"
+								>
+									<Trash2 className="size-4" />
+									Delete Deployment
+								</Button>
+							</div>
+						) : null}
+					</div>
+				</div>
+			) : null}
+		</>
+	);
+}
+
+function OverviewSnapshot({
+	deployment,
+	displayUrl,
+	screenshotUrl,
+	onRefreshPreview,
+	isRefreshingPreview,
+}: Pick<DeployOverviewProps, "deployment" | "onRefreshPreview"> & {
+	displayUrl: string | undefined;
+	screenshotUrl: DeployConfig["screenshotUrl"];
+	isRefreshingPreview: boolean;
+}) {
+	return (
+		<div className="rounded-xl hidden border border-border bg-card">
+			<div className="flex items-center justify-between border-b border-border px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
+				<span>Front page preview</span>
+				<div className="flex items-center gap-2">
+					<span className="text-muted-foreground/70">Live topology</span>
+					{onRefreshPreview && displayUrl && (
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={onRefreshPreview}
+							disabled={isRefreshingPreview}
+							className="h-7 gap-1.5 px-2 text-[10px] font-semibold tracking-normal normal-case"
+						>
+							<RefreshCw className={`size-3 ${isRefreshingPreview ? "animate-spin" : ""}`} />
+							{isRefreshingPreview ? "Creating..." : "New Preview"}
+						</Button>
+					)}
+				</div>
+			</div>
+			{screenshotUrl ? (
+				<div className="relative h-80 md:h-96">
+					<Image
+						src={screenshotUrl}
+						alt={`Screenshot of ${deployment.serviceName}`}
+						fill
+						sizes="(max-width: 768px) 100vw, 768px"
+						unoptimized
+						className="absolute inset-0 h-full w-full pointer-events-none object-cover overflow-hidden rounded-b-lg"
+					/>
+				</div>
+			) : displayUrl ? (
+				<div className="relative h-80 md:h-96">
+					<iframe
+						src={displayUrl}
+						title={`Snapshot of ${deployment.serviceName}`}
+						sandbox=""
+						className="absolute inset-0 h-full w-full pointer-events-none overflow-hidden rounded-b-lg"
+						loading="lazy"
+					/>
+				</div>
+			) : (
+				<div className="p-6 text-sm text-muted-foreground">
+					No live URL yet. Deploy to generate a preview snapshot.
+				</div>
+			)}
+		</div>
+	);
+}
+
+function overviewRegion(deployment: DeployConfig, fallback: string): string {
+	const ecs = isEcsCloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	const storage = isStaticS3CloudResources(deployment.cloudResources) ? deployment.cloudResources : null;
+	return (deployment.region || ecs?.region || storage?.region || fallback).trim() || fallback;
 }

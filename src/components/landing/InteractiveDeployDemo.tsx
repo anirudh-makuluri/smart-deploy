@@ -334,154 +334,244 @@ export function InteractiveDeployDemo({
 			>
 				<div className="landing-grid-overlay pointer-events-none absolute inset-0 opacity-10" aria-hidden />
 				<div className="relative z-10">
-					<div className={`relative overflow-hidden ${stageHeight}`}>
-						<AnimatePresence mode="wait">
-							<m.div
-								key={phase === "scan" ? "scan" : phase}
-								initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-								animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
-								exit={reducedMotion ? undefined : { opacity: 0, y: -8 }}
-								transition={{ duration: 0.3, ease: "easeOut" }}
-								className="absolute inset-0 overflow-hidden"
-							>
-								{phase === "setup" && <SetupMock context={storyContext} compact={compact} />}
-								{phase === "scan" && (
-									<ScanResultsMock context={storyContext} visibleLineCount={scanVisibleLines} compact={compact} />
-								)}
-								{phase === "blueprint" && <BlueprintMock resolvedCount={blueprintResolved} compact={compact} />}
-								{phase === "deploy" && (
-									<DeployProgressMock
-										visibleLineCount={deployLineCount}
-										progress={deployProgress}
-										compact={compact}
-									/>
-								)}
-								{phase === "complete" && <CompleteMock context={storyContext} compact={compact} />}
-							</m.div>
-						</AnimatePresence>
-					</div>
+					<DemoStage phase={phase} compact={compact} stageHeight={stageHeight} reducedMotion={reducedMotion} storyContext={storyContext} scanVisibleLines={scanVisibleLines} blueprintResolved={blueprintResolved} deployLineCount={deployLineCount} deployProgress={deployProgress} />
 
-					<div
-						className={`flex items-center justify-center overflow-hidden text-center ${
-							compact ? "demo-stat-slot" : DEMO_LAYOUT.stat.default
-						}`}
-					>
-						{phase === "scan" && scanComplete && (
-							<p
-								className={`truncate text-muted-foreground ${compact ? "demo-text-body" : "text-[13px]"}`}
-								data-testid="landing-v2-analysis-stat"
-							>
-								{analysisStat}
-							</p>
-						)}
-						{phase === "complete" && (
-							<p
-								className={`truncate font-medium text-foreground ${compact ? "demo-text-body" : "text-[13px]"}`}
-								data-testid="landing-v2-deployment-stat"
-							>
-								{deploymentStat}
-							</p>
-						)}
-					</div>
+					<DemoPhaseStatistics phase={phase} compact={compact} scanComplete={scanComplete} analysisStat={analysisStat} deploymentStat={deploymentStat} />
 
-					<div
-						className={`flex items-center gap-1.5 ${
-							compact ? "demo-repo-slot" : "mt-5 h-8 flex-nowrap overflow-hidden"
-						}`}
-					>
-						{phase === "setup" && (
-							<>
-								<span
-									className={`mr-1 shrink-0 font-medium text-muted-foreground ${compact ? "demo-text-mono" : "text-[11px]"}`}
-								>
-									Try a repo:
-								</span>
-								{DEMO_REPOS.map((demoRepo) => (
-									<button
-										key={demoRepo.slug}
-										type="button"
-										onClick={() => selectRepo(demoRepo)}
-										className={`shrink-0 rounded-md border font-mono transition-colors ${
-											compact ? "demo-repo-chip" : "px-2 py-1 text-[11px]"
-										} ${
-											demoRepo.slug === repo.slug
-												? "border-primary/45 bg-primary/12 text-primary"
-												: "border-white/12 bg-white/4 text-white/70 hover:border-white/25"
-										}`}
-									>
-										{demoRepo.label}
-									</button>
-								))}
-							</>
-						)}
-					</div>
+					<DemoRepositoryPicker phase={phase} compact={compact} repo={repo} selectRepo={selectRepo} />
 
-					<div
-						className={`flex flex-nowrap items-center justify-center overflow-hidden ${
-							compact ? "demo-actions-slot gap-[var(--demo-gap)]" : `${DEMO_LAYOUT.actions.default} flex-wrap gap-3`
-						}`}
-					>
-						{phase === "setup" && (
-							<Button
-								size={compact ? "default" : "lg"}
-								onClick={runAnalysis}
-								data-testid="landing-v2-run-analysis"
-								className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
-							>
-								Run Smart Analysis
-								<ArrowRight className={compact ? undefined : "size-4"} />
-							</Button>
-						)}
-						{phase === "scan" && (
-							<Button
-								size={compact ? "default" : "lg"}
-								variant="outline"
-								onClick={goToBlueprint}
-								data-testid="landing-v2-continue-scan"
-								className={compact ? "demo-btn shrink-0" : undefined}
-							>
-								{scanComplete ? "Review blueprint" : "Skip to blueprint"}
-							</Button>
-						)}
-						{phase === "blueprint" && (
-							<Button
-								size={compact ? "default" : "lg"}
-								onClick={approveDeploy}
-								data-testid="landing-v2-approve-blueprint"
-								className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
-							>
-								Approve &amp; deploy
-								<ArrowRight className={compact ? undefined : "size-4"} />
-							</Button>
-						)}
-						{phase === "complete" && (
-							<>
-								<Button
-									size={compact ? "default" : "lg"}
-									variant="outline"
-									onClick={replay}
-									className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
-									data-testid="landing-v2-replay"
-								>
-									<RotateCcw className={compact ? undefined : "size-4"} />
-									Replay demo
-								</Button>
-								<Button
-									asChild
-									size={compact ? "default" : "lg"}
-									className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
-									data-testid="landing-v2-final-cta"
-								>
-									<Link href={primaryHref}>
-										{primaryCopy}
-										<ArrowRight className={compact ? undefined : "size-4"} />
-									</Link>
-								</Button>
-							</>
-						)}
-					</div>
+					<DemoPhaseActions phase={phase} compact={compact} scanComplete={scanComplete} runAnalysis={runAnalysis} goToBlueprint={goToBlueprint} approveDeploy={approveDeploy} replay={replay} primaryHref={primaryHref} primaryCopy={primaryCopy} />
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function DemoStage({
+	phase,
+	compact,
+	stageHeight,
+	reducedMotion,
+	storyContext,
+	scanVisibleLines,
+	blueprintResolved,
+	deployLineCount,
+	deployProgress,
+}: Pick<InteractiveDeployDemoProps, "phase" | "compact"> &
+	Pick<
+		ReturnType<typeof useInteractiveDeployRuntime>,
+		| "reducedMotion"
+		| "storyContext"
+		| "scanVisibleLines"
+		| "blueprintResolved"
+		| "deployLineCount"
+		| "deployProgress"
+	> & { stageHeight: string }) {
+	return (
+		<div className={`relative overflow-hidden ${stageHeight}`}>
+			<AnimatePresence mode="wait">
+				<m.div
+					key={phase === "scan" ? "scan" : phase}
+					initial={reducedMotion ? false : { opacity: 0, y: 10 }}
+					animate={reducedMotion ? undefined : { opacity: 1, y: 0 }}
+					exit={reducedMotion ? undefined : { opacity: 0, y: -8 }}
+					transition={{ duration: 0.3, ease: "easeOut" }}
+					className="absolute inset-0 overflow-hidden"
+				>
+					{phase === "setup" && <SetupMock context={storyContext} compact={compact} />}
+					{phase === "scan" && (
+						<ScanResultsMock context={storyContext} visibleLineCount={scanVisibleLines} compact={compact} />
+					)}
+					{phase === "blueprint" && <BlueprintMock resolvedCount={blueprintResolved} compact={compact} />}
+					{phase === "deploy" && (
+						<DeployProgressMock
+							visibleLineCount={deployLineCount}
+							progress={deployProgress}
+							compact={compact}
+						/>
+					)}
+					{phase === "complete" && <CompleteMock context={storyContext} compact={compact} />}
+				</m.div>
+			</AnimatePresence>
+		</div>
+	);
+}
+
+function DemoPhaseStatistics({
+	phase,
+	compact,
+	scanComplete,
+	analysisStat,
+	deploymentStat,
+}: Pick<InteractiveDeployDemoProps, "phase" | "compact"> & {
+	scanComplete: boolean;
+	analysisStat: string;
+	deploymentStat: string;
+}) {
+	return (
+		<div
+			className={`flex items-center justify-center overflow-hidden text-center ${
+				compact ? "demo-stat-slot" : DEMO_LAYOUT.stat.default
+			}`}
+		>
+			{phase === "scan" && scanComplete && (
+				<p
+					className={`truncate text-muted-foreground ${compact ? "demo-text-body" : "text-[13px]"}`}
+					data-testid="landing-v2-analysis-stat"
+				>
+					{analysisStat}
+				</p>
+			)}
+			{phase === "complete" && (
+				<p
+					className={`truncate font-medium text-foreground ${compact ? "demo-text-body" : "text-[13px]"}`}
+					data-testid="landing-v2-deployment-stat"
+				>
+					{deploymentStat}
+				</p>
+			)}
+		</div>
+	);
+}
+
+function DemoRepositoryPicker({
+	phase,
+	compact,
+	repo,
+	selectRepo,
+}: Pick<InteractiveDeployDemoProps, "phase" | "compact"> &
+	Pick<ReturnType<typeof useInteractiveDeployRuntime>, "repo" | "selectRepo">) {
+	return (
+		<div
+			className={`flex items-center gap-1.5 ${
+				compact ? "demo-repo-slot" : "mt-5 h-8 flex-nowrap overflow-hidden"
+			}`}
+		>
+			{phase === "setup" && (
+				<>
+					<span
+						className={`mr-1 shrink-0 font-medium text-muted-foreground ${compact ? "demo-text-mono" : "text-[11px]"}`}
+					>
+						Try a repo:
+					</span>
+					{DEMO_REPOS.map((demoRepo) => (
+						<button
+							key={demoRepo.slug}
+							type="button"
+							onClick={() => selectRepo(demoRepo)}
+							className={`shrink-0 rounded-md border font-mono transition-colors ${
+								compact ? "demo-repo-chip" : "px-2 py-1 text-[11px]"
+							} ${
+								demoRepo.slug === repo.slug
+									? "border-primary/45 bg-primary/12 text-primary"
+									: "border-white/12 bg-white/4 text-white/70 hover:border-white/25"
+							}`}
+						>
+							{demoRepo.label}
+						</button>
+					))}
+				</>
+			)}
+		</div>
+	);
+}
+
+function DemoPhaseActions({
+	phase,
+	compact,
+	scanComplete,
+	runAnalysis,
+	goToBlueprint,
+	approveDeploy,
+	replay,
+	primaryHref,
+	primaryCopy,
+}: Pick<InteractiveDeployDemoProps, "phase" | "compact" | "primaryHref" | "primaryCopy"> &
+	Pick<
+		ReturnType<typeof useInteractiveDeployRuntime>,
+		"runAnalysis" | "goToBlueprint" | "approveDeploy" | "replay"
+	> & { scanComplete: boolean }) {
+	return (
+		<div
+			className={`flex flex-nowrap items-center justify-center overflow-hidden ${
+				compact ? "demo-actions-slot gap-[var(--demo-gap)]" : `${DEMO_LAYOUT.actions.default} flex-wrap gap-3`
+			}`}
+		>
+			{phase === "setup" && (
+				<Button
+					size={compact ? "default" : "lg"}
+					onClick={runAnalysis}
+					data-testid="landing-v2-run-analysis"
+					className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
+				>
+					Run Smart Analysis
+					<ArrowRight className={compact ? undefined : "size-4"} />
+				</Button>
+			)}
+			{phase === "scan" && (
+				<Button
+					size={compact ? "default" : "lg"}
+					variant="outline"
+					onClick={goToBlueprint}
+					data-testid="landing-v2-continue-scan"
+					className={compact ? "demo-btn shrink-0" : undefined}
+				>
+					{scanComplete ? "Review blueprint" : "Skip to blueprint"}
+				</Button>
+			)}
+			{phase === "blueprint" && (
+				<Button
+					size={compact ? "default" : "lg"}
+					onClick={approveDeploy}
+					data-testid="landing-v2-approve-blueprint"
+					className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
+				>
+					Approve &amp; deploy
+					<ArrowRight className={compact ? undefined : "size-4"} />
+				</Button>
+			)}
+			{phase === "complete" && (
+				<DemoCompleteActions
+					compact={compact}
+					replay={replay}
+					primaryHref={primaryHref}
+					primaryCopy={primaryCopy}
+				/>
+			)}
+		</div>
+	);
+}
+
+function DemoCompleteActions({
+	compact,
+	replay,
+	primaryHref,
+	primaryCopy,
+}: Pick<InteractiveDeployDemoProps, "compact" | "primaryHref" | "primaryCopy"> &
+	Pick<ReturnType<typeof useInteractiveDeployRuntime>, "replay">) {
+	return (
+		<>
+			<Button
+				size={compact ? "default" : "lg"}
+				variant="outline"
+				onClick={replay}
+				className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
+				data-testid="landing-v2-replay"
+			>
+				<RotateCcw className={compact ? undefined : "size-4"} />
+				Replay demo
+			</Button>
+			<Button
+				asChild
+				size={compact ? "default" : "lg"}
+				className={compact ? "demo-btn shrink-0 gap-1.5" : "gap-2"}
+				data-testid="landing-v2-final-cta"
+			>
+				<Link href={primaryHref}>
+					{primaryCopy}
+					<ArrowRight className={compact ? undefined : "size-4"} />
+				</Link>
+			</Button>
+		</>
 	);
 }

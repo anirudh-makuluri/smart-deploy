@@ -1,0 +1,85 @@
+let all_resources = Resources.*
+let resource_count = count(%all_resources)
+let tables = Resources.*[Type == "AWS::DynamoDB::Table"]
+let roles = Resources.*[Type == "AWS::IAM::Role"]
+let repositories = Resources.*[Type == "AWS::ECR::Repository"]
+let table_count = count(%tables)
+let role_count = count(%roles)
+let repository_count = count(%repositories)
+rule owned_types_and_size {
+    Metadata.Phase IN ["build", "runtime"]
+    %resource_count <= 50
+    Resources.*.Type IN ["AWS::IAM::Role", "AWS::ECR::Repository", "AWS::Logs::LogGroup", "AWS::DynamoDB::Table", "AWS::EC2::SecurityGroup", "AWS::EC2::SecurityGroupEgress", "AWS::ECS::TaskDefinition", "AWS::ECS::Service", "AWS::ElasticLoadBalancingV2::LoadBalancer", "AWS::ElasticLoadBalancingV2::Listener", "AWS::ElasticLoadBalancingV2::ListenerRule", "AWS::ElasticLoadBalancingV2::TargetGroup", "AWS::Route53::RecordSet"]
+    %table_count == 1
+    %role_count == 3
+    %repository_count == 3
+}
+rule protected_data {
+    Resources.Documents.DeletionPolicy == "Retain"
+    Resources.Documents.UpdateReplacePolicy == "Retain"
+    Resources.Documents.Properties.DeletionProtectionEnabled == true
+    Resources.Documents.Properties.BillingMode == "PAY_PER_REQUEST"
+    Resources.Documents.Properties.SSESpecification.SSEEnabled == true
+    Resources.Documents.Properties.OnDemandThroughput.MaxReadRequestUnits == 25
+    Resources.Documents.Properties.OnDemandThroughput.MaxWriteRequestUnits == 25
+    Resources.Documents.Properties.PointInTimeRecoverySpecification.PointInTimeRecoveryEnabled == false
+    Resources.Documents.Properties.PointInTimeRecoverySpecification.RecoveryPeriodInDays !exists
+    Resources.DocumentRole.DeletionPolicy == "Retain"
+    Resources.DocumentRole.UpdateReplacePolicy == "Retain"
+    Resources.DemoLogs.DeletionPolicy == "Retain"
+    Resources.DemoLogs.Properties.RetentionInDays == 7
+}
+rule immutable_images {
+    %repositories.Properties.ImageTagMutability == "IMMUTABLE"
+    %repositories.Properties.EmptyOnDelete == true
+    %repositories.Properties.EncryptionConfiguration.EncryptionType == "AES256"
+}
+rule scoped_build_trust {
+    Resources.BuildRole.Properties.AssumeRolePolicyDocument.Statement[*].Principal.Service == "codebuild.amazonaws.com"
+    Resources.BuildRole.Properties.AssumeRolePolicyDocument.Statement[*].Condition.StringEquals."aws:SourceAccount" == /^[0-9]{12}$/
+    Resources.BuildRole.Properties.AssumeRolePolicyDocument.Statement[*].Condition.StringEquals."aws:SourceArn" == /^arn:aws:codebuild:us-west-2:[0-9]{12}:project\/smartdeploy-builder$/
+    Resources.DocumentRole.Properties.AssumeRolePolicyDocument.Statement[*].Principal.AWS == /^arn:aws:iam::[0-9]{12}:(user|role)\/[A-Za-z0-9_+=,.@\/-]+$/
+}
+rule no_runtime_during_build when Metadata.Phase == "build" {
+    %resource_count == 8
+    Resources.*.Type IN ["AWS::IAM::Role", "AWS::ECR::Repository", "AWS::Logs::LogGroup", "AWS::DynamoDB::Table"]
+}
+rule bounded_runtime when Metadata.Phase == "runtime" {
+    let services = Resources.*[Type == "AWS::ECS::Service"]
+    let tasks = Resources.*[Type == "AWS::ECS::TaskDefinition"]
+    let service_count = count(%services)
+    let task_count = count(%tasks)
+    let container_count = count(%tasks.Properties.ContainerDefinitions[*])
+    %service_count == 3
+    %task_count == 3
+    %services.Properties.DesiredCount == 1
+    %services.Properties.LaunchType == "FARGATE"
+    %services.Properties.PlatformVersion == "1.4.0"
+    %services.Properties.EnableExecuteCommand == false
+    %services.Properties.DeploymentConfiguration.MaximumPercent == 100
+    %services.Properties.DeploymentConfiguration.MinimumHealthyPercent == 0
+    %tasks.Properties.Cpu == "256"
+    %tasks.Properties.Memory == "512"
+    %tasks.Properties.TaskRoleArn !exists
+    %tasks.Properties.Volumes !exists
+    %container_count == 6
+    %tasks.Properties.ContainerDefinitions[*].User == "10001:10001"
+    %tasks.Properties.ContainerDefinitions[*].ReadonlyRootFilesystem == true
+    %tasks.Properties.ContainerDefinitions[*].Privileged == false
+    %tasks.Properties.ContainerDefinitions[*].Image == /^\d{12}\.dkr\.ecr\.us-west-2\.amazonaws\.com\/sdp-[a-f0-9]{20}-(notes|tls)@sha256:[a-f0-9]{64}$/
+}
+rule private_origins when Metadata.Phase == "runtime" {
+    Resources.WorkerQuarantineGroup.DeletionPolicy == "Retain"
+    Resources.WorkerQuarantineGroup.UpdateReplacePolicy == "Retain"
+    Resources.WorkerQuarantineGroup.Properties.SecurityGroupIngress == []
+    Resources.WorkerQuarantineGroup.Properties.SecurityGroupEgress == [{"IpProtocol":"tcp","FromPort":443,"ToPort":443,"CidrIp":"0.0.0.0/0"}]
+    Resources.PublishedGroup.Properties.SecurityGroupIngress == [{"IpProtocol":"tcp","FromPort":8443,"ToPort":8443,"SourceSecurityGroupId":{"Ref":"GatewayGroup"}}]
+    Resources.PreviewGroup.Properties.SecurityGroupIngress == [{"IpProtocol":"tcp","FromPort":8443,"ToPort":8443,"SourceSecurityGroupId":{"Ref":"GatewayGroup"}}]
+    Resources.GatewayGroup.Properties.SecurityGroupIngress == [{"IpProtocol":"tcp","FromPort":8444,"ToPort":8444,"SourceSecurityGroupId":{"Ref":"LoadBalancerGroup"}},{"IpProtocol":"tcp","FromPort":8445,"ToPort":8445,"SourceSecurityGroupId":{"Ref":"LoadBalancerGroup"}}]
+    Metadata.TargetHealthIsTransportOnly == true
+    Resources.Listener.Properties.Protocol == "HTTPS"
+    Resources.Listener.Properties.Port == 443
+    Resources.Listener.Properties.DefaultActions[*].FixedResponseConfig.StatusCode == "404"
+    Resources.AppDns.Properties.Name == "*.apps.smart-deploy.xyz"
+    Resources.AppDns.Properties.Type == "A"
+}

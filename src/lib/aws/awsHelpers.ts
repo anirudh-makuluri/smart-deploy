@@ -4,6 +4,7 @@ import archiver from "archiver";
 import config from "../../config";
 import { createWebSocketLogger } from "../websocketLogger";
 import { getAwsClientConfig } from "./sdkClients";
+import { listenerArnFromOutput } from "./listenerOutput";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { S3Client, HeadBucketCommand, CreateBucketCommand, PutObjectCommand, BucketLocationConstraint } from "@aws-sdk/client-s3";
 import {
@@ -1612,9 +1613,8 @@ async function ensureHttpListener(
 	} catch (e: any) {
 		if (e.message?.includes("DuplicateListener")) {
 			const raw = await runAWSCommand(["elbv2", "describe-listeners", "--load-balancer-arn", albArn, "--output", "json", "--region", region], ws, "deploy");
-			const listeners = JSON.parse(raw).Listeners || [];
-			const listener = listeners.find((l: any) => l.Port === 80);
-			if (listener?.ListenerArn) return listener.ListenerArn;
+			const listenerArn = listenerArnFromOutput(raw, 80);
+			if (listenerArn) return listenerArn;
 		}
 		throw e;
 	}
@@ -1641,11 +1641,8 @@ async function ensureHttpsListener(
 			ws,
 			"deploy"
 		);
-		const listeners = JSON.parse(raw).Listeners || [];
-		const listener = listeners.find((l: any) => l.Port === 443);
-		if (listener?.ListenerArn) {
-			return listener.ListenerArn;
-		}
+		const listenerArn = listenerArnFromOutput(raw, 443);
+		if (listenerArn) return listenerArn;
 	} catch (e: any) {
 		// ignore
 	}
@@ -1682,9 +1679,8 @@ async function ensureHttpsListener(
 	} catch (e: any) {
 		if (e.message?.includes("DuplicateListener")) {
 			const raw = await runAWSCommand(["elbv2", "describe-listeners", "--load-balancer-arn", albArn, "--output", "json", "--region", region], ws, "deploy");
-			const listeners = JSON.parse(raw).Listeners || [];
-			const listener = listeners.find((l: any) => l.Port === 443);
-			if (listener?.ListenerArn) return listener.ListenerArn;
+			const listenerArn = listenerArnFromOutput(raw, 443);
+			if (listenerArn) return listenerArn;
 		}
 		throw e;
 	}

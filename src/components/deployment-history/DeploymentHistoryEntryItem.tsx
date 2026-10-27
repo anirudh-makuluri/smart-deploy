@@ -51,64 +51,7 @@ export function DeploymentHistoryEntryItem({
 	return (
 		<AccordionItem key={entry.id} value={entry.id} className="border-border px-4">
 			<AccordionTrigger className="text-foreground hover:no-underline hover:text-muted-foreground py-3">
-				<div className="flex flex-col gap-2.5 text-left w-full">
-					<div className="flex items-center gap-3 flex-wrap">
-						<span className="text-sm font-medium">{formatTimestamp(entry.timestamp)}</span>
-						<Badge
-							variant="outline"
-							className={
-								entry.success
-									? "border-primary/60 text-primary bg-primary/10"
-									: "border-amber-400/60 text-amber-400 bg-amber-400/10"
-							}
-						>
-							{entry.success ? "Success" : "Failed"}
-						</Badge>
-						{!entry.success && entry.failureCode && (
-							<Badge
-								variant="outline"
-								className="border-amber-300/40 bg-amber-300/5 font-mono text-[11px] text-amber-200"
-							>
-								{entry.failureCode}
-							</Badge>
-						)}
-						{isActiveRelease && (
-							<Badge
-								variant="outline"
-								className="border-emerald-500/60 bg-emerald-500/10 text-emerald-400"
-							>
-								Active Release
-							</Badge>
-						)}
-						{entry.durationMs && (
-							<span className="text-xs text-muted-foreground flex items-center gap-1">
-								<Clock className="size-3" />
-								{(entry.durationMs / 1000 / 60).toFixed(1)}m
-							</span>
-						)}
-					</div>
-					{(entry.commitSha || entry.commitMessage || entry.branch) && (
-						<div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-							{entry.commitSha && (
-								<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
-									<GitCommit className="size-3" />
-									<code className="font-mono">{entry.commitSha.substring(0, 7)}</code>
-								</div>
-							)}
-							{entry.commitMessage && (
-								<span className="max-w-64 truncate" title={entry.commitMessage}>
-									{entry.commitMessage}
-								</span>
-							)}
-							{entry.branch && (
-								<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
-									<GitBranch className="size-3" />
-									<span className="font-medium text-foreground">{entry.branch}</span>
-								</div>
-							)}
-						</div>
-					)}
-				</div>
+				<DeploymentHistoryHeading entry={entry} isActiveRelease={isActiveRelease} />
 			</AccordionTrigger>
 			<AccordionContent className="pb-4">
 				<div className="space-y-4">
@@ -221,5 +164,68 @@ export function DeploymentHistoryEntryItem({
 				</div>
 			</AccordionContent>
 		</AccordionItem>
+	);
+}
+
+function DeploymentHistoryHeading({
+	entry,
+	isActiveRelease,
+}: Pick<DeploymentHistoryEntryItemProps, "entry" | "isActiveRelease">) {
+	return (
+		<div className="flex flex-col gap-2.5 text-left w-full">
+			<div className="flex items-center gap-3 flex-wrap">
+				<span className="text-sm font-medium">{formatTimestamp(entry.timestamp)}</span>
+				<Badge
+					variant="outline"
+					className={
+						entry.success
+							? "border-primary/60 text-primary bg-primary/10"
+							: "border-amber-400/60 text-amber-400 bg-amber-400/10"
+					}
+				>
+					{entry.success ? "Success" : "Failed"}
+				</Badge>
+				{!entry.success && entry.failureCode && (
+					<Badge
+						variant="outline"
+						className="border-amber-300/40 bg-amber-300/5 font-mono text-[11px] text-amber-200"
+					>
+						{entry.failureCode}
+					</Badge>
+				)}
+				{isActiveRelease && (
+					<Badge variant="outline" className="border-emerald-500/60 bg-emerald-500/10 text-emerald-400">
+						Active Release
+					</Badge>
+				)}
+				{entry.durationMs && (
+					<span className="text-xs text-muted-foreground flex items-center gap-1">
+						<Clock className="size-3" />
+						{(entry.durationMs / 1000 / 60).toFixed(1)}m
+					</span>
+				)}
+			</div>
+			{(entry.commitSha || entry.commitMessage || entry.branch) && (
+				<div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+					{entry.commitSha && (
+						<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
+							<GitCommit className="size-3" />
+							<code className="font-mono">{entry.commitSha.substring(0, 7)}</code>
+						</div>
+					)}
+					{entry.commitMessage && (
+						<span className="max-w-64 truncate" title={entry.commitMessage}>
+							{entry.commitMessage}
+						</span>
+					)}
+					{entry.branch && (
+						<div className="flex items-center gap-1.5 bg-background px-2 py-1 rounded border border-border/50">
+							<GitBranch className="size-3" />
+							<span className="font-medium text-foreground">{entry.branch}</span>
+						</div>
+					)}
+				</div>
+			)}
+		</div>
 	);
 }

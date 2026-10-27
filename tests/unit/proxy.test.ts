@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
 const addToWaitingListMock = vi.fn();
-const mockConfig = { WAITING_LIST_ENABLED: true };
+const mockConfig = { WAITING_LIST_ENABLED: true, WORKSPACE_APPS_ENABLED: false, PRIVATE_APP_GATEWAY_ENABLED: false };
 
 vi.mock("@/lib/auth", () => ({
 	auth: {
@@ -23,10 +23,16 @@ vi.mock("@/db-helper", () => ({
 }));
 
 describe("proxy approval guard", () => {
+	let proxy: typeof import("@/proxy").proxy;
+	// Load the server module as fixture setup, outside each request's timeout.
+	beforeAll(async () => { ({ proxy } = await import("@/proxy")); }, 30_000);
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.unstubAllEnvs();
 		mockConfig.WAITING_LIST_ENABLED = true;
+		mockConfig.WORKSPACE_APPS_ENABLED = false;
+		mockConfig.PRIVATE_APP_GATEWAY_ENABLED = false;
 		vi.stubEnv("SUPABASE_URL", "https://supabase.example.com");
 		vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
 	});
@@ -38,7 +44,6 @@ describe("proxy approval guard", () => {
 			json: async () => ([]),
 		} as Response);
 
-		const { proxy } = await import("@/proxy");
 		const response = await proxy({
 			nextUrl: new URL("http://localhost:3000/home"),
 			url: "http://localhost:3000/home",
@@ -47,6 +52,24 @@ describe("proxy approval guard", () => {
 		expect(addToWaitingListMock).toHaveBeenCalledWith("removed@example.com", "Removed User");
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toBe("http://localhost:3000/waiting-list");
+		const expiredCookies = response.cookies.getAll();
+		expect(expiredCookies).toHaveLength(4);
+		for (const cookie of expiredCookies) {
+			expect(cookie.name).toMatch(/^__Host-smartdeploy\./);
+			expect(cookie).toMatchObject({ secure: true, httpOnly: true, path: "/", sameSite: "lax", maxAge: 0 });
+			expect(cookie.domain).toBeUndefined();
+		}
+	});
+
+	it("retains the login for private-app use while continuing to deny the platform home", async () => {
+		mockConfig.WORKSPACE_APPS_ENABLED = true;
+		mockConfig.PRIVATE_APP_GATEWAY_ENABLED = true;
+		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "invitee@example.com" } });
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json([]));
+		const response = await proxy({ nextUrl: new URL("https://control.test/home"), url: "https://control.test/home" } as never);
+		expect(response.status).toBe(307);
+		expect(response.headers.get("location")).toBe("https://control.test/waiting-list");
+		expect(response.headers.get("set-cookie")).toBeNull();
 	});
 
 	it("skips approved-user checks when waiting list is disabled", async () => {
@@ -54,7 +77,6 @@ describe("proxy approval guard", () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "removed@example.com" } });
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fetch should not be called"));
 
-		const { proxy } = await import("@/proxy");
 		const response = await proxy({
 			nextUrl: new URL("http://localhost:3000/home"),
 			url: "http://localhost:3000/home",
@@ -68,7 +90,6 @@ describe("proxy approval guard", () => {
 		getSessionMock.mockResolvedValue({ user: { id: "u1", email: "approved@example.com" } });
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fetch should not be called"));
 
-		const { proxy } = await import("@/proxy");
 		const response = await proxy({
 			nextUrl: new URL("http://localhost:3000/"),
 			url: "http://localhost:3000/",
@@ -89,7 +110,6 @@ describe("proxy approval guard", () => {
 			json: async () => ([{ email: "approved@example.com" }]),
 		} as Response);
 
-		const { proxy } = await import("@/proxy");
 		const response = await proxy({
 			nextUrl: new URL("http://localhost:3000/home"),
 			url: "http://localhost:3000/home",

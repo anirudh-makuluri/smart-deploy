@@ -1,0 +1,82 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "gateway-native-http-bridge",
+  "purpose": "Bound native HTTPS protocol, input cancellation and streamed output around authenticated fixed-runtime handlers",
+  "baselineRevision": "4b3371eafcf8308ae00fbd3a9ca7aabcdd117d3b",
+  "candidateBaseRevision": "4b3371eafcf8308ae00fbd3a9ca7aabcdd117d3b",
+  "baselineEvidence": "Verified #117 final source snapshot saved before commit; identical source now 4b3371e",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 37,
+    "affectedFileCount": 26,
+    "totalDiagnosticCount": 37,
+    "score": 84,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [],
+  "collateral": [
+    "src/lib/gateway/nativeInput.ts",
+    "src/lib/gateway/nativeResponse.ts",
+    "src/lib/gateway/nativeServer.ts",
+    "tests/unit/lib/gatewayNativeServer.test.ts",
+    "tests/e2e/app-login-confirmation.spec.ts",
+    "docs/internal/GATEWAY_NATIVE_HTTP.md",
+    "docs/internal/GATEWAY_AUTHENTICATED_HTTP.md",
+    "docs/internal/GATEWAY_HTTP_STREAMING.md"
+  ],
+  "verification": {
+    "unitFiles": 150,
+    "unitTests": 956,
+    "newNativeProtocolTests": 22,
+    "inputDestroyMutationFailed": 1,
+    "compiledNextDatabaseBrowserCases": 15,
+    "newBrowserCases": 3,
+    "protocolFixture": "Real HTTPS/raw TLS with verified fixture SNI and configured app Host; trusted fake handler, not authentication proof",
+    "browserFixture": "Actual native HTTPS bridge, signed Better Auth cookies/PostgreSQL API and verified TLS app transport; approval/verification/app content remain fixtures",
+    "browserAdditions": "Same-origin upload, readable anonymous POST with zero app requests, actual app cookie overwrite denied with session preserved",
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "buildSource": "Compiled browser setup builds source; later mutation restored byte-for-byte before full unit/worker checks",
+    "buildWarning": "Unchanged serviceDetectionClassification.ts broad filesystem tracing warning retained",
+    "timeoutRepair": "Header timeout must not exceed request timeout; factory now enforces both bounds",
+    "completeChangedFiles": 5,
+    "completeFullFiles": 631,
+    "unchangedDiagnosticIds": true,
+    "databaseSuite": "Unchanged full suite passes in #117 CI; new native PostgreSQL/browser composition repeated locally",
+    "databaseStopped": true,
+    "fixtureServersStopped": true,
+    "generatedTlsFilesRemoved": true,
+    "hostedEndToEnd": false
+  },
+  "limitations": [
+    "Unbound server factory; no production process/listen address, authoritative runtime registrar, DNS or certificate provisioning.",
+    "Trusted routes must wrap authenticated gateway handlers; native framing alone does not authorize protected cookies or identities.",
+    "HTTP/1.1 only; upgrades/CONNECT/pipelined extra requests are rejected, not proxied.",
+    "Per-server caps and app body limits exclude fixed error/header/TLS overhead and do not replace global cost/rate controls.",
+    "Full Doctor >=95, WS, AWS private ingress/wake/idle/budget, app data/secrets/quotas, UI/tools and hosted acceptance remain unmet."
+  ],
+  "productionReady": false,
+  "productionMutations": false
+}

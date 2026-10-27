@@ -7,11 +7,7 @@ import type {
 	SDArtifactsResponse,
 	repoType,
 } from "@/app/types";
-
-type GraphQLResponse<T> = {
-	data?: T;
-	errors?: { message: string }[];
-};
+import { isJsonObject, jsonErrorMessage, responseErrorMessage } from "./httpResponse";
 
 type BenchmarkSample = {
 	label: "graphql" | "rest";
@@ -34,17 +30,18 @@ async function graphQLRequest<T>(query: string, variables?: Record<string, unkno
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ query, variables }),
 	});
-	const payload: GraphQLResponse<T> = await res.json();
-	if (payload.errors && payload.errors.length > 0) {
-		throw new Error(payload.errors[0].message);
-	}
 	if (!res.ok) {
-		throw new Error("GraphQL request failed");
+		throw new Error(await responseErrorMessage(res, `GraphQL request failed (${res.status})`));
 	}
-	if (payload.data === undefined) {
+	const payload: unknown = await res.json().catch(() => null);
+	if (!isJsonObject(payload)) throw new Error("GraphQL response missing data");
+	if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+		throw new Error(jsonErrorMessage({ errors: payload.errors }, "GraphQL request failed"));
+	}
+	if (!isJsonObject(payload.data)) {
 		throw new Error("GraphQL response missing data");
 	}
-	return payload.data;
+	return payload.data as T;
 }
 
 function average(samples: BenchmarkSample[]) {
@@ -335,11 +332,14 @@ export async function saveDeploymentAnalysis(args: {
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(args),
 	});
-	const payload = (await res.json().catch(() => ({}))) as { error?: string; responseId?: string | null };
 	if (!res.ok) {
-		throw new Error(payload.error || `Failed to save analysis (${res.status})`);
+		throw new Error(await responseErrorMessage(res, `Failed to save analysis (${res.status})`));
 	}
-	return { responseId: payload.responseId ?? null };
+	const payload: unknown = await res.json().catch(() => null);
+	if (!isJsonObject(payload) || (typeof payload.responseId !== "string" && payload.responseId !== null)) {
+		throw new Error("Analysis response missing a response ID");
+	}
+	return { responseId: payload.responseId };
 }
 
 export async function refreshRepos(): Promise<repoType[]> {

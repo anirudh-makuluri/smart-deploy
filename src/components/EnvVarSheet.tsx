@@ -10,31 +10,11 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Trash2, Upload, FileText, X } from "lucide-react";
+import { Plus, Trash2, Upload, FileText } from "lucide-react";
 import { parseEnvLinesToEntries } from "@/lib/utils";
 import { toast } from "sonner";
-
-type EnvVarEntry = {
-	name: string;
-	value: string;
-}
-
-function createRowIds(length: number): string[] {
-	return Array.from({ length }, () => crypto.randomUUID());
-}
-
-function syncRowIds(rowIds: string[], targetLength: number): string[] {
-	const next = [...rowIds];
-	while (next.length < targetLength) {
-		next.push(crypto.randomUUID());
-	}
-	while (next.length > targetLength) {
-		next.pop();
-	}
-	return next;
-}
+import { useEnvVarRows, type EnvVarEntry } from "@/components/env-vars/useEnvVarRows";
 
 type EnvVarSheetProps = {
 	open: boolean;
@@ -50,36 +30,17 @@ export default function EnvVarSheet({
 	onEntriesChange,
 }: EnvVarSheetProps) {
 	const fileInputRef = React.useRef<HTMLInputElement>(null);
-	const [focusedIndex, setFocusedIndex] = React.useState<number | null>(null);
-	const [rowIds, setRowIds] = React.useState<string[]>(() => createRowIds(entries.length));
-	const effectiveRowIds = React.useMemo(() => syncRowIds(rowIds, entries.length), [entries.length, rowIds]);
-
-	const handleAddVariable = () => {
-		onEntriesChange([...entries, { name: "", value: "" }]);
-	};
-
-	const handleRemoveVariable = (index: number) => {
-		setRowIds((prev) => {
-			const next = [...prev];
-			next.splice(index, 1);
-			return next;
-		});
-		const newEntries = entries.filter((_, i) => i !== index);
-		onEntriesChange(newEntries);
-	};
-
-	const handleUpdateVariable = (
-		index: number,
-		field: keyof EnvVarEntry,
-		value: string
-	) => {
-		const newEntries = [...entries];
-		if (field === "name") {
-			newEntries[index].name = value.toUpperCase().replace(/[^A-Z0-9_]/g, "");
-		} else {
-			newEntries[index].value = value;
-		}
-		onEntriesChange(newEntries);
+	const pendingRead = React.useRef<FileReader | null>(null);
+	const [focusedRowId, setFocusedRowId] = React.useState<string | null>(null);
+	if (!open && focusedRowId !== null) setFocusedRowId(null);
+	const { rows, addRow, removeRow, updateRow, replaceEntries, mergeEntries } = useEnvVarRows(entries, onEntriesChange);
+	React.useEffect(() => () => {
+		const reader = pendingRead.current;
+		if (reader) { reader.onload = null; reader.onerror = null; reader.abort(); }
+	}, []);
+	const handleRemoveVariable = (id: string) => {
+		if (focusedRowId === id) setFocusedRowId(null);
+		removeRow(id);
 	};
 
 	const handlePaste = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
@@ -89,10 +50,6 @@ export default function EnvVarSheet({
 			e.preventDefault();
 			const parsed = parseEnvLinesToEntries(pastedText);
 			if (parsed.length > 0) {
-				// If we are at index and it's the only one or we want to append/replace
-				// For simplicity, let's replace empty entries or append
-				const baseEntries = entries.filter(e => e.name || e.value);
-				// If the current entry being pasted into is empty, we can replace it
 				const currentEntry = entries[index];
 				let newEntries: EnvVarEntry[] = [];
 
@@ -113,8 +70,7 @@ export default function EnvVarSheet({
 				});
 
 				const finalEntries = Array.from(uniqueEntriesMap.entries()).map(([name, value]) => ({ name, value }));
-				setRowIds(createRowIds(finalEntries.length > 0 ? finalEntries.length : 1));
-				onEntriesChange(finalEntries.length > 0 ? finalEntries : [{ name: "", value: "" }]);
+				replaceEntries(finalEntries.length > 0 ? finalEntries : [{ name: "", value: "" }]);
 				toast.success(`Imported ${parsed.length} environment variables`);
 			}
 		}
@@ -124,23 +80,26 @@ export default function EnvVarSheet({
 		const file = e.target.files?.[0];
 		if (!file) return;
 
+		const previous = pendingRead.current;
+		if (previous) { previous.onload = null; previous.onerror = null; previous.abort(); }
 		const reader = new FileReader();
+		pendingRead.current = reader;
 		reader.onload = (event) => {
+			if (pendingRead.current !== reader) return;
+			pendingRead.current = null;
 			const content = event.target?.result as string;
 			const parsed = parseEnvLinesToEntries(content);
 			if (parsed.length > 0) {
-				// Merge with existing, priority to new
-				const entryMap = new Map<string, string>();
-				entries.forEach(e => { if (e.name) entryMap.set(e.name, e.value) });
-				parsed.forEach(e => { if (e.name) entryMap.set(e.name, e.value) });
-
-				const merged = Array.from(entryMap.entries()).map(([name, value]) => ({ name, value }));
-				setRowIds(createRowIds(merged.length));
-				onEntriesChange(merged);
+				mergeEntries(parsed);
 				toast.success(`Imported ${parsed.length} variables from ${file.name}`);
 			} else {
 				toast.error("No valid environment variables found in file");
 			}
+		};
+		reader.onerror = () => {
+			if (pendingRead.current !== reader) return;
+			pendingRead.current = null;
+			toast.error("Unable to read .env file");
 		};
 		reader.readAsText(file);
 		// Reset input
@@ -180,7 +139,7 @@ export default function EnvVarSheet({
 						/>
 						<div className="h-4 w-px bg-white/10 mx-1" />
 						<Button
-							onClick={handleAddVariable}
+							onClick={addRow}
 							variant="default"
 							size="sm"
 							className="bg-primary hover:bg-primary/90 text-xs h-9"
@@ -209,28 +168,31 @@ export default function EnvVarSheet({
 										<span className="text-[10px] w-1/2 font-bold text-muted-foreground/40 uppercase tracking-wider">Value</span>
 									</div>
 									<div className="space-y-2">
-										{entries.map((entry, index) => (
-											<div key={effectiveRowIds[index] ?? index} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
+										{rows.map(({ id, entry }, index) => (
+											<div key={id} className="flex flex-row gap-2 items-center animate-in fade-in slide-in-from-right-2 duration-200">
 												<Input
 													value={entry.name}
 													onPaste={(e) => handlePaste(index, e)}
-													onChange={(e) => handleUpdateVariable(index, "name", e.target.value)}
+													onChange={(e) => updateRow(id, "name", e.target.value)}
+													aria-label={`Variable ${index + 1} name`}
 													placeholder="NAME"
 													className="bg-white/[0.03] border-white/5 h-9 text-xs font-mono focus-visible:ring-primary/20"
 												/>
 												<Input
 													value={entry.value}
-													onChange={(e) => handleUpdateVariable(index, "value", e.target.value)}
-													onFocus={() => setFocusedIndex(index)}
-													onBlur={() => setFocusedIndex(null)}
+													onChange={(e) => updateRow(id, "value", e.target.value)}
+													aria-label={`Variable ${index + 1} value`}
+													onFocus={() => setFocusedRowId(id)}
+													onBlur={() => setFocusedRowId(null)}
 													placeholder="VALUE"
-													type={focusedIndex === index ? "text" : "password"}
+													type={focusedRowId === id ? "text" : "password"}
 													className="bg-white/[0.03] border-white/5 h-9 text-xs font-mono focus-visible:ring-primary/20"
 												/>
 												<Button
 													variant="ghost"
 													size="icon"
-													onClick={() => handleRemoveVariable(index)}
+													onClick={() => handleRemoveVariable(id)}
+													aria-label={`Remove variable ${index + 1}`}
 													className="h-9 w-9 text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 shrink-0"
 												>
 													<Trash2 className="size-3.5" />

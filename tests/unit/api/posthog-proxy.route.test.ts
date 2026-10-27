@@ -7,6 +7,31 @@ const context = { params: Promise.resolve({ path: ["e"] }) };
 afterEach(() => vi.restoreAllMocks());
 
 describe("analytics proxy credential boundary", () => {
+	it("delivers upstream headers and initial bytes before the stream finishes, and propagates cancellation", async () => {
+		const cancel = vi.fn();
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) { controller.enqueue(new TextEncoder().encode("first chunk")); },
+			cancel,
+		});
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(stream, { status: 503, headers: { "Retry-After": "5" } }));
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const response = await Promise.race([
+				GET(new NextRequest("https://control.test/ph/e"), context),
+				new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("Proxy waited for upstream EOF")), 1000); }),
+			]);
+			expect(response.status).toBe(503);
+			expect(response.headers.get("retry-after")).toBe("5");
+			const reader = response.body!.getReader();
+			expect(new TextDecoder().decode((await reader.read()).value)).toBe("first chunk");
+			await reader.cancel("client closed");
+			expect(cancel).toHaveBeenCalledWith("client closed");
+		} finally {
+			clearTimeout(timeout);
+			if (!stream.locked) await stream.cancel();
+		}
+	});
+
 	it("forwards the project-token payload without platform cookies, bearer tokens, or private headers", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("ok"));
 		const body = JSON.stringify({ api_key: "phc_local_test_only", event: "test" });

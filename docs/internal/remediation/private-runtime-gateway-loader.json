@@ -1,0 +1,46 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "private-runtime-gateway-loader",
+  "baselineRevision": "e42429779746bc18efb63a559fb5e3cb21e9b81d",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Load only trusted current SQL/SSM/pinned-TLS runtime state, reconcile selected routes, and run a bounded-expiry operator gateway",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 688 },
+  "verification": {
+    "unitFiles": 165,
+    "unitTests": 1253,
+    "newUnitCases": 44,
+    "postgresFiles": 10,
+    "postgresTests": 153,
+    "newPostgresTlsCases": 2,
+    "dynamoCases": 33,
+    "nativeWorkloadProcesses": 2,
+    "compiledGatewayProcesses": 2,
+    "compiledPrivateBrowser": 15,
+    "compiledPublicBrowser": 5,
+    "cookieAndNativeBrowserCases": 21,
+    "typecheck": true,
+    "lint": true,
+    "productionBuild": true,
+    "workerBuild": true,
+    "workloadBuild": true,
+    "doctorComplete": true,
+    "hostedEndToEnd": false,
+    "initialRepairedFailures": [
+      "Fixture TLS overload and raw socket types required the existing GatewayTlsDial and Duplex interfaces.",
+      "SQL integration fixture initially used a nonexistent grant setter; now uses the existing grantUse/revokeUse methods.",
+      "Preload fixture moved to ESM for lint and uses a file URL for Windows --import compatibility."
+    ]
+  },
+  "limitations": [
+    "Process expiry stops serving, not AWS billing; durable owned-resource teardown remains required.",
+    "The launcher still must compose AWS task/network observation, source preflight/recheck, registration and activation.",
+    "Standalone process registry/SSM/platform transport is explicitly fake; TLS, HTTP serving and expiry are real.",
+    "Real PostgreSQL/TLS integration mocks SSM and document storage; no AWS IAM/ingress or hosted proof is implied.",
+    "No provisioning, worker start, migrations, flags, connection change, invitation email or production release."
+  ]
+}

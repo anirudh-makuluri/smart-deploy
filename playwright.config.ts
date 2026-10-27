@@ -13,9 +13,11 @@ export default defineConfig({
 		trace: "on-first-retry",
 	},
 	webServer: {
-		command: "npm run dev",
+		command: process.env.RUN_DATABASE_BROWSER_TESTS === "1" || process.env.RUN_INVITEE_BROWSER_TESTS === "1"
+			? "node tests/e2e/prepare-auth-schema.mjs && npm run dev" : "npm run dev",
+		// Probe without initializing auth before the disposable schema is prepared.
 		url: "http://localhost:3000/api/health",
-		reuseExistingServer: process.env.RUN_PROXY_BROWSER_TESTS !== "1",
+		reuseExistingServer: process.env.RUN_DATABASE_BROWSER_TESTS !== "1" && process.env.RUN_PROXY_BROWSER_TESTS !== "1" && process.env.RUN_INVITEE_BROWSER_TESTS !== "1",
 		timeout: 120_000,
 	},
 	projects: [

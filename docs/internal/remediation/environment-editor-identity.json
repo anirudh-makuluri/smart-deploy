@@ -1,0 +1,112 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "environment-editor-identity",
+  "purpose": "Stable immutable environment rows, secret masking and import lifecycle isolation",
+  "baselineRevision": "6a090c957ae7ca5ad65b7f0d7850052fd6eb9fcf",
+  "candidateBaseRevision": "6a090c957ae7ca5ad65b7f0d7850052fd6eb9fcf",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "before": {
+    "errorCount": 0,
+    "warningCount": 42,
+    "affectedFileCount": 29,
+    "totalDiagnosticCount": 42,
+    "score": 82,
+    "scoreLabel": "Needs work"
+  },
+  "after": {
+    "errorCount": 0,
+    "warningCount": 40,
+    "affectedFileCount": 28,
+    "totalDiagnosticCount": 40,
+    "score": 83,
+    "scoreLabel": "Needs work"
+  },
+  "changedFileSummary": {
+    "errorCount": 0,
+    "warningCount": 0,
+    "affectedFileCount": 0,
+    "totalDiagnosticCount": 0,
+    "score": 100,
+    "scoreLabel": "Great"
+  },
+  "diagnostics": [
+    {
+      "filePath": "src/components/EnvVarSheet.tsx",
+      "plugin": "react-doctor",
+      "rule": "no-array-index-as-key",
+      "severity": "warning",
+      "title": "Array index used as a key",
+      "message": "Your users can see & submit the wrong data when this list reorders or filters, so use a stable id like `key={item.id}`, not the array index \"index\".",
+      "help": "Use a stable id from the item, like `key={item.id}` or `key={item.slug}`. Index keys break when the list reorders or filters.",
+      "line": 213,
+      "column": 17,
+      "offset": 7560,
+      "length": 37,
+      "endLine": 213,
+      "category": "Bugs",
+      "fingerprint": "d4985dd8a7bd33532e1808ccd31c7f2c29a93349d1c763f69f25614c2df44f7e",
+      "id": "src/components/EnvVarSheet.tsx::213:17::react-doctor/no-array-index-as-key::4355749737c20ecca42e88a124407ac8602be73048f4c3deb95ffd199427279c",
+      "normalizedFilePath": "src/components/EnvVarSheet.tsx",
+      "tags": []
+    },
+    {
+      "filePath": "src/components/EnvVarSheet.tsx",
+      "plugin": "react-doctor",
+      "rule": "shadcn-icon-button-requires-label",
+      "severity": "warning",
+      "title": "Icon-only Button without accessible name",
+      "message": "This icon-only Button has no accessible name, so screen readers announce an unnamed button. Add aria-label or an sr-only text child (e.g. <span className=\"sr-only\">Delete</span>).",
+      "help": "Give every icon-sized Button an aria-label or an sr-only text child so assistive technology announces what the button does.",
+      "line": 230,
+      "column": 14,
+      "offset": 8528,
+      "length": 6,
+      "endLine": 235,
+      "category": "Accessibility",
+      "matchByOccurrence": true,
+      "fingerprint": "707eab0c23ecbf6e5382ba61a346bc76aefee81303280fc0e08e59df18afbf8a",
+      "id": "src/components/EnvVarSheet.tsx::230:14::react-doctor/shadcn-icon-button-requires-label::cf7d6214ff946be7e2fab34a9aefb8f617117b968a3e37633db55d196e54ddf3",
+      "normalizedFilePath": "src/components/EnvVarSheet.tsx",
+      "tags": []
+    }
+  ],
+  "confirmedIssues": [
+    "Appending and reordering could remount or reuse the wrong input.",
+    "Editing mutated caller-owned entry objects.",
+    "Row inputs and remove buttons lacked accessible names.",
+    "Delayed file completion could restore stale edits; superseded or unmounted readers must not commit.",
+    "Switching deployments must reset secret reveal state and cancel the previous import.",
+    "Closing and reopening retained plain-text reveal state despite the secret losing focus."
+  ],
+  "collateral": [
+    "src/components/ConfigTabs.tsx",
+    "src/components/EnvVarSheet.tsx",
+    "src/components/env-vars/useEnvVarRows.ts",
+    "tests/unit/components/ConfigTabs.test.tsx",
+    "tests/unit/components/EnvVarSheet.test.tsx",
+    "docs/internal/ENVIRONMENT_EDITOR_IDENTITY.md"
+  ],
+  "guidance": {
+    "indexRule": "Canonical 200 with plugin version drift; matched pinned local rules explain used.",
+    "iconRule": "Canonical 404; matched pinned local rules explain used."
+  },
+  "verification": {
+    "unitFiles": 136,
+    "unitTests": 587,
+    "editorTests": 11,
+    "configTabsTests": 2,
+    "typecheck": true,
+    "lint": true,
+    "workerBuild": true,
+    "productionBuild": true,
+    "scopedDoctorFiles": 5,
+    "fullDoctorFiles": 588,
+    "doctorScansComplete": true,
+    "nativeBrowserEditorAudit": false
+  },
+  "productionReady": false,
+  "productionMutations": false
+}

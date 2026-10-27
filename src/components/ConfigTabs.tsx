@@ -56,6 +56,7 @@ export default function ConfigTabs({
 				/>
 
 				<EnvVarSheet
+					key={deployment.id}
 					open={tabs.isEnvSheetOpen}
 					onOpenChange={tabs.setIsEnvSheetOpen}
 					entries={tabs.envEntries}
