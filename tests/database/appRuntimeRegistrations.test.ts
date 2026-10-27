@@ -79,6 +79,30 @@ async function liveRegisteredRuntime(target: RuntimeBinding) {
 	return { ...value, loader, response };
 }
 describe("authoritative runtime registration metadata", () => {
+	it.each(["preview", "published"] as const)("projects readiness only for a current managed %s binding without creating a user session", async environment => {
+		const target = environment === "preview" ? binding : await store.createBinding(appId, environment, "alice");
+		const { input, key } = await registration(target);
+		await expect(auth.documentReadinessScope(target.id)).rejects.toMatchObject({ status: 401 });
+		await store.register(input);
+		await expect(auth.documentReadinessScope(target.id)).rejects.toMatchObject({ status: 401 });
+		await store.activate(input.id, "alice", null);
+		expect(await authenticateGateway(pool, "Bearer " + key.token)).toEqual({ bindingId: target.id });
+		expect(await auth.documentReadinessScope(target.id)).toEqual({ appId, environment });
+		expect((await client.query("select count(*)::int as count from public.app_gateway_sessions")).rows[0].count).toBe(0);
+		await store.deactivate(appId, environment, "alice", input.id);
+		await expect(auth.documentReadinessScope(target.id)).rejects.toMatchObject({ status: 401 });
+		await expect(authenticateGateway(pool, "Bearer " + key.token)).rejects.toMatchObject({ status: 401 });
+	});
+	it("does not acquire a workspace write lock for a read-only readiness projection", async () => {
+		const { input } = await registration(); await store.register(input); await store.activate(input.id, "alice", null);
+		const blocker = new Client({ connectionString: databaseTestConnectionString() });
+		const bounded = new Pool({ connectionString: databaseTestConnectionString(), max: 1, statement_timeout: 2000, connectionTimeoutMillis: 2000 });
+		await blocker.connect();
+		try {
+			await blocker.query("begin"); await blocker.query("select id from public.app_workspaces where id=$1 for update", [workspaceId]);
+			await expect(new GatewayAuthStore(bounded, { codeSeconds: 60, sessionSeconds: 900 }).documentReadinessScope(binding.id)).resolves.toEqual({ appId, environment: "preview" });
+		} finally { await blocker.query("rollback"); await blocker.end(); await bounded.end(); }
+	});
 	it("publishes two verified prepared releases while preserving the app session and retaining revocation", async () => {
 		const published = await store.createBinding(appId, "published", "alice");
 		const values = [await registration(published), await registration(published), await registration(binding)];
@@ -192,6 +216,7 @@ describe("authoritative runtime registration metadata", () => {
 		const session = await sessionFor(legacy, "alice");
 		expect(await auth.authorize(legacy.id, session.token)).toEqual({ id: "alice", email: "alice@example.test" });
 		expect(await auth.authorizeDocuments(legacy.id, session.token)).toBeNull();
+		await expect(auth.documentReadinessScope(legacy.id)).rejects.toMatchObject({ status: 401 });
 	});
 	it("prepares only pinned release metadata without configuration or secret values", async () => {
 		const { input, deploymentId } = await registration();

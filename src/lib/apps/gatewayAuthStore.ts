@@ -199,6 +199,16 @@ export class GatewayAuthStore {
 		return row ? { identity: { id: row.id, email: row.email }, scope: DataScope.parse({ appId: row.appId, environment: row.environment }) } : null;
 	}
 
+	/** Caller must authenticate the selected gateway separately. No user data/session is returned. */
+	async documentReadinessScope(bindingId: string): Promise<DataScope> {
+		requireId(bindingId);
+		const result = await this.pool.query<DataScope>(`select b.app_id as "appId", b.environment
+			from public.app_gateway_bindings b where b.id=$1 and b.runtime_managed
+			and public.app_gateway_binding_available(b.id)`, [bindingId]);
+		if (!result.rows[0]) throw new WorkspaceError(401, "A current managed gateway is required.");
+		return DataScope.parse(result.rows[0]);
+	}
+
 	async revoke(bindingId: string, token: string): Promise<void> {
 		requireId(bindingId);
 		if (!SECRET_PATTERN.test(token)) return;

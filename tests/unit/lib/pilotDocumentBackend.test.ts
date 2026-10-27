@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	get: vi.fn(),
 	put: vi.fn(),
 	remove: vi.fn(),
+	inspect: vi.fn(),
 	construct: vi.fn(),
 	assume: vi.fn(),
 }));
@@ -36,9 +37,10 @@ vi.mock("@/lib/apps/documentStore", () => ({
 		get = mocks.get;
 		put = mocks.put;
 		remove = mocks.remove;
+		inspect = mocks.inspect;
 	},
 }));
-import { executePilotDocument } from "@/lib/apps/pilotDocumentBackend";
+import { executePilotDocument, inspectPilotDocumentBackend } from "@/lib/apps/pilotDocumentBackend";
 import { AppDataError } from "@/lib/apps/documentSchema";
 
 const scope = { appId: "11111111-1111-4111-8111-111111111111", environment: "published" as const };
@@ -58,11 +60,41 @@ beforeEach(() => {
 	mocks.get.mockResolvedValue(null);
 	mocks.put.mockResolvedValue({ collection: "notes", id: "shared", version, json: "{}" });
 	mocks.remove.mockResolvedValue(undefined);
+	mocks.inspect.mockResolvedValue({ control: { state: "active" }, usage: { bytes: 0, count: 0 } });
 	mocks.assume.mockResolvedValue({ accessKeyId: "ASIA" + "A".repeat(16), secretAccessKey: "s".repeat(40), sessionToken: "t".repeat(64), expiration: new Date(Date.now() + 900000) });
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("bounded single-app document backend", () => {
+	it.each(["preview", "published"] as const)("readiness reads only control/quota for the server-derived %s scope", async environment => {
+		await expect(inspectPilotDocumentBackend({ ...scope, environment }, new AbortController().signal)).resolves.toBeUndefined();
+		expect(mocks.inspect).toHaveBeenCalledWith({ ...scope, environment });
+		expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.put).not.toHaveBeenCalled(); expect(mocks.remove).not.toHaveBeenCalled();
+		expect(mocks.assume).toHaveBeenCalledTimes(1); expect(mocks.destroy).toHaveBeenCalledTimes(1);
+	});
+	it("readiness denies deleted data and other apps without reading documents", async () => {
+		await expect(inspectPilotDocumentBackend({ ...scope, appId: version }, new AbortController().signal)).rejects.toMatchObject({ status: 403 });
+		expect(mocks.assume).not.toHaveBeenCalled();
+		mocks.inspect.mockResolvedValue({ control: { state: "deleted" } });
+		await expect(inspectPilotDocumentBackend(scope, new AbortController().signal)).rejects.toMatchObject({ status: 410 });
+		expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.destroy).toHaveBeenCalledTimes(1);
+	});
+	it("shares admission between readiness and user document operations until actual completion", async () => {
+		let finish = () => {};
+		mocks.inspect.mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ control: { state: "active" } }); }));
+		const releases: Array<() => void> = [];
+		mocks.get.mockImplementationOnce(() => new Promise(resolve => { releases.push(() => resolve(null)); }));
+		const controller = new AbortController();
+		const first = inspectPilotDocumentBackend(scope, controller.signal);
+		const second = executePilotDocument(scope, get, new AbortController().signal);
+		await vi.waitFor(() => expect(mocks.inspect).toHaveBeenCalledTimes(1));
+		controller.abort();
+		try {
+			await expect(inspectPilotDocumentBackend(scope, new AbortController().signal)).rejects.toMatchObject({ status: 503 });
+			await expect(executePilotDocument(scope, get, new AbortController().signal)).rejects.toMatchObject({ status: 503 });
+		} finally { finish(); for (const release of releases) release(); await Promise.all([first, second]); }
+		expect(mocks.destroy).toHaveBeenCalledTimes(2);
+	});
 	it("uses the explicit table ARN and AWS HTTPS endpoint with retries disabled, then destroys the client", async () => {
 		const signal = new AbortController().signal;
 		await expect(executePilotDocument(scope, get, signal)).resolves.toEqual({ document: null });

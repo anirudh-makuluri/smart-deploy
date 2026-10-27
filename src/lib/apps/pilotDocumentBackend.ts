@@ -11,11 +11,11 @@ let pending = 0;
 export type GatewayDocumentResult = { document: AppDocument | null } | { deleted: true };
 
 /** Single-app pilot only. This process bound is not a global spending limit. */
-export async function executePilotDocument(
+async function pilotDocumentOperation(
 	scope: DataScope,
-	operation: GatewayDocumentOperation,
+	operation: GatewayDocumentOperation | null,
 	signal: AbortSignal,
-): Promise<GatewayDocumentResult> {
+): Promise<GatewayDocumentResult | null> {
 	if (!config.PRIVATE_APP_DOCUMENTS_ENABLED) throw new AppDataError(503);
 	const allowed = z.uuid().safeParse(config.APP_DOCUMENTS_APP_ID);
 	const parsedScope = DataScope.parse(scope);
@@ -24,9 +24,9 @@ export async function executePilotDocument(
 	if (pending >= 2 || signal.aborted) throw new AppDataError(503);
 	const roleScope = { appId: parsedScope.appId, tableArn: config.APP_DOCUMENTS_TABLE_ARN, roleArn: config.APP_DOCUMENTS_ROLE_ARN, region: config.AWS_REGION };
 	documentRolePolicy(roleScope);
-	const parsed = GatewayDocumentOperation.parse(operation);
-	const address = DocumentAddress.parse({ ...parsedScope, collection: parsed.collection, id: parsed.id });
-	const json = parsed.action === "put" ? documentJson(parsed.json) : "";
+	const parsed = operation === null ? null : GatewayDocumentOperation.parse(operation);
+	const address = parsed ? DocumentAddress.parse({ ...parsedScope, collection: parsed.collection, id: parsed.id }) : null;
+	const json = parsed?.action === "put" ? documentJson(parsed.json) : "";
 	let client: DynamoDBDocumentClient | null = null;
 	pending++;
 	try {
@@ -47,6 +47,11 @@ export async function executePilotDocument(
 			}),
 		);
 		const store = new AppDocumentStore(client, config.APP_DOCUMENTS_TABLE_ARN, Date.now, signal);
+		if (!parsed || !address) {
+			const snapshot = await store.inspect(parsedScope);
+			if (snapshot.control.state !== "active") throw new AppDataError(410);
+			return null;
+		}
 		if (parsed.action === "get") return { document: await store.get(address) };
 		if (parsed.action === "put") return { document: await store.put(address, json, parsed.expectedVersion) };
 		await store.remove(address, parsed.expectedVersion);
@@ -56,4 +61,15 @@ export async function executePilotDocument(
 		pending--;
 		client?.destroy();
 	}
+}
+
+export async function executePilotDocument(scope: DataScope, operation: GatewayDocumentOperation, signal: AbortSignal): Promise<GatewayDocumentResult> {
+	const result = await pilotDocumentOperation(scope, operation, signal);
+	if (result === null) throw new AppDataError(503);
+	return result;
+}
+
+/** Trusted service readiness only: reads control/quota rows, never document contents or credentials. */
+export async function inspectPilotDocumentBackend(scope: DataScope, signal: AbortSignal): Promise<void> {
+	await pilotDocumentOperation(scope, null, signal);
 }
