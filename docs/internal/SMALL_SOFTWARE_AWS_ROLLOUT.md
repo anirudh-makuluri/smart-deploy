@@ -1584,3 +1584,43 @@ demo provisioning/admission and hosted creator/colleague/persistence/revocation
 proof remain required. This is local controlled-auth proof, not real OAuth/AWS
 acceptance. No production account, invitation, email, provider connection, flags,
 migration, billable cloud resources/startup, rollout merge or deployment changed.
+
+October 26 evening continuation: #131 exact-head CI/Vercel preview pass at
+987cd14b81151075244ba5ade718d412a260c251. Inspected run40444162780:1326unit,
+153SQL,33DynamoDB,21nativecookie/21compiledprivate/5publicbrowser,2gateway/
+2workloadprocess,1Linuxcontainer,full710-file Doctor100/100. No review threads.
+PR body/issue99 updated. Local sharing evidence remains in the earlier entry.
+
+Published and attached draft#132:
+https://github.com/anirudh-makuluri/smart-deploy/pull/132
+head1375dba08b5f5e5687c4f34f7520d4699e998af9, branchfeat/app-document-role,
+base#126/feat/private-app-document-api. Independent of later gateway/UI/cleanup
+branches; merge#126 before#132. Requires APP_DOCUMENTS_ROLE_ARN and short-lived
+STS credentials with one-table/exact-app-partition session policy. DynamoDB no
+longer receives the platform's broad credentials. Validate returned account/role/
+session/mandatory fields/expiry; no fallback. Include credential work in two-slot
+admission, retain slots until actual settlement, cancel/discard late credentials,
+one attempt/bounded endpoints/timeouts/client cleanup. Flag stays default-off.
+
+Final serial local proof:162unitfiles/1180tests(23new),33focusedcredential/backend,
+33DynamoDBLocal,15compiledprivate/5publicbrowser; full lint/types/private+public
+production builds/worker compilation+alias pass. Full676-file Doctor0.9.18
+100/100,zeroerrors/warnings/skips,no suppression. Read-only AWS Access Analyzer:
+zerofindings; all17IAMcustom-policy simulations pass(5positive/12negative).
+Initial policy validation passed but condition-check simulation denied: current
+service authorization reference and isolated simulations identified unsupported
+EnclosingOperation on ConditionCheckItem. Separate that permission with the same
+table/LeadingKeys restrictions; it has no standalone API. Recompiled/reran
+focused tests and restarted final verification after stopping the preliminary
+run; no interrupted run counted as passed. Final source/diff inspected. No actual
+assumed-role data access or IAM provisioning is claimed. Exact#132CIpending.
+Unchanged standalone SQL/workload implementations pass exact#126CI and were not
+repeated locally. OwnedDB/DynamoDB/browser fixtures stopped. Evidence:
+C:\Users\aniru\.codex\verification\smartdeploy-document-role-1793071948009.
+
+The actual role/trust/table/limits still need verified provisioning and actual
+positive/cross-app-negative calls before enabling. IAM isolates app partition;
+broker authorization and sort keys isolate environments. Trusted publish/launch,
+bounded workload provisioning/admission and hosted persistence/revocation proof
+remain. No production IAM/configuration/connection/migration/data/cloud resources,
+worker startup, rollout merge or deployment changed. Billing#85 untouched.
