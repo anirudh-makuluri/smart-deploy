@@ -41,4 +41,15 @@ describe("independent demo guard artifact", () => {
 		const dns = template.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "route53:ChangeResourceRecordSets");
 		expect(dns?.Condition).toEqual({ "ForAllValues:StringEquals": { "route53:ChangeResourceRecordSetsNormalizedRecordNames": [{ "Fn::Sub": "\\052.${AppDomain}" }], "route53:ChangeResourceRecordSetsActions": ["DELETE"], "route53:ChangeResourceRecordSetsRecordTypes": ["A"] } });
 	});
+	it("can remove both environment target groups and rules only on the owned ALB", async () => {
+		const template = await buildDemoGuardTemplate(); const statements = template.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement;
+		expect(statements.find(row => row.Action === "elasticloadbalancing:DeleteTargetGroup")?.Resource).toEqual(["pub", "prev"].map(environment => ({ "Fn::Sub": `arn:aws:elasticloadbalancing:\${AWS::Region}:\${AWS::AccountId}:targetgroup/sdp-\${DemoId}-${environment}/*` })));
+		expect(statements.find(row => row.Action === "elasticloadbalancing:DeleteRule")?.Resource).toEqual({ "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/sdp-${DemoId}-alb/*/*/*" });
+	});
+	it("includes registry-documented deletion dependencies without permitting new workloads or KMS grants", async () => {
+		const template = await buildDemoGuardTemplate(); const statements = template.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement; const actions = statements.flatMap(row => Array.isArray(row.Action) ? row.Action : [row.Action]);
+		for (const action of ["ec2:DescribeSecurityGroupRules", "elasticloadbalancing:DescribeRules", "iam:TagRole", "iam:UntagRole", "route53:ListHostedZones"]) expect(actions).toContain(action);
+		expect(statements.find(row => row.Action === "iam:PassRole")).toEqual({ Effect: "Allow", Action: "iam:PassRole", Resource: { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/sdp-${DemoId}-execution" }, Condition: { StringEquals: { "iam:PassedToService": "ecs-tasks.amazonaws.com" } } });
+		for (const action of ["ecs:RunTask", "ecs:CreateService", "ec2:StartInstances", "kms:RetireGrant", "dynamodb:DeleteTable"]) expect(actions).not.toContain(action);
+	});
 });

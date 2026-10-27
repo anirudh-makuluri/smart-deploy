@@ -1,0 +1,42 @@
+{
+  "owner": "smartdeploy-small-software-remediation",
+  "bucket": "aws-demo-composition",
+  "baselineRevision": "52fbbc3a73b5e3b69bde68ede75b721167328ee1",
+  "scannerVersion": "0.9.18",
+  "schemaVersion": 3,
+  "scope": "full",
+  "categorySelection": "unfiltered",
+  "productionReady": false,
+  "productionMutations": false,
+  "purpose": "Pure bounded curated-demo workload and CodeBuild request rendering with independently owned cleanup",
+  "after": { "score": 100, "errorCount": 0, "warningCount": 0, "completeFullFiles": 757 },
+  "verification": {
+    "focusedUnitFiles": 3,
+    "focusedUnitTests": 32,
+    "rendererCliScenarios": 10,
+    "cloudFormationSchemaFindings": 0,
+    "workloadGuardScenarios": 17,
+    "workloadGuardNegativeCases": 15,
+    "cleanupGuardScenarios": 9,
+    "cleanupGuardNegativeCases": 8,
+    "awsBasicTemplateChecks": 2,
+    "awsIamPoliciesChecked": 6,
+    "awsIamFindings": 0,
+    "awsValidationReadOnly": true,
+    "typecheck": true,
+    "lint": true,
+    "workerAndFixtureCompilation": true,
+    "doctorComplete": true,
+    "exactHeadCiPending": true,
+    "actualAwsResources": false
+  },
+  "limitations": [
+    "The full Doctor scan covers the combined worktree, including the separate readiness continuation.",
+    "No AWS build, resource, worker start, production migration, flag, provider connection or deployment changed.",
+    "Requires live guard, lease, cost, certificate, network and platform-principal admission before execution.",
+    "Requires a runtime-only WebSocket entrypoint and quarantined worker bootstrap before public ingress.",
+    "Retains app data and quarantine on bootstrap failure; does not implement app deletion, purge or later-window data import.",
+    "Actual build/catalog/bootstrap, hosted AWS persistence/version and observed teardown remain pending.",
+    "The user deferred the manual two-account hosted sharing and revocation test."
+  ]
+}

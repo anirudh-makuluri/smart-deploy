@@ -4,8 +4,17 @@ on:
     paths:
       - src/lib/aws/demoCleanup.ts
       - src/lib/aws/demoGuardParameters.ts
+      - src/lib/aws/demoWorkload.ts
+      - src/lib/aws/demoBuildPlan.ts
+      - src/lib/aws/documentRole.ts
       - scripts/build-demo-guard.mjs
       - scripts/verify-demo-guard.mjs
+      - scripts/render-demo-workload*.mjs
+      - scripts/render-demo-build.mjs
+      - scripts/verify-demo-workload.mjs
+      - tests/helpers/demoWorkloadPlan.ts
+      - tests/helpers/gatewayCertificate.ts
+      - tsconfig.demo-validation.json
       - infra/demo/**
       - .github/workflows/demo-guard-validation.yml
 permissions:
@@ -22,11 +31,17 @@ jobs:
       - run: npm ci
       - name: Render reviewed cleanup source into template
         run: node scripts/build-demo-guard.mjs "$RUNNER_TEMP/demo-guard.json"
+      - name: Render bounded offline build and runtime workload fixtures
+        run: |
+          npx tsc -p tsconfig.demo-validation.json
+          mkdir "$RUNNER_TEMP/demo-workload"
+          node scripts/render-demo-workload-fixtures.mjs "$RUNNER_TEMP/demo-workload"
       - name: Validate CloudFormation schema
         run: |
           python3 -m venv "$RUNNER_TEMP/demo-cfn-tools"
           "$RUNNER_TEMP/demo-cfn-tools/bin/python" -m pip install cfn-lint==1.58.0
           "$RUNNER_TEMP/demo-cfn-tools/bin/cfn-lint" --format json --regions us-west-2 --template "$RUNNER_TEMP/demo-guard.json"
+          "$RUNNER_TEMP/demo-cfn-tools/bin/cfn-lint" --format json --regions us-west-2 --template "$RUNNER_TEMP/demo-workload/build-template.json" "$RUNNER_TEMP/demo-workload/runtime-template.json"
       - name: Verify compliance and negative mutations with pinned official Guard
         run: |
           mkdir "$RUNNER_TEMP/demo-guard-tool"
@@ -34,6 +49,7 @@ jobs:
           echo "09c2b8cfd81d513374a8da89d4805dc55006a3da52bbf598e272022d4d198e94  $RUNNER_TEMP/demo-guard-tool/guard.tar.gz" | sha256sum --check
           tar -xzf "$RUNNER_TEMP/demo-guard-tool/guard.tar.gz" -C "$RUNNER_TEMP/demo-guard-tool"
           node scripts/verify-demo-guard.mjs "$RUNNER_TEMP/demo-guard-tool/cfn-guard-v3-x86_64-ubuntu-latest/cfn-guard" "$RUNNER_TEMP/demo-guard-mutations.json"
+          node scripts/verify-demo-workload.mjs "$RUNNER_TEMP/demo-guard-tool/cfn-guard-v3-x86_64-ubuntu-latest/cfn-guard" "$RUNNER_TEMP/demo-workload" "$RUNNER_TEMP/demo-workload-mutations.json"
       - name: Save validation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -42,3 +58,5 @@ jobs:
           path: |
             ${{ runner.temp }}/demo-guard.json
             ${{ runner.temp }}/demo-guard-mutations.json
+            ${{ runner.temp }}/demo-workload/*-template.json
+            ${{ runner.temp }}/demo-workload-mutations.json
