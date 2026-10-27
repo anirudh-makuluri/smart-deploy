@@ -1691,3 +1691,29 @@ any curated build must use a separately scoped ephemeral role override and a
 bounded timeout under the demo guard/cost admission. No build or resource was
 started, and no provider connection was modified. Actual hosted runtime,
 persistence/redeployment/revocation and automatic teardown proof remain gates.
+
+Published draftPR#134,feat/app-preview-publish-ui at
+4a8192f4a7000863e989afc02f9cb19ef9a31b04,base release/private-app-mvp2d03ef4.
+Final serial combined proof:183unitfiles/1446tests(24new),155SQL,33DynamoDB,
+2gateway/2workloadprocess,23private/5publiccompiledbrowser; full lint/types/
+private+publicbuilds/worker+workloadcompilation pass. Complete737-file Doctor
+100/100,zero findings/skips,no suppression. Mobile390px visually inspected.
+First compiled run caught retired-v1 selector fallback after v2 selection;
+repaired and unit/browser regression passes. Initial test-handler diagnostic
+repaired with explicit async error handling. Final single-case visual rerun
+preserves screenshot outside the public suite's cleaned output. Failed runs are
+retained separately and not counted as passing. OwnedDB/fixtures stopped.
+Evidence:C:\Users\aniru\.codex\verification\smartdeploy-publish-ui-1793109480000.
+Exact-head CI pending; issue99/PR attachment recorded. Production unchanged.
+
+Read-only Vercel dashboard confirms production is the#a8af9f3 analytics hotfix,
+main is its production branch, and PRIVATE_APP settings are absent from both
+project and linked shared variables. Existing dashboard access is available;
+no secret was revealed, no setting/connection changed. Temporary tab closed.
+
+Active next slice:feat/aws-private-demo-compose, based on#134head4a8192f in the
+same managed worktree. No code changes yet. It must compose the curated notes
+app, bounded AWS workload/build/bootstrap and the existing cleanup/data/runtime
+guards. Actual IAM/certificate/network/version/persistence/revocation/teardown
+proof remains required before the complete MVP can be called shipped. No AWS
+build/resource/worker start, production migration/flag, merge or release occurred.
