@@ -1825,3 +1825,73 @@ test remains deferred by explicit user instruction. Main remainsa8af9f3;worker
 auto-deployment variable is absent (live list query succeeds),so main pushes do
 not automatically start the worker. No AWS resource/build/startup,production
 migration/flag/provider connection/account/session/email/merge/deploy changed.
+
+PR#136/#137 exact-head CI and Vercel previews now pass. Inspected#136 build
+122503723995/database122503723486/infrastructure122503723769:1490unit,155SQL,
+33DDB,21nativecookie/23private/fivepublic/one notes-processbrowser,two gateway/
+two workload process,both Linux containers,17workload/9cleanup Guard cases and
+complete755-file Doctor100/100. The standalone755 count excludes readiness.
+Inspected#137 build122504248086/database122504247566:1515unit,158SQL,33DDB,
+same browser/process/container cases and full757-file Doctor100/100. Final SQL
+includes management-lock contention. No review threads on either PR. PR bodies
+and issue99 updated. A diagnostics log502 for#136 was recovered through bounded
+gh job-log inspection; no check failure or rerun was hidden.
+
+Active feat/private-demo-worker remains uncommitted,base#137. Dedicated server
+and production CLI/image target are implemented. Normal production Docker target
+still inherits the original runner. The demo omits general jobs/internal bridge/
+background reconciler,denies non-runtime socket events and stops at fixed expiry.
+Shared session-pool setup is reset and forced to the validated operator CA with
+verify-full and a two-connection bound;the controller keeps its separate verified
+pool. Mode/version/port/expiry health has no credentials/catalog metadata.
+Initial22focused unit and10native transport/compiled-process cases pass. Added
+occupied-port preservation and pre-timer expired-health tests; final complete
+unit/types/lint/compilation/native/Doctor verification is running serially.
+Linux Docker is unavailable locally; new actual-image CI is required,not skipped.
+
+Read-only AWS inspection confirms the existing worker role already has scoped
+GetSecretValue access to the existing smartdeploy-server secret,and required
+database/auth/AWS/Supabase configuration fields are present. No values displayed,
+provider connection changed,SSM credential transfer or new IAM grant. Actual
+runtime launch remains blocked on final code/CI and explicit existing guard/
+lease/cost/certificate/principal/build/catalog/bootstrap/teardown checks. Manual
+real-account hosted test remains deferred. No production/AWS mutation.
+
+Protected read-only STS verification using the existing server-secret AWS fields
+identifies account328342419078/user smartdeploy-service-user. This differs from
+the operator CLI's default-user. Use the verified server principal for dedicated
+document-role trust;do not assume the operator is the application caller. The
+actual hosted Next.js broker still needs positive readiness/CloudTrail proof,
+because its runtime credential-provider selection can differ. Credential values
+were never displayed,persisted or written to a provider connection.
+
+Published/attached draftPR#138 at
+d3f95bc07362860939299da15b6b176bbd8d5b37,base#137,branchfeat/private-demo-worker.
+17files435additions/three deletions. Full189unitfiles/1520tests pass; final
+nine native signed Socket.IO/HTTP and three compiled CLI cases pass,including
+session revocation,unsupported jobs,malformed actor/cloud fields,pre-timer expiry
+health,automatic timed exit and occupied-port preservation. Two compiled gateway
+cases pass. Final types/full lint/worker+alias compilation pass. Initial complete
+766-file Doctor92/one unguarded URL warning was repaired with URL.canParse; the
+new full766-file scan is100/100,zero findings/skips,no suppression. Native checks
+were repeated after that guard. The image test checks actual built-in source
+version without a runtime version override,private-demo command,non-root/read-only
+execution and Linux SIGTERM. Local Docker unavailable; actual image check in CI
+is mandatory/pending. CI Doctor/infrastructure/proxy/preview already green; full
+build/database still running at last check. Issue99 updated. Workspace clean.
+
+Evidence:C:\Users\aniru\.codex\verification\smartdeploy-private-demo-worker-1793140680000
+(original full checks,retained92report,repaired100report,final targeted checks).
+No AWS resources/build/startup or production change. The exact approved server
+secret is already readable by the existing worker's scoped inline role policy;
+no new secret transfer channel or IAM connection is necessary.
+
+Read-only dashboard inspection plus an unauthenticated API probe confirm Vercel
+Standard Protection on previews (401 Protected deployment),no automation bypass
+secret and no active shareable links. Existing same-project OIDC trusted source
+is present. No protection/access/environment setting was changed. No local
+Vercel CLI authentication/project link was found at normal configuration paths;
+no browser cookie/token extraction was attempted. Temporary dashboard tab closed.
+Manual real-account testing stays deferred; hosted machine smoke needs legitimate
+deployment access or the authorized guarded production rollout. Do not weaken
+preview authentication or invent sessions. Main stilla8af9f3;worker stopped.
