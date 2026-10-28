@@ -5,25 +5,28 @@ import { describe, expect, it } from "vitest";
 import { buildDemoGuardTemplate } from "../../../scripts/build-demo-guard.mjs";
 
 describe("independent demo guard artifact", () => {
-	it("embeds the reviewed standalone cleanup source with an exact source hash", async () => {
-		const template = await buildDemoGuardTemplate(); const source = await readFile(path.resolve("src/lib/aws/demoCleanup.ts"), "utf8");
+	it("renders native SDK workflow states with an exact reviewed source hash", async () => {
+		const template = await buildDemoGuardTemplate(); const source = await readFile(path.resolve("scripts/demo-cleanup-workflow.mjs"), "utf8");
 		expect(template.Metadata.CleanupSourceSha256).toBe(createHash("sha256").update(source.replaceAll("\r\n", "\n")).digest("hex"));
-		expect(template.Resources.CleanupFunction.Properties.Code.ZipFile).toContain("exports.handler = handler");
-		expect(template.Resources.CleanupFunction.Properties.Code.ZipFile).not.toMatch(/require\(["']\./);
-		expect(Buffer.byteLength(JSON.stringify(template, null, 2))).toBeLessThanOrEqual(51200);
+		expect(template.Resources.CleanupWorkflow.Properties.Definition.QueryLanguage).toBe("JSONata");
+		expect(JSON.stringify(template.Resources.CleanupWorkflow.Properties.Definition)).not.toContain("lambda:");
+		expect(Buffer.byteLength(JSON.stringify(template))).toBeLessThan(51200);
 	});
 	it("creates only the independent cleanup control plane, never application runtime or data", async () => {
 		const template = await buildDemoGuardTemplate(); const types = Object.values(template.Resources).map(resource => resource.Type);
-		expect(types.every(type => ["AWS::Scheduler::ScheduleGroup", "AWS::Scheduler::Schedule", "AWS::IAM::Role", "AWS::Lambda::Function", "AWS::Lambda::EventInvokeConfig", "AWS::SQS::Queue", "AWS::Logs::LogGroup"].includes(type))).toBe(true);
-		expect(template.Resources.CleanupFunction.Properties.ReservedConcurrentExecutions).toBe(1);
+		expect(types.every(type => ["AWS::StepFunctions::StateMachine", "AWS::Events::Rule", "AWS::SQS::QueuePolicy", "AWS::IAM::Role", "AWS::SQS::Queue", "AWS::Logs::LogGroup"].includes(type))).toBe(true);
+		expect(template.Resources.CleanupWorkflow.Properties.StateMachineType).toBe("STANDARD");
 		expect(template.Resources.CleanupDlq.Properties.SqsManagedSseEnabled).toBe(true); expect(template.Resources.CleanupDlq.DeletionPolicy).toBe("Retain");
 	});
-	it("bounds schedule, async retries, execution and log retention", async () => {
-		const template = await buildDemoGuardTemplate(); const schedule = template.Resources.CleanupSchedule.Properties;
-		expect(schedule).toMatchObject({ State: "ENABLED", ScheduleExpression: "rate(1 minute)", FlexibleTimeWindow: { Mode: "OFF" }, StartDate: { Ref: "CleanupStartUtc" }, EndDate: { Ref: "CleanupEndUtc" } });
-		expect(schedule.Target.RetryPolicy).toEqual({ MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 3 });
-		expect(template.Resources.CleanupAsyncDelivery.Properties).toMatchObject({ MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 1 });
-		expect(template.Resources.CleanupFunction.Properties.Timeout).toBe(60); expect(template.Resources.CleanupLogs.Properties.RetentionInDays).toBe(7);
+	it("bounds the durable timer, polling, task timeouts and failure audit delivery", async () => {
+		const template = await buildDemoGuardTemplate(); const machine = template.Resources.CleanupWorkflow.Properties;
+		expect(machine.Definition.TimeoutSeconds).toBe(9300);
+		expect(machine.Definition.States.ExpiryTimer).toEqual({ Type: "Wait", Timestamp: { "Fn::Sub": "${CleanupStartUtc}" }, Next: "CleanupWindow" });
+		expect(machine.Definition.States.RetryDelay.Seconds).toBe(60);
+		expect(machine.LoggingConfiguration).toMatchObject({ Level: "ERROR", IncludeExecutionData: false });
+		expect(template.Resources.CleanupFailureRule.Properties.Targets[0].RetryPolicy).toEqual({ MaximumEventAgeInSeconds: 300, MaximumRetryAttempts: 3 });
+		expect(template.Resources.CleanupFailureRule.Properties.EventPattern.detail.status).toEqual(["FAILED", "TIMED_OUT", "ABORTED"]);
+		expect(template.Resources.CleanupLogs.Properties.RetentionInDays).toBe(7);
 	});
 	it("requires exact worker/ENI ownership leases and does not grant app-data deletion", async () => {
 		const template = await buildDemoGuardTemplate(); const statements = template.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement;
@@ -35,9 +38,9 @@ describe("independent demo guard artifact", () => {
 		expect(actions).not.toContain("dynamodb:DeleteTable"); expect(actions).not.toContain("s3:DeleteBucket"); expect(actions).not.toContain("ec2:TerminateInstances");
 		expect(actions).not.toContain("ssm:GetParameter"); expect(actions).not.toContain("ssm:GetParameters");
 	});
-	it("restricts Scheduler trust to the exact schedule group/account and DNS to one wildcard delete", async () => {
+	it("restricts workflow trust to the exact machine/account and DNS to one wildcard delete", async () => {
 		const template = await buildDemoGuardTemplate();
-		expect(template.Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition).toEqual({ StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" }, "aws:SourceArn": { "Fn::GetAtt": ["CleanupGroup", "Arn"] } } });
+		expect(template.Resources.CleanupRole.Properties.AssumeRolePolicyDocument.Statement[0]).toMatchObject({ Principal: { Service: "states.amazonaws.com" }, Condition: { StringEquals: { "aws:SourceAccount": { Ref: "AWS::AccountId" }, "aws:SourceArn": { "Fn::Sub": "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:sdp-guard-${DemoId}" } } } });
 		const dns = template.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "route53:ChangeResourceRecordSets");
 		expect(dns?.Condition).toEqual({ "ForAllValues:StringEquals": { "route53:ChangeResourceRecordSetsNormalizedRecordNames": [{ "Fn::Sub": "\\052.${AppDomain}" }], "route53:ChangeResourceRecordSetsActions": ["DELETE"], "route53:ChangeResourceRecordSetsRecordTypes": ["A"] } });
 	});

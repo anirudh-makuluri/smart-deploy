@@ -8,14 +8,15 @@ if (process.argv.length < 3 || process.argv.length > 4) throw Error("Usage: node
 const executable = process.argv[2];
 const directory = await mkdtemp(path.join(tmpdir(), "smartdeploy-cfn-guard-")); const files = [];
 const mutations = [
-  ["concurrency", "bounded_cleanup", value => { value.Resources.CleanupFunction.Properties.ReservedConcurrentExecutions = 10; }],
+  ["workflow-type", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.StateMachineType = "EXPRESS"; }],
   ["worker-lease", "worker_lease", value => { delete value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "ec2:StopInstances").Condition; }],
   ["interface-scope", "interface_lease", value => { value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "ec2:ModifyNetworkInterfaceAttribute").Resource = "*"; }],
   ["queue-encryption", "protected_audit", value => { value.Resources.CleanupDlq.Properties.SqsManagedSseEnabled = false; }],
-  ["schedule-end", "bounded_cleanup", value => { delete value.Resources.CleanupSchedule.Properties.EndDate; }],
-  ["schedule-trust", "scheduler_identity", value => { value.Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals["aws:SourceArn"] = { "Fn::GetAtt": ["CleanupSchedule", "Arn"] }; }],
+  ["expiry-timer", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.Definition.States.ExpiryTimer.Timestamp = "2000-01-01T00:00:00Z"; }],
+  ["workflow-trust", "workflow_identity", value => { value.Resources.CleanupRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals["aws:SourceArn"] = "*"; }],
   ["app-resource", "control_plane_only", value => { value.Resources.UnexpectedTable = { Type: "AWS::DynamoDB::Table" }; }],
-  ["async-retry-age", "bounded_cleanup", value => { value.Resources.CleanupAsyncDelivery.Properties.MaximumEventAgeInSeconds = 21600; }],
+  ["retry-spin", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.Definition.States.RetryDelay.Seconds = 0; }],
+  ["unbounded-execution", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.Definition.TimeoutSeconds = 31536000; }],
 ];
 const results = [];
 async function validate(label, template) {

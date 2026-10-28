@@ -8,6 +8,7 @@ on:
       - src/lib/aws/demoBuildPlan.ts
       - src/lib/aws/documentRole.ts
       - scripts/build-demo-guard.mjs
+      - scripts/demo-cleanup-workflow.mjs
       - scripts/verify-demo-guard.mjs
       - scripts/render-demo-workload*.mjs
       - scripts/render-demo-build.mjs

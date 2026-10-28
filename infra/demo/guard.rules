@@ -1,21 +1,17 @@
 # Application resources must live in the separately owned, deletable workload stack.
 rule control_plane_only {
-    Resources.*.Type IN ["AWS::Scheduler::ScheduleGroup", "AWS::Scheduler::Schedule", "AWS::IAM::Role", "AWS::Lambda::Function", "AWS::Lambda::EventInvokeConfig", "AWS::SQS::Queue", "AWS::Logs::LogGroup"]
+    Resources.*.Type IN ["AWS::StepFunctions::StateMachine", "AWS::Events::Rule", "AWS::SQS::QueuePolicy", "AWS::IAM::Role", "AWS::SQS::Queue", "AWS::Logs::LogGroup"]
 }
 
 rule bounded_cleanup {
-    Resources.CleanupFunction.Properties.ReservedConcurrentExecutions == 1
-    Resources.CleanupFunction.Properties.Timeout <= 60
-    Resources.CleanupFunction.Properties.MemorySize <= 512
-    Resources.CleanupSchedule.Properties.State == "ENABLED"
-    Resources.CleanupSchedule.Properties.ScheduleExpression == "rate(1 minute)"
-    Resources.CleanupSchedule.Properties.StartDate == {"Ref":"CleanupStartUtc"}
-    Resources.CleanupSchedule.Properties.EndDate == {"Ref":"CleanupEndUtc"}
-    Resources.CleanupSchedule.Properties.FlexibleTimeWindow.Mode == "OFF"
-    Resources.CleanupSchedule.Properties.Target.RetryPolicy.MaximumEventAgeInSeconds <= 300
-    Resources.CleanupSchedule.Properties.Target.RetryPolicy.MaximumRetryAttempts <= 3
-    Resources.CleanupAsyncDelivery.Properties.MaximumEventAgeInSeconds <= 300
-    Resources.CleanupAsyncDelivery.Properties.MaximumRetryAttempts <= 1
+    Resources.CleanupWorkflow.Properties.StateMachineType == "STANDARD"
+    Resources.CleanupWorkflow.Properties.Definition.TimeoutSeconds == 9300
+    Resources.CleanupWorkflow.Properties.Definition.States.ExpiryTimer.Timestamp == {"Fn::Sub":"${CleanupStartUtc}"}
+    Resources.CleanupWorkflow.Properties.Definition.States.RetryDelay.Seconds == 60
+    Resources.CleanupWorkflow.Properties.Definition.States.CleanupWindow.Default == "CleanupIncomplete"
+    Resources.CleanupWorkflow.Properties.Definition.States.CleanupWindow.Choices[0].Condition == "{% $toMillis($states.context.State.EnteredTime) < $states.input.config.expiresAt + 1800000 and $states.input.round < 30 %}"
+    Resources.CleanupFailureRule.Properties.Targets[*].RetryPolicy.MaximumEventAgeInSeconds <= 300
+    Resources.CleanupFailureRule.Properties.Targets[*].RetryPolicy.MaximumRetryAttempts <= 3
 }
 
 rule protected_audit {
@@ -25,6 +21,8 @@ rule protected_audit {
     Resources.CleanupDlq.UpdateReplacePolicy == "Retain"
     Resources.CleanupLogs.Properties.RetentionInDays <= 7
     Resources.CleanupLogs.DeletionPolicy == "Retain"
+    Resources.CleanupWorkflow.Properties.LoggingConfiguration.Level == "ERROR"
+    Resources.CleanupWorkflow.Properties.LoggingConfiguration.IncludeExecutionData == false
 }
 
 rule worker_lease {
@@ -41,7 +39,7 @@ rule interface_lease {
     %detach.Condition == {"StringEquals":{"ec2:ResourceTag/smartdeploy:demo-id":{"Ref":"DemoId"}}}
 }
 
-rule scheduler_identity {
-    Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[*].Principal.Service == "scheduler.amazonaws.com"
-    Resources.SchedulerRole.Properties.AssumeRolePolicyDocument.Statement[*].Condition == {"StringEquals":{"aws:SourceAccount":{"Ref":"AWS::AccountId"},"aws:SourceArn":{"Fn::GetAtt":["CleanupGroup","Arn"]}}}
+rule workflow_identity {
+    Resources.CleanupRole.Properties.AssumeRolePolicyDocument.Statement[*].Principal.Service == "states.amazonaws.com"
+    Resources.CleanupRole.Properties.AssumeRolePolicyDocument.Statement[*].Condition == {"StringEquals":{"aws:SourceAccount":{"Ref":"AWS::AccountId"},"aws:SourceArn":{"Fn::Sub":"arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:sdp-guard-${DemoId}"}}}
 }
