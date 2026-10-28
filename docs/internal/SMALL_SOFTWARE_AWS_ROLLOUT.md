@@ -1,6 +1,16 @@
 # AWS small-software rollout
 
-Status: implementation plan, not a claim of shipped capabilities.
+Status (October 27, America/Phoenix): web code and eight additive migrations are
+in production through [release PR #139](https://github.com/anirudh-makuluri/smart-deploy/pull/139).
+Private-app flags remain disabled. The user deferred Lambda concurrency/quota
+work, so the AWS demo remains off. Do not submit a quota/Support request, remove
+the cleanup concurrency limit or start the demo while deferred. The failed guard
+attempt and its temporary leases were cleaned up and terminal state verified.
+The worker is stopped, original network groups preserved, and no ALB or ECS
+services/tasks are running. Actual AWS feature acceptance and the manual
+two-account hosted test are outstanding; that manual test is user-deferred.
+The original scheduled-work restrictions below are historical; later manual
+release instructions authorized the completed production changes.
 
 ## Product outcome
 
@@ -1937,3 +1947,69 @@ Actual guard/lease/certificate/caller/build/catalog/bootstrap/readiness/network/
 version/persistence/observed teardown remain. Manual two-account hosted testing
 stays explicitly deferred by the user; never manufacture an account/session or
 claim that proof. Production remains a8af9f3/#101 at this record.
+
+### October 27 production code release and explicit Lambda deferral
+
+All aggregate #139 checks passed at reviewed source d3f95bc, including the full
+766-file Doctor100/100 release gate in run40601898370. Applied only the eight
+reviewed additive migrations using exact hashes, a session advisory lock,
+per-migration transactions and bounded lock/statement timeouts. All16 existing
+deployments and161 runs retain their null app associations; all13 new tables
+have RLS. Optional legacy backfill was excluded. Private completion receipt saved.
+
+Merged #139 with a merge commit preserving all46 feature heads at main
+596b046fd617bd62d7a32c9ecb130d81ec662cfa. Verified Vercel production deployment
+6NiPw2XYH6n21aFq9R4WbaUuzfq4 Ready, promoted to smart-deploy.xyz, with that exact
+source displayed. Actual ten signed-out HTTP smoke cases pass: landing/login,
+private-home redirect, null auth session, four disabled workspace/gateway/data
+APIs, worker-token denial and natural404. Worker auto-deploy run40602773985 was
+skipped as intended. These are signed-out production checks, not authenticated
+creator/colleague proof. All private-app flags remain off.
+
+Created one curated team workspace/app and separate managed published/preview
+bindings for the selected existing verified/approved creator using reviewed
+privileged stores. This is operator bootstrap, not a claimed human publish flow.
+No account/session was created, no invitation accepted/sent and no email sent.
+No app data table, credentials, release-success record or runtime was fabricated.
+
+The unused first local demo deadline expired during an idle session; no resources
+had started. Preserved that unused plan and refreshed the deadline only after
+verifying no owned live resources and a stopped/unleased worker. Actual fresh
+cleanup/build templates passed pinned cfn-lint, Guard and AWS syntax validation.
+The guard change set passed actual describe-events pre-deployment validation.
+Create-only worker/ENI SSM leases and matching ownership tags were acquired; the
+original group snapshot was preserved. Executed only the independent guard stack.
+
+Actual guard creation failed: the account has10 total/unreserved Lambda
+executions, and reserving1 would breach AWS's minimum10 unreserved. The minimal
+quota API request for11 was rejected because requests must exceed the default
+1000. No quota request or Support case was created. The user first approved a
+Support request, then explicitly said to leave Lambda executions for now; that
+latest direction supersedes permission to submit it. Do not submit quota/Support
+requests, weaken the guard limit or start the demo while this is deferred.
+No CodeBuild, worker, app services, ALB, ACM certificate or application data table
+was started/created. Do not reuse the failed demo namespace for a later window.
+
+Observed ROLLBACK_COMPLETE, preserved sanitized failure evidence, and cleaned up
+only the owned failed control plane. Its retained queue and log group were
+verified empty before deletion. Final actual checks: guard stack/queue/log group
+absent; both temporary SSM lease parameters absent; matching worker/ENI tags
+removed; original groups unchanged; worker stopped; zero ECS services/running/
+pending tasks; no ALB; Lambda quota request history empty. Cleanup is observed,
+not inferred from accepted deletes. No provider connections/secret contents or
+existing application data changed.
+
+After exact-head ancestry and current-owner verification, closed45 focused PRs
+as integrated through #139; #91 was automatically marked merged. All46 feature
+heads are in the production merge, zero rollout feature PRs remain open. These
+closures are code integration, not successful AWS feature acceptance. Billing#85
+and roadmap#90 stay separate/open. Issue99 and #139 now show current production
+and deferral status, preserving older verification history.
+
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-mvp-launch-1793142600000
+(migration-receipt.json, production-smoke.json, pilot.json, source-archive.json,
+guard-change-set-inspection.json, failed-guard-cleanup.json,
+release-reconciliation.json). Private operator metadata/keys remain outside Git;
+no credentials or QA account emails were published. Runtime/data/certificate/
+principal/build/catalog/network/version/persistence/automatic teardown acceptance
+remain outstanding. Manual two-account hosted testing stays user-deferred.
