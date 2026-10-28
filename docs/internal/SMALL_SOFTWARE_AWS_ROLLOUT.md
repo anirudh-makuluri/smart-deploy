@@ -2,10 +2,14 @@
 
 Status (October 27, America/Phoenix): web code and eight additive migrations are
 in production through [release PR #139](https://github.com/anirudh-makuluri/smart-deploy/pull/139).
-Private-app flags remain disabled. The user deferred Lambda concurrency/quota
-work, so the AWS demo remains off. Do not submit a quota/Support request, remove
-the cleanup concurrency limit or start the demo while deferred. The failed guard
-attempt and its temporary leases were cleaned up and terminal state verified.
+Private-app flags remain disabled. The user selected Step Functions to replace
+the blocked cleanup Lambda; [PR #140](https://github.com/anirudh-makuluri/smart-deploy/pull/140)
+is merged and passed actual timed native cleanup of disposable fixtures. Keep
+the Lambda quota at 10 and do not submit a
+quota/Support request. The failed Lambda guard attempt and its temporary leases
+were cleaned up and terminal state verified. Both native test guards and all
+their temporary resources are also removed. A fresh bounded workload admission
+and actual application/ALB/worker teardown acceptance remain before the full demo.
 The worker is stopped, original network groups preserved, and no ALB or ECS
 services/tasks are running. Actual AWS feature acceptance and the manual
 two-account hosted test are outstanding; that manual test is user-deferred.
@@ -2013,3 +2017,64 @@ release-reconciliation.json). Private operator metadata/keys remain outside Git;
 no credentials or QA account emails were published. Runtime/data/certificate/
 principal/build/catalog/network/version/persistence/automatic teardown acceptance
 remain outstanding. Manual two-account hosted testing stays user-deferred.
+
+### October 27 native Step Functions cleanup guard
+
+The user selected Step Functions so the region can retain ten Lambda executions.
+Merged focused [PR #140](https://github.com/anirudh-makuluri/smart-deploy/pull/140)
+at main `1e8b0e006197cb815113227b79b331a8f5a72d59`, preserving reviewed head
+`3b435d6be7b2ccf2d3a8e40aff0d48613b3d8d8f`. The guard template now emits one
+Standard state machine with native SDK tasks, an exact named execution, durable
+absolute expiry wait, bounded independent cleanup branches, scoped role/trust,
+encrypted failure queue and seven-day audit logs. No Lambda/Scheduler resource or
+Lambda reservation is created. No quota request or Support case was submitted.
+
+All exact-head checks passed: CI run `40631496285` includes 190 unit files / 1,544
+tests, 158 PostgreSQL cases, 33 DynamoDB cases, all browser/process checks, three
+Linux container checks, production build, and full Doctor 100/100 across 769
+files. Ready-for-review Doctor run `40632609534` also passed at the same head.
+Final local typecheck/lint, 41 focused cases and full Doctor passed. Pinned
+cfn-lint 1.58.0 reports no findings; Guard 3.2.1 passes six rules with nine unsafe
+mutations rejected. AWS native definition validation has no diagnostics; strict
+mocked ECS TestState and IAM identity/trust Access Analyzer checks also pass.
+
+Actual AWS validation inspected deployed definition, role/trust, audit and
+failure-delivery configuration. The first guard proved durable waiting, rejection
+of a wrong execution name before SDK tasks, and minimal ARN/status failure-queue
+delivery. At expiry, four branches passed but the missing stack used native
+`CloudFormation.CloudFormationException`. It correctly remained incomplete.
+Added the exact missing-stack-cause case and regressions rejecting unrelated
+generic/validation errors and a foreign stack. Retired that empty test after
+baseline inspection; preserved its aborted history, and never reused its ID.
+
+The final fresh guard protected six synthetic, tagged standard parameters and
+one tiny owned CloudFormation fixture stack. Verified all fixtures existed,
+without reading values. Its first task entered 280 ms after the fixed expiry;
+six parameter delete tasks and one stack delete ran. A later pass observed
+absence, exercised the actual missing-stack regression and reached SUCCEEDED.
+Independent AWS reads confirmed the stack and all six parameters absent.
+No applications, real secrets, worker startup, ECS services/tasks or ALB were
+created. This is positive native timer/SDK/IAM cleanup proof, not the full
+application persistence or actual ECS/ALB/worker teardown test.
+
+Preserved both test histories and logs, removed both owned guard stacks and their
+retained queues/log groups, and observed terminal absence of machines, roles and
+failure rules. Final worker/ENI remain unleased and stopped with original groups;
+services/tasks/ALBs are zero. Lambda total/unreserved concurrency both remain 10.
+Main worker auto-deploy run `40633134625` was skipped; its enable variable remains
+absent. Billing #85 is untouched. Private-app enablement remains pending.
+
+Fresh Step Functions pricing plus a conservative graph bound adds at most
+$0.073625 per workflow and a $0.10 native-smoke allowance to the prior envelope,
+for $5.11444375 total estimated admission against the approved additional $10.
+No free tier assumed; this is not a hard billing cap. A new full-workload window
+still needs fresh cost/lease/guard admission and runtime/certificate/principal/
+build/catalog/network/version/persistence/automatic-teardown acceptance. The
+manual two-account hosted test stays user-deferred. Never manufacture sessions
+or successful release records to replace missing hosted proof.
+
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-step-functions-guard
+(`ci-final.log`, `health-final.json`, `guard-final.json`, `native-retirement.json`,
+and `native-v2/native-proof.json`, `fixture-retirement.json`,
+`native-retirement.json`). Only private receipts contain operator identities and
+fixture resource IDs; no credentials or QA emails were published.

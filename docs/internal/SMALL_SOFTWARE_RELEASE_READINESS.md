@@ -1,5 +1,15 @@
 # Small-software production readiness
 
+Historical audit: the October 23 findings below describe the early candidate,
+not the current implementation. As of October 27, all 46 feature heads are in
+production through #139, eight additive migrations are applied, and the complete
+repository health gate passes. Private-app flags remain off pending actual AWS
+acceptance. The user selected the native Step Functions guard in #140 to retain
+the Lambda concurrency limit at 10. See the latest entries in
+[the rollout ledger](./SMALL_SOFTWARE_AWS_ROLLOUT.md) for code, CI, hosted smoke,
+infrastructure and remaining acceptance boundaries. Manual two-account hosted
+sharing/revocation testing remains explicitly deferred by the user.
+
 Audit date: October 23, 2026 (America/Phoenix).
 
 Decision: **not ready to promote the entire feature to production**.
