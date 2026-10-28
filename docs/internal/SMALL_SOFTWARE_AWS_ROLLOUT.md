@@ -2078,3 +2078,9 @@ Evidence: C:\Users\aniru\.codex\verification\smartdeploy-step-functions-guard
 and `native-v2/native-proof.json`, `fixture-retirement.json`,
 `native-retirement.json`). Only private receipts contain operator identities and
 fixture resource IDs; no credentials or QA emails were published.
+
+Post-merge hosting: Vercel reports Production deployment `FhYDAv7eXpVCxDvYUp9bwcCYk46j`
+successful for main `1e8b0e0` (GitHub deployment `7377264905`). Ten fresh signed-out
+checks on `smart-deploy.xyz` pass, including disabled private API gates. This is
+provider source/deployment metadata plus hosted HTTP smoke, not authenticated
+human-flow proof. Receipt: `production-smoke-final.json` in the evidence folder.
