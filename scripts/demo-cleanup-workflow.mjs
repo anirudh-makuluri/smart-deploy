@@ -84,7 +84,7 @@ function stack() {
   const stored = "$states.input.stack", group = "$states.input.gatewayGroup", eni = `${response}.NetworkInterfaces[0]`;
   const states = {
     ReadStack: task("cloudformation", "describeStacks", { StackName: expr(cfg + ".stackName") }, "StackIdentity", '"stack": $states.result.Stacks[0], "response": $states.result', "StackError"),
-    StackError: check(`$states.input.error.Error in ['CloudFormation.ValidationException','CloudFormation.ValidationErrorException'] and $contains($states.input.error.Cause, 'Stack with id ' & ${cfg}.stackName & ' does not exist')`, "Done"),
+    StackError: check(`$states.input.error.Error in ['CloudFormation.CloudFormationException','CloudFormation.ValidationException','CloudFormation.ValidationErrorException'] and $contains($states.input.error.Cause, 'Stack with id ' & ${cfg}.stackName & ' does not exist')`, "Done"),
     StackIdentity: check(`$count(${response}.Stacks) = 1 and ${stored}.StackName = ${cfg}.stackName and ${starts(stored + '.StackId', cfg + '.stackPrefix')} and ($not($exists(${stored}.RoleARN)) or ${stored}.RoleARN = '') and ${owned(stored + ".Tags")}`, "ReadResources"),
     ReadResources: task("cloudformation", "listStackResources", { StackName: expr(cfg + ".stackName") }, "ResourceBounds", `"response": $states.result, "gatewayGroups": [$states.result.StackResourceSummaries[LogicalResourceId='GatewayGroup' and ResourceType='AWS::EC2::SecurityGroup'].PhysicalResourceId]`),
     ResourceBounds: check(`$not($exists(${response}.NextToken)) and $exists(${response}.StackResourceSummaries) and $count(${response}.StackResourceSummaries) <= 50 and $count($states.input.gatewayGroups) <= 1`, "HasGatewayGroup"),

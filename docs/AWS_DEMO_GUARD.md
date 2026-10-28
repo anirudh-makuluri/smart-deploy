@@ -75,6 +75,10 @@ tags disappear and are never mutated. ALB name/ARN/tags must match. Parameters
 are checked by deterministic name/tag; their values are never read. Only fixed
 typed missing-resource errors count as absence. A CloudFormation validation error
 must also identify the exact missing stack; unrelated errors do not qualify.
+The native CloudFormation SDK reports a missing stack as
+`CloudFormation.CloudFormationException`; this case is accepted only with the
+exact prepared stack name in the missing-stack cause. Other generic service
+errors remain incomplete.
 
 The role retains the reviewed worker/ENI IAM lease conditions and namespace-scoped
 infrastructure deletion dependencies. It cannot start instances, create services,

@@ -52,9 +52,13 @@ describe("native Standard cleanup workflow", () => {
     expect(await new CleanupWorkflowFixture(aws.transport).run()).toEqual({ status: "complete" });
     expect(aws.calls.some(row => row.resource.endsWith(":stopInstances"))).toBe(false);
   });
-  it("does not classify other CloudFormation errors as resource absence", async () => {
+  it.each([
+    ["CloudFormation.ValidationException", "Request arguments are invalid"],
+    ["CloudFormation.CloudFormationException", "Request arguments are invalid"],
+    ["CloudFormation.CloudFormationException", "Stack with id sdp-demo-foreign does not exist"],
+  ])("does not classify unrelated CloudFormation errors as resource absence: %s %s", async (code, detail) => {
     const aws = cleanupAwsFixture(); const fixture = new CleanupWorkflowFixture(async (resource, args) => {
-      if (resource.endsWith(":describeStacks")) throw new CleanupTaskError("CloudFormation.ValidationException", "Request arguments are invalid");
+      if (resource.endsWith(":describeStacks")) throw new CleanupTaskError(code, detail);
       return aws.transport(resource, args);
     });
     await expect(fixture.run()).rejects.toThrow("CleanupIncomplete"); expect(aws.model.worker).toBe("stopped");
