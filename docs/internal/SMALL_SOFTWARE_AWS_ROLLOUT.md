@@ -1,7 +1,13 @@
 # AWS small-software rollout
 
-Status (October 27, America/Phoenix): web code and eight additive migrations are
+Status (October 29, America/Phoenix): web code and eight additive migrations are
 in production through [release PR #139](https://github.com/anirudh-makuluri/smart-deploy/pull/139).
+The user subsequently authorized starting and updating the WebSocket server.
+The normal worker is now running reviewed main `1e8b0e0`, with actual public
+HTTPS/WSS/version and denial checks passing. It is a bounded run: a fresh native
+guard is waiting to stop the worker on October 29 at 16:45:36 America/Phoenix.
+Recheck actual worker/guard state before subsequent work; this is not an
+always-on authorization or proof that the future stop has completed.
 Private-app flags remain disabled. The user selected Step Functions to replace
 the blocked cleanup Lambda; [PR #140](https://github.com/anirudh-makuluri/smart-deploy/pull/140)
 is merged and passed actual timed native cleanup of disposable fixtures. Keep
@@ -10,8 +16,9 @@ quota/Support request. The failed Lambda guard attempt and its temporary leases
 were cleaned up and terminal state verified. Both native test guards and all
 their temporary resources are also removed. A fresh bounded workload admission
 and actual application/ALB/worker teardown acceptance remain before the full demo.
-The worker is stopped, original network groups preserved, and no ALB or ECS
-services/tasks are running. Actual AWS feature acceptance and the manual
+Original network groups are recorded; the worker currently uses owned quarantine
+and HTTPS edge groups, with port 4001 bound to loopback. No application ALB or ECS
+services/tasks were started by this rollout. Actual AWS feature acceptance and the manual
 two-account hosted test are outstanding; that manual test is user-deferred.
 The original scheduled-work restrictions below are historical; later manual
 release instructions authorized the completed production changes.
@@ -2084,3 +2091,71 @@ successful for main `1e8b0e0` (GitHub deployment `7377264905`). Ten fresh signed
 checks on `smart-deploy.xyz` pass, including disabled private API gates. This is
 provider source/deployment metadata plus hosted HTTP smoke, not authenticated
 human-flow proof. Receipt: `production-smoke-final.json` in the evidence folder.
+
+### October 29 explicit WebSocket startup and update
+
+The user revoked the previous WebSocket hold by explicitly asking to turn it on
+and push the update. Rechecked stopped/unleased EC2, source, network, domain,
+budget, guard and AWS operator identity. Current main `1e8b0e0` has identical
+worker source/dependencies/Dockerfile to reviewed CI head `3b435d6`; no application
+source change was needed. Existing combined CI remains the source baseline;
+actual image, host and public deployment evidence below are new.
+
+Preserved the $10 additional budget and time-boxed authorization. Fresh AWS Price
+List inputs and Decimal calculation admit $1.525625 including 2.5 worker hours,
+one <=30-minute small CodeBuild run, bounded state transitions and $1.25 for
+storage/credits/logs/traffic/requests. This is an estimate, not a hard billing cap.
+A fresh owned guard was deployed, inspected, started with its exact name and
+observed waiting at its expiry before any compute/build startup. Create-only
+worker/primary-ENI leases record original groups. The independent guard's stop
+permission simulates allowed for its actual lease and denied for foreign tags.
+Expiry is October 29, 2026, 16:45:36 America/Phoenix; observed stop and post-stop
+cleanup/reconciliation are still pending at this record.
+
+Booted with no ingress and stopped the legacy container/Nginx before exposure.
+Used the existing CodeBuild project with an exact restricted per-build role and
+no project/provider-connection changes. Its permissions cover one checksummed
+source archive, owned logs and the existing worker ECR repository. Build source
+zip comment/hash pins main, production image embeds the full revision/label,
+and the host deploys immutable digest
+`sha256:908ef43422d4f08ab716c6e93486dd8f9e4b5ff57fd4d273f4d53f85c33cf6cc`.
+Actual built and running image metadata, command and health version agree.
+The source S3 object was removed after verification; the active ECR image remains.
+
+Renewed the expired worker-domain Let's Encrypt certificate through an HTTP-only
+ACME server, without proxying the old worker. The public chain/hostname verify
+under TLS 1.3 and the certificate is valid through January 27, 2027. The final
+container runs as UID/GID 10001 with a read-only filesystem, dropped capabilities,
+no new privileges, resource limits and loopback-only port 4001. Nginx exposes
+80/443 and redirects HTTP to HTTPS. Existing secret contents/connections remain
+unchanged; runtime configuration forces private-app flags off and verifies the
+database's CA and hostname, with a two-connection pool.
+
+Readiness initially inspected PostgreSQL's backend SSL view, which describes the
+connection behind Supabase's pooler. Corrected the operator check to require the
+worker's actual TLS socket to be encrypted and peer-authorized, then perform a
+read-only query. It passes, as does the real SQL absent-session guard. Public
+`https://ws.smart-deploy.xyz/health` reports the exact full main revision.
+Actual HTTPS/WSS transport, missing/forged-token denial and foreign-origin denial
+pass. Engine.IO rejects the foreign origin with 400/code3; ordinary worker HTTP
+rejects it with 403. The private workspace API is still gated on Vercel.
+No real account/session was created or borrowed, and no invitation/email sent.
+Authenticated real-user testing stays deferred, not counted as passed.
+
+The manual ECR basic scan completes with zero critical, four high, ten medium and
+three low OS findings. The high items are CVE-2026-19499, CVE-2026-5435,
+CVE-2026-107161 and CVE-2026-85091; Debian's stable tracker still marks the relevant
+packages affected. They were not remediated by this worker-only rollout. Do not
+claim a clean image scan or proven absence of exploitability; reassess fixes
+before a further activation. Lambda code was not updated (last modification
+remains August 9); regional total/unreserved concurrency remains ten. General
+worker auto-deployment remains disabled; no queue/runner update was dispatched.
+
+Evidence: C:\Users\aniru\.codex\verification\smartdeploy-ws-rollout-20261029
+(`budget.json`, `native-deployed-verification.json`, `build-status.json`,
+`image.json`, host script result receipts, `public-verification.json`,
+`image-scan.json`, `stop-permission-proof.json`, `deployment-receipt.json`).
+The full private-app runtime/data/publish/persistence demo remains separate.
+At expiry, inspect actual worker and guard terminal state, reconcile the owned
+workload stack, retained quarantine/logs and original groups, then release only
+this run's leases/tags. Do not delete the guard while its worker remains running.
