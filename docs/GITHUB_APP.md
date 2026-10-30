@@ -31,6 +31,8 @@ GITHUB_APP_SLUG=
 
 After sign-in, SmartDeploy checks the GitHub user token for accessible App installations. If none exist, a compact dashboard banner sends the user to GitHub's installation flow for `GITHUB_APP_SLUG`. Users choose the account and repositories that can trigger automated deployments there.
 
+Server-side GitHub token retrieval selects the user's GitHub row in Better Auth's `account` table and passes that row's `id` as `accountId` to `auth.api.getAccessToken`. Better Auth 1.7 no longer accepts `providerId` as the selector. Better Auth handles decryption and refresh; never use the stored `accessToken` column directly as a fallback because it contains encrypted data. Token retrieval failures propagate instead of sending ciphertext to GitHub.
+
 ## Apply the database change
 
 Apply the `github_webhook_deliveries` table and index block from the current [`supabase/schema.sql`](../supabase/schema.sql) in Supabase before enabling webhook delivery. The table ensures GitHub retries do not create duplicate deployments.

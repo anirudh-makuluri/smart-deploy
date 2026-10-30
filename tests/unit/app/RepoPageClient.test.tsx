@@ -231,4 +231,43 @@ describe("RepoPageClient", () => {
 		});
 		expect(useAppData.getState().setActiveServiceName).toHaveBeenCalledWith("web");
 	});
+
+	it("shows lookup failures without claiming the repository is missing and allows retry", async () => {
+		resolveRepo.mockRejectedValueOnce(new Error("GitHub authentication expired. Please reconnect GitHub and try again."));
+		fetchRepoRecord.mockResolvedValue(null);
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<RepoPageClient owner="acme" repoName="shop" />
+			</QueryClientProvider>
+		);
+
+		expect(await screen.findByRole("heading", { name: "Unable to load repository" })).toBeInTheDocument();
+		expect(screen.getByRole("alert")).toHaveTextContent("GitHub authentication expired");
+		expect(screen.queryByText("Repository Not Found")).not.toBeInTheDocument();
+		expect(detectRepoServices).not.toHaveBeenCalled();
+		expect(fetchRepoDeployments).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+		expect(await screen.findByText("ready")).toBeInTheDocument();
+		expect(resolveRepo).toHaveBeenCalledTimes(2);
+		expect(detectRepoServices).toHaveBeenCalledWith("https://github.com/acme/shop", "main");
+		expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+	});
+
+	it("explains a masked server failure without claiming the repository does not exist", async () => {
+		resolveRepo.mockRejectedValue(new Error("Unexpected error."));
+		const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+		render(
+			<QueryClientProvider client={queryClient}>
+				<RepoPageClient owner="acme" repoName="shop" />
+			</QueryClientProvider>
+		);
+
+		expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong while loading this repository. Please try again.");
+		expect(screen.queryByText(/does not exist/)).not.toBeInTheDocument();
+	});
 });

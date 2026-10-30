@@ -17,6 +17,15 @@ Symptom-first reference for deployment and runtime issues. Match your error text
 
 ## Deployment failure codes
 
+### REPOSITORY_LOOKUP_FAILED
+
+- **Stage:** repository loading
+- **Retryable:** yes, for temporary server or network failures
+- **Exact strings:** `Unable to load repository`, `Something went wrong while loading this repository. Please try again.`
+- **Symptoms:** The repository page cannot load GitHub metadata. This does not establish that the repository is missing.
+- **Quick checks:** Retry using **Try again**. Follow any GitHub connection error shown on the page. If the error persists, inspect the server logs for the GraphQL `resolveRepo` request; internal errors remain masked in the client.
+- **Fix:** Correct the underlying GitHub connection or server error. Service detection waits until repository metadata is available.
+
 ### DEPLOYMENT_FAILED_GENERIC
 
 - **Stage:** unknown

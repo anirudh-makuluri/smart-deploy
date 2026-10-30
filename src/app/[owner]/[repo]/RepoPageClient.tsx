@@ -21,12 +21,14 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 		setMobileWorkspaceNavOpen,
 		services,
 		loading,
+		repoError,
+		retryRepo,
 		error,
 		repoDeployments,
 		openWorkspaceForService,
 		catalogActions,
 	} = useRepoPageClient(owner, repoName);
-	const repoNotFound = !loading && !repo;
+	const repoUnavailable = !loading && !repo;
 
 	return (
 		<div className={`dot-grid-bg flex flex-col text-foreground ${activeService ? "h-svh overflow-hidden" : "min-h-svh"}`}>
@@ -38,13 +40,25 @@ export default function RepoPageClient({ owner, repoName }: RepoPageClientProps)
 					</div>
 				</div>
 			)}
-			{repoNotFound && (
+			{repoUnavailable && (
 				<div className="flex-1 flex items-center justify-center">
 					<div className="text-center space-y-4">
-						<h1 className="text-3xl font-bold">Repository Not Found</h1>
+						<h1 className="text-3xl font-bold">Unable to load repository</h1>
 						<p className="text-muted-foreground">
-							The repository <span className="font-mono font-semibold">{owner}/{repoName}</span> does not exist or is not accessible.
+							Could not load <span className="font-mono font-semibold">{owner}/{repoName}</span>.
 						</p>
+						<p role="alert" className="text-muted-foreground">
+							{!repoError || repoError.message === "Unexpected error."
+								? "Something went wrong while loading this repository. Please try again."
+								: repoError.message}
+						</p>
+						<button
+							type="button"
+							onClick={() => void retryRepo()}
+							className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
+						>
+							Try again
+						</button>
 						<Link
 							href="/"
 							className="inline-block mt-4 rounded-md bg-primary px-4 py-2 text-primary-foreground hover:opacity-90"
