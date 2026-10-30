@@ -66,7 +66,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 	const activeRepoMatchesRoute = matchesRepoRoute(activeRepo, owner, repoName);
 	const activeRepoRecordMatchesRoute = matchesRepoRecordRoute(activeRepoRecord, owner, repoName);
 
-	const { data: repoQueryData, isLoading : isLoadingRepo } = useQuery({
+	const { data: repoQueryData, isLoading: isLoadingRepo, error: repoError, refetch: retryRepo } = useQuery({
 		queryKey: [routeKey, "repo"],
 		enabled: !activeRepoMatchesRoute,
 		staleTime: 60_000,
@@ -105,7 +105,7 @@ export function useRepoPageClient(owner: string, repoName: string) {
 
 	const { isLoading: isLoadingServices, error: errorServices } = useQuery({
 		queryKey: [routeKey, "repo-services"],
-		enabled: !isLoadingRepoRecord && (!repoRecord || repoRecord.services.length === 0),
+		enabled: Boolean(repo) && !isLoadingRepoRecord && services.length === 0,
 		queryFn: async () => {
 			const data = await detectRepoServices(repoUrl, repo?.default_branch ?? "");
 			const list = data.services ?? [];
@@ -258,6 +258,8 @@ export function useRepoPageClient(owner: string, repoName: string) {
 		setMobileWorkspaceNavOpen,
 		services,
 		loading,
+		repoError,
+		retryRepo,
 		error,
 		repoDeployments,
 		openWorkspaceForService,
