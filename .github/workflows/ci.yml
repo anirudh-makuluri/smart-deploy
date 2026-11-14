@@ -5,7 +5,7 @@ on:
 
 jobs:
   database-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -151,7 +151,7 @@ jobs:
           path: test-results/
 
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
