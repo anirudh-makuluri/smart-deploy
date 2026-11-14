@@ -11,6 +11,8 @@ const mutations = [
   ["workflow-type", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.StateMachineType = "EXPRESS"; }],
   ["worker-lease", "worker_lease", value => { delete value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "ec2:StopInstances").Condition; }],
   ["interface-scope", "interface_lease", value => { value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "ec2:ModifyNetworkInterfaceAttribute").Resource = "*"; }],
+  ["interface-groups", "interface_lease", value => { const row = value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(entry => entry.Action === "ec2:ModifyNetworkInterfaceAttribute"); row.Resource = row.Resource[0]; }],
+  ["interface-group-lease", "interface_lease", value => { delete value.Resources.CleanupRole.Properties.Policies[0].PolicyDocument.Statement.find(row => row.Action === "ec2:ModifyNetworkInterfaceAttribute").Condition; }],
   ["queue-encryption", "protected_audit", value => { value.Resources.CleanupDlq.Properties.SqsManagedSseEnabled = false; }],
   ["expiry-timer", "bounded_cleanup", value => { value.Resources.CleanupWorkflow.Properties.Definition.States.ExpiryTimer.Timestamp = "2000-01-01T00:00:00Z"; }],
   ["workflow-trust", "workflow_identity", value => { value.Resources.CleanupRole.Properties.AssumeRolePolicyDocument.Statement[0].Condition.StringEquals["aws:SourceArn"] = "*"; }],

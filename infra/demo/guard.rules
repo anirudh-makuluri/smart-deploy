@@ -35,7 +35,7 @@ rule worker_lease {
 rule interface_lease {
     let detach = Resources.CleanupRole.Properties.Policies[*].PolicyDocument.Statement[Action == "ec2:ModifyNetworkInterfaceAttribute"]
     %detach not empty
-    %detach.Resource == {"Fn::Sub":"arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}"}
+    %detach.Resource == [{"Fn::Sub":"arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}"}, {"Fn::Sub":"arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"}]
     %detach.Condition == {"StringEquals":{"ec2:ResourceTag/smartdeploy:demo-id":{"Ref":"DemoId"}}}
 }
 
