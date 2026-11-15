@@ -34,6 +34,11 @@ describe("independent demo guard artifact", () => {
 			const permission = statements.find(row => row.Action === action); expect(permission?.Resource).not.toBe("*");
 			expect(permission?.Condition).toEqual({ StringEquals: { "ec2:ResourceTag/smartdeploy:demo-id": { Ref: "DemoId" } } });
 		}
+		// EC2 also authorizes each attached security group; omitting it left the Oct 29 worker quarantined (CleanupIncomplete).
+		expect(statements.find(row => row.Action === "ec2:ModifyNetworkInterfaceAttribute")?.Resource).toEqual([
+			{ "Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}" },
+			{ "Fn::Sub": "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*" },
+		]);
 		const actions = statements.flatMap(row => Array.isArray(row.Action) ? row.Action : [row.Action]);
 		expect(actions).not.toContain("dynamodb:DeleteTable"); expect(actions).not.toContain("s3:DeleteBucket"); expect(actions).not.toContain("ec2:TerminateInstances");
 		expect(actions).not.toContain("ssm:GetParameter"); expect(actions).not.toContain("ssm:GetParameters");

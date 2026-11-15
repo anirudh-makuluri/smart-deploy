@@ -56,7 +56,8 @@ export async function buildDemoGuardTemplate() {
         statement(["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"], "*", region),
         statement(["ec2:DescribeInstances", "ec2:DescribeSecurityGroups", "ec2:DescribeSecurityGroupRules", "ec2:DescribeNetworkInterfaces"], "*", region),
         statement("ec2:StopInstances", sub("arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${WorkerInstanceId}"), lease),
-        statement("ec2:ModifyNetworkInterfaceAttribute", sub("arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}"), lease),
+        // EC2 authorizes this action against the interface and every group being attached, so both must carry the lease.
+        statement("ec2:ModifyNetworkInterfaceAttribute", [sub("arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/${WorkerEniId}"), sub("arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*")], lease),
         statement(["ec2:DeleteSecurityGroup", "ec2:RevokeSecurityGroupIngress", "ec2:RevokeSecurityGroupEgress"], sub("arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/*"), lease),
         statement(["ecs:DescribeServices", "ecs:ListTagsForResource", "ecs:UpdateService", "ecs:DeleteService"], serviceArns),
         statement(["ecs:DescribeTaskDefinition", "ecs:DeregisterTaskDefinition"], sub(`arn:aws:ecs:\${AWS::Region}:\${AWS::AccountId}:task-definition/${prefix}-*:*`)),
